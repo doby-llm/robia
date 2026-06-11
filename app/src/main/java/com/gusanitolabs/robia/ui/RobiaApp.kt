@@ -1,4 +1,4 @@
-package com.gusanitolabs.rovia.ui
+package com.gusanitolabs.robia.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -61,19 +61,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.gusanitolabs.rovia.R
-import com.gusanitolabs.rovia.core.designsystem.RoviaTheme
+import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 
 @Composable
-fun RoviaApp() {
-    RoviaTheme {
-        RoviaShell()
+fun RobiaApp() {
+    RobiaTheme {
+        RobiaShell()
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RoviaShell() {
+private fun RobiaShell() {
     var settingsExpanded by remember { mutableStateOf(false) }
     val addClothingDescription = stringResource(R.string.content_add_clothing)
 
@@ -114,7 +114,7 @@ private fun RoviaShell() {
                 ),
             )
         },
-        bottomBar = { RoviaBottomBar() },
+        bottomBar = { RobiaBottomBar() },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { },
@@ -167,7 +167,7 @@ private fun SettingsMenu(expanded: Boolean, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun RoviaBottomBar() {
+private fun RobiaBottomBar() {
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -362,6 +362,6 @@ private fun EmptyStateCard() {
 
 @Preview(showBackground = true)
 @Composable
-private fun RoviaAppPreview() {
-    RoviaApp()
+private fun RobiaAppPreview() {
+    RobiaApp()
 }

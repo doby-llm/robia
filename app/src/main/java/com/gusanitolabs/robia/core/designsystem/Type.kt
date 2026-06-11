@@ -1,4 +1,4 @@
-package com.gusanitolabs.rovia.core.designsystem
+package com.gusanitolabs.robia.core.designsystem
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.font.FontFamily
@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 // Uses the platform sans-serif until bundled Inter font assets are added.
-val RoviaTypography = Typography(
+val RobiaTypography = Typography(
     headlineLarge = Typography().headlineLarge.copy(
         fontFamily = FontFamily.SansSerif,
         fontSize = 32.sp,

@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Rovia"
+rootProject.name = "Robia"
 include(":app")

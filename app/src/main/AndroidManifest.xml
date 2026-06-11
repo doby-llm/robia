@@ -10,11 +10,11 @@
         android:localeConfig="@xml/locales_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Rovia">
+        android:theme="@style/Theme.Robia">
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.Rovia">
+            android:theme="@style/Theme.Robia">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -1,6 +1,6 @@
-# Rovia product brief
+# Robia product brief
 
-Rovia is an Android digital wardrobe app for Google Play. It helps users photograph garments, maintain a local wardrobe catalog, attach and manage tags, and browse or edit clothing items from a polished mobile interface.
+Robia is an Android digital wardrobe app for Google Play. It helps users photograph garments, maintain a local wardrobe catalog, attach and manage tags, and browse or edit clothing items from a polished mobile interface.
 
 ## MVP scope
 
@@ -12,11 +12,11 @@ Rovia is an Android digital wardrobe app for Google Play. It helps users photogr
 
 ## UX direction
 
-The tracked UX source lives in `docs/ux/` and should be followed closely. Those assets currently use the placeholder name “Closet Harmony”; product implementation should adapt them to Rovia.
+The tracked UX source lives in `docs/ux/` and should be followed closely. Those assets currently use the placeholder name “Closet Harmony”; product implementation should adapt them to Robia.
 
 Required adaptations:
 
-- Use the app name Rovia.
+- Use the app name Robia.
 - Remove the left logo/spa icon from the top bar.
 - Use a settings icon on the right side that opens language and data-sync options.
 - Keep the Earth & Steel visual system, refined wardrobe flows, tag management, filtering, gallery browsing, capture, and item detail patterns as the baseline.

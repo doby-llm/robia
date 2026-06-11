@@ -1,11 +1,11 @@
-# Rovia
+# Robia
 
-Rovia is an Android digital wardrobe app built with Kotlin, Jetpack Compose, and Gradle.
+Robia is an Android digital wardrobe app built with Kotlin, Jetpack Compose, and Gradle.
 
 ## Android scaffold
 
-- Package/application id: `com.gusanitolabs.rovia`
-- App label: `Rovia`
+- Package/application id: `com.gusanitolabs.robia`
+- App label: `Robia`
 - UI stack: Jetpack Compose + Material 3
 - Initial locales: English, Spanish, German; the app follows the system language by default
 - Current CI target: debug APK artifact via GitHub Actions

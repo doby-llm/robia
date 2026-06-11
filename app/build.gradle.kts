@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.gusanitolabs.rovia"
+    namespace = "com.gusanitolabs.robia"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.gusanitolabs.rovia"
+        applicationId = "com.gusanitolabs.robia"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
