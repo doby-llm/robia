@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Local wardrobe data backup policy will be tightened when persistence lands. -->
+    </cloud-backup>
+    <device-transfer>
+        <!-- Device transfer is allowed for the empty scaffold only. -->
+    </device-transfer>
+</data-extraction-rules>

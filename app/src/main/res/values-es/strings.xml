@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Rovia</string>
+    <string name="browse">Explorar</string>
+    <string name="manage">Gestionar</string>
+    <string name="add_clothing">Añadir prenda</string>
+    <string name="settings">Ajustes</string>
+    <string name="language">Idioma</string>
+    <string name="language_system">Predeterminado del sistema</string>
+    <string name="language_english">Inglés</string>
+    <string name="language_spanish">Español</string>
+    <string name="language_german">Alemán</string>
+    <string name="data_sync">Sincronización de datos</string>
+    <string name="data_sync_coming_soon">Sincronización con Google Drive próximamente</string>
+    <string name="wardrobe_title">Tu armario</string>
+    <string name="wardrobe_intro">Empieza a crear un catálogo local de ropa, etiquetas y detalles listos para combinar.</string>
+    <string name="filters">Filtros</string>
+    <string name="all_filters">Todos los filtros</string>
+    <string name="empty_wardrobe_title">Aún no hay prendas</string>
+    <string name="empty_wardrobe_body">Añade tu primera prenda para crear un armario digital pulido y fácil de buscar.</string>
+    <string name="sample_item_name">Camisa de lino</string>
+    <string name="sample_item_brand">Lista para catalogación local</string>
+    <string name="tag_summer">Verano</string>
+    <string name="tag_casual">Casual</string>
+    <string name="content_settings_menu">Abrir menú de ajustes</string>
+    <string name="content_add_clothing">Añadir una prenda</string>
+    <string name="content_favorite">Prenda favorita</string>
+    <string-array name="language_choices">
+        <item>@string/language_system</item>
+        <item>@string/language_english</item>
+        <item>@string/language_spanish</item>
+        <item>@string/language_german</item>
+    </string-array>
+</resources>
