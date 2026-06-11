@@ -22,9 +22,19 @@
     <string name="sample_item_brand">Ready for local-first cataloging</string>
     <string name="tag_summer">Summer</string>
     <string name="tag_casual">Casual</string>
+    <string name="item_detail">Item detail</string>
+    <string name="item_detail_title">Garment detail</string>
+    <string name="item_detail_body">A detail route is ready for photo, tag, and edit flows once local wardrobe data lands.</string>
+    <string name="manage_tags_title">Manage tags</string>
+    <string name="manage_tags_body">Create and organize wardrobe tags for seasons, colors, occasions, and care notes.</string>
+    <string name="add_edit_title">Add or edit clothing</string>
+    <string name="add_edit_body">Capture a garment photo and details here. The route is wired for the upcoming local data form.</string>
+    <string name="language_settings_title">Language</string>
+    <string name="language_settings_body">Robia follows your system language by default and is prepared for English, Spanish, and German.</string>
     <string name="content_settings_menu">Open settings menu</string>
     <string name="content_add_clothing">Add a clothing item</string>
     <string name="content_favorite">Favorite garment</string>
+    <string name="content_open_item_detail">Open garment detail</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

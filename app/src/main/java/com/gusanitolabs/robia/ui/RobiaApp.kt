@@ -1,6 +1,8 @@
 package com.gusanitolabs.robia.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Style
@@ -34,9 +37,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -54,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -63,6 +67,43 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
+
+private sealed interface RobiaRoute {
+    @get:StringRes
+    val titleRes: Int
+
+    data object Browse : RobiaRoute {
+        override val titleRes = R.string.browse
+    }
+
+    data object ManageTags : RobiaRoute {
+        override val titleRes = R.string.manage
+    }
+
+    data object AddEditClothing : RobiaRoute {
+        override val titleRes = R.string.add_clothing
+    }
+
+    data object ItemDetail : RobiaRoute {
+        override val titleRes = R.string.item_detail
+    }
+
+    data object LanguageSettings : RobiaRoute {
+        override val titleRes = R.string.language
+    }
+}
+
+private data class BottomNavDestination(
+    val route: RobiaRoute,
+    @StringRes val labelRes: Int,
+    val icon: ImageVector,
+)
+
+private val bottomDestinations = listOf(
+    BottomNavDestination(RobiaRoute.Browse, R.string.browse, Icons.Rounded.GridView),
+    BottomNavDestination(RobiaRoute.AddEditClothing, R.string.add_clothing, Icons.Rounded.Add),
+    BottomNavDestination(RobiaRoute.ManageTags, R.string.manage, Icons.Rounded.Style),
+)
 
 @Composable
 fun RobiaApp() {
@@ -74,8 +115,8 @@ fun RobiaApp() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RobiaShell() {
+    var currentRoute: RobiaRoute by remember { mutableStateOf(RobiaRoute.Browse) }
     var settingsExpanded by remember { mutableStateOf(false) }
-    val addClothingDescription = stringResource(R.string.content_add_clothing)
 
     Scaffold(
         topBar = {
@@ -104,6 +145,10 @@ private fun RobiaShell() {
                         SettingsMenu(
                             expanded = settingsExpanded,
                             onDismiss = { settingsExpanded = false },
+                            onLanguageClick = {
+                                currentRoute = RobiaRoute.LanguageSettings
+                                settingsExpanded = false
+                            },
                         )
                     }
                 },
@@ -114,32 +159,28 @@ private fun RobiaShell() {
                 ),
             )
         },
-        bottomBar = { RobiaBottomBar() },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.semantics {
-                    contentDescription = addClothingDescription
-                },
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = null,
-                )
-            }
+        bottomBar = {
+            RobiaBottomBar(
+                currentRoute = currentRoute,
+                onRouteSelected = { currentRoute = it },
+            )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        WardrobeHome(innerPadding)
+        RobiaNavHost(
+            currentRoute = currentRoute,
+            innerPadding = innerPadding,
+            onRouteSelected = { currentRoute = it },
+        )
     }
 }
 
 @Composable
-private fun SettingsMenu(expanded: Boolean, onDismiss: () -> Unit) {
-    val languages = stringArrayResource(R.array.language_choices)
-
+private fun SettingsMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onLanguageClick: () -> Unit,
+) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -147,18 +188,18 @@ private fun SettingsMenu(expanded: Boolean, onDismiss: () -> Unit) {
         DropdownMenuItem(
             text = { Text(stringResource(R.string.language)) },
             leadingIcon = { Icon(Icons.Rounded.Language, contentDescription = null) },
-            onClick = { },
-            enabled = false,
+            onClick = onLanguageClick,
         )
-        languages.forEach { language ->
-            DropdownMenuItem(
-                text = { Text(language) },
-                onClick = onDismiss,
-            )
-        }
-        Divider()
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.data_sync_coming_soon)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(R.string.data_sync))
+                    Text(
+                        text = stringResource(R.string.data_sync_coming_soon),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            },
             leadingIcon = { Icon(Icons.Rounded.CloudOff, contentDescription = null) },
             onClick = { },
             enabled = false,
@@ -167,27 +208,59 @@ private fun SettingsMenu(expanded: Boolean, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun RobiaBottomBar() {
+private fun RobiaBottomBar(
+    currentRoute: RobiaRoute,
+    onRouteSelected: (RobiaRoute) -> Unit,
+) {
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        NavigationBarItem(
-            selected = true,
-            onClick = { },
-            icon = { Icon(Icons.Rounded.GridView, contentDescription = null) },
-            label = { Text(stringResource(R.string.browse)) },
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = { },
-            icon = { Icon(Icons.Rounded.Style, contentDescription = null) },
-            label = { Text(stringResource(R.string.manage)) },
-        )
+        bottomDestinations.forEach { destination ->
+            NavigationBarItem(
+                selected = currentRoute == destination.route,
+                onClick = { onRouteSelected(destination.route) },
+                icon = { Icon(destination.icon, contentDescription = null) },
+                label = { Text(stringResource(destination.labelRes)) },
+            )
+        }
     }
 }
 
 @Composable
-private fun WardrobeHome(innerPadding: PaddingValues) {
+private fun RobiaNavHost(
+    currentRoute: RobiaRoute,
+    innerPadding: PaddingValues,
+    onRouteSelected: (RobiaRoute) -> Unit,
+) {
+    when (currentRoute) {
+        RobiaRoute.Browse -> WardrobeHome(innerPadding, onRouteSelected)
+        RobiaRoute.ManageTags -> PlaceholderScreen(
+            innerPadding = innerPadding,
+            titleRes = R.string.manage_tags_title,
+            bodyRes = R.string.manage_tags_body,
+            icon = Icons.Rounded.Style,
+        )
+        RobiaRoute.AddEditClothing -> PlaceholderScreen(
+            innerPadding = innerPadding,
+            titleRes = R.string.add_edit_title,
+            bodyRes = R.string.add_edit_body,
+            icon = Icons.Rounded.Add,
+        )
+        RobiaRoute.ItemDetail -> PlaceholderScreen(
+            innerPadding = innerPadding,
+            titleRes = R.string.item_detail_title,
+            bodyRes = R.string.item_detail_body,
+            icon = Icons.Rounded.Info,
+        )
+        RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
+    }
+}
+
+@Composable
+private fun WardrobeHome(
+    innerPadding: PaddingValues,
+    onRouteSelected: (RobiaRoute) -> Unit,
+) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -211,8 +284,8 @@ private fun WardrobeHome(innerPadding: PaddingValues) {
         }
 
         item { FilterBar() }
-        item { GarmentPreviewCard() }
-        item { EmptyStateCard() }
+        item { GarmentPreviewCard(onClick = { onRouteSelected(RobiaRoute.ItemDetail) }) }
+        item { EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) }) }
     }
 }
 
@@ -236,43 +309,26 @@ private fun FilterBar() {
 }
 
 @Composable
-private fun GarmentPreviewCard() {
+private fun GarmentPreviewCard(onClick: () -> Unit) {
     val favoriteDescription = stringResource(R.string.content_favorite)
+    val itemDescription = stringResource(R.string.content_open_item_detail)
 
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = itemDescription }
+            .clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .width(96.dp)
-                    .aspectRatio(3f / 4f)
-                    .clip(MaterialTheme.shapes.large)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.surfaceContainerLow,
-                                MaterialTheme.colorScheme.secondaryContainer,
-                            ),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Style,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
+            GarmentImagePlaceholder()
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -313,6 +369,32 @@ private fun GarmentPreviewCard() {
 }
 
 @Composable
+private fun GarmentImagePlaceholder() {
+    Box(
+        modifier = Modifier
+            .width(96.dp)
+            .aspectRatio(3f / 4f)
+            .clip(MaterialTheme.shapes.large)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.surfaceContainerLow,
+                        MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Style,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(40.dp),
+        )
+    }
+}
+
+@Composable
 private fun TonalTag(text: String) {
     Surface(
         shape = CircleShape,
@@ -328,7 +410,7 @@ private fun TonalTag(text: String) {
 }
 
 @Composable
-private fun EmptyStateCard() {
+private fun EmptyStateCard(onAddClick: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = Color.White,
@@ -356,6 +438,106 @@ private fun EmptyStateCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
+            AssistChip(
+                onClick = onAddClick,
+                label = { Text(stringResource(R.string.add_clothing)) },
+                leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaceholderScreen(
+    innerPadding: PaddingValues,
+    @StringRes titleRes: Int,
+    @StringRes bodyRes: Int,
+    icon: ImageVector,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Text(
+                        text = stringResource(titleRes),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(bodyRes),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
+    val languages = stringArrayResource(R.array.language_choices)
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.language_settings_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.language_settings_body),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                languages.forEachIndexed { index, language ->
+                    ListItem(
+                        headlineContent = { Text(language) },
+                        leadingContent = { Icon(Icons.Rounded.Language, contentDescription = null) },
+                    )
+                    if (index != languages.lastIndex) {
+                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
         }
     }
 }
