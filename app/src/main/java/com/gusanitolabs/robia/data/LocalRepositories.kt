@@ -4,11 +4,13 @@ import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
+import com.gusanitolabs.robia.data.local.MainColorEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
@@ -37,10 +39,15 @@ class LocalTagRepository(
     private val tagDao: TagDao,
 ) : TagRepository {
     override fun observeCategories(): Flow<List<TagCategory>> =
-        tagDao.observeCategories().map { categories -> categories.map(TagCategoryEntity::toDomain) }
+        tagDao.observeCategories().map { categories ->
+            categories.map(TagCategoryEntity::toDomain).filterNot { category -> category.id == "care" }
+        }
 
     override fun observeTags(): Flow<List<GarmentTag>> =
-        tagDao.observeTags().map { tags -> tags.map(GarmentTagEntity::toDomain) }
+        tagDao.observeTags().map { tags -> tags.map(GarmentTagEntity::toDomain).filterNotCare() }
+
+    override fun observeMainColors(): Flow<List<MainColor>> =
+        tagDao.observeMainColors().map { colors -> colors.map(MainColorEntity::toDomain) }
 
     override suspend fun upsertCategory(category: TagCategory) {
         tagDao.upsertCategory(category.toEntity())
@@ -50,13 +57,22 @@ class LocalTagRepository(
         tagDao.upsertTag(tag.toEntity())
     }
 
+    override suspend fun upsertMainColor(color: MainColor) {
+        tagDao.upsertMainColor(color.toEntity())
+    }
+
     override suspend fun deleteCustomTag(id: String) {
         tagDao.deleteCustomTag(id)
+    }
+
+    override suspend fun deleteCustomMainColor(id: String) {
+        tagDao.deleteCustomMainColor(id)
     }
 
     override suspend fun seedDefaultsIfNeeded() {
         tagDao.seedCategories(DefaultTags.categories.map(TagCategory::toEntity))
         tagDao.seedTags(DefaultTags.tags.map(GarmentTag::toEntity))
+        tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
     }
 }
 
@@ -99,3 +115,7 @@ private fun TagCategoryEntity.toDomain(): TagCategory = TagCategory(id, name, so
 private fun TagCategory.toEntity(): TagCategoryEntity = TagCategoryEntity(id, name, sortOrder, isSystem)
 private fun GarmentTagEntity.toDomain(): GarmentTag = GarmentTag(id, categoryId, name, sortOrder, isSystem)
 private fun GarmentTag.toEntity(): GarmentTagEntity = GarmentTagEntity(id, categoryId, name, sortOrder, isSystem)
+private fun MainColorEntity.toDomain(): MainColor = MainColor(id, name, hex, sortOrder, isDefault)
+private fun MainColor.toEntity(): MainColorEntity = MainColorEntity(id, name, hex, sortOrder, isDefault)
+
+private fun List<GarmentTag>.filterNotCare(): List<GarmentTag> = filterNot { tag -> tag.categoryId == "care" }

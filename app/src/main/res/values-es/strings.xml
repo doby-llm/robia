@@ -76,7 +76,7 @@
     <string name="color_multicolor">Multicolor</string>
     <string name="color_unknown">Desconocido</string>
     <string name="manage_tags_title">Gestionar etiquetas</string>
-    <string name="manage_tags_body">Crea y organiza etiquetas del armario para estaciones, colores, ocasiones y notas de cuidado.</string>
+    <string name="manage_tags_body">Crea y organiza categorías del armario, ubicaciones, ajuste, ocasiones, estaciones y la paleta de color principal.</string>
     <string name="add_edit_title">Añadir o editar ropa</string>
     <string name="edit_clothing_title">Editar prenda</string>
     <string name="add_edit_body">Captura una foto de la prenda, conserva colores manuales y añade etiquetas al armario local.</string>
@@ -146,6 +146,27 @@
     <string name="category_occasion">Ocasiones</string>
     <string name="category_care">Cuidado</string>
     <string name="category_custom">Personalizadas</string>
+    <string name="filter_occasion">Ocasión</string>
+    <string name="main_color_palette_title">Paleta de color principal</string>
+    <string name="color_count">%1$d colores</string>
+    <string name="content_add_color">Añadir color</string>
+    <string name="content_edit_color">Editar color</string>
+    <string name="content_delete_color">Eliminar color</string>
+    <string name="content_color_swatch">Muestra de color %1$s</string>
+    <string name="add_color_title">Añadir color</string>
+    <string name="edit_color_title">Editar color</string>
+    <string name="color_name_label">Nombre del color</string>
+    <string name="color_hex_label">Color hexadecimal</string>
+    <string name="category_category">Categoría</string>
+    <string name="category_fit">Ajuste</string>
+    <string name="category_location">Ubicaciones</string>
+    <string name="tag_t_shirt">Camiseta</string>
+    <string name="tag_pants">Pantalones</string>
+    <string name="tag_shirt">Camisa</string>
+    <string name="tag_regular">Regular</string>
+    <string name="tag_slim">Entallado</string>
+    <string name="tag_oversized">Oversize</string>
+    <string name="tag_main_closet">Armario principal</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

@@ -52,6 +52,14 @@ data class GarmentTag(
     val isSystem: Boolean = false,
 )
 
+data class MainColor(
+    val id: String,
+    val name: String,
+    val hex: String,
+    val sortOrder: Int,
+    val isDefault: Boolean = false,
+)
+
 enum class LanguagePreference(val storageValue: String?) {
     System(null),
     English("en"),

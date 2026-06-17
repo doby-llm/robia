@@ -612,15 +612,21 @@ private fun DetailTonalTag(text: String) {
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = when (id) {
-    "style-casual" -> stringResource(R.string.tag_casual)
-    "style-formal" -> stringResource(R.string.tag_formal)
+    "category-t-shirt" -> stringResource(R.string.tag_t_shirt)
+    "category-pants" -> stringResource(R.string.tag_pants)
+    "category-shirt" -> stringResource(R.string.tag_shirt)
+    "category-shoes" -> stringResource(R.string.tag_shoes)
     "season-spring" -> stringResource(R.string.tag_spring)
     "season-summer" -> stringResource(R.string.tag_summer)
     "season-autumn" -> stringResource(R.string.tag_autumn)
     "season-winter" -> stringResource(R.string.tag_winter)
+    "fit-regular" -> stringResource(R.string.tag_regular)
+    "fit-slim" -> stringResource(R.string.tag_slim)
+    "fit-oversized" -> stringResource(R.string.tag_oversized)
+    "occasion-everyday" -> stringResource(R.string.tag_everyday)
     "occasion-work" -> stringResource(R.string.tag_work)
     "occasion-travel" -> stringResource(R.string.tag_travel)
-    "care-dry-clean" -> stringResource(R.string.tag_dry_clean)
+    "location-main-closet" -> stringResource(R.string.tag_main_closet)
     else -> name
 }
 

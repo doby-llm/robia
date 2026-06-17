@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,13 +46,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
 import java.util.Locale
 import java.util.UUID
 
+private const val SeasonCategoryId = "season"
+
 private data class TagEditorState(
     val categoryId: String,
     val existingTag: GarmentTag? = null,
+)
+
+private data class ColorEditorState(
+    val existingColor: MainColor? = null,
 )
 
 @Composable
@@ -59,17 +67,23 @@ fun ManageTagsScreen(
     innerPadding: PaddingValues,
     categories: List<TagCategory>,
     tags: List<GarmentTag>,
+    mainColors: List<MainColor>,
     onSaveTag: (GarmentTag) -> Unit,
-    onDeleteCustomTag: (GarmentTag) -> Unit,
+    onDeleteTag: (GarmentTag) -> Unit,
+    onSaveMainColor: (MainColor) -> Unit,
+    onDeleteMainColor: (MainColor) -> Unit,
 ) {
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
+    var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
+    val visibleCategories = categories.filterNot { category -> category.id == "care" }
+    val visibleTags = tags.filterNot { tag -> tag.categoryId == "care" }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
         contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -86,15 +100,24 @@ fun ManageTagsScreen(
             }
         }
 
-        categories.forEach { category ->
+        item(key = "main-color-palette") {
+            MainColorPaletteCard(
+                colors = mainColors,
+                onAddColor = { colorEditorState = ColorEditorState() },
+                onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
+                onDeleteColor = onDeleteMainColor,
+            )
+        }
+
+        visibleCategories.forEach { category ->
             item(key = category.id) {
-                val categoryTags = tags.filter { tag -> tag.categoryId == category.id }
+                val categoryTags = visibleTags.filter { tag -> tag.categoryId == category.id }
                 TagCategoryCard(
                     category = category,
                     tags = categoryTags,
                     onAddTag = { editorState = TagEditorState(categoryId = category.id) },
                     onEditTag = { tag -> editorState = TagEditorState(categoryId = category.id, existingTag = tag) },
-                    onDeleteTag = onDeleteCustomTag,
+                    onDeleteTag = onDeleteTag,
                 )
             }
         }
@@ -103,11 +126,23 @@ fun ManageTagsScreen(
     editorState?.let { state ->
         TagEditorDialog(
             state = state,
-            categoryTags = tags.filter { tag -> tag.categoryId == state.categoryId },
+            categoryTags = visibleTags.filter { tag -> tag.categoryId == state.categoryId },
             onDismiss = { editorState = null },
             onSave = { tag ->
                 onSaveTag(tag)
                 editorState = null
+            },
+        )
+    }
+
+    colorEditorState?.let { state ->
+        ColorEditorDialog(
+            state = state,
+            colors = mainColors,
+            onDismiss = { colorEditorState = null },
+            onSave = { color ->
+                onSaveMainColor(color)
+                colorEditorState = null
             },
         )
     }
@@ -122,6 +157,7 @@ private fun TagCategoryCard(
     onDeleteTag: (GarmentTag) -> Unit,
 ) {
     val addDescription = stringResource(R.string.content_add_tag)
+    val isImmutable = category.id == SeasonCategoryId
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -130,8 +166,8 @@ private fun TagCategoryCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -141,7 +177,7 @@ private fun TagCategoryCard(
                     imageVector = Icons.Rounded.LocalOffer,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(20.dp),
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -155,11 +191,13 @@ private fun TagCategoryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(
-                    modifier = Modifier.semantics { contentDescription = addDescription },
-                    onClick = onAddTag,
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
+                if (!isImmutable) {
+                    IconButton(
+                        modifier = Modifier.semantics { contentDescription = addDescription },
+                        onClick = onAddTag,
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                    }
                 }
             }
 
@@ -170,10 +208,11 @@ private fun TagCategoryCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     tags.forEach { tag ->
                         TagListRow(
                             tag = tag,
+                            canEdit = !isImmutable,
                             onEdit = { onEditTag(tag) },
                             onDelete = { onDeleteTag(tag) },
                         )
@@ -187,6 +226,7 @@ private fun TagCategoryCard(
 @Composable
 private fun TagListRow(
     tag: GarmentTag,
+    canEdit: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -200,7 +240,7 @@ private fun TagListRow(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, end = 6.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -215,16 +255,10 @@ private fun TagListRow(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
-            if (tag.isSystem) {
-                Text(
-                    text = stringResource(R.string.system_tag_badge),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
+            if (canEdit) {
                 IconButton(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .semantics { contentDescription = editDescription },
                     onClick = onEdit,
                 ) {
@@ -232,7 +266,7 @@ private fun TagListRow(
                 }
                 IconButton(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .semantics { contentDescription = deleteDescription },
                     onClick = onDelete,
                 ) {
@@ -243,6 +277,141 @@ private fun TagListRow(
                         modifier = Modifier.size(18.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MainColorPaletteCard(
+    colors: List<MainColor>,
+    onAddColor: () -> Unit,
+    onEditColor: (MainColor) -> Unit,
+    onDeleteColor: (MainColor) -> Unit,
+) {
+    val addDescription = stringResource(R.string.content_add_color)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.LocalOffer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.main_color_palette_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.color_count, colors.size),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(
+                    modifier = Modifier.semantics { contentDescription = addDescription },
+                    onClick = onAddColor,
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                colors.forEach { color ->
+                    ColorListRow(
+                        color = color,
+                        canEdit = !color.isDefault,
+                        canDelete = !color.isDefault && colors.size > 1,
+                        onEdit = { onEditColor(color) },
+                        onDelete = { onDeleteColor(color) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorListRow(
+    color: MainColor,
+    canEdit: Boolean,
+    canDelete: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val editDescription = stringResource(R.string.content_edit_color)
+    val deleteDescription = stringResource(R.string.content_delete_color)
+    val swatchDescription = stringResource(R.string.content_color_swatch, color.name)
+
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, end = 6.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(color.hex.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .semantics { contentDescription = swatchDescription },
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = color.name, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = color.hex,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(
+                modifier = Modifier
+                    .size(40.dp)
+                    .semantics { contentDescription = editDescription },
+                enabled = canEdit,
+                onClick = onEdit,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = null,
+                    tint = if (canEdit) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            IconButton(
+                modifier = Modifier
+                    .size(40.dp)
+                    .semantics { contentDescription = deleteDescription },
+                enabled = canDelete,
+                onClick = onDelete,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = null,
+                    tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
@@ -282,7 +451,7 @@ private fun TagEditorDialog(
                     val existing = state.existingTag
                     onSave(
                         GarmentTag(
-                            id = existing?.id ?: customTagId(trimmedName),
+                            id = existing?.id ?: customId(prefix = state.categoryId, name = trimmedName),
                             categoryId = state.categoryId,
                             name = trimmedName,
                             sortOrder = existing?.sortOrder ?: categoryTags.nextSortOrder(),
@@ -303,46 +472,133 @@ private fun TagEditorDialog(
 }
 
 @Composable
+private fun ColorEditorDialog(
+    state: ColorEditorState,
+    colors: List<MainColor>,
+    onDismiss: () -> Unit,
+    onSave: (MainColor) -> Unit,
+) {
+    var name by remember(state) { mutableStateOf(state.existingColor?.name.orEmpty()) }
+    var hex by remember(state) { mutableStateOf(state.existingColor?.hex ?: "#") }
+    val trimmedName = name.trim()
+    val normalizedHex = hex.toNormalizedHex()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    if (state.existingColor == null) R.string.add_color_title else R.string.edit_color_title,
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.color_name_label)) },
+                )
+                OutlinedTextField(
+                    value = hex,
+                    onValueChange = { hex = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.color_hex_label)) },
+                    placeholder = { Text("#D6B84C") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = trimmedName.isNotEmpty() && normalizedHex != null,
+                onClick = {
+                    val existing = state.existingColor
+                    onSave(
+                        MainColor(
+                            id = existing?.id ?: customId(prefix = "color", name = trimmedName),
+                            name = trimmedName,
+                            hex = normalizedHex.orEmpty(),
+                            sortOrder = existing?.sortOrder ?: colors.nextSortOrder(),
+                            isDefault = existing?.isDefault ?: false,
+                        ),
+                    )
+                },
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun TagCategory.localizedName(): String = when (id) {
-    "style" -> stringResource(R.string.category_style)
+    "category" -> stringResource(R.string.category_category)
     "season" -> stringResource(R.string.category_season)
+    "fit" -> stringResource(R.string.category_fit)
     "occasion" -> stringResource(R.string.category_occasion)
-    "care" -> stringResource(R.string.category_care)
-    "custom" -> stringResource(R.string.category_custom)
+    "location" -> stringResource(R.string.category_location)
     else -> name
 }
 
 @Composable
 private fun GarmentTag.localizedName(): String = when (id) {
-    "style-casual" -> stringResource(R.string.tag_casual)
-    "style-formal" -> stringResource(R.string.tag_formal)
+    "category-t-shirt" -> stringResource(R.string.tag_t_shirt)
+    "category-pants" -> stringResource(R.string.tag_pants)
+    "category-shirt" -> stringResource(R.string.tag_shirt)
+    "category-shoes" -> stringResource(R.string.tag_shoes)
     "season-spring" -> stringResource(R.string.tag_spring)
     "season-summer" -> stringResource(R.string.tag_summer)
     "season-autumn" -> stringResource(R.string.tag_autumn)
     "season-winter" -> stringResource(R.string.tag_winter)
+    "fit-regular" -> stringResource(R.string.tag_regular)
+    "fit-slim" -> stringResource(R.string.tag_slim)
+    "fit-oversized" -> stringResource(R.string.tag_oversized)
+    "occasion-everyday" -> stringResource(R.string.tag_everyday)
     "occasion-work" -> stringResource(R.string.tag_work)
     "occasion-travel" -> stringResource(R.string.tag_travel)
-    "care-dry-clean" -> stringResource(R.string.tag_dry_clean)
+    "location-main-closet" -> stringResource(R.string.tag_main_closet)
     else -> name
 }
 
 @Composable
 private fun GarmentTag.dotColor(): Color = when (categoryId) {
+    "category" -> MaterialTheme.colorScheme.primaryContainer
     "season" -> MaterialTheme.colorScheme.secondaryContainer
+    "fit" -> MaterialTheme.colorScheme.tertiaryContainer
     "occasion" -> MaterialTheme.colorScheme.outline
-    "care" -> MaterialTheme.colorScheme.tertiaryContainer
-    "custom" -> MaterialTheme.colorScheme.primaryContainer
+    "location" -> MaterialTheme.colorScheme.inversePrimary
     else -> MaterialTheme.colorScheme.surfaceVariant
 }
 
 private fun List<GarmentTag>.nextSortOrder(): Int =
     (maxOfOrNull(GarmentTag::sortOrder) ?: 0) + 10
 
-private fun customTagId(name: String): String {
+private fun List<MainColor>.nextSortOrder(): Int =
+    (maxOfOrNull(MainColor::sortOrder) ?: 0) + 10
+
+private fun customId(prefix: String, name: String): String {
     val slug = name
         .lowercase(Locale.ROOT)
         .replace(Regex("[^a-z0-9]+"), "-")
         .trim('-')
-        .ifEmpty { "tag" }
-    return "custom-$slug-${UUID.randomUUID()}"
+        .ifEmpty { prefix }
+    return "$prefix-$slug-${UUID.randomUUID()}"
+}
+
+private fun String.toNormalizedHex(): String? {
+    val normalized = trim().removePrefix("#")
+    if (normalized.length != 6 || normalized.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
+        return null
+    }
+    return "#${normalized.uppercase(Locale.ROOT)}"
+}
+
+private fun String.toComposeColor(): Color? = toNormalizedHex()?.let { normalized ->
+    Color(android.graphics.Color.parseColor(normalized))
 }

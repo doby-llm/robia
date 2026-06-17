@@ -99,6 +99,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.LanguagePreference
+import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.SettingsRepository
@@ -193,6 +194,7 @@ fun RobiaApp(
     val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
+    val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(tagRepository) {
@@ -206,6 +208,7 @@ fun RobiaApp(
             clothingItems = clothingItems,
             tagCategories = tagCategories,
             availableTags = availableTags,
+            mainColors = mainColors,
             onLanguageSelected = { language ->
                 scope.launch { settingsRepository.setLanguagePreference(language) }
             },
@@ -215,8 +218,14 @@ fun RobiaApp(
             onSaveTag = { tag ->
                 scope.launch { tagRepository.upsertTag(tag) }
             },
+            onSaveMainColor = { color ->
+                scope.launch { tagRepository.upsertMainColor(color) }
+            },
             onDeleteCustomTag = { tag ->
                 scope.launch { tagRepository.deleteCustomTag(tag.id) }
+            },
+            onDeleteMainColor = { color ->
+                scope.launch { tagRepository.deleteCustomMainColor(color.id) }
             },
         )
         }
@@ -259,10 +268,13 @@ private fun RobiaShell(
     clothingItems: List<ClothingItem>,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
+    mainColors: List<MainColor>,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
+    onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
+    onDeleteMainColor: (MainColor) -> Unit,
 ) {
     val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
     val currentRoute = routeStack.last()
@@ -378,6 +390,7 @@ private fun RobiaShell(
             selectedDomainItem = selectedDomainItem,
             tagCategories = tagCategories,
             availableTags = availableTags,
+            mainColors = mainColors,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
@@ -396,7 +409,9 @@ private fun RobiaShell(
             onFiltersChange = { browseFilters = it },
             onResetFilters = { browseFilters = BrowseFilterState() },
             onSaveTag = onSaveTag,
+            onSaveMainColor = onSaveMainColor,
             onDeleteCustomTag = onDeleteCustomTag,
+            onDeleteMainColor = onDeleteMainColor,
         )
     }
 }
@@ -486,6 +501,7 @@ private fun RobiaNavHost(
     selectedDomainItem: ClothingItem?,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
+    mainColors: List<MainColor>,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -493,7 +509,9 @@ private fun RobiaNavHost(
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
+    onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
+    onDeleteMainColor: (MainColor) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -510,8 +528,11 @@ private fun RobiaNavHost(
             innerPadding = innerPadding,
             categories = tagCategories,
             tags = availableTags,
+            mainColors = mainColors,
             onSaveTag = onSaveTag,
-            onDeleteCustomTag = onDeleteCustomTag,
+            onDeleteTag = onDeleteCustomTag,
+            onSaveMainColor = onSaveMainColor,
+            onDeleteMainColor = onDeleteMainColor,
         )
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(
             innerPadding = innerPadding,
@@ -1030,8 +1051,11 @@ private fun AdvancedFiltersScreen(
     onShowResults: () -> Unit,
 ) {
     val resultCount = remember(items, filters) { items.count(filters::matches) }
+    val categoryTags = availableTags.filter { it.categoryId == "category" }
     val seasonTags = availableTags.filter { it.categoryId == "season" }
-    val categoryTags = availableTags.filter { it.categoryId != "season" }
+    val fitTags = availableTags.filter { it.categoryId == "fit" }
+    val occasionTags = availableTags.filter { it.categoryId == "occasion" }
+    val locationTags = availableTags.filter { it.categoryId == "location" }
     val primaryColors = items.map(UiWardrobeItem::primaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
     val secondaryColors = items.map(UiWardrobeItem::secondaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
 
@@ -1089,34 +1113,32 @@ private fun AdvancedFiltersScreen(
         }
         item {
             FilterSection(title = stringResource(R.string.filter_fit)) {
-                Text(
-                    text = stringResource(R.string.filter_fit_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                FilterTagChips(
+                    tags = fitTags,
+                    selectedTagIds = filters.selectedTagIds,
+                    emptyText = stringResource(R.string.filters_no_tags),
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                )
+            }
+        }
+        item {
+            FilterSection(title = stringResource(R.string.filter_occasion)) {
+                FilterTagChips(
+                    tags = occasionTags,
+                    selectedTagIds = filters.selectedTagIds,
+                    emptyText = stringResource(R.string.filters_no_tags),
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
                 )
             }
         }
         item {
             FilterSection(title = stringResource(R.string.filter_location)) {
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Rounded.GridView, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                        Text(
-                            text = stringResource(R.string.filter_location_main_closet),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
+                FilterTagChips(
+                    tags = locationTags,
+                    selectedTagIds = filters.selectedTagIds,
+                    emptyText = stringResource(R.string.filters_no_tags),
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                )
             }
         }
         item {
@@ -1316,15 +1338,21 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = when (id) {
-    "style-casual" -> stringResource(R.string.tag_casual)
-    "style-formal" -> stringResource(R.string.tag_formal)
+    "category-t-shirt" -> stringResource(R.string.tag_t_shirt)
+    "category-pants" -> stringResource(R.string.tag_pants)
+    "category-shirt" -> stringResource(R.string.tag_shirt)
+    "category-shoes" -> stringResource(R.string.tag_shoes)
     "season-spring" -> stringResource(R.string.tag_spring)
     "season-summer" -> stringResource(R.string.tag_summer)
     "season-autumn" -> stringResource(R.string.tag_autumn)
     "season-winter" -> stringResource(R.string.tag_winter)
+    "fit-regular" -> stringResource(R.string.tag_regular)
+    "fit-slim" -> stringResource(R.string.tag_slim)
+    "fit-oversized" -> stringResource(R.string.tag_oversized)
+    "occasion-everyday" -> stringResource(R.string.tag_everyday)
     "occasion-work" -> stringResource(R.string.tag_work)
     "occasion-travel" -> stringResource(R.string.tag_travel)
-    "care-dry-clean" -> stringResource(R.string.tag_dry_clean)
+    "location-main-closet" -> stringResource(R.string.tag_main_closet)
     else -> name
 }
 
@@ -1372,10 +1400,13 @@ private fun RobiaAppPreview() {
             clothingItems = emptyList(),
             tagCategories = emptyList(),
             availableTags = emptyList(),
+            mainColors = emptyList(),
             onLanguageSelected = {},
             onSaveItem = {},
             onSaveTag = {},
+            onSaveMainColor = {},
             onDeleteCustomTag = {},
+            onDeleteMainColor = {},
         )
     }
 }

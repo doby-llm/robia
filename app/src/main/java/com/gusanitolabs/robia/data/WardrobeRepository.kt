@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.data
 
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
 import kotlinx.coroutines.flow.Flow
 
@@ -15,8 +16,11 @@ interface WardrobeRepository {
 interface TagRepository {
     fun observeCategories(): Flow<List<TagCategory>>
     fun observeTags(): Flow<List<GarmentTag>>
+    fun observeMainColors(): Flow<List<MainColor>>
     suspend fun upsertCategory(category: TagCategory)
     suspend fun upsertTag(tag: GarmentTag)
+    suspend fun upsertMainColor(color: MainColor)
     suspend fun deleteCustomTag(id: String)
+    suspend fun deleteCustomMainColor(id: String)
     suspend fun seedDefaultsIfNeeded()
 }

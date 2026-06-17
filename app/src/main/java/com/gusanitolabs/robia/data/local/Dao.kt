@@ -46,18 +46,30 @@ interface TagDao {
     @Query("SELECT * FROM garment_tags ORDER BY sort_order, name")
     fun observeTags(): Flow<List<GarmentTagEntity>>
 
+    @Query("SELECT * FROM main_colors ORDER BY sort_order, name")
+    fun observeMainColors(): Flow<List<MainColorEntity>>
+
     @Upsert
     suspend fun upsertCategory(category: TagCategoryEntity)
 
     @Upsert
     suspend fun upsertTag(tag: GarmentTagEntity)
 
-    @Query("DELETE FROM garment_tags WHERE id = :id AND is_system = 0")
+    @Upsert
+    suspend fun upsertMainColor(color: MainColorEntity)
+
+    @Query("DELETE FROM garment_tags WHERE id = :id AND category_id != 'season'")
     suspend fun deleteCustomTag(id: String)
+
+    @Query("DELETE FROM main_colors WHERE id = :id AND is_default = 0 AND (SELECT COUNT(*) FROM main_colors) > 1")
+    suspend fun deleteCustomMainColor(id: String)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun seedCategories(categories: List<TagCategoryEntity>)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun seedTags(tags: List<GarmentTagEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun seedMainColors(colors: List<MainColorEntity>)
 }

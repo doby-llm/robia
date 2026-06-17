@@ -76,7 +76,7 @@
     <string name="color_multicolor">Mehrfarbig</string>
     <string name="color_unknown">Unbekannt</string>
     <string name="manage_tags_title">Tags verwalten</string>
-    <string name="manage_tags_body">Erstelle und organisiere Garderoben-Tags für Jahreszeiten, Farben, Anlässe und Pflegehinweise.</string>
+    <string name="manage_tags_body">Erstelle und organisiere Garderobenkategorien, Orte, Passform, Anlässe, Jahreszeiten und die Hauptfarbpalette.</string>
     <string name="add_edit_title">Kleidung hinzufügen oder bearbeiten</string>
     <string name="edit_clothing_title">Kleidungsstück bearbeiten</string>
     <string name="add_edit_body">Erfasse ein Foto, bewahre manuelle Farbwerte und füge Tags zur lokalen Garderobe hinzu.</string>
@@ -146,6 +146,27 @@
     <string name="category_occasion">Anlässe</string>
     <string name="category_care">Pflege</string>
     <string name="category_custom">Benutzerdefiniert</string>
+    <string name="filter_occasion">Anlass</string>
+    <string name="main_color_palette_title">Hauptfarbpalette</string>
+    <string name="color_count">%1$d Farben</string>
+    <string name="content_add_color">Farbe hinzufügen</string>
+    <string name="content_edit_color">Farbe bearbeiten</string>
+    <string name="content_delete_color">Farbe löschen</string>
+    <string name="content_color_swatch">Farbfeld %1$s</string>
+    <string name="add_color_title">Farbe hinzufügen</string>
+    <string name="edit_color_title">Farbe bearbeiten</string>
+    <string name="color_name_label">Farbname</string>
+    <string name="color_hex_label">Hex-Farbe</string>
+    <string name="category_category">Kategorie</string>
+    <string name="category_fit">Passform</string>
+    <string name="category_location">Orte</string>
+    <string name="tag_t_shirt">T-Shirt</string>
+    <string name="tag_pants">Hosen</string>
+    <string name="tag_shirt">Hemd</string>
+    <string name="tag_regular">Normal</string>
+    <string name="tag_slim">Schmal</string>
+    <string name="tag_oversized">Oversized</string>
+    <string name="tag_main_closet">Hauptschrank</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

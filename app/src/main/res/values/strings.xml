@@ -76,7 +76,7 @@
     <string name="color_multicolor">Multicolor</string>
     <string name="color_unknown">Unknown</string>
     <string name="manage_tags_title">Manage tags</string>
-    <string name="manage_tags_body">Create and organize wardrobe tags for seasons, colors, occasions, and care notes.</string>
+    <string name="manage_tags_body">Create and organize wardrobe categories, locations, fit, occasions, seasons, and the main color palette.</string>
     <string name="add_edit_title">Add or edit clothing</string>
     <string name="edit_clothing_title">Edit clothing</string>
     <string name="add_edit_body">Capture a garment photo, preserve manual colors, and add tags for the local wardrobe.</string>
@@ -146,6 +146,27 @@
     <string name="category_occasion">Occasions</string>
     <string name="category_care">Care</string>
     <string name="category_custom">Custom</string>
+    <string name="filter_occasion">Occasion</string>
+    <string name="main_color_palette_title">Main Color Palette</string>
+    <string name="color_count">%1$d colors</string>
+    <string name="content_add_color">Add color</string>
+    <string name="content_edit_color">Edit color</string>
+    <string name="content_delete_color">Delete color</string>
+    <string name="content_color_swatch">%1$s color swatch</string>
+    <string name="add_color_title">Add color</string>
+    <string name="edit_color_title">Edit color</string>
+    <string name="color_name_label">Color name</string>
+    <string name="color_hex_label">Hex color</string>
+    <string name="category_category">Category</string>
+    <string name="category_fit">Fit</string>
+    <string name="category_location">Locations</string>
+    <string name="tag_t_shirt">T-shirt</string>
+    <string name="tag_pants">Pants</string>
+    <string name="tag_shirt">Shirt</string>
+    <string name="tag_regular">Regular</string>
+    <string name="tag_slim">Slim</string>
+    <string name="tag_oversized">Oversized</string>
+    <string name="tag_main_closet">Main closet</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

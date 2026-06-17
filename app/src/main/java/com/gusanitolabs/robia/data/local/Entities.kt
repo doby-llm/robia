@@ -58,6 +58,15 @@ data class GarmentTagEntity(
     @ColumnInfo(name = "is_system") val isSystem: Boolean,
 )
 
+@Entity(tableName = "main_colors")
+data class MainColorEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val hex: String,
+    @ColumnInfo(name = "sort_order") val sortOrder: Int,
+    @ColumnInfo(name = "is_default") val isDefault: Boolean,
+)
+
 @Entity(
     tableName = "clothing_item_tags",
     primaryKeys = ["clothing_item_id", "tag_id"],
