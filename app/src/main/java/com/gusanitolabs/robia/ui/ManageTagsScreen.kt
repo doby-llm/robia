@@ -454,7 +454,7 @@ private fun TagEditorDialog(
                             id = existing?.id ?: customId(prefix = state.categoryId, name = trimmedName),
                             categoryId = state.categoryId,
                             name = trimmedName,
-                            sortOrder = existing?.sortOrder ?: categoryTags.nextSortOrder(),
+                            sortOrder = existing?.sortOrder ?: categoryTags.nextTagSortOrder(),
                             isSystem = false,
                         ),
                     )
@@ -519,7 +519,7 @@ private fun ColorEditorDialog(
                             id = existing?.id ?: customId(prefix = "color", name = trimmedName),
                             name = trimmedName,
                             hex = normalizedHex.orEmpty(),
-                            sortOrder = existing?.sortOrder ?: colors.nextSortOrder(),
+                            sortOrder = existing?.sortOrder ?: colors.nextColorSortOrder(),
                             isDefault = existing?.isDefault ?: false,
                         ),
                     )
@@ -576,10 +576,10 @@ private fun GarmentTag.dotColor(): Color = when (categoryId) {
     else -> MaterialTheme.colorScheme.surfaceVariant
 }
 
-private fun List<GarmentTag>.nextSortOrder(): Int =
+private fun List<GarmentTag>.nextTagSortOrder(): Int =
     (maxOfOrNull(GarmentTag::sortOrder) ?: 0) + 10
 
-private fun List<MainColor>.nextSortOrder(): Int =
+private fun List<MainColor>.nextColorSortOrder(): Int =
     (maxOfOrNull(MainColor::sortOrder) ?: 0) + 10
 
 private fun customId(prefix: String, name: String): String {
