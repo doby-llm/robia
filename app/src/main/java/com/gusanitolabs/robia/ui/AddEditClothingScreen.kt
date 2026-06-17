@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.ui
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -81,6 +83,7 @@ fun AddEditClothingScreen(
     var secondaryRawColor by rememberSaveable { mutableStateOf("") }
     var removeBackground by rememberSaveable { mutableStateOf(true) }
     var captureStatus by rememberSaveable { mutableStateOf("") }
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(existingItem?.id) {
         name = existingItem?.name.orEmpty()
@@ -103,6 +106,36 @@ fun AddEditClothingScreen(
     val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
     val isEditing = existingItem != null
     val untitledItem = stringResource(R.string.untitled_item)
+    val hasUnsavedChanges = name != existingItem?.name.orEmpty() ||
+        notes != existingItem?.notes.orEmpty() ||
+        photoUri != existingItem?.photoUri ||
+        selectedTagIds != existingItem?.tags?.map(GarmentTag::id).orEmpty() ||
+        primaryRawColor != existingItem?.colorMetrics?.primaryRawValue.orEmpty() ||
+        secondaryRawColor != existingItem?.colorMetrics?.secondaryRawValue.orEmpty()
+
+    fun requestClose() {
+        if (hasUnsavedChanges) {
+            showDiscardDialog = true
+        } else {
+            onCancel()
+        }
+    }
+
+    BackHandler { requestClose() }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text(stringResource(R.string.unsaved_changes_title)) },
+            text = { Text(stringResource(R.string.unsaved_changes_body)) },
+            confirmButton = {
+                TextButton(onClick = onCancel) { Text(stringResource(R.string.discard_changes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
+            },
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -217,7 +250,7 @@ fun AddEditClothingScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 TextButton(
-                    onClick = onCancel,
+                    onClick = ::requestClose,
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Rounded.Close, contentDescription = null)

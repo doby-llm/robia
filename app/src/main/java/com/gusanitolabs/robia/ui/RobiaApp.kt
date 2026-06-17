@@ -1,7 +1,10 @@
 package com.gusanitolabs.robia.ui
 
 import android.net.Uri
+import android.content.res.Configuration
+import android.os.LocaleList
 import android.widget.ImageView
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,13 +33,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
@@ -60,9 +66,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +81,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -94,6 +104,7 @@ import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 private sealed interface RobiaRoute {
     @get:StringRes
@@ -118,6 +129,10 @@ private sealed interface RobiaRoute {
     data object LanguageSettings : RobiaRoute {
         override val titleRes = R.string.language
     }
+
+    data object AdvancedFilters : RobiaRoute {
+        override val titleRes = R.string.advanced_filters_title
+    }
 }
 
 private data class BottomNavDestination(
@@ -138,13 +153,28 @@ private data class UiWardrobeItem(
     val secondaryColor: DisplayColorLabel,
     val secondaryRawValue: String?,
     val isFavorite: Boolean,
-    val isSample: Boolean = false,
 )
 
 private data class UiTag(
     val id: String,
     val label: String,
 )
+
+private data class BrowseFilterState(
+    val selectedTagIds: Set<String> = emptySet(),
+    val selectedPrimaryColors: Set<DisplayColorLabel> = emptySet(),
+    val selectedSecondaryColors: Set<DisplayColorLabel> = emptySet(),
+) {
+    val hasActiveFilters: Boolean
+        get() = selectedTagIds.isNotEmpty() || selectedPrimaryColors.isNotEmpty() || selectedSecondaryColors.isNotEmpty()
+
+    fun matches(item: UiWardrobeItem): Boolean {
+        val itemTagIds = item.tags.map(UiTag::id).toSet()
+        return selectedTagIds.all(itemTagIds::contains) &&
+            (selectedPrimaryColors.isEmpty() || item.primaryColor in selectedPrimaryColors) &&
+            (selectedSecondaryColors.isEmpty() || item.secondaryColor in selectedSecondaryColors)
+    }
+}
 
 private val bottomDestinations = listOf(
     BottomNavDestination(RobiaRoute.Browse, R.string.browse, Icons.Rounded.GridView),
@@ -168,7 +198,8 @@ fun RobiaApp(
         tagRepository.seedDefaultsIfNeeded()
     }
 
-    RobiaTheme {
+    LocalizedRobiaContent(settings.languagePreference) {
+        RobiaTheme {
         RobiaShell(
             settings = settings,
             clothingItems = clothingItems,
@@ -187,6 +218,36 @@ fun RobiaApp(
                 scope.launch { tagRepository.deleteCustomTag(tag.id) }
             },
         )
+        }
+    }
+}
+
+@Composable
+private fun LocalizedRobiaContent(
+    languagePreference: LanguagePreference,
+    content: @Composable () -> Unit,
+) {
+    val baseContext = LocalContext.current
+    val baseConfiguration = LocalConfiguration.current
+    val localizedConfiguration = remember(languagePreference, baseConfiguration) {
+        Configuration(baseConfiguration).apply {
+            val languageTag = languagePreference.storageValue
+            if (languageTag != null) {
+                val locale = Locale.forLanguageTag(languageTag)
+                Locale.setDefault(locale)
+                setLocales(LocaleList(locale))
+            }
+        }
+    }
+    val localizedContext = remember(languagePreference, baseContext, localizedConfiguration) {
+        baseContext.createConfigurationContext(localizedConfiguration)
+    }
+
+    CompositionLocalProvider(
+        LocalConfiguration provides localizedConfiguration,
+        LocalContext provides localizedContext,
+    ) {
+        content()
     }
 }
 
@@ -202,21 +263,37 @@ private fun RobiaShell(
     onSaveTag: (GarmentTag) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
 ) {
-    var currentRoute: RobiaRoute by remember { mutableStateOf(RobiaRoute.Browse) }
+    val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
+    val currentRoute = routeStack.last()
     var settingsExpanded by remember { mutableStateOf(false) }
     var selectedItemId by remember { mutableStateOf<String?>(null) }
+    var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     val items = clothingItems.toUiWardrobeItems()
-    val sampleItems = rememberSampleWardrobeItems()
-    val displayedItems = items.ifEmpty { sampleItems }
-    val selectedItem = displayedItems.firstOrNull { it.id == selectedItemId } ?: displayedItems.firstOrNull()
+    val filteredItems = remember(items, browseFilters) { items.filter(browseFilters::matches) }
+    val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
+
+    fun pushRoute(route: RobiaRoute) {
+        if (routeStack.lastOrNull() != route) routeStack.add(route)
+    }
+
+    fun replaceRoute(route: RobiaRoute) {
+        routeStack.clear()
+        routeStack.add(route)
+    }
+
+    fun popRoute() {
+        if (routeStack.size > 1) routeStack.removeAt(routeStack.lastIndex)
+    }
+
+    BackHandler(enabled = routeStack.size > 1) { popRoute() }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    if (currentRoute == RobiaRoute.ItemDetail) {
-                        IconButton(onClick = { currentRoute = RobiaRoute.Browse }) {
+                    if (routeStack.size > 1 && currentRoute != RobiaRoute.AddEditClothing) {
+                        IconButton(onClick = ::popRoute) {
                             Icon(
                                 imageVector = Icons.Rounded.ArrowBack,
                                 contentDescription = stringResource(R.string.content_go_back),
@@ -226,11 +303,7 @@ private fun RobiaShell(
                 },
                 title = {
                     Text(
-                        text = if (currentRoute == RobiaRoute.ItemDetail) {
-                            stringResource(R.string.item_detail)
-                        } else {
-                            stringResource(R.string.app_name)
-                        },
+                        text = stringResource(currentRoute.titleRes),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -265,7 +338,7 @@ private fun RobiaShell(
                                 },
                                 onDismiss = { settingsExpanded = false },
                                 onLanguageClick = {
-                                    currentRoute = RobiaRoute.LanguageSettings
+                                    pushRoute(RobiaRoute.LanguageSettings)
                                     settingsExpanded = false
                                 },
                             )
@@ -281,12 +354,12 @@ private fun RobiaShell(
             )
         },
         bottomBar = {
-            if (currentRoute != RobiaRoute.ItemDetail) {
+            if (currentRoute != RobiaRoute.ItemDetail && currentRoute != RobiaRoute.AdvancedFilters) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
                     onRouteSelected = { route ->
                         if (route == RobiaRoute.AddEditClothing) selectedItemId = null
-                        currentRoute = route
+                        replaceRoute(route)
                     },
                 )
             }
@@ -296,25 +369,31 @@ private fun RobiaShell(
         RobiaNavHost(
             currentRoute = currentRoute,
             innerPadding = innerPadding,
-            items = displayedItems,
-            isShowingSamples = items.isEmpty(),
+            items = filteredItems,
+            allItems = items,
+            totalItemCount = items.size,
+            filters = browseFilters,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
             tagCategories = tagCategories,
             availableTags = availableTags,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
-                currentRoute = route
+                pushRoute(route)
             },
+            onBack = ::popRoute,
             onItemSelected = { item ->
                 selectedItemId = item.id
-                currentRoute = RobiaRoute.ItemDetail
+                pushRoute(RobiaRoute.ItemDetail)
             },
             onSaveItem = { item ->
                 onSaveItem(item)
                 selectedItemId = item.id
-                currentRoute = RobiaRoute.ItemDetail
+                replaceRoute(RobiaRoute.Browse)
+                pushRoute(RobiaRoute.ItemDetail)
             },
+            onFiltersChange = { browseFilters = it },
+            onResetFilters = { browseFilters = BrowseFilterState() },
             onSaveTag = onSaveTag,
             onDeleteCustomTag = onDeleteCustomTag,
         )
@@ -399,14 +478,19 @@ private fun RobiaNavHost(
     currentRoute: RobiaRoute,
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
-    isShowingSamples: Boolean,
+    allItems: List<UiWardrobeItem>,
+    totalItemCount: Int,
+    filters: BrowseFilterState,
     selectedItem: UiWardrobeItem?,
     selectedDomainItem: ClothingItem?,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     onRouteSelected: (RobiaRoute) -> Unit,
+    onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
+    onFiltersChange: (BrowseFilterState) -> Unit,
+    onResetFilters: () -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
 ) {
@@ -414,9 +498,12 @@ private fun RobiaNavHost(
         RobiaRoute.Browse -> BrowseWardrobeScreen(
             innerPadding = innerPadding,
             items = items,
-            isShowingSamples = isShowingSamples,
+            hasItemsInWardrobe = totalItemCount > 0,
+            hasActiveFilters = filters.hasActiveFilters,
             onItemSelected = onItemSelected,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
+            onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
+            onResetFilters = onResetFilters,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,
@@ -429,7 +516,7 @@ private fun RobiaNavHost(
             innerPadding = innerPadding,
             availableTags = availableTags,
             existingItem = selectedDomainItem,
-            onCancel = { onRouteSelected(RobiaRoute.Browse) },
+            onCancel = onBack,
             onSave = onSaveItem,
         )
         RobiaRoute.ItemDetail -> selectedItem?.let { item ->
@@ -440,6 +527,16 @@ private fun RobiaNavHost(
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
+        RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
+            innerPadding = innerPadding,
+            filters = filters,
+            availableTags = availableTags,
+            items = allItems,
+            allItemCount = totalItemCount,
+            onFiltersChange = onFiltersChange,
+            onResetFilters = onResetFilters,
+            onShowResults = onBack,
+        )
     }
 }
 
@@ -447,9 +544,12 @@ private fun RobiaNavHost(
 private fun BrowseWardrobeScreen(
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
-    isShowingSamples: Boolean,
+    hasItemsInWardrobe: Boolean,
+    hasActiveFilters: Boolean,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onAddClick: () -> Unit,
+    onFiltersClick: () -> Unit,
+    onResetFilters: () -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
@@ -460,13 +560,16 @@ private fun BrowseWardrobeScreen(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { FilterBar() }
-        if (isShowingSamples) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            FilterBar(hasActiveFilters = hasActiveFilters, onFiltersClick = onFiltersClick)
+        }
+        if (items.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                EmptyStateCard(onAddClick = onAddClick)
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                SampleWardrobeNotice(onAddClick = onAddClick)
+                if (hasItemsInWardrobe && hasActiveFilters) {
+                    EmptyFiltersCard(onResetFilters = onResetFilters)
+                } else {
+                    EmptyStateCard(onAddClick = onAddClick)
+                }
             }
         }
         items(items, key = { it.id }) { item ->
@@ -475,38 +578,29 @@ private fun BrowseWardrobeScreen(
                 onClick = { onItemSelected(item) },
             )
         }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            OutlinedButton(
-                onClick = { },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 64.dp, vertical = 12.dp),
-            ) {
-                Text(stringResource(R.string.load_more_items))
-            }
-        }
-        if (!isShowingSamples && items.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { EmptyStateCard(onAddClick = onAddClick) }
-        }
     }
 }
 
 @Composable
-private fun FilterBar() {
+private fun FilterBar(
+    hasActiveFilters: Boolean,
+    onFiltersClick: () -> Unit,
+) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
     ) {
         FilterChip(
-            selected = false,
-            onClick = { },
+            selected = hasActiveFilters,
+            onClick = onFiltersClick,
             label = { Text(stringResource(R.string.filters)) },
             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
         AssistChip(
-            onClick = { },
+            onClick = onFiltersClick,
             label = { Text(stringResource(R.string.all_filters)) },
+            leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
         Spacer(
             modifier = Modifier
@@ -517,42 +611,6 @@ private fun FilterBar() {
     }
 }
 
-@Composable
-private fun SampleWardrobeNotice(onAddClick: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.sample_wardrobe_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(R.string.sample_wardrobe_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            AssistChip(
-                onClick = onAddClick,
-                label = { Text(stringResource(R.string.add_clothing)) },
-                leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-            )
-        }
-    }
-}
 
 @Composable
 private fun GarmentGridCard(
@@ -875,6 +933,42 @@ private fun EmptyStateCard(onAddClick: () -> Unit) {
 }
 
 @Composable
+private fun EmptyFiltersCard(onResetFilters: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Tune,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(44.dp),
+            )
+            Text(
+                text = stringResource(R.string.empty_filters_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.empty_filters_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onResetFilters) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.reset_filters))
+            }
+        }
+    }
+}
+
+@Composable
 private fun PlaceholderScreen(
     innerPadding: PaddingValues,
     @StringRes titleRes: Int,
@@ -921,6 +1015,239 @@ private fun PlaceholderScreen(
         }
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdvancedFiltersScreen(
+    innerPadding: PaddingValues,
+    filters: BrowseFilterState,
+    availableTags: List<GarmentTag>,
+    items: List<UiWardrobeItem>,
+    allItemCount: Int,
+    onFiltersChange: (BrowseFilterState) -> Unit,
+    onResetFilters: () -> Unit,
+    onShowResults: () -> Unit,
+) {
+    val resultCount = remember(items, filters) { items.count(filters::matches) }
+    val seasonTags = availableTags.filter { it.categoryId == "season" }
+    val categoryTags = availableTags.filter { it.categoryId != "season" }
+    val primaryColors = items.map(UiWardrobeItem::primaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
+    val secondaryColors = items.map(UiWardrobeItem::secondaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.advanced_filters_title),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = stringResource(R.string.advanced_filters_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onResetFilters, enabled = filters.hasActiveFilters) {
+                    Text(stringResource(R.string.reset_filters))
+                }
+            }
+        }
+
+        item {
+            FilterSection(title = stringResource(R.string.filter_category)) {
+                FilterTagChips(
+                    tags = categoryTags,
+                    selectedTagIds = filters.selectedTagIds,
+                    emptyText = stringResource(R.string.filters_no_tags),
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                )
+            }
+        }
+        item {
+            FilterSection(title = stringResource(R.string.filter_season)) {
+                FilterTagChips(
+                    tags = seasonTags,
+                    selectedTagIds = filters.selectedTagIds,
+                    emptyText = stringResource(R.string.filters_no_tags),
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                )
+            }
+        }
+        item {
+            FilterSection(title = stringResource(R.string.filter_fit)) {
+                Text(
+                    text = stringResource(R.string.filter_fit_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            FilterSection(title = stringResource(R.string.filter_location)) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.GridView, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            text = stringResource(R.string.filter_location_main_closet),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            FilterSection(title = stringResource(R.string.filter_color_palette)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ColorPaletteChips(
+                        title = stringResource(R.string.primary_color),
+                        colors = primaryColors,
+                        selectedColors = filters.selectedPrimaryColors,
+                        onColorToggled = { color -> onFiltersChange(filters.togglePrimaryColor(color)) },
+                    )
+                    ColorPaletteChips(
+                        title = stringResource(R.string.secondary_color),
+                        colors = secondaryColors,
+                        selectedColors = filters.selectedSecondaryColors,
+                        onColorToggled = { color -> onFiltersChange(filters.toggleSecondaryColor(color)) },
+                    )
+                }
+            }
+        }
+        if (allItemCount > 0 && resultCount == 0 && filters.hasActiveFilters) {
+            item { EmptyFiltersCard(onResetFilters = onResetFilters) }
+        }
+        item {
+            Button(
+                onClick = onShowResults,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = allItemCount == 0 || resultCount > 0 || !filters.hasActiveFilters,
+            ) {
+                Text(stringResource(R.string.show_results_count, resultCount))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.secondary,
+            fontWeight = FontWeight.Bold,
+        )
+        content()
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilterTagChips(
+    tags: List<GarmentTag>,
+    selectedTagIds: Set<String>,
+    emptyText: String,
+    onTagToggled: (GarmentTag) -> Unit,
+) {
+    if (tags.isEmpty()) {
+        Text(emptyText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        tags.forEach { tag ->
+            val selected = tag.id in selectedTagIds
+            FilterChip(
+                selected = selected,
+                onClick = { onTagToggled(tag) },
+                label = { Text(tag.localizedLabel()) },
+                leadingIcon = if (selected) {
+                    { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                } else {
+                    null
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ColorPaletteChips(
+    title: String,
+    colors: List<DisplayColorLabel>,
+    selectedColors: Set<DisplayColorLabel>,
+    onColorToggled: (DisplayColorLabel) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (colors.isEmpty()) {
+            Text(
+                text = stringResource(R.string.filters_no_colors),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                colors.forEach { color ->
+                    FilterChip(
+                        selected = color in selectedColors,
+                        onClick = { onColorToggled(color) },
+                        label = { Text(color.localizedLabel()) },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clip(CircleShape)
+                                    .background(color.swatchColor())
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                            )
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun BrowseFilterState.toggleTag(tagId: String): BrowseFilterState = copy(
+    selectedTagIds = selectedTagIds.toggle(tagId),
+)
+
+private fun BrowseFilterState.togglePrimaryColor(color: DisplayColorLabel): BrowseFilterState = copy(
+    selectedPrimaryColors = selectedPrimaryColors.toggle(color),
+)
+
+private fun BrowseFilterState.toggleSecondaryColor(color: DisplayColorLabel): BrowseFilterState = copy(
+    selectedSecondaryColors = selectedSecondaryColors.toggle(color),
+)
+
+private fun <T> Set<T>.toggle(value: T): Set<T> = if (value in this) this - value else this + value
 
 @Composable
 private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
@@ -985,95 +1312,6 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
         isFavorite = item.isFavorite,
     )
 }
-
-@Composable
-private fun rememberSampleWardrobeItems(): List<UiWardrobeItem> = listOf(
-    UiWardrobeItem(
-        id = "sample-linen-shirt",
-        name = stringResource(R.string.sample_linen_shirt_name),
-        subtitle = stringResource(R.string.sample_linen_shirt_brand),
-        notes = stringResource(R.string.sample_linen_shirt_notes),
-        photoUri = null,
-        tags = listOf(
-            UiTag("season-summer", stringResource(R.string.tag_summer)),
-            UiTag("style-casual", stringResource(R.string.tag_casual)),
-        ),
-        primaryColor = DisplayColorLabel.White,
-        primaryRawValue = "#F8F9FA",
-        secondaryColor = DisplayColorLabel.Brown,
-        secondaryRawValue = "#C8A57D",
-        isFavorite = false,
-        isSample = true,
-    ),
-    UiWardrobeItem(
-        id = "sample-jeans",
-        name = stringResource(R.string.sample_jeans_name),
-        subtitle = stringResource(R.string.sample_jeans_brand),
-        notes = stringResource(R.string.sample_jeans_notes),
-        photoUri = null,
-        tags = listOf(
-            UiTag("season-all", stringResource(R.string.tag_all_season)),
-            UiTag("style-everyday", stringResource(R.string.tag_everyday)),
-        ),
-        primaryColor = DisplayColorLabel.Blue,
-        primaryRawValue = "#315F8E",
-        secondaryColor = DisplayColorLabel.Gray,
-        secondaryRawValue = "#AEB4BA",
-        isFavorite = true,
-        isSample = true,
-    ),
-    UiWardrobeItem(
-        id = "sample-field-jacket",
-        name = stringResource(R.string.sample_field_jacket_name),
-        subtitle = stringResource(R.string.sample_field_jacket_brand),
-        notes = stringResource(R.string.sample_field_jacket_notes),
-        photoUri = null,
-        tags = listOf(
-            UiTag("season-autumn", stringResource(R.string.tag_autumn)),
-            UiTag("style-outerwear", stringResource(R.string.tag_outerwear)),
-        ),
-        primaryColor = DisplayColorLabel.Green,
-        primaryRawValue = "#5F6F48",
-        secondaryColor = DisplayColorLabel.Brown,
-        secondaryRawValue = "#8B6848",
-        isFavorite = false,
-        isSample = true,
-    ),
-    UiWardrobeItem(
-        id = "sample-sneakers",
-        name = stringResource(R.string.sample_sneakers_name),
-        subtitle = stringResource(R.string.sample_sneakers_brand),
-        notes = stringResource(R.string.sample_sneakers_notes),
-        photoUri = null,
-        tags = listOf(
-            UiTag("season-all", stringResource(R.string.tag_all_season)),
-            UiTag("style-shoes", stringResource(R.string.tag_shoes)),
-        ),
-        primaryColor = DisplayColorLabel.White,
-        primaryRawValue = "#F8F9FA",
-        secondaryColor = DisplayColorLabel.Gray,
-        secondaryRawValue = "#DADADA",
-        isFavorite = false,
-        isSample = true,
-    ),
-    UiWardrobeItem(
-        id = "sample-tee",
-        name = stringResource(R.string.sample_tee_name),
-        subtitle = stringResource(R.string.sample_tee_brand),
-        notes = stringResource(R.string.sample_tee_notes),
-        photoUri = null,
-        tags = listOf(
-            UiTag("style-casual", stringResource(R.string.tag_casual)),
-            UiTag("category-tops", stringResource(R.string.tag_tops)),
-        ),
-        primaryColor = DisplayColorLabel.Black,
-        primaryRawValue = "#1F1F1F",
-        secondaryColor = DisplayColorLabel.Gray,
-        secondaryRawValue = "#8E8E8E",
-        isFavorite = true,
-        isSample = true,
-    ),
-)
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = when (id) {
