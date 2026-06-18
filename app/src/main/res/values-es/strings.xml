@@ -81,6 +81,7 @@
     <string name="edit_clothing_title">Editar prenda</string>
     <string name="add_edit_body">Captura una foto de la prenda, conserva colores manuales y añade etiquetas al armario local.</string>
     <string name="item_details_section">Detalles de la prenda</string>
+    <string name="item_details_refined_hint">Mantén compactos el nombre y las notas editables para que la previsualización y las cajas de metadatos destaquen.</string>
     <string name="item_name_label">Nombre de la prenda</string>
     <string name="item_name_placeholder">p. ej., Jersey de lana mostaza</string>
     <string name="item_notes_label">Descripción</string>
@@ -103,6 +104,15 @@
     <string name="palette_selector_hint">Toca un círculo para elegir solo desde la paleta de color principal. El procesamiento de foto rellena los colores de paleta más cercanos.</string>
     <string name="palette_empty">Aún no hay colores de paleta disponibles. Añade colores en la paleta de color principal primero.</string>
     <string name="tags_section">Etiquetas</string>
+    <string name="metadata_section">Metadatos</string>
+    <string name="metadata_section_body">Elige metadatos del armario en cajas enfocadas en vez de una nube genérica de etiquetas.</string>
+    <string name="metadata_category">Categoría</string>
+    <string name="metadata_season">Temporada</string>
+    <string name="metadata_fit">Ajuste</string>
+    <string name="metadata_location">Ubicación</string>
+    <string name="metadata_occasions">Ocasiones</string>
+    <string name="single_select_metadata_hint">Selecciona una</string>
+    <string name="multi_select_metadata_hint">Selecciona las que correspondan</string>
     <string name="tags_empty">Aún no hay etiquetas disponibles.</string>
     <string name="no_tags_selected">Sin etiquetas seleccionadas</string>
     <string name="none">Ninguno</string>

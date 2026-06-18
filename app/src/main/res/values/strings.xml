@@ -81,6 +81,7 @@
     <string name="edit_clothing_title">Edit clothing</string>
     <string name="add_edit_body">Capture a garment photo, preserve manual colors, and add tags for the local wardrobe.</string>
     <string name="item_details_section">Item details</string>
+    <string name="item_details_refined_hint">Keep the editable garment name and notes compact so the media preview and metadata boxes stay prominent.</string>
     <string name="item_name_label">Item name</string>
     <string name="item_name_placeholder">e.g., Mustard wool sweater</string>
     <string name="item_notes_label">Description</string>
@@ -103,6 +104,15 @@
     <string name="palette_selector_hint">Tap a circle to choose from the Manage Color Palette only. Photo processing auto-fills nearest palette colors.</string>
     <string name="palette_empty">No palette colors are available yet. Add colors in Manage Color Palette first.</string>
     <string name="tags_section">Tags</string>
+    <string name="metadata_section">Metadata</string>
+    <string name="metadata_section_body">Choose wardrobe metadata from focused boxes instead of one generic tag cloud.</string>
+    <string name="metadata_category">Category</string>
+    <string name="metadata_season">Season</string>
+    <string name="metadata_fit">Fit</string>
+    <string name="metadata_location">Location</string>
+    <string name="metadata_occasions">Occasions</string>
+    <string name="single_select_metadata_hint">Select one</string>
+    <string name="multi_select_metadata_hint">Select all that apply</string>
     <string name="tags_empty">No tags are available yet.</string>
     <string name="no_tags_selected">No tags selected</string>
     <string name="none">None</string>

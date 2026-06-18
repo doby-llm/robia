@@ -245,6 +245,11 @@ fun AddEditClothingScreen(
 
         item {
             CardSection(title = stringResource(R.string.item_details_section)) {
+                Text(
+                    text = stringResource(R.string.item_details_refined_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -265,7 +270,7 @@ fun AddEditClothingScreen(
         }
 
         item {
-            CardSection(title = stringResource(R.string.colors_section)) {
+            CardSection(title = stringResource(R.string.extracted_colors)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                     PaletteColorCircle(
                         title = stringResource(R.string.primary_color),
@@ -291,37 +296,11 @@ fun AddEditClothingScreen(
         }
 
         item {
-            CardSection(title = stringResource(R.string.tags_section)) {
-                if (availableTags.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.tags_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    FlowChipRow {
-                        availableTags.forEach { tag ->
-                            val selected = tag.id in selectedTagIds
-                            FilterChip(
-                                selected = selected,
-                                onClick = {
-                                    selectedTagIds = if (selected) {
-                                        selectedTagIds - tag.id
-                                    } else {
-                                        selectedTagIds + tag.id
-                                    }
-                                },
-                                label = { Text(tag.localizedLabel()) },
-                                leadingIcon = if (selected) {
-                                    { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                } else {
-                                    null
-                                },
-                            )
-                        }
-                    }
-                }
-            }
+            MetadataCaptureSection(
+                availableTags = availableTags,
+                selectedTagIds = selectedTagIds,
+                onSelectedTagIdsChange = { selectedTagIds = it },
+            )
         }
 
         item {
@@ -378,6 +357,160 @@ fun AddEditClothingScreen(
         }
     }
 }
+
+@Composable
+private fun MetadataCaptureSection(
+    availableTags: List<GarmentTag>,
+    selectedTagIds: List<String>,
+    onSelectedTagIdsChange: (List<String>) -> Unit,
+) {
+    CardSection(title = stringResource(R.string.metadata_section)) {
+        Text(
+            text = stringResource(R.string.metadata_section_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (availableTags.isEmpty()) {
+            Text(
+                text = stringResource(R.string.tags_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            MetadataTagCard(
+                title = stringResource(R.string.metadata_category),
+                subtitle = stringResource(R.string.single_select_metadata_hint),
+                tags = availableTags.forCategory("category"),
+                selectedTagIds = selectedTagIds,
+                singleSelect = true,
+                onSelectedTagIdsChange = onSelectedTagIdsChange,
+            )
+            MetadataTagCard(
+                title = stringResource(R.string.metadata_season),
+                subtitle = stringResource(R.string.multi_select_metadata_hint),
+                tags = availableTags.forCategory("season"),
+                selectedTagIds = selectedTagIds,
+                singleSelect = false,
+                onSelectedTagIdsChange = onSelectedTagIdsChange,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MetadataTagCard(
+                    title = stringResource(R.string.metadata_fit),
+                    subtitle = stringResource(R.string.single_select_metadata_hint),
+                    tags = availableTags.forCategory("fit"),
+                    selectedTagIds = selectedTagIds,
+                    singleSelect = true,
+                    onSelectedTagIdsChange = onSelectedTagIdsChange,
+                    modifier = Modifier.weight(1f),
+                )
+                MetadataTagCard(
+                    title = stringResource(R.string.metadata_location),
+                    subtitle = stringResource(R.string.single_select_metadata_hint),
+                    tags = availableTags.forCategory("location"),
+                    selectedTagIds = selectedTagIds,
+                    singleSelect = true,
+                    onSelectedTagIdsChange = onSelectedTagIdsChange,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            MetadataTagCard(
+                title = stringResource(R.string.metadata_occasions),
+                subtitle = stringResource(R.string.multi_select_metadata_hint),
+                tags = availableTags.forCategory("occasion"),
+                selectedTagIds = selectedTagIds,
+                singleSelect = false,
+                onSelectedTagIdsChange = onSelectedTagIdsChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetadataTagCard(
+    title: String,
+    subtitle: String,
+    tags: List<GarmentTag>,
+    selectedTagIds: List<String>,
+    singleSelect: Boolean,
+    onSelectedTagIdsChange: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title.uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (tags.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_tags_in_category),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            } else {
+                FlowChipRow {
+                    tags.forEach { tag ->
+                        val selected = tag.id in selectedTagIds
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                onSelectedTagIdsChange(
+                                    selectedTagIds.toggleTag(
+                                        tag = tag,
+                                        selected = selected,
+                                        singleSelect = singleSelect,
+                                        categoryTagIds = tags.map(GarmentTag::id),
+                                    ),
+                                )
+                            },
+                            label = { Text(tag.localizedLabel()) },
+                            leadingIcon = if (selected) {
+                                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun List<GarmentTag>.forCategory(categoryId: String): List<GarmentTag> =
+    filter { tag -> tag.categoryId == categoryId }.sortedWith(compareBy<GarmentTag> { it.sortOrder }.thenBy { it.name })
+
+private fun List<String>.toggleTag(
+    tag: GarmentTag,
+    selected: Boolean,
+    singleSelect: Boolean,
+    categoryTagIds: List<String>,
+): List<String> =
+    if (selected) {
+        this - tag.id
+    } else if (singleSelect) {
+        filterNot { selectedId -> selectedId in categoryTagIds } + tag.id
+    } else {
+        this + tag.id
+    }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

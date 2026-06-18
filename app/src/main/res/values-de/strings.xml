@@ -81,6 +81,7 @@
     <string name="edit_clothing_title">Kleidungsstück bearbeiten</string>
     <string name="add_edit_body">Erfasse ein Foto, bewahre manuelle Farbwerte und füge Tags zur lokalen Garderobe hinzu.</string>
     <string name="item_details_section">Kleidungsdetails</string>
+    <string name="item_details_refined_hint">Halte den bearbeitbaren Namen und die Notizen kompakt, damit Medienvorschau und Metadatenboxen im Fokus bleiben.</string>
     <string name="item_name_label">Name des Kleidungsstücks</string>
     <string name="item_name_placeholder">z. B. Senfgelber Wollpullover</string>
     <string name="item_notes_label">Beschreibung</string>
@@ -103,6 +104,15 @@
     <string name="palette_selector_hint">Tippe auf einen Kreis, um nur aus der Hauptfarbpalette zu wählen. Die Fotoverarbeitung füllt die nächstliegenden Palettenfarben automatisch aus.</string>
     <string name="palette_empty">Noch keine Palettenfarben verfügbar. Füge zuerst Farben in der Hauptfarbpalette hinzu.</string>
     <string name="tags_section">Tags</string>
+    <string name="metadata_section">Metadaten</string>
+    <string name="metadata_section_body">Wähle Garderoben-Metadaten in fokussierten Boxen statt in einer generischen Tag-Wolke.</string>
+    <string name="metadata_category">Kategorie</string>
+    <string name="metadata_season">Saison</string>
+    <string name="metadata_fit">Passform</string>
+    <string name="metadata_location">Ort</string>
+    <string name="metadata_occasions">Anlässe</string>
+    <string name="single_select_metadata_hint">Eine auswählen</string>
+    <string name="multi_select_metadata_hint">Alle zutreffenden auswählen</string>
     <string name="tags_empty">Noch keine Tags verfügbar.</string>
     <string name="no_tags_selected">Keine Tags ausgewählt</string>
     <string name="none">Keiner</string>
