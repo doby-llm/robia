@@ -261,12 +261,21 @@ private fun LocalizedRobiaContent(
         baseContext.createConfigurationContext(localizedConfiguration)
     }
 
-    CompositionLocalProvider(
-        LocalConfiguration provides localizedConfiguration,
-        LocalContext provides localizedContext,
-        LocalActivityResultRegistryOwner provides activityResultRegistryOwner,
-    ) {
-        content()
+    if (activityResultRegistryOwner != null) {
+        CompositionLocalProvider(
+            LocalConfiguration provides localizedConfiguration,
+            LocalContext provides localizedContext,
+            LocalActivityResultRegistryOwner provides activityResultRegistryOwner,
+        ) {
+            content()
+        }
+    } else {
+        CompositionLocalProvider(
+            LocalConfiguration provides localizedConfiguration,
+            LocalContext provides localizedContext,
+        ) {
+            content()
+        }
     }
 }
 
