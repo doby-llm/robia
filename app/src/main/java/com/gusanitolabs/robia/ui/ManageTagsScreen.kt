@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -60,6 +62,26 @@ private data class TagEditorState(
 
 private data class ColorEditorState(
     val existingColor: MainColor? = null,
+)
+
+private data class PaletteSwatch(
+    val hex: String,
+    val labelResId: Int,
+)
+
+private val CuratedPaletteSwatches = listOf(
+    PaletteSwatch("#1F1F1F", R.string.color_black),
+    PaletteSwatch("#F8F9FA", R.string.color_white),
+    PaletteSwatch("#5F6368", R.string.color_charcoal),
+    PaletteSwatch("#8B6848", R.string.color_brown),
+    PaletteSwatch("#D8C3A5", R.string.color_beige_cream),
+    PaletteSwatch("#315F8E", R.string.color_navy_blue),
+    PaletteSwatch("#5F6F48", R.string.color_green),
+    PaletteSwatch("#9E3D35", R.string.color_red),
+    PaletteSwatch("#D4879A", R.string.color_pink),
+    PaletteSwatch("#765A91", R.string.color_purple),
+    PaletteSwatch("#D6B84C", R.string.color_mustard),
+    PaletteSwatch("#B76E3D", R.string.color_orange),
 )
 
 @Composable
@@ -335,7 +357,7 @@ private fun MainColorPaletteCard(
                 colors.forEach { color ->
                     ColorListRow(
                         color = color,
-                        canEdit = !color.isDefault,
+                        canEdit = true,
                         canDelete = !color.isDefault && colors.size > 1,
                         onEdit = { onEditColor(color) },
                         onDelete = { onDeleteColor(color) },
@@ -478,10 +500,19 @@ private fun ColorEditorDialog(
     onDismiss: () -> Unit,
     onSave: (MainColor) -> Unit,
 ) {
+    val curatedHexes = remember { CuratedPaletteSwatches.map(PaletteSwatch::hex).toSet() }
     var name by remember(state) { mutableStateOf(state.existingColor?.name.orEmpty()) }
-    var hex by remember(state) { mutableStateOf(state.existingColor?.hex ?: "#") }
+    var selectedHex by remember(state) {
+        mutableStateOf(state.existingColor?.hex?.toNormalizedHex() ?: CuratedPaletteSwatches.first().hex)
+    }
+    var customHex by remember(state) { mutableStateOf(state.existingColor?.hex ?: CuratedPaletteSwatches.first().hex) }
+    var showCustomHex by remember(state) {
+        mutableStateOf(state.existingColor?.hex?.toNormalizedHex() !in curatedHexes)
+    }
     val trimmedName = name.trim()
-    val normalizedHex = hex.toNormalizedHex()
+    val normalizedCustomHex = customHex.toNormalizedHex()
+    val selectedColorHex = if (showCustomHex) normalizedCustomHex else selectedHex
+    val showHexError = showCustomHex && customHex.isNotBlank() && normalizedCustomHex == null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -500,25 +531,52 @@ private fun ColorEditorDialog(
                     singleLine = true,
                     label = { Text(stringResource(R.string.color_name_label)) },
                 )
-                OutlinedTextField(
-                    value = hex,
-                    onValueChange = { hex = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.color_hex_label)) },
-                    placeholder = { Text("#D6B84C") },
+                Text(
+                    text = stringResource(R.string.color_palette_picker_label),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                CuratedColorGrid(
+                    selectedHex = selectedColorHex,
+                    onSelect = { swatch, label ->
+                        selectedHex = swatch.hex
+                        customHex = swatch.hex
+                        showCustomHex = false
+                        if (name.isBlank()) {
+                            name = label
+                        }
+                    },
+                )
+                TextButton(onClick = { showCustomHex = !showCustomHex }) {
+                    Text(stringResource(R.string.custom_hex_color))
+                }
+                if (showCustomHex) {
+                    OutlinedTextField(
+                        value = customHex,
+                        onValueChange = { customHex = it },
+                        singleLine = true,
+                        isError = showHexError,
+                        label = { Text(stringResource(R.string.color_hex_label)) },
+                        placeholder = { Text("#D6B84C") },
+                        supportingText = {
+                            if (showHexError) {
+                                Text(stringResource(R.string.color_hex_invalid))
+                            }
+                        },
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
-                enabled = trimmedName.isNotEmpty() && normalizedHex != null,
+                enabled = trimmedName.isNotEmpty() && selectedColorHex != null,
                 onClick = {
                     val existing = state.existingColor
                     onSave(
                         MainColor(
                             id = existing?.id ?: customId(prefix = "color", name = trimmedName),
                             name = trimmedName,
-                            hex = normalizedHex.orEmpty(),
+                            hex = selectedColorHex.orEmpty(),
                             sortOrder = existing?.sortOrder ?: colors.nextColorSortOrder(),
                             isDefault = existing?.isDefault ?: false,
                         ),
@@ -534,6 +592,62 @@ private fun ColorEditorDialog(
             }
         },
     )
+}
+
+@Composable
+private fun CuratedColorGrid(
+    selectedHex: String?,
+    onSelect: (PaletteSwatch, String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        CuratedPaletteSwatches.chunked(4).forEach { rowSwatches ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                rowSwatches.forEach { swatch ->
+                    val label = stringResource(swatch.labelResId)
+                    PaletteSwatchButton(
+                        swatch = swatch,
+                        label = label,
+                        selected = selectedHex == swatch.hex,
+                        onClick = { onSelect(swatch, label) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PaletteSwatchButton(
+    swatch: PaletteSwatch,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val swatchColor = swatch.hex.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    val swatchDescription = stringResource(R.string.content_select_color_swatch, label)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .width(72.dp)
+            .semantics { contentDescription = swatchDescription }
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(swatchColor)
+                .border(if (selected) 3.dp else 1.dp, borderColor, CircleShape),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
