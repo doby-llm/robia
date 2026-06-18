@@ -29,7 +29,7 @@
     <string name="sample_linen_shirt_notes">Atmungsaktives Leinenhemd für warme Tage und lockere Layering-Looks.</string>
     <string name="sample_jeans_name">Vintage Straight Jeans</string>
     <string name="sample_jeans_brand">Levi\'s 501</string>
-    <string name="sample_jeans_notes">Strukturierter blauer Denim mit geradem Schnitt für jeden Tag.</string>
+    <string name="sample_jeans_notes">Strukturierter blauer Denim mit geradlinigem Styling für jeden Tag.</string>
     <string name="sample_field_jacket_name">Utility-Feldjacke</string>
     <string name="sample_field_jacket_brand">Madewell</string>
     <string name="sample_field_jacket_notes">Olivfarbene Baumwolljacke mit praktischen Taschen und Messingdetails.</string>
@@ -76,7 +76,7 @@
     <string name="color_multicolor">Mehrfarbig</string>
     <string name="color_unknown">Unbekannt</string>
     <string name="manage_tags_title">Tags verwalten</string>
-    <string name="manage_tags_body">Erstelle und organisiere Garderobenkategorien, Orte, Passform, Anlässe, Jahreszeiten und die Hauptfarbpalette.</string>
+    <string name="manage_tags_body">Erstelle und organisiere Garderobenkategorien, Orte, Anlässe, Jahreszeiten und die Hauptfarbpalette.</string>
     <string name="add_edit_title">Kleidung hinzufügen oder bearbeiten</string>
     <string name="edit_clothing_title">Kleidungsstück bearbeiten</string>
     <string name="add_edit_body">Erfasse ein Foto, bewahre manuelle Farbwerte und füge Tags zur lokalen Garderobe hinzu.</string>
@@ -85,7 +85,7 @@
     <string name="item_name_label">Name des Kleidungsstücks</string>
     <string name="item_name_placeholder">z. B. Senfgelber Wollpullover</string>
     <string name="item_notes_label">Beschreibung</string>
-    <string name="item_notes_placeholder">Füge Stoff, Marke, Passform oder Pflegehinweise hinzu</string>
+    <string name="item_notes_placeholder">Füge Stoff, Marke, Styling oder Pflegehinweise hinzu</string>
     <string name="gallery">Galerie</string>
     <string name="photo_placeholder">Noch kein Foto ausgewählt</string>
     <string name="photo_placeholder_status">Wähle ein Galeriebild oder nimm ein Kamerafoto auf, um es vorzuschauen und zu speichern.</string>
@@ -109,7 +109,6 @@
     <string name="metadata_section_body">Wähle Garderoben-Metadaten in fokussierten Boxen statt in einer generischen Tag-Wolke.</string>
     <string name="metadata_category">Kategorie</string>
     <string name="metadata_season">Saison</string>
-    <string name="metadata_fit">Passform</string>
     <string name="metadata_location">Ort</string>
     <string name="metadata_occasions">Anlässe</string>
     <string name="single_select_metadata_hint">Eine auswählen</string>
@@ -129,8 +128,6 @@
     <string name="reset_filters">Alle zurücksetzen</string>
     <string name="filter_category">Kategorie</string>
     <string name="filter_season">Saison</string>
-    <string name="filter_fit">Passform</string>
-    <string name="filter_fit_body">Passformdaten werden noch nicht gespeichert. Dieser Bereich ist für kommende Garderobenfelder vorbereitet.</string>
     <string name="filter_location">Ort</string>
     <string name="filter_location_main_closet">Hauptschrank</string>
     <string name="filter_color_palette">Farbpalette</string>
@@ -177,14 +174,10 @@
     <string name="color_name_label">Farbname</string>
     <string name="color_hex_label">Hex-Farbe</string>
     <string name="category_category">Kategorie</string>
-    <string name="category_fit">Passform</string>
     <string name="category_location">Orte</string>
     <string name="tag_t_shirt">T-Shirt</string>
     <string name="tag_pants">Hosen</string>
     <string name="tag_shirt">Hemd</string>
-    <string name="tag_regular">Normal</string>
-    <string name="tag_slim">Schmal</string>
-    <string name="tag_oversized">Oversized</string>
     <string name="tag_main_closet">Hauptschrank</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>

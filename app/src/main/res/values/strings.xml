@@ -29,7 +29,7 @@
     <string name="sample_linen_shirt_notes">A breathable linen button-down for warm days and relaxed layering.</string>
     <string name="sample_jeans_name">Vintage straight jeans</string>
     <string name="sample_jeans_brand">Levi\'s 501</string>
-    <string name="sample_jeans_notes">Structured blue denim with an everyday straight fit.</string>
+    <string name="sample_jeans_notes">Structured blue denim with everyday straight-leg styling.</string>
     <string name="sample_field_jacket_name">Utility field jacket</string>
     <string name="sample_field_jacket_brand">Madewell</string>
     <string name="sample_field_jacket_notes">Olive cotton outerwear with practical pockets and brass details.</string>
@@ -76,7 +76,7 @@
     <string name="color_multicolor">Multicolor</string>
     <string name="color_unknown">Unknown</string>
     <string name="manage_tags_title">Manage tags</string>
-    <string name="manage_tags_body">Create and organize wardrobe categories, locations, fit, occasions, seasons, and the main color palette.</string>
+    <string name="manage_tags_body">Create and organize wardrobe categories, locations, occasions, seasons, and the main color palette.</string>
     <string name="add_edit_title">Add or edit clothing</string>
     <string name="edit_clothing_title">Edit clothing</string>
     <string name="add_edit_body">Capture a garment photo, preserve manual colors, and add tags for the local wardrobe.</string>
@@ -85,7 +85,7 @@
     <string name="item_name_label">Item name</string>
     <string name="item_name_placeholder">e.g., Mustard wool sweater</string>
     <string name="item_notes_label">Description</string>
-    <string name="item_notes_placeholder">Add fabric, brand, fit, or care details</string>
+    <string name="item_notes_placeholder">Add fabric, brand, styling, or care details</string>
     <string name="gallery">Gallery</string>
     <string name="photo_placeholder">No photo selected yet</string>
     <string name="photo_placeholder_status">Choose a gallery image or take a camera photo to preview and save it.</string>
@@ -109,7 +109,6 @@
     <string name="metadata_section_body">Choose wardrobe metadata from focused boxes instead of one generic tag cloud.</string>
     <string name="metadata_category">Category</string>
     <string name="metadata_season">Season</string>
-    <string name="metadata_fit">Fit</string>
     <string name="metadata_location">Location</string>
     <string name="metadata_occasions">Occasions</string>
     <string name="single_select_metadata_hint">Select one</string>
@@ -129,8 +128,6 @@
     <string name="reset_filters">Reset all</string>
     <string name="filter_category">Category</string>
     <string name="filter_season">Season</string>
-    <string name="filter_fit">Fit</string>
-    <string name="filter_fit_body">Fit metadata is not stored yet. Keep this section ready for upcoming wardrobe fields.</string>
     <string name="filter_location">Location</string>
     <string name="filter_location_main_closet">Main closet</string>
     <string name="filter_color_palette">Color Palette</string>
@@ -177,14 +174,10 @@
     <string name="color_name_label">Color name</string>
     <string name="color_hex_label">Hex color</string>
     <string name="category_category">Category</string>
-    <string name="category_fit">Fit</string>
     <string name="category_location">Locations</string>
     <string name="tag_t_shirt">T-shirt</string>
     <string name="tag_pants">Pants</string>
     <string name="tag_shirt">Shirt</string>
-    <string name="tag_regular">Regular</string>
-    <string name="tag_slim">Slim</string>
-    <string name="tag_oversized">Oversized</string>
     <string name="tag_main_closet">Main closet</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>

@@ -996,7 +996,6 @@ private fun DetailMetadataGrid(
     val metadata = listOf(
         stringResource(R.string.filter_category) to tags.firstLabelInCategory("category"),
         stringResource(R.string.filter_season) to tags.firstLabelInCategory("season"),
-        stringResource(R.string.filter_fit) to tags.firstLabelInCategory("fit"),
         stringResource(R.string.filter_location) to tags.firstLabelInCategory("location"),
         stringResource(R.string.filter_occasion) to tags.firstLabelInCategory("occasion"),
     )
@@ -1218,7 +1217,6 @@ private fun AdvancedFiltersScreen(
     val resultCount = remember(items, filters) { items.count(filters::matches) }
     val categoryTags = availableTags.filter { it.categoryId == "category" }
     val seasonTags = availableTags.filter { it.categoryId == "season" }
-    val fitTags = availableTags.filter { it.categoryId == "fit" }
     val occasionTags = availableTags.filter { it.categoryId == "occasion" }
     val locationTags = availableTags.filter { it.categoryId == "location" }
     val primaryColors = items.map(UiWardrobeItem::primaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
@@ -1270,16 +1268,6 @@ private fun AdvancedFiltersScreen(
             FilterSection(title = stringResource(R.string.filter_season)) {
                 FilterTagChips(
                     tags = seasonTags,
-                    selectedTagIds = filters.selectedTagIds,
-                    emptyText = stringResource(R.string.filters_no_tags),
-                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
-                )
-            }
-        }
-        item {
-            FilterSection(title = stringResource(R.string.filter_fit)) {
-                FilterTagChips(
-                    tags = fitTags,
                     selectedTagIds = filters.selectedTagIds,
                     emptyText = stringResource(R.string.filters_no_tags),
                     onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
@@ -1515,9 +1503,6 @@ private fun GarmentTag.localizedLabel(): String = when (id) {
     "season-summer" -> stringResource(R.string.tag_summer)
     "season-autumn" -> stringResource(R.string.tag_autumn)
     "season-winter" -> stringResource(R.string.tag_winter)
-    "fit-regular" -> stringResource(R.string.tag_regular)
-    "fit-slim" -> stringResource(R.string.tag_slim)
-    "fit-oversized" -> stringResource(R.string.tag_oversized)
     "occasion-everyday" -> stringResource(R.string.tag_everyday)
     "occasion-work" -> stringResource(R.string.tag_work)
     "occasion-travel" -> stringResource(R.string.tag_travel)

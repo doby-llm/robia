@@ -381,26 +381,14 @@ private fun MetadataCaptureSection(
                 singleSelect = false,
                 onSelectedTagIdsChange = onSelectedTagIdsChange,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetadataTagCard(
-                    title = stringResource(R.string.metadata_fit),
-                    subtitle = stringResource(R.string.single_select_metadata_hint),
-                    tags = availableTags.forCategory("fit"),
-                    selectedTagIds = selectedTagIds,
-                    singleSelect = true,
-                    onSelectedTagIdsChange = onSelectedTagIdsChange,
-                    modifier = Modifier.weight(1f),
-                )
-                MetadataTagCard(
-                    title = stringResource(R.string.metadata_location),
-                    subtitle = stringResource(R.string.single_select_metadata_hint),
-                    tags = availableTags.forCategory("location"),
-                    selectedTagIds = selectedTagIds,
-                    singleSelect = true,
-                    onSelectedTagIdsChange = onSelectedTagIdsChange,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            MetadataTagCard(
+                title = stringResource(R.string.metadata_location),
+                subtitle = stringResource(R.string.single_select_metadata_hint),
+                tags = availableTags.forCategory("location"),
+                selectedTagIds = selectedTagIds,
+                singleSelect = true,
+                onSelectedTagIdsChange = onSelectedTagIdsChange,
+            )
             MetadataTagCard(
                 title = stringResource(R.string.metadata_occasions),
                 subtitle = stringResource(R.string.multi_select_metadata_hint),
@@ -962,9 +950,6 @@ private fun GarmentTag.localizedLabel(): String = when (id) {
     "season-summer" -> stringResource(R.string.tag_summer)
     "season-autumn" -> stringResource(R.string.tag_autumn)
     "season-winter" -> stringResource(R.string.tag_winter)
-    "fit-regular" -> stringResource(R.string.tag_regular)
-    "fit-slim" -> stringResource(R.string.tag_slim)
-    "fit-oversized" -> stringResource(R.string.tag_oversized)
     "occasion-everyday" -> stringResource(R.string.tag_everyday)
     "occasion-work" -> stringResource(R.string.tag_work)
     "occasion-travel" -> stringResource(R.string.tag_travel)

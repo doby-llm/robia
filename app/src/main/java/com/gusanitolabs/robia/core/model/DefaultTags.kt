@@ -4,7 +4,6 @@ object DefaultTags {
     val categories = listOf(
         TagCategory(id = "category", name = "Category", sortOrder = 10, isSystem = true),
         TagCategory(id = "season", name = "Season", sortOrder = 20, isSystem = true),
-        TagCategory(id = "fit", name = "Fit", sortOrder = 30, isSystem = true),
         TagCategory(id = "occasion", name = "Occasion", sortOrder = 40, isSystem = true),
         TagCategory(id = "location", name = "Location", sortOrder = 50, isSystem = true),
     )
@@ -18,9 +17,6 @@ object DefaultTags {
         GarmentTag(id = "season-summer", categoryId = "season", name = "Summer", sortOrder = 20, isSystem = true),
         GarmentTag(id = "season-autumn", categoryId = "season", name = "Autumn", sortOrder = 30, isSystem = true),
         GarmentTag(id = "season-winter", categoryId = "season", name = "Winter", sortOrder = 40, isSystem = true),
-        GarmentTag(id = "fit-regular", categoryId = "fit", name = "Regular", sortOrder = 10),
-        GarmentTag(id = "fit-slim", categoryId = "fit", name = "Slim", sortOrder = 20),
-        GarmentTag(id = "fit-oversized", categoryId = "fit", name = "Oversized", sortOrder = 30),
         GarmentTag(id = "occasion-everyday", categoryId = "occasion", name = "Everyday", sortOrder = 10),
         GarmentTag(id = "occasion-work", categoryId = "occasion", name = "Work", sortOrder = 20),
         GarmentTag(id = "occasion-travel", categoryId = "occasion", name = "Travel", sortOrder = 30),

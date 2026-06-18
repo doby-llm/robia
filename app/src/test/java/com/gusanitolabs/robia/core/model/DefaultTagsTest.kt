@@ -15,8 +15,9 @@ class DefaultTagsTest {
     @Test
     fun manageTaxonomyUsesCurrentEditableGroups() {
         val categoryIds = DefaultTags.categories.map(TagCategory::id)
-        assertEquals(listOf("category", "season", "fit", "occasion", "location"), categoryIds)
+        assertEquals(listOf("category", "season", "occasion", "location"), categoryIds)
         assertFalse(categoryIds.contains("care"))
+        assertFalse(categoryIds.contains("fit"))
     }
 
     @Test

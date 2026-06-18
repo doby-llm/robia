@@ -540,7 +540,6 @@ private fun ColorEditorDialog(
 private fun TagCategory.localizedName(): String = when (id) {
     "category" -> stringResource(R.string.category_category)
     "season" -> stringResource(R.string.category_season)
-    "fit" -> stringResource(R.string.category_fit)
     "occasion" -> stringResource(R.string.category_occasion)
     "location" -> stringResource(R.string.category_location)
     else -> name
@@ -556,9 +555,6 @@ private fun GarmentTag.localizedName(): String = when (id) {
     "season-summer" -> stringResource(R.string.tag_summer)
     "season-autumn" -> stringResource(R.string.tag_autumn)
     "season-winter" -> stringResource(R.string.tag_winter)
-    "fit-regular" -> stringResource(R.string.tag_regular)
-    "fit-slim" -> stringResource(R.string.tag_slim)
-    "fit-oversized" -> stringResource(R.string.tag_oversized)
     "occasion-everyday" -> stringResource(R.string.tag_everyday)
     "occasion-work" -> stringResource(R.string.tag_work)
     "occasion-travel" -> stringResource(R.string.tag_travel)
@@ -570,7 +566,6 @@ private fun GarmentTag.localizedName(): String = when (id) {
 private fun GarmentTag.dotColor(): Color = when (categoryId) {
     "category" -> MaterialTheme.colorScheme.primaryContainer
     "season" -> MaterialTheme.colorScheme.secondaryContainer
-    "fit" -> MaterialTheme.colorScheme.tertiaryContainer
     "occasion" -> MaterialTheme.colorScheme.outline
     "location" -> MaterialTheme.colorScheme.inversePrimary
     else -> MaterialTheme.colorScheme.surfaceVariant

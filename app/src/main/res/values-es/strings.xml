@@ -29,7 +29,7 @@
     <string name="sample_linen_shirt_notes">Camisa transpirable de lino para días cálidos y capas relajadas.</string>
     <string name="sample_jeans_name">Vaqueros rectos vintage</string>
     <string name="sample_jeans_brand">Levi\'s 501</string>
-    <string name="sample_jeans_notes">Denim azul estructurado con corte recto para uso diario.</string>
+    <string name="sample_jeans_notes">Denim azul estructurado con estilo recto para uso diario.</string>
     <string name="sample_field_jacket_name">Chaqueta utilitaria</string>
     <string name="sample_field_jacket_brand">Madewell</string>
     <string name="sample_field_jacket_notes">Prenda exterior de algodón oliva con bolsillos prácticos y detalles de latón.</string>
@@ -76,7 +76,7 @@
     <string name="color_multicolor">Multicolor</string>
     <string name="color_unknown">Desconocido</string>
     <string name="manage_tags_title">Gestionar etiquetas</string>
-    <string name="manage_tags_body">Crea y organiza categorías del armario, ubicaciones, ajuste, ocasiones, estaciones y la paleta de color principal.</string>
+    <string name="manage_tags_body">Crea y organiza categorías del armario, ubicaciones, ocasiones, estaciones y la paleta de color principal.</string>
     <string name="add_edit_title">Añadir o editar ropa</string>
     <string name="edit_clothing_title">Editar prenda</string>
     <string name="add_edit_body">Captura una foto de la prenda, conserva colores manuales y añade etiquetas al armario local.</string>
@@ -85,7 +85,7 @@
     <string name="item_name_label">Nombre de la prenda</string>
     <string name="item_name_placeholder">p. ej., Jersey de lana mostaza</string>
     <string name="item_notes_label">Descripción</string>
-    <string name="item_notes_placeholder">Añade tela, marca, ajuste o cuidados</string>
+    <string name="item_notes_placeholder">Añade tela, marca, estilo o cuidados</string>
     <string name="gallery">Galería</string>
     <string name="photo_placeholder">Aún no hay foto seleccionada</string>
     <string name="photo_placeholder_status">Elige una imagen de la galería o toma una foto con la cámara para previsualizarla y guardarla.</string>
@@ -109,7 +109,6 @@
     <string name="metadata_section_body">Elige metadatos del armario en cajas enfocadas en vez de una nube genérica de etiquetas.</string>
     <string name="metadata_category">Categoría</string>
     <string name="metadata_season">Temporada</string>
-    <string name="metadata_fit">Ajuste</string>
     <string name="metadata_location">Ubicación</string>
     <string name="metadata_occasions">Ocasiones</string>
     <string name="single_select_metadata_hint">Selecciona una</string>
@@ -129,8 +128,6 @@
     <string name="reset_filters">Restablecer todo</string>
     <string name="filter_category">Categoría</string>
     <string name="filter_season">Temporada</string>
-    <string name="filter_fit">Ajuste</string>
-    <string name="filter_fit_body">Los datos de ajuste aún no se guardan. Esta sección queda lista para próximos campos del armario.</string>
     <string name="filter_location">Ubicación</string>
     <string name="filter_location_main_closet">Armario principal</string>
     <string name="filter_color_palette">Paleta de color</string>
@@ -177,14 +174,10 @@
     <string name="color_name_label">Nombre del color</string>
     <string name="color_hex_label">Color hexadecimal</string>
     <string name="category_category">Categoría</string>
-    <string name="category_fit">Ajuste</string>
     <string name="category_location">Ubicaciones</string>
     <string name="tag_t_shirt">Camiseta</string>
     <string name="tag_pants">Pantalones</string>
     <string name="tag_shirt">Camisa</string>
-    <string name="tag_regular">Regular</string>
-    <string name="tag_slim">Entallado</string>
-    <string name="tag_oversized">Oversize</string>
     <string name="tag_main_closet">Armario principal</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
