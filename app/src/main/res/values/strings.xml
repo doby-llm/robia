@@ -115,6 +115,8 @@
     <string name="multi_select_metadata_hint">Select all that apply</string>
     <string name="tags_empty">No tags are available yet.</string>
     <string name="no_tags_selected">No tags selected</string>
+    <string name="not_set">Not set</string>
+    <string name="tap_edit_to_add">Tap edit to add</string>
     <string name="none">None</string>
     <string name="cancel">Cancel</string>
     <string name="save_item">Save item</string>

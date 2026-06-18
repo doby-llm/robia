@@ -115,6 +115,8 @@
     <string name="multi_select_metadata_hint">Selecciona las que correspondan</string>
     <string name="tags_empty">Aún no hay etiquetas disponibles.</string>
     <string name="no_tags_selected">Sin etiquetas seleccionadas</string>
+    <string name="not_set">Sin definir</string>
+    <string name="tap_edit_to_add">Toca editar para añadir</string>
     <string name="none">Ninguno</string>
     <string name="cancel">Cancelar</string>
     <string name="save_item">Guardar prenda</string>

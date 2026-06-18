@@ -115,6 +115,8 @@
     <string name="multi_select_metadata_hint">Alle zutreffenden auswählen</string>
     <string name="tags_empty">Noch keine Tags verfügbar.</string>
     <string name="no_tags_selected">Keine Tags ausgewählt</string>
+    <string name="not_set">Nicht festgelegt</string>
+    <string name="tap_edit_to_add">Zum Hinzufügen bearbeiten</string>
     <string name="none">Keiner</string>
     <string name="cancel">Abbrechen</string>
     <string name="save_item">Teil speichern</string>

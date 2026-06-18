@@ -87,6 +87,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -163,6 +164,7 @@ private data class UiWardrobeItem(
 
 private data class UiTag(
     val id: String,
+    val categoryId: String,
     val label: String,
 )
 
@@ -303,6 +305,16 @@ private fun RobiaShell(
         if (routeStack.size > 1) routeStack.removeAt(routeStack.lastIndex)
     }
 
+    fun toggleFavorite(itemId: String) {
+        val item = clothingItems.firstOrNull { it.id == itemId } ?: return
+        onSaveItem(
+            item.copy(
+                isFavorite = !item.isFavorite,
+                updatedAtEpochMillis = System.currentTimeMillis(),
+            ),
+        )
+    }
+
     BackHandler(enabled = routeStack.size > 1) { popRoute() }
 
     Scaffold(
@@ -327,10 +339,17 @@ private fun RobiaShell(
                 },
                 actions = {
                     if (currentRoute == RobiaRoute.ItemDetail && selectedItem != null) {
-                        IconButton(onClick = { }) {
+                        val favoriteDescription = stringResource(R.string.content_favorite)
+                        IconButton(
+                            modifier = Modifier.semantics {
+                                contentDescription = favoriteDescription
+                                selected = selectedItem.isFavorite
+                            },
+                            onClick = { toggleFavorite(selectedItem.id) },
+                        ) {
                             Icon(
                                 imageVector = if (selectedItem.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = stringResource(R.string.content_favorite),
+                                contentDescription = null,
                                 tint = MaterialTheme.colorScheme.secondary,
                             )
                         }
@@ -404,6 +423,7 @@ private fun RobiaShell(
                 selectedItemId = item.id
                 pushRoute(RobiaRoute.ItemDetail)
             },
+            onToggleFavorite = ::toggleFavorite,
             onSaveItem = { item ->
                 onSaveItem(item)
                 selectedItemId = item.id
@@ -509,6 +529,7 @@ private fun RobiaNavHost(
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
+    onToggleFavorite: (String) -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
@@ -524,6 +545,7 @@ private fun RobiaNavHost(
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             onItemSelected = onItemSelected,
+            onToggleFavorite = onToggleFavorite,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
             onResetFilters = onResetFilters,
@@ -574,6 +596,7 @@ private fun BrowseWardrobeScreen(
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     onItemSelected: (UiWardrobeItem) -> Unit,
+    onToggleFavorite: (String) -> Unit,
     onAddClick: () -> Unit,
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
@@ -603,6 +626,7 @@ private fun BrowseWardrobeScreen(
             GarmentGridCard(
                 item = item,
                 onClick = { onItemSelected(item) },
+                onFavoriteClick = { onToggleFavorite(item.id) },
             )
         }
     }
@@ -643,8 +667,10 @@ private fun FilterBar(
 private fun GarmentGridCard(
     item: UiWardrobeItem,
     onClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
 ) {
     val itemDescription = stringResource(R.string.content_open_item_detail)
+    val favoriteDescription = stringResource(R.string.content_favorite)
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -666,11 +692,16 @@ private fun GarmentGridCard(
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(8.dp),
+                    .padding(8.dp)
+                    .semantics {
+                        contentDescription = favoriteDescription
+                        selected = item.isFavorite
+                    }
+                    .clickable(onClick = onFavoriteClick),
             ) {
                 Icon(
                     imageVector = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = stringResource(R.string.content_favorite),
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(6.dp),
                 )
@@ -782,12 +813,7 @@ private fun ItemDetailScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            GarmentPhotoPlaceholder(
-                item = item,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(3f / 4f),
-            )
+            DetailMediaCard(item)
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -804,7 +830,7 @@ private fun ItemDetailScreen(
             }
         }
         item { ColorMetricsCard(item) }
-        item { TagBentoGrid(item.tags) }
+        item { DetailMetadataGrid(tags = item.tags, onEditClick = onEditClick) }
         item {
             Button(
                 onClick = onEditClick,
@@ -813,6 +839,49 @@ private fun ItemDetailScreen(
                 Icon(Icons.Rounded.Edit, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.edit))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailMediaCard(item: UiWardrobeItem) {
+    val photoStatusRes = if (item.photoUri.isNullOrBlank()) {
+        R.string.photo_placeholder_status
+    } else {
+        R.string.photo_processed_status
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            GarmentPhotoPlaceholder(
+                item = item,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(3f / 4f),
+            )
+            Column(
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.background_removal),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(photoStatusRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(R.string.background_removal_status),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -861,6 +930,14 @@ private fun ColorSwatch(
     paletteName: String? = null,
     paletteHex: String? = null,
 ) {
+    val colorValue = paletteHex?.takeIf { it.isNotBlank() } ?: rawValue?.takeIf { it.isNotBlank() }
+    val displayLabel = when {
+        color != DisplayColorLabel.Unknown -> color.localizedLabel()
+        !paletteName.isNullOrBlank() -> paletteName
+        !colorValue.isNullOrBlank() -> colorValue
+        else -> color.localizedLabel()
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -878,12 +955,11 @@ private fun ColorSwatch(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = color.localizedLabel(),
+            text = displayLabel,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        val colorValue = paletteHex?.takeIf { it.isNotBlank() } ?: rawValue?.takeIf { it.isNotBlank() }
-        paletteName?.takeIf { it.isNotBlank() }?.let { name ->
+        paletteName?.takeIf { it.isNotBlank() && it != displayLabel }?.let { name ->
             Text(
                 text = name,
                 style = MaterialTheme.typography.bodySmall,
@@ -901,9 +977,20 @@ private fun ColorSwatch(
 }
 
 @Composable
-private fun TagBentoGrid(tags: List<UiTag>) {
+private fun DetailMetadataGrid(
+    tags: List<UiTag>,
+    onEditClick: () -> Unit,
+) {
+    val metadata = listOf(
+        stringResource(R.string.filter_category) to tags.firstLabelInCategory("category"),
+        stringResource(R.string.filter_season) to tags.firstLabelInCategory("season"),
+        stringResource(R.string.filter_fit) to tags.firstLabelInCategory("fit"),
+        stringResource(R.string.filter_location) to tags.firstLabelInCategory("location"),
+        stringResource(R.string.filter_occasion) to tags.firstLabelInCategory("occasion"),
+    )
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -911,31 +998,78 @@ private fun TagBentoGrid(tags: List<UiTag>) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = stringResource(R.string.tags),
+                text = stringResource(R.string.tags_section),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            if (tags.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.no_tags),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                tags.chunked(2).forEach { rowTags ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowTags.forEach { tag ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                TonalTag(text = tag.label)
-                            }
-                        }
-                        if (rowTags.size == 1) Spacer(modifier = Modifier.weight(1f))
+            metadata.chunked(2).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowItems.forEach { (label, value) ->
+                        DetailMetadataCard(
+                            label = label,
+                            value = value,
+                            onEditClick = onEditClick,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
+                    if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
     }
 }
+
+@Composable
+private fun DetailMetadataCard(
+    label: String,
+    value: String?,
+    onEditClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = modifier.clickable(onClick = onEditClick),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Style,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value ?: stringResource(R.string.not_set),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (value == null) {
+                Text(
+                    text = stringResource(R.string.tap_edit_to_add),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+private fun List<UiTag>.firstLabelInCategory(categoryId: String): String? =
+    firstOrNull { tag -> tag.categoryId == categoryId }?.label
 
 @Composable
 private fun EmptyStateCard(onAddClick: () -> Unit) {
@@ -1346,7 +1480,7 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
         subtitle = item.notes.ifBlank { stringResource(R.string.wardrobe_item_saved_locally) },
         notes = item.notes,
         photoUri = item.photoUri,
-        tags = item.tags.map { tag -> UiTag(tag.id, tag.localizedLabel()) },
+        tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
         primaryColor = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
         primaryRawValue = item.colorMetrics.primaryRawValue,
         primaryPaletteColorName = item.colorMetrics.primaryPaletteColorName,
