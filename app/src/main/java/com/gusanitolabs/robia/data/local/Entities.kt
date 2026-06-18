@@ -26,8 +26,14 @@ data class ClothingItemEntity(
 data class ColorMetricsEntity(
     @ColumnInfo(name = "primary_raw_value") val primaryRawValue: String?,
     @ColumnInfo(name = "primary_display_label") val primaryDisplayLabel: DisplayColorLabel?,
+    @ColumnInfo(name = "primary_palette_color_id") val primaryPaletteColorId: String?,
+    @ColumnInfo(name = "primary_palette_color_name") val primaryPaletteColorName: String?,
+    @ColumnInfo(name = "primary_palette_color_hex") val primaryPaletteColorHex: String?,
     @ColumnInfo(name = "secondary_raw_value") val secondaryRawValue: String?,
     @ColumnInfo(name = "secondary_display_label") val secondaryDisplayLabel: DisplayColorLabel?,
+    @ColumnInfo(name = "secondary_palette_color_id") val secondaryPaletteColorId: String?,
+    @ColumnInfo(name = "secondary_palette_color_name") val secondaryPaletteColorName: String?,
+    @ColumnInfo(name = "secondary_palette_color_hex") val secondaryPaletteColorHex: String?,
 )
 
 @Entity(tableName = "tag_categories")

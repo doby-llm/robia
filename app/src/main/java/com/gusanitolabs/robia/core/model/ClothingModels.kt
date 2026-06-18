@@ -17,8 +17,14 @@ data class ClothingItem(
 data class ClothingColorMetrics(
     val primaryRawValue: String? = null,
     val primaryDisplayLabel: DisplayColorLabel? = null,
+    val primaryPaletteColorId: String? = null,
+    val primaryPaletteColorName: String? = null,
+    val primaryPaletteColorHex: String? = null,
     val secondaryRawValue: String? = null,
     val secondaryDisplayLabel: DisplayColorLabel? = null,
+    val secondaryPaletteColorId: String? = null,
+    val secondaryPaletteColorName: String? = null,
+    val secondaryPaletteColorHex: String? = null,
 )
 
 enum class DisplayColorLabel {

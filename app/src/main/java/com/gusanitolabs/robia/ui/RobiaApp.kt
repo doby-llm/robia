@@ -152,8 +152,12 @@ private data class UiWardrobeItem(
     val tags: List<UiTag>,
     val primaryColor: DisplayColorLabel,
     val primaryRawValue: String?,
+    val primaryPaletteColorName: String?,
+    val primaryPaletteColorHex: String?,
     val secondaryColor: DisplayColorLabel,
     val secondaryRawValue: String?,
+    val secondaryPaletteColorName: String?,
+    val secondaryPaletteColorHex: String?,
     val isFavorite: Boolean,
 )
 
@@ -537,6 +541,7 @@ private fun RobiaNavHost(
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(
             innerPadding = innerPadding,
             availableTags = availableTags,
+            mainColors = mainColors,
             existingItem = selectedDomainItem,
             onCancel = onBack,
             onSave = onSaveItem,
@@ -833,11 +838,15 @@ private fun ColorMetricsCard(item: UiWardrobeItem) {
                     role = stringResource(R.string.primary_color),
                     color = item.primaryColor,
                     rawValue = item.primaryRawValue,
+                    paletteName = item.primaryPaletteColorName,
+                    paletteHex = item.primaryPaletteColorHex,
                 )
                 ColorSwatch(
                     role = stringResource(R.string.secondary_color),
                     color = item.secondaryColor,
                     rawValue = item.secondaryRawValue,
+                    paletteName = item.secondaryPaletteColorName,
+                    paletteHex = item.secondaryPaletteColorHex,
                 )
             }
         }
@@ -849,6 +858,8 @@ private fun ColorSwatch(
     role: String,
     color: DisplayColorLabel,
     rawValue: String?,
+    paletteName: String? = null,
+    paletteHex: String? = null,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -871,7 +882,15 @@ private fun ColorSwatch(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        rawValue?.takeIf { it.isNotBlank() }?.let { value ->
+        val colorValue = paletteHex?.takeIf { it.isNotBlank() } ?: rawValue?.takeIf { it.isNotBlank() }
+        paletteName?.takeIf { it.isNotBlank() }?.let { name ->
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        colorValue?.let { value ->
             Text(
                 text = value,
                 style = MaterialTheme.typography.labelMedium,
@@ -1330,8 +1349,12 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
         tags = item.tags.map { tag -> UiTag(tag.id, tag.localizedLabel()) },
         primaryColor = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
         primaryRawValue = item.colorMetrics.primaryRawValue,
+        primaryPaletteColorName = item.colorMetrics.primaryPaletteColorName,
+        primaryPaletteColorHex = item.colorMetrics.primaryPaletteColorHex,
         secondaryColor = item.colorMetrics.secondaryDisplayLabel ?: DisplayColorLabel.Unknown,
         secondaryRawValue = item.colorMetrics.secondaryRawValue,
+        secondaryPaletteColorName = item.colorMetrics.secondaryPaletteColorName,
+        secondaryPaletteColorHex = item.colorMetrics.secondaryPaletteColorHex,
         isFavorite = item.isFavorite,
     )
 }

@@ -1,10 +1,13 @@
 package com.gusanitolabs.robia.ui
 
 import android.net.Uri
+import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,22 +51,30 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.media.ClothingImageStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -71,47 +82,91 @@ import java.util.UUID
 fun AddEditClothingScreen(
     innerPadding: PaddingValues,
     availableTags: List<GarmentTag>,
+    mainColors: List<MainColor>,
     existingItem: ClothingItem?,
     onCancel: () -> Unit,
     onSave: (ClothingItem) -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var primaryRawColor by rememberSaveable { mutableStateOf("") }
-    var secondaryRawColor by rememberSaveable { mutableStateOf("") }
-    var removeBackground by rememberSaveable { mutableStateOf(true) }
+    var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedSecondaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
     var captureStatus by rememberSaveable { mutableStateOf("") }
+    var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(existingItem?.id) {
+    val primaryPaletteColor = mainColors.colorForId(selectedPrimaryColorId)
+    val secondaryPaletteColor = mainColors.colorForId(selectedSecondaryColorId)
+    val primaryRawColor = primaryPaletteColor?.hex.orEmpty()
+    val secondaryRawColor = secondaryPaletteColor?.hex.orEmpty()
+    val primaryLabel = remember(primaryRawColor) { ColorLabelResolver.fromRawValue(primaryRawColor) }
+    val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
+
+    fun applyExtractedColors(colors: List<MainColor>) {
+        colors.getOrNull(0)?.let { selectedPrimaryColorId = it.id }
+        colors.getOrNull(1)?.let { selectedSecondaryColorId = it.id }
+    }
+
+    fun processSelectedPhoto(uriString: String, status: String) {
+        photoUri = uriString
+        captureStatus = status
+        scope.launch {
+            val extracted = withContext(Dispatchers.IO) {
+                ClothingImageStore.extractNearestPaletteColors(context, Uri.parse(uriString), mainColors)
+            }
+            if (extracted.isNotEmpty()) {
+                applyExtractedColors(extracted)
+                captureStatus = "processed"
+            }
+        }
+    }
+
+    LaunchedEffect(existingItem?.id, mainColors) {
         name = existingItem?.name.orEmpty()
         notes = existingItem?.notes.orEmpty()
         photoUri = existingItem?.photoUri
         selectedTagIds = existingItem?.tags?.map(GarmentTag::id).orEmpty()
-        primaryRawColor = existingItem?.colorMetrics?.primaryRawValue.orEmpty()
-        secondaryRawColor = existingItem?.colorMetrics?.secondaryRawValue.orEmpty()
+        selectedPrimaryColorId = existingItem?.colorMetrics?.primaryPaletteColorId
+            ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
+        selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
+            ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
         captureStatus = ""
     }
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
-            photoUri = uri.toString()
-            captureStatus = "gallery"
+            scope.launch {
+                val storedUri = withContext(Dispatchers.IO) {
+                    ClothingImageStore.copyContentUriToPrivateStorage(context, uri)
+                }
+                processSelectedPhoto(storedUri.toString(), "gallery")
+            }
         }
     }
 
-    val primaryLabel = remember(primaryRawColor) { ColorLabelResolver.fromRawValue(primaryRawColor) }
-    val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+        val capturedUri = pendingCameraUri
+        if (captured && capturedUri != null) {
+            processSelectedPhoto(capturedUri, "camera")
+        } else {
+            captureStatus = ""
+        }
+        pendingCameraUri = null
+    }
+
     val isEditing = existingItem != null
     val untitledItem = stringResource(R.string.untitled_item)
     val hasUnsavedChanges = name != existingItem?.name.orEmpty() ||
         notes != existingItem?.notes.orEmpty() ||
         photoUri != existingItem?.photoUri ||
         selectedTagIds != existingItem?.tags?.map(GarmentTag::id).orEmpty() ||
-        primaryRawColor != existingItem?.colorMetrics?.primaryRawValue.orEmpty() ||
-        secondaryRawColor != existingItem?.colorMetrics?.secondaryRawValue.orEmpty()
+        selectedPrimaryColorId != existingItem?.colorMetrics?.primaryPaletteColorId ||
+        selectedSecondaryColorId != existingItem?.colorMetrics?.secondaryPaletteColorId
 
     fun requestClose() {
         if (hasUnsavedChanges) {
@@ -134,6 +189,22 @@ fun AddEditClothingScreen(
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
             },
+        )
+    }
+
+    colorPickerTarget?.let { target ->
+        ColorPalettePickerDialog(
+            title = stringResource(if (target == ColorPickerTarget.Primary) R.string.primary_color else R.string.secondary_color),
+            colors = mainColors,
+            onColorSelected = { color ->
+                if (target == ColorPickerTarget.Primary) {
+                    selectedPrimaryColorId = color.id
+                } else {
+                    selectedSecondaryColorId = color.id
+                }
+                colorPickerTarget = null
+            },
+            onDismiss = { colorPickerTarget = null },
         )
     }
 
@@ -163,10 +234,12 @@ fun AddEditClothingScreen(
             PhotoCaptureCard(
                 photoUri = photoUri,
                 captureStatus = captureStatus,
-                removeBackground = removeBackground,
-                onRemoveBackgroundChange = { removeBackground = it },
-                onGalleryClick = { galleryLauncher.launch("image/*") },
-                onCameraClick = { captureStatus = "camera" },
+                onGalleryClick = { galleryLauncher.launch(arrayOf("image/*")) },
+                onCameraClick = {
+                    val cameraUri = ClothingImageStore.createCaptureUri(context)
+                    pendingCameraUri = cameraUri.toString()
+                    cameraLauncher.launch(cameraUri)
+                },
             )
         }
 
@@ -193,19 +266,26 @@ fun AddEditClothingScreen(
 
         item {
             CardSection(title = stringResource(R.string.colors_section)) {
-                ColorInputRow(
-                    title = stringResource(R.string.primary_color),
-                    rawColor = primaryRawColor,
-                    label = primaryLabel,
-                    onRawColorChange = { primaryRawColor = it },
-                    required = true,
-                )
-                ColorInputRow(
-                    title = stringResource(R.string.secondary_color),
-                    rawColor = secondaryRawColor,
-                    label = secondaryLabel,
-                    onRawColorChange = { secondaryRawColor = it },
-                    required = false,
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    PaletteColorCircle(
+                        title = stringResource(R.string.primary_color),
+                        color = primaryPaletteColor,
+                        label = primaryLabel,
+                        modifier = Modifier.weight(1f),
+                        onClick = { colorPickerTarget = ColorPickerTarget.Primary },
+                    )
+                    PaletteColorCircle(
+                        title = stringResource(R.string.secondary_color),
+                        color = secondaryPaletteColor,
+                        label = secondaryLabel,
+                        modifier = Modifier.weight(1f),
+                        onClick = { colorPickerTarget = ColorPickerTarget.Secondary },
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.palette_selector_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -269,10 +349,16 @@ fun AddEditClothingScreen(
                                 photoUri = photoUri,
                                 tags = selectedTags,
                                 colorMetrics = ClothingColorMetrics(
-                                    primaryRawValue = primaryRawColor.ifBlank { null },
-                                    primaryDisplayLabel = primaryLabel,
-                                    secondaryRawValue = secondaryRawColor.ifBlank { null },
-                                    secondaryDisplayLabel = secondaryLabel.takeUnless { secondaryRawColor.isBlank() },
+                                    primaryRawValue = primaryPaletteColor?.hex,
+                                    primaryDisplayLabel = primaryLabel.takeIf { primaryPaletteColor != null },
+                                    primaryPaletteColorId = primaryPaletteColor?.id,
+                                    primaryPaletteColorName = primaryPaletteColor?.name,
+                                    primaryPaletteColorHex = primaryPaletteColor?.hex,
+                                    secondaryRawValue = secondaryPaletteColor?.hex,
+                                    secondaryDisplayLabel = secondaryLabel.takeIf { secondaryPaletteColor != null },
+                                    secondaryPaletteColorId = secondaryPaletteColor?.id,
+                                    secondaryPaletteColorName = secondaryPaletteColor?.name,
+                                    secondaryPaletteColorHex = secondaryPaletteColor?.hex,
                                 ),
                                 isFavorite = existingItem?.isFavorite ?: false,
                                 isArchived = existingItem?.isArchived ?: false,
@@ -380,8 +466,6 @@ fun ClothingDetailScreen(
 private fun PhotoCaptureCard(
     photoUri: String?,
     captureStatus: String,
-    removeBackground: Boolean,
-    onRemoveBackgroundChange: (Boolean) -> Unit,
     onGalleryClick: () -> Unit,
     onCameraClick: () -> Unit,
 ) {
@@ -430,11 +514,12 @@ private fun PhotoCaptureCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(checked = removeBackground, onCheckedChange = onRemoveBackgroundChange)
+                    Switch(checked = false, onCheckedChange = null, enabled = false)
                 }
                 val statusText = when (captureStatus) {
                     "gallery" -> R.string.gallery_selected_status
-                    "camera" -> R.string.camera_hook_status
+                    "camera" -> R.string.camera_selected_status
+                    "processed" -> R.string.photo_processed_status
                     else -> R.string.photo_placeholder_status
                 }
                 Text(
@@ -457,24 +542,38 @@ private fun PhotoPreview(photoUri: String?, modifier: Modifier = Modifier) {
             .background(MaterialTheme.colorScheme.surfaceContainerLow),
         contentAlignment = Alignment.Center,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(24.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Style,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(56.dp),
+        val uri = photoUri?.takeIf { it.isNotBlank() }
+        if (uri != null) {
+            AndroidView(
+                factory = { context ->
+                    ImageView(context).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    }
+                },
+                update = { imageView -> imageView.setImageURI(Uri.parse(uri)) },
+                modifier = Modifier.fillMaxSize(),
             )
-            Text(
-                text = photoUri ?: stringResource(R.string.photo_placeholder),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Style,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(56.dp),
+                )
+                Text(
+                    text = stringResource(R.string.photo_placeholder),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -504,34 +603,87 @@ private fun CardSection(
 }
 
 @Composable
-private fun ColorInputRow(
+private fun PaletteColorCircle(
     title: String,
-    rawColor: String,
+    color: MainColor?,
     label: DisplayColorLabel,
-    onRawColorChange: (String) -> Unit,
-    required: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ColorSwatch(rawColor = rawColor)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    text = stringResource(R.string.display_color_format, stringResource(label.stringRes)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(color?.hex?.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (color == null) {
+                Icon(Icons.Rounded.Add, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
             }
         }
-        OutlinedTextField(
-            value = rawColor,
-            onValueChange = onRawColorChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(if (required) stringResource(R.string.raw_color_required) else stringResource(R.string.raw_color_optional)) },
-            placeholder = { Text(stringResource(R.string.raw_color_placeholder)) },
-            singleLine = true,
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = color?.name ?: stringResource(R.string.none),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
+        if (color != null) {
+            Text(
+                text = stringResource(R.string.display_color_format, stringResource(label.stringRes)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
+}
+
+@Composable
+private fun ColorPalettePickerDialog(
+    title: String,
+    colors: List<MainColor>,
+    onColorSelected: (MainColor) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            if (colors.isEmpty()) {
+                Text(stringResource(R.string.palette_empty))
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(colors.size) { index ->
+                        val color = colors[index]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onColorSelected(color) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            ColorSwatch(rawColor = color.hex)
+                            Column {
+                                Text(color.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                Text(color.hex, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @Composable
@@ -628,6 +780,34 @@ private fun GarmentTag.localizedLabel(): String = when (id) {
     "occasion-travel" -> stringResource(R.string.tag_travel)
     "location-main-closet" -> stringResource(R.string.tag_main_closet)
     else -> name
+}
+
+private enum class ColorPickerTarget { Primary, Secondary }
+
+private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { color -> color.id == id }
+
+private fun List<MainColor>.nearestColor(rawHex: String?): MainColor? {
+    val rgb = rawHex?.toRgbOrNull() ?: return null
+    return minByOrNull { color ->
+        val paletteRgb = color.hex.toRgbOrNull() ?: return@minByOrNull Int.MAX_VALUE
+        (rgb.red - paletteRgb.red) * (rgb.red - paletteRgb.red) +
+            (rgb.green - paletteRgb.green) * (rgb.green - paletteRgb.green) +
+            (rgb.blue - paletteRgb.blue) * (rgb.blue - paletteRgb.blue)
+    }
+}
+
+private data class RgbColor(val red: Int, val green: Int, val blue: Int)
+
+private fun String.toRgbOrNull(): RgbColor? {
+    val normalized = trim().removePrefix("#")
+    if (normalized.length != 6 || normalized.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
+        return null
+    }
+    return RgbColor(
+        red = normalized.substring(0, 2).toInt(16),
+        green = normalized.substring(2, 4).toInt(16),
+        blue = normalized.substring(4, 6).toInt(16),
+    )
 }
 
 private val DisplayColorLabel.stringRes: Int
