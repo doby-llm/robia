@@ -15,6 +15,7 @@
     <string name="wardrobe_title">Tu armario</string>
     <string name="wardrobe_intro">Empieza a crear un catálogo local de ropa, etiquetas y detalles listos para combinar.</string>
     <string name="filters">Filtros</string>
+    <string name="active_filters_count">Filtros (%1$d)</string>
     <string name="all_filters">Todos los filtros</string>
     <string name="load_more_items">Cargar más prendas</string>
     <string name="empty_wardrobe_title">Aún no hay prendas</string>
@@ -139,7 +140,9 @@
     <string name="empty_filters_title">No hay prendas coincidentes</string>
     <string name="empty_filters_body">Prueba a restablecer los filtros o a seleccionar menos opciones.</string>
     <string name="filters_no_tags">Aún no hay etiquetas disponibles.</string>
-    <string name="filters_no_colors">Añade prendas con colores para filtrar por paleta.</string>
+    <string name="filters_no_colors">Aún no hay colores de paleta disponibles. Añade colores en la paleta de color principal primero.</string>
+    <string name="filters_no_colors_selected">Sin colores seleccionados</string>
+    <string name="filters_colors_selected_count">%1$d colores seleccionados</string>
     <string name="unsaved_changes_title">¿Descartar cambios?</string>
     <string name="unsaved_changes_body">Esta prenda tiene cambios sin guardar. Sigue editando o descártalos y vuelve atrás.</string>
     <string name="discard_changes">Descartar</string>

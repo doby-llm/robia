@@ -15,6 +15,7 @@
     <string name="wardrobe_title">Your wardrobe</string>
     <string name="wardrobe_intro">Start building a local catalog of clothes, tags, and outfit-ready details.</string>
     <string name="filters">Filters</string>
+    <string name="active_filters_count">Filters (%1$d)</string>
     <string name="all_filters">All filters</string>
     <string name="load_more_items">Load more items</string>
     <string name="empty_wardrobe_title">No garments yet</string>
@@ -139,7 +140,9 @@
     <string name="empty_filters_title">No matching garments</string>
     <string name="empty_filters_body">Try resetting filters or selecting fewer options.</string>
     <string name="filters_no_tags">No tags available yet.</string>
-    <string name="filters_no_colors">Add garments with colors to filter by palette.</string>
+    <string name="filters_no_colors">No palette colors available yet. Add colors in Manage Color Palette first.</string>
+    <string name="filters_no_colors_selected">No colors selected</string>
+    <string name="filters_colors_selected_count">%1$d colors selected</string>
     <string name="unsaved_changes_title">Discard changes?</string>
     <string name="unsaved_changes_body">This clothing item has unsaved edits. Keep editing or discard them and go back.</string>
     <string name="discard_changes">Discard</string>

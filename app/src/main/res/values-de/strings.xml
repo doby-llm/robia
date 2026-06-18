@@ -15,6 +15,7 @@
     <string name="wardrobe_title">Deine Garderobe</string>
     <string name="wardrobe_intro">Beginne mit einem lokalen Katalog für Kleidung, Tags und outfitbereite Details.</string>
     <string name="filters">Filter</string>
+    <string name="active_filters_count">Filter (%1$d)</string>
     <string name="all_filters">Alle Filter</string>
     <string name="load_more_items">Weitere Teile laden</string>
     <string name="empty_wardrobe_title">Noch keine Kleidungsstücke</string>
@@ -139,7 +140,9 @@
     <string name="empty_filters_title">Keine passenden Kleidungsstücke</string>
     <string name="empty_filters_body">Setze die Filter zurück oder wähle weniger Optionen aus.</string>
     <string name="filters_no_tags">Noch keine Tags verfügbar.</string>
-    <string name="filters_no_colors">Füge Kleidungsstücke mit Farben hinzu, um nach Palette zu filtern.</string>
+    <string name="filters_no_colors">Noch keine Palettenfarben verfügbar. Füge zuerst Farben in der Hauptfarbpalette hinzu.</string>
+    <string name="filters_no_colors_selected">Keine Farben ausgewählt</string>
+    <string name="filters_colors_selected_count">%1$d Farben ausgewählt</string>
     <string name="unsaved_changes_title">Änderungen verwerfen?</string>
     <string name="unsaved_changes_body">Dieses Kleidungsstück hat ungespeicherte Änderungen. Weiter bearbeiten oder verwerfen und zurückgehen.</string>
     <string name="discard_changes">Verwerfen</string>

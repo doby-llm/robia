@@ -154,10 +154,12 @@ private data class UiWardrobeItem(
     val tags: List<UiTag>,
     val primaryColor: DisplayColorLabel,
     val primaryRawValue: String?,
+    val primaryPaletteColorId: String?,
     val primaryPaletteColorName: String?,
     val primaryPaletteColorHex: String?,
     val secondaryColor: DisplayColorLabel,
     val secondaryRawValue: String?,
+    val secondaryPaletteColorId: String?,
     val secondaryPaletteColorName: String?,
     val secondaryPaletteColorHex: String?,
     val isFavorite: Boolean,
@@ -171,18 +173,22 @@ private data class UiTag(
 
 private data class BrowseFilterState(
     val selectedTagIds: Set<String> = emptySet(),
-    val selectedPrimaryColors: Set<DisplayColorLabel> = emptySet(),
-    val selectedSecondaryColors: Set<DisplayColorLabel> = emptySet(),
+    val selectedPaletteColorIds: Set<String> = emptySet(),
 ) {
     val hasActiveFilters: Boolean
-        get() = selectedTagIds.isNotEmpty() || selectedPrimaryColors.isNotEmpty() || selectedSecondaryColors.isNotEmpty()
+        get() = selectedTagIds.isNotEmpty() || selectedPaletteColorIds.isNotEmpty()
 
-    fun matches(item: UiWardrobeItem): Boolean {
+    val activeFilterCount: Int
+        get() = selectedTagIds.size + selectedPaletteColorIds.size
+
+    fun matches(item: UiWardrobeItem, paletteColors: List<MainColor>): Boolean {
         val itemTagIds = item.tags.map(UiTag::id).toSet()
         return selectedTagIds.all(itemTagIds::contains) &&
-            (selectedPrimaryColors.isEmpty() || item.primaryColor in selectedPrimaryColors) &&
-            (selectedSecondaryColors.isEmpty() || item.secondaryColor in selectedSecondaryColors)
+            (selectedPaletteColorIds.isEmpty() || item.matchesAnyPaletteColor(selectedPaletteColors(paletteColors)))
     }
+
+    private fun selectedPaletteColors(paletteColors: List<MainColor>): List<MainColor> =
+        paletteColors.filter { color -> color.id in selectedPaletteColorIds }
 }
 
 private val bottomDestinations = listOf(
@@ -300,7 +306,9 @@ private fun RobiaShell(
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     val items = clothingItems.toUiWardrobeItems()
-    val filteredItems = remember(items, browseFilters) { items.filter(browseFilters::matches) }
+    val filteredItems = remember(items, browseFilters, mainColors) {
+        items.filter { item -> browseFilters.matches(item, mainColors) }
+    }
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
 
@@ -556,6 +564,7 @@ private fun RobiaNavHost(
             items = items,
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
+            activeFilterCount = filters.activeFilterCount,
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
@@ -592,6 +601,7 @@ private fun RobiaNavHost(
             innerPadding = innerPadding,
             filters = filters,
             availableTags = availableTags,
+            mainColors = mainColors,
             items = allItems,
             allItemCount = totalItemCount,
             onFiltersChange = onFiltersChange,
@@ -607,6 +617,7 @@ private fun BrowseWardrobeScreen(
     items: List<UiWardrobeItem>,
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
+    activeFilterCount: Int,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onAddClick: () -> Unit,
@@ -623,7 +634,11 @@ private fun BrowseWardrobeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            FilterBar(hasActiveFilters = hasActiveFilters, onFiltersClick = onFiltersClick)
+            FilterBar(
+                hasActiveFilters = hasActiveFilters,
+                activeFilterCount = activeFilterCount,
+                onFiltersClick = onFiltersClick,
+            )
         }
         if (items.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -647,8 +662,15 @@ private fun BrowseWardrobeScreen(
 @Composable
 private fun FilterBar(
     hasActiveFilters: Boolean,
+    activeFilterCount: Int,
     onFiltersClick: () -> Unit,
 ) {
+    val filterLabel = if (hasActiveFilters) {
+        stringResource(R.string.active_filters_count, activeFilterCount)
+    } else {
+        stringResource(R.string.filters)
+    }
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -657,7 +679,7 @@ private fun FilterBar(
         FilterChip(
             selected = hasActiveFilters,
             onClick = onFiltersClick,
-            label = { Text(stringResource(R.string.filters)) },
+            label = { Text(filterLabel) },
             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
         AssistChip(
@@ -1208,19 +1230,21 @@ private fun AdvancedFiltersScreen(
     innerPadding: PaddingValues,
     filters: BrowseFilterState,
     availableTags: List<GarmentTag>,
+    mainColors: List<MainColor>,
     items: List<UiWardrobeItem>,
     allItemCount: Int,
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
     onShowResults: () -> Unit,
 ) {
-    val resultCount = remember(items, filters) { items.count(filters::matches) }
+    val resultCount = remember(items, filters, mainColors) {
+        items.count { item -> filters.matches(item, mainColors) }
+    }
     val categoryTags = availableTags.filter { it.categoryId == "category" }
     val seasonTags = availableTags.filter { it.categoryId == "season" }
     val occasionTags = availableTags.filter { it.categoryId == "occasion" }
     val locationTags = availableTags.filter { it.categoryId == "location" }
-    val primaryColors = items.map(UiWardrobeItem::primaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
-    val secondaryColors = items.map(UiWardrobeItem::secondaryColor).distinct().filterNot { it == DisplayColorLabel.Unknown }
+
 
     LazyColumn(
         modifier = Modifier
@@ -1296,20 +1320,11 @@ private fun AdvancedFiltersScreen(
         }
         item {
             FilterSection(title = stringResource(R.string.filter_color_palette)) {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ColorPaletteChips(
-                        title = stringResource(R.string.primary_color),
-                        colors = primaryColors,
-                        selectedColors = filters.selectedPrimaryColors,
-                        onColorToggled = { color -> onFiltersChange(filters.togglePrimaryColor(color)) },
-                    )
-                    ColorPaletteChips(
-                        title = stringResource(R.string.secondary_color),
-                        colors = secondaryColors,
-                        selectedColors = filters.selectedSecondaryColors,
-                        onColorToggled = { color -> onFiltersChange(filters.toggleSecondaryColor(color)) },
-                    )
-                }
+                ColorPaletteChips(
+                    colors = mainColors,
+                    selectedColorIds = filters.selectedPaletteColorIds,
+                    onColorToggled = { color -> onFiltersChange(filters.togglePaletteColor(color.id)) },
+                )
             }
         }
         if (allItemCount > 0 && resultCount == 0 && filters.hasActiveFilters) {
@@ -1375,13 +1390,24 @@ private fun FilterTagChips(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ColorPaletteChips(
-    title: String,
-    colors: List<DisplayColorLabel>,
-    selectedColors: Set<DisplayColorLabel>,
-    onColorToggled: (DisplayColorLabel) -> Unit,
+    colors: List<MainColor>,
+    selectedColorIds: Set<String>,
+    onColorToggled: (MainColor) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (selectedColorIds.isEmpty()) {
+            Text(
+                text = stringResource(R.string.filters_no_colors_selected),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.filters_colors_selected_count, selectedColorIds.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (colors.isEmpty()) {
             Text(
                 text = stringResource(R.string.filters_no_colors),
@@ -1391,17 +1417,20 @@ private fun ColorPaletteChips(
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 colors.forEach { color ->
+                    val selected = color.id in selectedColorIds
+                    val swatchDescription = stringResource(R.string.content_color_swatch, color.name)
                     FilterChip(
-                        selected = color in selectedColors,
+                        selected = selected,
                         onClick = { onColorToggled(color) },
-                        label = { Text(color.localizedLabel()) },
+                        label = { Text(color.name) },
                         leadingIcon = {
                             Box(
                                 modifier = Modifier
                                     .size(18.dp)
                                     .clip(CircleShape)
                                     .background(color.swatchColor())
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                    .semantics { contentDescription = swatchDescription },
                             )
                         },
                     )
@@ -1415,15 +1444,46 @@ private fun BrowseFilterState.toggleTag(tagId: String): BrowseFilterState = copy
     selectedTagIds = selectedTagIds.toggle(tagId),
 )
 
-private fun BrowseFilterState.togglePrimaryColor(color: DisplayColorLabel): BrowseFilterState = copy(
-    selectedPrimaryColors = selectedPrimaryColors.toggle(color),
-)
-
-private fun BrowseFilterState.toggleSecondaryColor(color: DisplayColorLabel): BrowseFilterState = copy(
-    selectedSecondaryColors = selectedSecondaryColors.toggle(color),
+private fun BrowseFilterState.togglePaletteColor(colorId: String): BrowseFilterState = copy(
+    selectedPaletteColorIds = selectedPaletteColorIds.toggle(colorId),
 )
 
 private fun <T> Set<T>.toggle(value: T): Set<T> = if (value in this) this - value else this + value
+
+private fun UiWardrobeItem.matchesAnyPaletteColor(colors: List<MainColor>): Boolean = colors.any { color ->
+    primaryPaletteColorId == color.id ||
+        secondaryPaletteColorId == color.id ||
+        primaryPaletteFallbackMatches(color) ||
+        secondaryPaletteFallbackMatches(color)
+}
+
+private fun UiWardrobeItem.primaryPaletteFallbackMatches(color: MainColor): Boolean =
+    primaryPaletteColorId.isNullOrBlank() &&
+        color.matchesStoredPaletteValue(primaryPaletteColorName, primaryPaletteColorHex ?: primaryRawValue)
+
+private fun UiWardrobeItem.secondaryPaletteFallbackMatches(color: MainColor): Boolean =
+    secondaryPaletteColorId.isNullOrBlank() &&
+        color.matchesStoredPaletteValue(secondaryPaletteColorName, secondaryPaletteColorHex ?: secondaryRawValue)
+
+private fun MainColor.matchesStoredPaletteValue(name: String?, hex: String?): Boolean =
+    this.name.equals(name, ignoreCase = true) || normalizedHex?.let { it == hex.normalizedHexOrNull() } == true
+
+private val MainColor.normalizedHex: String?
+    get() = hex.normalizedHexOrNull()
+
+private fun MainColor.swatchColor(): Color = hex.toComposeColor() ?: Color(0xFFDADADA)
+
+private fun String?.normalizedHexOrNull(): String? {
+    val normalized = this?.trim()?.removePrefix("#") ?: return null
+    if (normalized.length != 6 || normalized.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
+        return null
+    }
+    return normalized.uppercase(Locale.US)
+}
+
+private fun String.toComposeColor(): Color? = normalizedHexOrNull()?.let { normalized ->
+    Color(android.graphics.Color.parseColor("#$normalized"))
+}
 
 @Composable
 private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
@@ -1483,10 +1543,12 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
         tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
         primaryColor = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
         primaryRawValue = item.colorMetrics.primaryRawValue,
+        primaryPaletteColorId = item.colorMetrics.primaryPaletteColorId,
         primaryPaletteColorName = item.colorMetrics.primaryPaletteColorName,
         primaryPaletteColorHex = item.colorMetrics.primaryPaletteColorHex,
         secondaryColor = item.colorMetrics.secondaryDisplayLabel ?: DisplayColorLabel.Unknown,
         secondaryRawValue = item.colorMetrics.secondaryRawValue,
+        secondaryPaletteColorId = item.colorMetrics.secondaryPaletteColorId,
         secondaryPaletteColorName = item.colorMetrics.secondaryPaletteColorName,
         secondaryPaletteColorHex = item.colorMetrics.secondaryPaletteColorHex,
         isFavorite = item.isFavorite,
