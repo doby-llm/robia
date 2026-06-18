@@ -92,6 +92,7 @@
     <string name="gallery_selected_status">Galeriefoto wurde privat kopiert und wird hier angezeigt.</string>
     <string name="camera_selected_status">Kamerafoto wurde privat aufgenommen und wird hier angezeigt.</string>
     <string name="photo_processed_status">Fotovorschau bereit; Palettenfarben wurden aus dem Bild extrahiert.</string>
+    <string name="media_actions_unavailable_status">Die Fotoauswahl ist in dieser Sitzung nicht verfügbar. Du kannst dieses Kleidungsstück trotzdem ohne Foto speichern.</string>
     <string name="camera_hook_status">Die Kameraaufnahme speichert ein privates Bild für dieses Kleidungsstück.</string>
     <string name="background_removal">Hintergrundentfernung</string>
     <string name="background_removal_status">In diesem Build nicht verfügbar; das Originalfoto wird unverändert angezeigt und gespeichert.</string>
@@ -146,6 +147,8 @@
     <string name="content_add_clothing">Kleidungsstück hinzufügen</string>
     <string name="content_favorite">Lieblingskleidungsstück</string>
     <string name="content_open_item_detail">Kleidungsdetail öffnen</string>
+    <string name="content_open_gallery">Galerieauswahl öffnen</string>
+    <string name="content_open_camera">Kameraaufnahme öffnen</string>
     <string name="content_go_back">Zurück</string>
     <string name="content_add_tag">Tag hinzufügen</string>
     <string name="content_edit_tag">Tag bearbeiten</string>

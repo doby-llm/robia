@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.os.LocaleList
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -245,6 +246,7 @@ private fun LocalizedRobiaContent(
 ) {
     val baseContext = LocalContext.current
     val baseConfiguration = LocalConfiguration.current
+    val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
     val localizedConfiguration = remember(languagePreference, baseConfiguration) {
         Configuration(baseConfiguration).apply {
             val languageTag = languagePreference.storageValue
@@ -262,6 +264,7 @@ private fun LocalizedRobiaContent(
     CompositionLocalProvider(
         LocalConfiguration provides localizedConfiguration,
         LocalContext provides localizedContext,
+        LocalActivityResultRegistryOwner provides activityResultRegistryOwner,
     ) {
         content()
     }

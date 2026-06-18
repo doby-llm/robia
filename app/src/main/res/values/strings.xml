@@ -92,6 +92,7 @@
     <string name="gallery_selected_status">Gallery photo copied privately and previewed here.</string>
     <string name="camera_selected_status">Camera photo captured privately and previewed here.</string>
     <string name="photo_processed_status">Photo preview ready; palette colors were extracted from the image.</string>
+    <string name="media_actions_unavailable_status">Photo picker unavailable in this session. You can still save this item without a photo.</string>
     <string name="camera_hook_status">Camera capture saves a private image for this item.</string>
     <string name="background_removal">Background removal</string>
     <string name="background_removal_status">Unavailable in this build; original photo is shown and saved unchanged.</string>
@@ -146,6 +147,8 @@
     <string name="content_add_clothing">Add a clothing item</string>
     <string name="content_favorite">Favorite garment</string>
     <string name="content_open_item_detail">Open garment detail</string>
+    <string name="content_open_gallery">Open gallery picker</string>
+    <string name="content_open_camera">Open camera capture</string>
     <string name="content_go_back">Go back</string>
     <string name="content_add_tag">Add tag</string>
     <string name="content_edit_tag">Edit tag</string>

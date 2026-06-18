@@ -92,6 +92,7 @@
     <string name="gallery_selected_status">Foto de galería copiada en privado y previsualizada aquí.</string>
     <string name="camera_selected_status">Foto de cámara capturada en privado y previsualizada aquí.</string>
     <string name="photo_processed_status">Previsualización lista; se extrajeron colores de paleta de la imagen.</string>
+    <string name="media_actions_unavailable_status">El selector de fotos no está disponible en esta sesión. Aun así puedes guardar esta prenda sin foto.</string>
     <string name="camera_hook_status">La captura de cámara guarda una imagen privada para esta prenda.</string>
     <string name="background_removal">Eliminación de fondo</string>
     <string name="background_removal_status">No disponible en esta versión; la foto original se muestra y guarda sin cambios.</string>
@@ -146,6 +147,8 @@
     <string name="content_add_clothing">Añadir una prenda</string>
     <string name="content_favorite">Prenda favorita</string>
     <string name="content_open_item_detail">Abrir detalle de la prenda</string>
+    <string name="content_open_gallery">Abrir selector de galería</string>
+    <string name="content_open_camera">Abrir captura de cámara</string>
     <string name="content_go_back">Volver</string>
     <string name="content_add_tag">Añadir etiqueta</string>
     <string name="content_edit_tag">Editar etiqueta</string>

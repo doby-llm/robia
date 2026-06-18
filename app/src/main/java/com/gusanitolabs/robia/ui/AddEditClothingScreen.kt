@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.ui
 import android.net.Uri
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -95,10 +96,10 @@ fun AddEditClothingScreen(
     var selectedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSecondaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
     var captureStatus by rememberSaveable { mutableStateOf("") }
     var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+    val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
 
     val primaryPaletteColor = mainColors.colorForId(selectedPrimaryColorId)
     val secondaryPaletteColor = mainColors.colorForId(selectedSecondaryColorId)
@@ -116,9 +117,11 @@ fun AddEditClothingScreen(
         photoUri = uriString
         captureStatus = status
         scope.launch {
-            val extracted = withContext(Dispatchers.IO) {
-                ClothingImageStore.extractNearestPaletteColors(context, Uri.parse(uriString), mainColors)
-            }
+            val extracted = runCatching {
+                withContext(Dispatchers.IO) {
+                    ClothingImageStore.extractNearestPaletteColors(context, Uri.parse(uriString), mainColors)
+                }
+            }.getOrDefault(emptyList())
             if (extracted.isNotEmpty()) {
                 applyExtractedColors(extracted)
                 captureStatus = "processed"
@@ -136,27 +139,6 @@ fun AddEditClothingScreen(
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
         captureStatus = ""
-    }
-
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            scope.launch {
-                val storedUri = withContext(Dispatchers.IO) {
-                    ClothingImageStore.copyContentUriToPrivateStorage(context, uri)
-                }
-                processSelectedPhoto(storedUri.toString(), "gallery")
-            }
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
-        val capturedUri = pendingCameraUri
-        if (captured && capturedUri != null) {
-            processSelectedPhoto(capturedUri, "camera")
-        } else {
-            captureStatus = ""
-        }
-        pendingCameraUri = null
     }
 
     val isEditing = existingItem != null
@@ -231,16 +213,21 @@ fun AddEditClothingScreen(
         }
 
         item {
-            PhotoCaptureCard(
-                photoUri = photoUri,
-                captureStatus = captureStatus,
-                onGalleryClick = { galleryLauncher.launch(arrayOf("image/*")) },
-                onCameraClick = {
-                    val cameraUri = ClothingImageStore.createCaptureUri(context)
-                    pendingCameraUri = cameraUri.toString()
-                    cameraLauncher.launch(cameraUri)
-                },
-            )
+            if (activityResultRegistryOwner != null) {
+                PhotoCaptureCardWithLaunchers(
+                    photoUri = photoUri,
+                    captureStatus = captureStatus,
+                    onCaptureStatusChange = { captureStatus = it },
+                    onPhotoSelected = ::processSelectedPhoto,
+                )
+            } else {
+                PhotoCaptureCard(
+                    photoUri = photoUri,
+                    captureStatus = "media_unavailable",
+                    onGalleryClick = null,
+                    onCameraClick = null,
+                )
+            }
         }
 
         item {
@@ -596,11 +583,70 @@ fun ClothingDetailScreen(
 }
 
 @Composable
+private fun PhotoCaptureCardWithLaunchers(
+    photoUri: String?,
+    captureStatus: String,
+    onCaptureStatusChange: (String) -> Unit,
+    onPhotoSelected: (String, String) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) {
+            onCaptureStatusChange("")
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val storedUri = runCatching {
+                withContext(Dispatchers.IO) {
+                    ClothingImageStore.copyContentUriToPrivateStorage(context, uri)
+                }
+            }.getOrElse {
+                onCaptureStatusChange("media_unavailable")
+                return@launch
+            }
+            onPhotoSelected(storedUri.toString(), "gallery")
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+        val capturedUri = pendingCameraUri
+        if (captured && capturedUri != null) {
+            onPhotoSelected(capturedUri, "camera")
+        } else {
+            onCaptureStatusChange("")
+        }
+        pendingCameraUri = null
+    }
+
+    PhotoCaptureCard(
+        photoUri = photoUri,
+        captureStatus = captureStatus,
+        onGalleryClick = {
+            runCatching { galleryLauncher.launch(arrayOf("image/*")) }
+                .onFailure { onCaptureStatusChange("media_unavailable") }
+        },
+        onCameraClick = {
+            runCatching {
+                val cameraUri = ClothingImageStore.createCaptureUri(context)
+                pendingCameraUri = cameraUri.toString()
+                cameraLauncher.launch(cameraUri)
+            }.onFailure {
+                pendingCameraUri = null
+                onCaptureStatusChange("media_unavailable")
+            }
+        },
+    )
+}
+
+@Composable
 private fun PhotoCaptureCard(
     photoUri: String?,
     captureStatus: String,
-    onGalleryClick: () -> Unit,
-    onCameraClick: () -> Unit,
+    onGalleryClick: (() -> Unit)?,
+    onCameraClick: (() -> Unit)?,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -617,13 +663,23 @@ private fun PhotoCaptureCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onGalleryClick) {
-                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
+                TextButton(onClick = { onGalleryClick?.invoke() }, enabled = onGalleryClick != null) {
+                    Icon(
+                        Icons.Rounded.PhotoLibrary,
+                        contentDescription = stringResource(R.string.content_open_gallery),
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.gallery))
                 }
-                Button(onClick = onCameraClick, shape = CircleShape) {
-                    Icon(Icons.Rounded.PhotoCamera, contentDescription = null)
+                Button(
+                    onClick = { onCameraClick?.invoke() },
+                    enabled = onCameraClick != null,
+                    shape = CircleShape,
+                ) {
+                    Icon(
+                        Icons.Rounded.PhotoCamera,
+                        contentDescription = stringResource(R.string.content_open_camera),
+                    )
                 }
             }
             Column(
@@ -653,6 +709,7 @@ private fun PhotoCaptureCard(
                     "gallery" -> R.string.gallery_selected_status
                     "camera" -> R.string.camera_selected_status
                     "processed" -> R.string.photo_processed_status
+                    "media_unavailable" -> R.string.media_actions_unavailable_status
                     else -> R.string.photo_placeholder_status
                 }
                 Text(
