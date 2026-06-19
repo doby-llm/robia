@@ -453,6 +453,7 @@ private fun RobiaShell(
                 pushRoute(RobiaRoute.ItemDetail)
             },
             onToggleFavorite = ::toggleFavorite,
+            onCancelAddEdit = ::closeAddEdit,
             onSaveItem = { item ->
                 onSaveItem(item)
                 selectedItemId = item.id
@@ -559,6 +560,7 @@ private fun RobiaNavHost(
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
+    onCancelAddEdit: () -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
@@ -595,7 +597,7 @@ private fun RobiaNavHost(
             availableTags = availableTags,
             mainColors = mainColors,
             existingItem = selectedDomainItem,
-            onCancel = ::closeAddEdit,
+            onCancel = onCancelAddEdit,
             onSave = onSaveItem,
         )
         RobiaRoute.ItemDetail -> selectedItem?.let { item ->
