@@ -104,7 +104,7 @@
     <string name="background_removal">Background removal</string>
     <string name="background_removal_status">Unavailable in this build; original photo is shown and saved unchanged.</string>
     <string name="colors_section">Colors</string>
-    <string name="display_color_format">Display label: %1$s</string>
+
     <string name="raw_color_required">Raw color value</string>
     <string name="raw_color_optional">Raw color value (optional)</string>
     <string name="raw_color_placeholder">Hex or label, e.g., #D6B84C or olive</string>
@@ -112,12 +112,20 @@
     <string name="palette_selector_hint">Tap to change</string>
     <string name="palette_empty">No palette colors are available yet. Add colors in Manage Color Palette first.</string>
     <string name="tags_section">Tags</string>
-    <string name="metadata_section">Metadata</string>
-    <string name="metadata_section_body">Choose wardrobe metadata from focused boxes instead of one generic tag cloud.</string>
+    <string name="metadata_section">Additional information</string>
+    <string name="metadata_section_body">Choose wardrobe details from focused controls instead of one generic tag cloud.</string>
     <string name="metadata_category">Category</string>
     <string name="metadata_season">Season</string>
+    <string name="metadata_fit">Fit</string>
+    <string name="metadata_fit_hint">How it wears</string>
     <string name="metadata_location">Location</string>
     <string name="metadata_occasions">Occasions</string>
+    <string name="fit_does_not_fit">Doesn’t fit</string>
+    <string name="fit_snug">Snug</string>
+    <string name="fit_good">Fits well</string>
+    <string name="fit_relaxed">Relaxed</string>
+    <string name="fit_oversized">Oversized</string>
+    <string name="clear_fit">Clear fit</string>
     <string name="single_select_metadata_hint">Select one</string>
     <string name="multi_select_metadata_hint">Select all that apply</string>
     <string name="tags_empty">No tags are available yet.</string>

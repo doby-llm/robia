@@ -104,7 +104,7 @@
     <string name="background_removal">Eliminación de fondo</string>
     <string name="background_removal_status">No disponible en esta versión; la foto original se muestra y guarda sin cambios.</string>
     <string name="colors_section">Colores</string>
-    <string name="display_color_format">Etiqueta visible: %1$s</string>
+
     <string name="raw_color_required">Valor de color original</string>
     <string name="raw_color_optional">Valor de color original (opcional)</string>
     <string name="raw_color_placeholder">Hex o etiqueta, p. ej., #D6B84C u oliva</string>
@@ -112,12 +112,20 @@
     <string name="palette_selector_hint">Toca para cambiar</string>
     <string name="palette_empty">Aún no hay colores de paleta disponibles. Añade colores en la paleta de color principal primero.</string>
     <string name="tags_section">Etiquetas</string>
-    <string name="metadata_section">Metadatos</string>
-    <string name="metadata_section_body">Elige metadatos del armario en cajas enfocadas en vez de una nube genérica de etiquetas.</string>
+    <string name="metadata_section">Información adicional</string>
+    <string name="metadata_section_body">Elige detalles del armario con controles enfocados en vez de una nube genérica de etiquetas.</string>
     <string name="metadata_category">Categoría</string>
     <string name="metadata_season">Temporada</string>
+    <string name="metadata_fit">Ajuste</string>
+    <string name="metadata_fit_hint">Cómo queda</string>
     <string name="metadata_location">Ubicación</string>
     <string name="metadata_occasions">Ocasiones</string>
+    <string name="fit_does_not_fit">No queda bien</string>
+    <string name="fit_snug">Ajustado</string>
+    <string name="fit_good">Queda bien</string>
+    <string name="fit_relaxed">Holgado</string>
+    <string name="fit_oversized">Oversize</string>
+    <string name="clear_fit">Borrar ajuste</string>
     <string name="single_select_metadata_hint">Selecciona una</string>
     <string name="multi_select_metadata_hint">Selecciona las que correspondan</string>
     <string name="tags_empty">Aún no hay etiquetas disponibles.</string>

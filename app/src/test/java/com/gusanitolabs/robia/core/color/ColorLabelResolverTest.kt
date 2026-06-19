@@ -13,6 +13,12 @@ class ColorLabelResolverTest {
     }
 
     @Test
+    fun preservesDefaultPaletteRedAndPinkLabels() {
+        assertEquals(DisplayColorLabel.Pink, ColorLabelResolver.fromRawValue("#D4879A"))
+        assertEquals(DisplayColorLabel.Red, ColorLabelResolver.fromRawValue("#9E3D35"))
+    }
+
+    @Test
     fun preservesKnownTextLabels() {
         assertEquals(DisplayColorLabel.Brown, ColorLabelResolver.fromRawValue("brown"))
         assertEquals(DisplayColorLabel.Multicolor, ColorLabelResolver.fromRawValue("multi-color"))

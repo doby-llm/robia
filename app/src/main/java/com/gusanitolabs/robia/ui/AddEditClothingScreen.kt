@@ -28,22 +28,30 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Event
+import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Style
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -96,6 +105,7 @@ fun AddEditClothingScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var fitValue by rememberSaveable { mutableStateOf<Int?>(null) }
     var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSecondaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var captureStatus by rememberSaveable { mutableStateOf("") }
@@ -136,6 +146,7 @@ fun AddEditClothingScreen(
         notes = existingItem?.notes.orEmpty()
         photoUri = existingItem?.photoUri
         selectedTagIds = existingItem?.tags?.map(GarmentTag::id).orEmpty()
+        fitValue = existingItem?.fitValue
         selectedPrimaryColorId = existingItem?.colorMetrics?.primaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
@@ -149,6 +160,7 @@ fun AddEditClothingScreen(
         notes != existingItem?.notes.orEmpty() ||
         photoUri != existingItem?.photoUri ||
         selectedTagIds != existingItem?.tags?.map(GarmentTag::id).orEmpty() ||
+        fitValue != existingItem?.fitValue ||
         selectedPrimaryColorId != existingItem?.colorMetrics?.primaryPaletteColorId ||
         selectedSecondaryColorId != existingItem?.colorMetrics?.secondaryPaletteColorId
 
@@ -279,6 +291,7 @@ fun AddEditClothingScreen(
                     PaletteColorCircle(
                         title = stringResource(R.string.secondary_color),
                         color = secondaryPaletteColor,
+                        emptyIcon = Icons.Rounded.Close,
                         modifier = Modifier.weight(1f),
                         onClick = { colorPickerTarget = ColorPickerTarget.Secondary },
                     )
@@ -295,7 +308,9 @@ fun AddEditClothingScreen(
             MetadataCaptureSection(
                 availableTags = availableTags,
                 selectedTagIds = selectedTagIds,
+                fitValue = fitValue,
                 onSelectedTagIdsChange = { selectedTagIds = it },
+                onFitValueChange = { fitValue = it },
             )
         }
 
@@ -323,6 +338,7 @@ fun AddEditClothingScreen(
                                 notes = notes,
                                 photoUri = photoUri,
                                 tags = selectedTags,
+                                fitValue = fitValue,
                                 colorMetrics = ClothingColorMetrics(
                                     primaryRawValue = primaryPaletteColor?.hex,
                                     primaryDisplayLabel = primaryLabel.takeIf { primaryPaletteColor != null },
@@ -358,7 +374,9 @@ fun AddEditClothingScreen(
 private fun MetadataCaptureSection(
     availableTags: List<GarmentTag>,
     selectedTagIds: List<String>,
+    fitValue: Int?,
     onSelectedTagIdsChange: (List<String>) -> Unit,
+    onFitValueChange: (Int?) -> Unit,
 ) {
     CardSection(title = stringResource(R.string.metadata_section)) {
         Text(
@@ -374,33 +392,46 @@ private fun MetadataCaptureSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            MetadataTagCard(
+            MetadataDropdownCard(
                 title = stringResource(R.string.metadata_category),
                 subtitle = stringResource(R.string.single_select_metadata_hint),
+                icon = Icons.Rounded.Checkroom,
                 tags = availableTags.forCategory("category"),
                 selectedTagIds = selectedTagIds,
-                singleSelect = true,
                 onSelectedTagIdsChange = onSelectedTagIdsChange,
             )
             MetadataTagCard(
                 title = stringResource(R.string.metadata_season),
                 subtitle = stringResource(R.string.multi_select_metadata_hint),
+                icon = Icons.Rounded.WbSunny,
                 tags = availableTags.forCategory("season"),
                 selectedTagIds = selectedTagIds,
                 singleSelect = false,
                 onSelectedTagIdsChange = onSelectedTagIdsChange,
             )
-            MetadataTagCard(
-                title = stringResource(R.string.metadata_location),
-                subtitle = stringResource(R.string.single_select_metadata_hint),
-                tags = availableTags.forCategory("location"),
-                selectedTagIds = selectedTagIds,
-                singleSelect = true,
-                onSelectedTagIdsChange = onSelectedTagIdsChange,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FitSliderCard(
+                    fitValue = fitValue,
+                    onFitValueChange = onFitValueChange,
+                    modifier = Modifier.weight(1f),
+                )
+                MetadataDropdownCard(
+                    title = stringResource(R.string.metadata_location),
+                    subtitle = stringResource(R.string.single_select_metadata_hint),
+                    icon = Icons.Rounded.Inventory2,
+                    tags = availableTags.forCategory("location"),
+                    selectedTagIds = selectedTagIds,
+                    onSelectedTagIdsChange = onSelectedTagIdsChange,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             MetadataTagCard(
                 title = stringResource(R.string.metadata_occasions),
                 subtitle = stringResource(R.string.multi_select_metadata_hint),
+                icon = Icons.Rounded.Event,
                 tags = availableTags.forCategory("occasion"),
                 selectedTagIds = selectedTagIds,
                 singleSelect = false,
@@ -411,14 +442,145 @@ private fun MetadataCaptureSection(
 }
 
 @Composable
+private fun MetadataDropdownCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    tags: List<GarmentTag>,
+    selectedTagIds: List<String>,
+    onSelectedTagIdsChange: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedTag = tags.firstOrNull { tag -> tag.id in selectedTagIds }
+    val categoryTagIds = remember(tags) { tags.map(GarmentTag::id).toSet() }
+    var expanded by remember { mutableStateOf(false) }
+
+    MetadataShellCard(title = title, subtitle = subtitle, icon = icon, modifier = modifier) {
+        if (tags.isEmpty()) {
+            Text(
+                text = stringResource(R.string.no_tags_in_category),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        } else {
+            Box {
+                OutlinedButton(
+                    onClick = { expanded = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = selectedTag?.localizedLabel() ?: stringResource(R.string.not_set),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.not_set)) },
+                        onClick = {
+                            expanded = false
+                            onSelectedTagIdsChange(selectedTagIds.filterNot { selectedId -> selectedId in categoryTagIds })
+                        },
+                    )
+                    tags.forEach { tag ->
+                        DropdownMenuItem(
+                            text = { Text(tag.localizedLabel()) },
+                            onClick = {
+                                expanded = false
+                                onSelectedTagIdsChange(
+                                    selectedTagIds.filterNot { selectedId -> selectedId in categoryTagIds } + tag.id,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FitSliderCard(
+    fitValue: Int?,
+    onFitValueChange: (Int?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    MetadataShellCard(
+        title = stringResource(R.string.metadata_fit),
+        subtitle = stringResource(R.string.metadata_fit_hint),
+        icon = Icons.Rounded.Straighten,
+        modifier = modifier,
+    ) {
+        Text(
+            text = fitValue?.fitLabel() ?: stringResource(R.string.not_set),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Slider(
+            value = fitValue?.toFloat() ?: 2f,
+            onValueChange = { onFitValueChange(it.toInt().coerceIn(0, 4)) },
+            valueRange = 0f..4f,
+            steps = 3,
+        )
+        TextButton(onClick = { onFitValueChange(null) }) {
+            Text(stringResource(R.string.clear_fit))
+        }
+    }
+}
+
+@Composable
 private fun MetadataTagCard(
     title: String,
     subtitle: String,
+    icon: ImageVector,
     tags: List<GarmentTag>,
     selectedTagIds: List<String>,
     singleSelect: Boolean,
     onSelectedTagIdsChange: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
+) {
+    MetadataShellCard(title = title, subtitle = subtitle, icon = icon, modifier = modifier) {
+        if (tags.isEmpty()) {
+            Text(
+                text = stringResource(R.string.no_tags_in_category),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        } else {
+            FlowChipRow {
+                tags.forEach { tag ->
+                    val selected = tag.id in selectedTagIds
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            onSelectedTagIdsChange(
+                                selectedTagIds.toggleTag(
+                                    tag = tag,
+                                    selected = selected,
+                                    singleSelect = singleSelect,
+                                    categoryTagIds = tags.map(GarmentTag::id),
+                                ),
+                            )
+                        },
+                        label = { Text(tag.localizedLabel()) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetadataShellCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -426,55 +588,34 @@ private fun MetadataTagCard(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title.uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Bold,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (tags.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.no_tags_in_category),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                )
-            } else {
-                FlowChipRow {
-                    tags.forEach { tag ->
-                        val selected = tag.id in selectedTagIds
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                onSelectedTagIdsChange(
-                                    selectedTagIds.toggleTag(
-                                        tag = tag,
-                                        selected = selected,
-                                        singleSelect = singleSelect,
-                                        categoryTagIds = tags.map(GarmentTag::id),
-                                    ),
-                                )
-                            },
-                            label = { Text(tag.localizedLabel()) },
-                            leadingIcon = if (selected) {
-                                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else {
-                                null
-                            },
-                        )
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = title.uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
+            content()
         }
     }
 }
@@ -815,6 +956,7 @@ private fun CardSection(
 private fun PaletteColorCircle(
     title: String,
     color: MainColor?,
+    emptyIcon: ImageVector = Icons.Rounded.Add,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -832,7 +974,7 @@ private fun PaletteColorCircle(
             contentAlignment = Alignment.Center,
         ) {
             if (color == null) {
-                Icon(Icons.Rounded.Add, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                Icon(emptyIcon, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
             }
         }
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -966,7 +1108,7 @@ private fun EmptyDetailCard(onAddClick: () -> Unit) {
 private fun FlowChipRow(content: @Composable () -> Unit) {
     androidx.compose.foundation.layout.FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         content()
     }
@@ -1005,6 +1147,15 @@ private fun GarmentTag.localizedLabel(): String = when (id) {
 }
 
 private enum class ColorPickerTarget { Primary, Secondary }
+
+@Composable
+private fun Int.fitLabel(): String = when (coerceIn(0, 4)) {
+    0 -> stringResource(R.string.fit_does_not_fit)
+    1 -> stringResource(R.string.fit_snug)
+    2 -> stringResource(R.string.fit_good)
+    3 -> stringResource(R.string.fit_relaxed)
+    else -> stringResource(R.string.fit_oversized)
+}
 
 private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { color -> color.id == id }
 

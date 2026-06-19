@@ -7,6 +7,7 @@ data class ClothingItem(
     val notes: String = "",
     val photoUri: String? = null,
     val tags: List<GarmentTag> = emptyList(),
+    val fitValue: Int? = null,
     val colorMetrics: ClothingColorMetrics = ClothingColorMetrics(),
     val isFavorite: Boolean = false,
     val isArchived: Boolean = false,

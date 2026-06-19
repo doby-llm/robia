@@ -16,6 +16,7 @@ data class ClothingItemEntity(
     val name: String,
     val notes: String,
     @ColumnInfo(name = "photo_uri") val photoUri: String?,
+    @ColumnInfo(name = "fit_value") val fitValue: Int?,
     @Embedded(prefix = "color_") val colorMetrics: ColorMetricsEntity,
     @ColumnInfo(name = "is_favorite") val isFavorite: Boolean,
     @ColumnInfo(name = "is_archived") val isArchived: Boolean,

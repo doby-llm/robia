@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MainColorEntity::class,
         ClothingItemTagCrossRef::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -34,7 +34,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                     RobiaDatabase::class.java,
                     "robia.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }
@@ -74,6 +74,12 @@ abstract class RobiaDatabase : RoomDatabase() {
                 database.execSQL("DELETE FROM clothing_item_tags WHERE tag_id IN (SELECT id FROM garment_tags WHERE category_id = 'fit')")
                 database.execSQL("DELETE FROM garment_tags WHERE category_id = 'fit'")
                 database.execSQL("DELETE FROM tag_categories WHERE id = 'fit'")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE clothing_items ADD COLUMN fit_value INTEGER")
             }
         }
     }

@@ -34,17 +34,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -152,6 +157,7 @@ private data class UiWardrobeItem(
     val notes: String,
     val photoUri: String?,
     val tags: List<UiTag>,
+    val fitValue: Int?,
     val primaryColor: DisplayColorLabel,
     val primaryRawValue: String?,
     val primaryPaletteColorId: String?,
@@ -875,7 +881,7 @@ private fun ItemDetailScreen(
             }
         }
         item { ColorMetricsCard(item) }
-        item { DetailMetadataGrid(tags = item.tags, onEditClick = onEditClick) }
+        item { DetailMetadataGrid(item = item, onEditClick = onEditClick) }
         item {
             Button(
                 onClick = onEditClick,
@@ -976,11 +982,12 @@ private fun ColorSwatch(
     paletteHex: String? = null,
 ) {
     val colorValue = paletteHex?.takeIf { it.isNotBlank() } ?: rawValue?.takeIf { it.isNotBlank() }
+    val hasStoredColor = !colorValue.isNullOrBlank() || !paletteName.isNullOrBlank()
     val displayLabel = when {
+        !hasStoredColor -> stringResource(R.string.no_color)
         color != DisplayColorLabel.Unknown -> color.localizedLabel()
         !paletteName.isNullOrBlank() -> paletteName
-        !colorValue.isNullOrBlank() -> colorValue
-        else -> color.localizedLabel()
+        else -> colorValue.orEmpty()
     }
 
     Column(
@@ -991,7 +998,7 @@ private fun ColorSwatch(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(color.swatchColor())
+                .background(if (hasStoredColor) color.swatchColor() else MaterialTheme.colorScheme.surfaceContainerHigh)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
         )
         Text(
@@ -1023,14 +1030,16 @@ private fun ColorSwatch(
 
 @Composable
 private fun DetailMetadataGrid(
-    tags: List<UiTag>,
+    item: UiWardrobeItem,
     onEditClick: () -> Unit,
 ) {
+    val tags = item.tags
     val metadata = listOf(
-        stringResource(R.string.filter_category) to tags.firstLabelInCategory("category"),
-        stringResource(R.string.filter_season) to tags.firstLabelInCategory("season"),
-        stringResource(R.string.filter_location) to tags.firstLabelInCategory("location"),
-        stringResource(R.string.filter_occasion) to tags.firstLabelInCategory("occasion"),
+        DetailMetadataItem(Icons.Rounded.Checkroom, stringResource(R.string.metadata_category), tags.labelsInCategory("category")),
+        DetailMetadataItem(Icons.Rounded.WbSunny, stringResource(R.string.metadata_season), tags.labelsInCategory("season")),
+        DetailMetadataItem(Icons.Rounded.Straighten, stringResource(R.string.metadata_fit), item.fitValue?.fitLabel()),
+        DetailMetadataItem(Icons.Rounded.Inventory2, stringResource(R.string.metadata_location), tags.labelsInCategory("location")),
+        DetailMetadataItem(Icons.Rounded.Event, stringResource(R.string.metadata_occasions), tags.labelsInCategory("occasion")),
     )
 
     Card(
@@ -1042,7 +1051,7 @@ private fun DetailMetadataGrid(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = stringResource(R.string.tags_section),
+                text = stringResource(R.string.metadata_section),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -1051,10 +1060,11 @@ private fun DetailMetadataGrid(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    rowItems.forEach { (label, value) ->
+                    rowItems.forEach { metadataItem ->
                         DetailMetadataCard(
-                            label = label,
-                            value = value,
+                            icon = metadataItem.icon,
+                            label = metadataItem.label,
+                            value = metadataItem.value,
                             onEditClick = onEditClick,
                             modifier = Modifier.weight(1f),
                         )
@@ -1068,6 +1078,7 @@ private fun DetailMetadataGrid(
 
 @Composable
 private fun DetailMetadataCard(
+    icon: ImageVector,
     label: String,
     value: String?,
     onEditClick: () -> Unit,
@@ -1083,7 +1094,7 @@ private fun DetailMetadataCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(
-                imageVector = Icons.Rounded.Style,
+                imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
@@ -1112,8 +1123,16 @@ private fun DetailMetadataCard(
     }
 }
 
-private fun List<UiTag>.firstLabelInCategory(categoryId: String): String? =
-    firstOrNull { tag -> tag.categoryId == categoryId }?.label
+private data class DetailMetadataItem(
+    val icon: ImageVector,
+    val label: String,
+    val value: String?,
+)
+
+private fun List<UiTag>.labelsInCategory(categoryId: String): String? =
+    filter { tag -> tag.categoryId == categoryId }
+        .joinToString { tag -> tag.label }
+        .takeIf { labels -> labels.isNotBlank() }
 
 @Composable
 private fun EmptyStateCard(onAddClick: () -> Unit) {
@@ -1552,6 +1571,7 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
         notes = item.notes,
         photoUri = item.photoUri,
         tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
+        fitValue = item.fitValue,
         primaryColor = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
         primaryRawValue = item.colorMetrics.primaryRawValue,
         primaryPaletteColorId = item.colorMetrics.primaryPaletteColorId,
@@ -1616,6 +1636,15 @@ private fun DisplayColorLabel.swatchColor(): Color = when (this) {
     DisplayColorLabel.Yellow -> Color(0xFFD6B84C)
     DisplayColorLabel.Multicolor -> Color(0xFFA56639)
     DisplayColorLabel.Unknown -> Color(0xFFDADADA)
+}
+
+@Composable
+private fun Int.fitLabel(): String = when (coerceIn(0, 4)) {
+    0 -> stringResource(R.string.fit_does_not_fit)
+    1 -> stringResource(R.string.fit_snug)
+    2 -> stringResource(R.string.fit_good)
+    3 -> stringResource(R.string.fit_relaxed)
+    else -> stringResource(R.string.fit_oversized)
 }
 
 @Preview(showBackground = true)

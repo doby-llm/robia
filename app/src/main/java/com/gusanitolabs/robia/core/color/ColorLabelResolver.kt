@@ -29,13 +29,13 @@ object ColorLabelResolver {
 
         val hue = rgbToHueDegrees(r, g, b)
         return when {
-            hue < 15 || hue >= 345 -> DisplayColorLabel.Red
+            hue < 15 || hue >= 350 -> DisplayColorLabel.Red
             hue < 45 -> DisplayColorLabel.Orange
             hue < 70 -> DisplayColorLabel.Yellow
             hue < 165 -> DisplayColorLabel.Green
             hue < 255 -> DisplayColorLabel.Blue
             hue < 290 -> DisplayColorLabel.Purple
-            hue < 345 -> DisplayColorLabel.Pink
+            hue < 350 -> DisplayColorLabel.Pink
             else -> DisplayColorLabel.Unknown
         }
     }

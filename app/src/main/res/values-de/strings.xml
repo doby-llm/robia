@@ -104,7 +104,7 @@
     <string name="background_removal">Hintergrundentfernung</string>
     <string name="background_removal_status">In diesem Build nicht verfügbar; das Originalfoto wird unverändert angezeigt und gespeichert.</string>
     <string name="colors_section">Farben</string>
-    <string name="display_color_format">Anzeigeetikett: %1$s</string>
+
     <string name="raw_color_required">Rohfarbwert</string>
     <string name="raw_color_optional">Rohfarbwert (optional)</string>
     <string name="raw_color_placeholder">Hex oder Label, z. B. #D6B84C oder Oliv</string>
@@ -112,12 +112,20 @@
     <string name="palette_selector_hint">Zum Ändern tippen</string>
     <string name="palette_empty">Noch keine Palettenfarben verfügbar. Füge zuerst Farben in der Hauptfarbpalette hinzu.</string>
     <string name="tags_section">Tags</string>
-    <string name="metadata_section">Metadaten</string>
-    <string name="metadata_section_body">Wähle Garderoben-Metadaten in fokussierten Boxen statt in einer generischen Tag-Wolke.</string>
+    <string name="metadata_section">Zusätzliche Informationen</string>
+    <string name="metadata_section_body">Wähle Garderobendetails mit fokussierten Steuerelementen statt in einer generischen Tag-Wolke.</string>
     <string name="metadata_category">Kategorie</string>
     <string name="metadata_season">Saison</string>
+    <string name="metadata_fit">Passform</string>
+    <string name="metadata_fit_hint">Wie es sitzt</string>
     <string name="metadata_location">Ort</string>
     <string name="metadata_occasions">Anlässe</string>
+    <string name="fit_does_not_fit">Passt nicht</string>
+    <string name="fit_snug">Eng</string>
+    <string name="fit_good">Passt gut</string>
+    <string name="fit_relaxed">Locker</string>
+    <string name="fit_oversized">Oversized</string>
+    <string name="clear_fit">Passform löschen</string>
     <string name="single_select_metadata_hint">Eine auswählen</string>
     <string name="multi_select_metadata_hint">Alle zutreffenden auswählen</string>
     <string name="tags_empty">Noch keine Tags verfügbar.</string>
