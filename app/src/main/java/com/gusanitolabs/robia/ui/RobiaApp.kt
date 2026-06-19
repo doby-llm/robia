@@ -807,7 +807,7 @@ private fun GarmentPhotoPlaceholder(
             AndroidView(
                 factory = { context ->
                     ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        scaleType = ImageView.ScaleType.FIT_CENTER
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
                 },
@@ -873,11 +873,13 @@ private fun ItemDetailScreen(
                     style = MaterialTheme.typography.headlineLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = item.notes.ifBlank { item.subtitle },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                item.notes.takeIf { it.isNotBlank() }?.let { description ->
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         item { ColorMetricsCard(item) }
@@ -897,44 +899,16 @@ private fun ItemDetailScreen(
 
 @Composable
 private fun DetailMediaCard(item: UiWardrobeItem) {
-    val photoStatusRes = if (item.photoUri.isNullOrBlank()) {
-        R.string.photo_placeholder_status
-    } else {
-        R.string.photo_processed_status
-    }
-
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            GarmentPhotoPlaceholder(
-                item = item,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(3f / 4f),
-            )
-            Column(
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.background_removal),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(photoStatusRes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = stringResource(R.string.background_removal_status),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        GarmentPhotoPlaceholder(
+            item = item,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(3f / 4f),
+        )
     }
 }
 
@@ -949,11 +923,11 @@ private fun ColorMetricsCard(item: UiWardrobeItem) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = stringResource(R.string.extracted_colors),
+                text = stringResource(R.string.colors_section),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 ColorSwatch(
                     role = stringResource(R.string.primary_color),
                     color = item.primaryColor,
@@ -983,10 +957,11 @@ private fun ColorSwatch(
 ) {
     val colorValue = paletteHex?.takeIf { it.isNotBlank() } ?: rawValue?.takeIf { it.isNotBlank() }
     val hasStoredColor = !colorValue.isNullOrBlank() || !paletteName.isNullOrBlank()
+    val swatchColor = colorValue?.toComposeColor() ?: color.swatchColor()
     val displayLabel = when {
         !hasStoredColor -> stringResource(R.string.no_color)
-        color != DisplayColorLabel.Unknown -> color.localizedLabel()
         !paletteName.isNullOrBlank() -> paletteName
+        color != DisplayColorLabel.Unknown -> color.localizedLabel()
         else -> colorValue.orEmpty()
     }
 
@@ -998,7 +973,7 @@ private fun ColorSwatch(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(if (hasStoredColor) color.swatchColor() else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(if (hasStoredColor) swatchColor else MaterialTheme.colorScheme.surfaceContainerHigh)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
         )
         Text(
@@ -1281,7 +1256,7 @@ private fun AdvancedFiltersScreen(
             .fillMaxSize()
             .padding(innerPadding),
         contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(28.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
             Row(
@@ -1377,7 +1352,7 @@ private fun FilterSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = title.uppercase(),
             style = MaterialTheme.typography.labelLarge,
@@ -1424,7 +1399,7 @@ private fun ColorPaletteChips(
     selectedColorIds: Set<String>,
     onColorToggled: (MainColor) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (selectedColorIds.isEmpty()) {
             Text(
                 text = stringResource(R.string.filters_no_colors_selected),
@@ -1445,7 +1420,7 @@ private fun ColorPaletteChips(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 colors.forEach { color ->
                     val selected = color.id in selectedColorIds
                     val swatchDescription = stringResource(R.string.content_color_swatch, color.name)
