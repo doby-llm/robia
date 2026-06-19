@@ -90,9 +90,11 @@
     <string name="item_name_label">Nombre de la prenda</string>
     <string name="item_name_placeholder">p. ej., Jersey de lana mostaza</string>
     <string name="item_notes_label">Descripción</string>
-    <string name="item_notes_placeholder">Añade tela, marca, estilo o cuidados</string>
+    <string name="item_notes_placeholder">Description (optional)</string>
+    <string name="item_name_required_to_save">El nombre es obligatorio para guardar.</string>
     <string name="gallery">Galería</string>
-    <string name="photo_placeholder">Aún no hay foto seleccionada</string>
+    <string name="photo_placeholder">Añade una foto de la prenda</string>
+    <string name="photo_placeholder_tap_camera">Toca para abrir la cámara</string>
     <string name="photo_placeholder_status">Elige una imagen de la galería o toma una foto con la cámara para previsualizarla y guardarla.</string>
     <string name="gallery_selected_status">Foto de galería copiada en privado y previsualizada aquí.</string>
     <string name="camera_selected_status">Foto de cámara capturada en privado y previsualizada aquí.</string>
@@ -107,7 +109,7 @@
     <string name="raw_color_optional">Valor de color original (opcional)</string>
     <string name="raw_color_placeholder">Hex o etiqueta, p. ej., #D6B84C u oliva</string>
     <string name="raw_color_summary">Original: %1$s • Etiqueta: %2$s</string>
-    <string name="palette_selector_hint">Toca un círculo para elegir solo desde la paleta de color principal. El procesamiento de foto rellena los colores de paleta más cercanos.</string>
+    <string name="palette_selector_hint">Toca para cambiar</string>
     <string name="palette_empty">Aún no hay colores de paleta disponibles. Añade colores en la paleta de color principal primero.</string>
     <string name="tags_section">Etiquetas</string>
     <string name="metadata_section">Metadatos</string>
@@ -123,6 +125,7 @@
     <string name="not_set">Sin definir</string>
     <string name="tap_edit_to_add">Toca editar para añadir</string>
     <string name="none">Ninguno</string>
+    <string name="no_color">Sin color</string>
     <string name="cancel">Cancelar</string>
     <string name="save_item">Guardar prenda</string>
     <string name="untitled_item">Prenda sin título</string>
@@ -144,7 +147,7 @@
     <string name="filters_no_colors_selected">Sin colores seleccionados</string>
     <string name="filters_colors_selected_count">%1$d colores seleccionados</string>
     <string name="unsaved_changes_title">¿Descartar cambios?</string>
-    <string name="unsaved_changes_body">Esta prenda tiene cambios sin guardar. Sigue editando o descártalos y vuelve atrás.</string>
+    <string name="unsaved_changes_body">Tus cambios no se guardarán.</string>
     <string name="discard_changes">Descartar</string>
     <string name="keep_editing">Seguir editando</string>
     <string name="content_settings_menu">Abrir menú de ajustes</string>

@@ -325,6 +325,15 @@ private fun RobiaShell(
         if (routeStack.size > 1) routeStack.removeAt(routeStack.lastIndex)
     }
 
+    fun closeAddEdit() {
+        if (routeStack.size > 1) {
+            popRoute()
+        } else {
+            selectedItemId = null
+            replaceRoute(RobiaRoute.Browse)
+        }
+    }
+
     fun toggleFavorite(itemId: String) {
         val item = clothingItems.firstOrNull { it.id == itemId } ?: return
         onSaveItem(
@@ -586,7 +595,7 @@ private fun RobiaNavHost(
             availableTags = availableTags,
             mainColors = mainColors,
             existingItem = selectedDomainItem,
-            onCancel = onBack,
+            onCancel = ::closeAddEdit,
             onSave = onSaveItem,
         )
         RobiaRoute.ItemDetail -> selectedItem?.let { item ->

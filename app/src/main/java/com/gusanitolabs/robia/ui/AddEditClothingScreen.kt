@@ -61,6 +61,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -166,7 +168,12 @@ fun AddEditClothingScreen(
             title = { Text(stringResource(R.string.unsaved_changes_title)) },
             text = { Text(stringResource(R.string.unsaved_changes_body)) },
             confirmButton = {
-                TextButton(onClick = onCancel) { Text(stringResource(R.string.discard_changes)) }
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        onCancel()
+                    },
+                ) { Text(stringResource(R.string.discard_changes)) }
             },
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
@@ -178,11 +185,12 @@ fun AddEditClothingScreen(
         ColorPalettePickerDialog(
             title = stringResource(if (target == ColorPickerTarget.Primary) R.string.primary_color else R.string.secondary_color),
             colors = mainColors,
+            allowNoColor = target == ColorPickerTarget.Secondary,
             onColorSelected = { color ->
                 if (target == ColorPickerTarget.Primary) {
-                    selectedPrimaryColorId = color.id
+                    selectedPrimaryColorId = color?.id
                 } else {
-                    selectedSecondaryColorId = color.id
+                    selectedSecondaryColorId = color?.id
                 }
                 colorPickerTarget = null
             },
@@ -243,6 +251,9 @@ fun AddEditClothingScreen(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.item_name_label)) },
                     placeholder = { Text(stringResource(R.string.item_name_placeholder)) },
+                    supportingText = {
+                        if (name.isBlank()) Text(stringResource(R.string.item_name_required_to_save))
+                    },
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -262,14 +273,12 @@ fun AddEditClothingScreen(
                     PaletteColorCircle(
                         title = stringResource(R.string.primary_color),
                         color = primaryPaletteColor,
-                        label = primaryLabel,
                         modifier = Modifier.weight(1f),
                         onClick = { colorPickerTarget = ColorPickerTarget.Primary },
                     )
                     PaletteColorCircle(
                         title = stringResource(R.string.secondary_color),
                         color = secondaryPaletteColor,
-                        label = secondaryLabel,
                         modifier = Modifier.weight(1f),
                         onClick = { colorPickerTarget = ColorPickerTarget.Secondary },
                     )
@@ -642,7 +651,12 @@ private fun PhotoCaptureCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            PhotoPreview(photoUri = photoUri, modifier = Modifier.fillMaxWidth())
+            PhotoPreview(
+                photoUri = photoUri,
+                modifier = Modifier.fillMaxWidth(),
+                aspectRatio = 4f / 3f,
+                onEmptyPhotoClick = onCameraClick,
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -685,11 +699,6 @@ private fun PhotoCaptureCard(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        Text(
-                            text = stringResource(R.string.background_removal_status),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     Switch(checked = false, onCheckedChange = null, enabled = false)
                 }
@@ -712,15 +721,30 @@ private fun PhotoCaptureCard(
 }
 
 @Composable
-private fun PhotoPreview(photoUri: String?, modifier: Modifier = Modifier) {
+private fun PhotoPreview(
+    photoUri: String?,
+    modifier: Modifier = Modifier,
+    aspectRatio: Float = 3f / 4f,
+    onEmptyPhotoClick: (() -> Unit)? = null,
+) {
+    val uri = photoUri?.takeIf { it.isNotBlank() }
+    val emptyPhotoContentDescription = stringResource(R.string.content_open_camera)
     Box(
         modifier = modifier
-            .aspectRatio(3f / 4f)
+            .aspectRatio(aspectRatio)
             .clip(MaterialTheme.shapes.extraLarge)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .then(
+                if (uri == null && onEmptyPhotoClick != null) {
+                    Modifier
+                        .clickable(onClick = onEmptyPhotoClick)
+                        .semantics { contentDescription = emptyPhotoContentDescription }
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        val uri = photoUri?.takeIf { it.isNotBlank() }
         if (uri != null) {
             AndroidView(
                 factory = { context ->
@@ -751,6 +775,13 @@ private fun PhotoPreview(photoUri: String?, modifier: Modifier = Modifier) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (onEmptyPhotoClick != null) {
+                    Text(
+                        text = stringResource(R.string.photo_placeholder_tap_camera),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -784,7 +815,6 @@ private fun CardSection(
 private fun PaletteColorCircle(
     title: String,
     color: MainColor?,
-    label: DisplayColorLabel,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -813,13 +843,6 @@ private fun PaletteColorCircle(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (color != null) {
-            Text(
-                text = stringResource(R.string.display_color_format, stringResource(label.stringRes)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -827,17 +850,41 @@ private fun PaletteColorCircle(
 private fun ColorPalettePickerDialog(
     title: String,
     colors: List<MainColor>,
-    onColorSelected: (MainColor) -> Unit,
+    allowNoColor: Boolean,
+    onColorSelected: (MainColor?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            if (colors.isEmpty()) {
+            if (colors.isEmpty() && !allowNoColor) {
                 Text(stringResource(R.string.palette_empty))
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (allowNoColor) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onColorSelected(null) }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(Icons.Rounded.Close, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                                }
+                                Text(stringResource(R.string.no_color), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
                     items(colors.size) { index ->
                         val color = colors[index]
                         Row(

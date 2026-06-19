@@ -90,9 +90,11 @@
     <string name="item_name_label">Item name</string>
     <string name="item_name_placeholder">e.g., Mustard wool sweater</string>
     <string name="item_notes_label">Description</string>
-    <string name="item_notes_placeholder">Add fabric, brand, styling, or care details</string>
+    <string name="item_notes_placeholder">Description (optional)</string>
+    <string name="item_name_required_to_save">Name is required to save.</string>
     <string name="gallery">Gallery</string>
-    <string name="photo_placeholder">No photo selected yet</string>
+    <string name="photo_placeholder">Add a clothing photo</string>
+    <string name="photo_placeholder_tap_camera">Tap to open camera</string>
     <string name="photo_placeholder_status">Choose a gallery image or take a camera photo to preview and save it.</string>
     <string name="gallery_selected_status">Gallery photo copied privately and previewed here.</string>
     <string name="camera_selected_status">Camera photo captured privately and previewed here.</string>
@@ -107,7 +109,7 @@
     <string name="raw_color_optional">Raw color value (optional)</string>
     <string name="raw_color_placeholder">Hex or label, e.g., #D6B84C or olive</string>
     <string name="raw_color_summary">Raw: %1$s • Label: %2$s</string>
-    <string name="palette_selector_hint">Tap a circle to choose from the Manage Color Palette only. Photo processing auto-fills nearest palette colors.</string>
+    <string name="palette_selector_hint">Tap to change</string>
     <string name="palette_empty">No palette colors are available yet. Add colors in Manage Color Palette first.</string>
     <string name="tags_section">Tags</string>
     <string name="metadata_section">Metadata</string>
@@ -123,6 +125,7 @@
     <string name="not_set">Not set</string>
     <string name="tap_edit_to_add">Tap edit to add</string>
     <string name="none">None</string>
+    <string name="no_color">No color</string>
     <string name="cancel">Cancel</string>
     <string name="save_item">Save item</string>
     <string name="untitled_item">Untitled item</string>
@@ -144,7 +147,7 @@
     <string name="filters_no_colors_selected">No colors selected</string>
     <string name="filters_colors_selected_count">%1$d colors selected</string>
     <string name="unsaved_changes_title">Discard changes?</string>
-    <string name="unsaved_changes_body">This clothing item has unsaved edits. Keep editing or discard them and go back.</string>
+    <string name="unsaved_changes_body">Your edits won’t be saved.</string>
     <string name="discard_changes">Discard</string>
     <string name="keep_editing">Keep editing</string>
     <string name="content_settings_menu">Open settings menu</string>
