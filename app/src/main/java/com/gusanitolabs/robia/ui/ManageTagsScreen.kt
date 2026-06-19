@@ -54,6 +54,7 @@ import java.util.Locale
 import java.util.UUID
 
 private const val SeasonCategoryId = "season"
+private const val DefaultCustomColorHex = "#A8644E"
 
 private data class TagEditorState(
     val categoryId: String,
@@ -501,18 +502,30 @@ private fun ColorEditorDialog(
     onSave: (MainColor) -> Unit,
 ) {
     val curatedHexes = remember { CuratedPaletteSwatches.map(PaletteSwatch::hex).toSet() }
+    val editingColorId = state.existingColor?.id
+    val siblingColors = remember(colors, editingColorId) { colors.filterNot { color -> color.id == editingColorId } }
+    val unavailableHexes = remember(siblingColors) { siblingColors.mapNotNull { color -> color.hex.toNormalizedHex() }.toSet() }
+    val firstAvailableSwatchHex = remember(unavailableHexes) {
+        CuratedPaletteSwatches.firstOrNull { swatch -> swatch.hex !in unavailableHexes }?.hex
+    }
+    val existingColorHex = state.existingColor?.hex?.toNormalizedHex()
     var name by remember(state) { mutableStateOf(state.existingColor?.name.orEmpty()) }
     var selectedHex by remember(state) {
-        mutableStateOf(state.existingColor?.hex?.toNormalizedHex() ?: CuratedPaletteSwatches.first().hex)
+        mutableStateOf(existingColorHex ?: firstAvailableSwatchHex ?: CuratedPaletteSwatches.first().hex)
     }
-    var customHex by remember(state) { mutableStateOf(state.existingColor?.hex ?: CuratedPaletteSwatches.first().hex) }
+    var customHex by remember(state) { mutableStateOf(state.existingColor?.hex ?: firstAvailableSwatchHex ?: DefaultCustomColorHex) }
     var showCustomHex by remember(state) {
-        mutableStateOf(state.existingColor?.hex?.toNormalizedHex() !in curatedHexes)
+        mutableStateOf(existingColorHex?.let { hex -> hex !in curatedHexes } ?: (firstAvailableSwatchHex == null))
     }
     val trimmedName = name.trim()
     val normalizedCustomHex = customHex.toNormalizedHex()
     val selectedColorHex = if (showCustomHex) normalizedCustomHex else selectedHex
     val showHexError = showCustomHex && customHex.isNotBlank() && normalizedCustomHex == null
+    val hasDuplicateName = trimmedName.isNotEmpty() && siblingColors.any { color ->
+        color.name.toNormalizedName() == trimmedName.toNormalizedName()
+    }
+    val hasDuplicateHex = selectedColorHex != null && selectedColorHex in unavailableHexes
+    val canSave = trimmedName.isNotEmpty() && selectedColorHex != null && !hasDuplicateName && !hasDuplicateHex
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -529,7 +542,13 @@ private fun ColorEditorDialog(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
+                    isError = hasDuplicateName,
                     label = { Text(stringResource(R.string.color_name_label)) },
+                    supportingText = {
+                        if (hasDuplicateName) {
+                            Text(stringResource(R.string.color_name_duplicate))
+                        }
+                    },
                 )
                 Text(
                     text = stringResource(R.string.color_palette_picker_label),
@@ -538,6 +557,7 @@ private fun ColorEditorDialog(
                 )
                 CuratedColorGrid(
                     selectedHex = selectedColorHex,
+                    unavailableHexes = unavailableHexes,
                     onSelect = { swatch, label ->
                         selectedHex = swatch.hex
                         customHex = swatch.hex
@@ -555,21 +575,28 @@ private fun ColorEditorDialog(
                         value = customHex,
                         onValueChange = { customHex = it },
                         singleLine = true,
-                        isError = showHexError,
+                        isError = showHexError || hasDuplicateHex,
                         label = { Text(stringResource(R.string.color_hex_label)) },
                         placeholder = { Text("#D6B84C") },
                         supportingText = {
-                            if (showHexError) {
-                                Text(stringResource(R.string.color_hex_invalid))
+                            when {
+                                showHexError -> Text(stringResource(R.string.color_hex_invalid))
+                                hasDuplicateHex -> Text(stringResource(R.string.color_hex_duplicate))
                             }
                         },
+                    )
+                } else if (hasDuplicateHex) {
+                    Text(
+                        text = stringResource(R.string.color_hex_duplicate),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
         },
         confirmButton = {
             Button(
-                enabled = trimmedName.isNotEmpty() && selectedColorHex != null,
+                enabled = canSave,
                 onClick = {
                     val existing = state.existingColor
                     onSave(
@@ -597,6 +624,7 @@ private fun ColorEditorDialog(
 @Composable
 private fun CuratedColorGrid(
     selectedHex: String?,
+    unavailableHexes: Set<String>,
     onSelect: (PaletteSwatch, String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -608,6 +636,7 @@ private fun CuratedColorGrid(
                         swatch = swatch,
                         label = label,
                         selected = selectedHex == swatch.hex,
+                        enabled = swatch.hex !in unavailableHexes || selectedHex == swatch.hex,
                         onClick = { onSelect(swatch, label) },
                     )
                 }
@@ -621,11 +650,24 @@ private fun PaletteSwatchButton(
     swatch: PaletteSwatch,
     label: String,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val swatchColor = swatch.hex.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh
-    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    val swatchDescription = stringResource(R.string.content_select_color_swatch, label)
+    val borderColor = when {
+        selected -> MaterialTheme.colorScheme.primary
+        enabled -> MaterialTheme.colorScheme.outlineVariant
+        else -> MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+    }
+    val swatchDescription = stringResource(
+        if (enabled) R.string.content_select_color_swatch else R.string.content_color_swatch_unavailable,
+        label,
+    )
+    val labelColor = when {
+        selected -> MaterialTheme.colorScheme.primary
+        enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.error
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -633,19 +675,19 @@ private fun PaletteSwatchButton(
         modifier = Modifier
             .width(72.dp)
             .semantics { contentDescription = swatchDescription }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
     ) {
         Box(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(swatchColor)
+                .background(if (enabled) swatchColor else swatchColor.copy(alpha = 0.38f))
                 .border(if (selected) 3.dp else 1.dp, borderColor, CircleShape),
         )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = labelColor,
         )
     }
 }
@@ -699,6 +741,9 @@ private fun customId(prefix: String, name: String): String {
         .ifEmpty { prefix }
     return "$prefix-$slug-${UUID.randomUUID()}"
 }
+
+private fun String.toNormalizedName(): String =
+    trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
 
 private fun String.toNormalizedHex(): String? {
     val normalized = trim().removePrefix("#")

@@ -188,6 +188,7 @@
     <string name="content_delete_color">Eliminar color</string>
     <string name="content_color_swatch">Muestra de color %1$s</string>
     <string name="content_select_color_swatch">Seleccionar muestra %1$s</string>
+    <string name="content_color_swatch_unavailable">La muestra %1$s ya existe</string>
     <string name="add_color_title">Añadir color</string>
     <string name="edit_color_title">Editar color</string>
     <string name="color_name_label">Nombre del color</string>
@@ -195,6 +196,8 @@
     <string name="color_palette_picker_label">Elige de la paleta</string>
     <string name="custom_hex_color">Usar hex personalizado</string>
     <string name="color_hex_invalid">Introduce un color hexadecimal válido de 6 dígitos, por ejemplo #D6B84C.</string>
+    <string name="color_name_duplicate">Ya existe un color con este nombre.</string>
+    <string name="color_hex_duplicate">Ya existe un color con esta muestra.</string>
     <string name="category_category">Categoría</string>
     <string name="category_location">Ubicaciones</string>
     <string name="tag_t_shirt">Camiseta</string>
