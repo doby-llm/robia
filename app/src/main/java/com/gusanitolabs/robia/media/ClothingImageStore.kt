@@ -39,14 +39,34 @@ object ClothingImageStore {
         context: Context,
         imageUri: Uri,
         palette: List<MainColor>,
-    ): List<MainColor> {
+    ): List<MainColor> = extractPaletteColorMatches(context, imageUri, palette)
+        .map(PaletteColorMatch::color)
+        .take(2)
+
+    fun extractPaletteColorMatches(
+        context: Context,
+        imageUri: Uri,
+        palette: List<MainColor>,
+    ): List<PaletteColorMatch> {
         if (palette.isEmpty()) return emptyList()
         val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream) ?: return emptyList()
+        return bitmap.useForColors { source -> paletteMatches(source, palette) }
+    }
+
+    fun cropTransparentPixels(
+        context: Context,
+        imageUri: Uri,
+    ): Uri {
+        val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream) ?: return imageUri
         return bitmap.useForColors { source ->
-            dominantRgbBuckets(source)
-                .mapNotNull { rgb -> palette.nearestTo(rgb) }
-                .distinctBy(MainColor::id)
-                .take(2)
+            val cropBounds = transparentContentBounds(source) ?: return@useForColors imageUri
+            if (cropBounds.isFullSize(source.width, source.height)) return@useForColors imageUri
+            val cropped = Bitmap.createBitmap(source, cropBounds.left, cropBounds.top, cropBounds.width, cropBounds.height)
+            try {
+                writeProcessedBitmap(context, cropped, prefix = "cropped-subject")
+            } finally {
+                cropped.recycle()
+            }
         }
     }
 
@@ -78,10 +98,11 @@ object ClothingImageStore {
         recycle()
     }
 
-    private fun dominantRgbBuckets(bitmap: Bitmap): List<Rgb> {
+    private fun paletteMatches(bitmap: Bitmap, palette: List<MainColor>): List<PaletteColorMatch> {
         val maxDimension = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
         val sampleStep = (maxDimension / 96).coerceAtLeast(1)
-        val buckets = mutableMapOf<Int, Bucket>()
+        val counts = mutableMapOf<MainColor, Int>()
+        var visiblePixels = 0
 
         var y = 0
         while (y < bitmap.height) {
@@ -93,18 +114,62 @@ object ClothingImageStore {
                     val red = (color ushr 16) and 0xFF
                     val green = (color ushr 8) and 0xFF
                     val blue = color and 0xFF
-                    val key = ((red / 32) shl 16) or ((green / 32) shl 8) or (blue / 32)
-                    buckets.getOrPut(key) { Bucket() }.add(red, green, blue)
+                    val nearest = palette.nearestTo(Rgb(red, green, blue))
+                    if (nearest != null) {
+                        counts[nearest] = (counts[nearest] ?: 0) + 1
+                        visiblePixels += 1
+                    }
                 }
                 x += sampleStep
             }
             y += sampleStep
         }
 
-        return buckets.values
-            .sortedByDescending(Bucket::count)
-            .map(Bucket::average)
-            .take(8)
+        if (visiblePixels == 0) return emptyList()
+        return counts.entries
+            .sortedByDescending { it.value }
+            .map { (color, count) ->
+                PaletteColorMatch(
+                    color = color,
+                    pixelCount = count,
+                    ratio = count.toFloat() / visiblePixels.toFloat(),
+                )
+            }
+    }
+
+    private fun transparentContentBounds(bitmap: Bitmap): CropBounds? {
+        if (!bitmap.hasAlpha()) return null
+        var minX = bitmap.width
+        var minY = bitmap.height
+        var maxX = -1
+        var maxY = -1
+
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                val alpha = (bitmap.getPixel(x, y) ushr 24) and 0xFF
+                if (alpha > TRANSPARENT_CROP_ALPHA_THRESHOLD) {
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+
+        if (maxX < minX || maxY < minY) return null
+        val contentWidth = maxX - minX + 1
+        val contentHeight = maxY - minY + 1
+        val bitmapArea = bitmap.width * bitmap.height
+        val contentArea = contentWidth * contentHeight
+        if (contentWidth < MIN_CROP_CONTENT_SIZE || contentHeight < MIN_CROP_CONTENT_SIZE) return null
+        if (contentArea < bitmapArea / 100) return null
+
+        val padding = (maxOf(bitmap.width, bitmap.height) * CROP_PADDING_RATIO).toInt().coerceAtLeast(MIN_CROP_PADDING_PX)
+        val left = (minX - padding).coerceAtLeast(0)
+        val top = (minY - padding).coerceAtLeast(0)
+        val right = (maxX + padding).coerceAtMost(bitmap.width - 1)
+        val bottom = (maxY + padding).coerceAtMost(bitmap.height - 1)
+        return CropBounds(left = left, top = top, width = right - left + 1, height = bottom - top + 1)
     }
 
     private fun List<MainColor>.nearestTo(rgb: Rgb): MainColor? = minByOrNull { color ->
@@ -128,23 +193,24 @@ object ClothingImageStore {
 
     private data class Rgb(val red: Int, val green: Int, val blue: Int)
 
-    private class Bucket {
-        var red: Long = 0
-        var green: Long = 0
-        var blue: Long = 0
-        var count: Int = 0
+    data class PaletteColorMatch(
+        val color: MainColor,
+        val pixelCount: Int,
+        val ratio: Float,
+    )
 
-        fun add(red: Int, green: Int, blue: Int) {
-            this.red += red.toLong()
-            this.green += green.toLong()
-            this.blue += blue.toLong()
-            count += 1
-        }
-
-        fun average(): Rgb = Rgb(
-            red = (red / count.coerceAtLeast(1)).toInt(),
-            green = (green / count.coerceAtLeast(1)).toInt(),
-            blue = (blue / count.coerceAtLeast(1)).toInt(),
-        )
+    private data class CropBounds(
+        val left: Int,
+        val top: Int,
+        val width: Int,
+        val height: Int,
+    ) {
+        fun isFullSize(bitmapWidth: Int, bitmapHeight: Int): Boolean =
+            left == 0 && top == 0 && width == bitmapWidth && height == bitmapHeight
     }
+
+    private const val TRANSPARENT_CROP_ALPHA_THRESHOLD = 24
+    private const val MIN_CROP_CONTENT_SIZE = 16
+    private const val MIN_CROP_PADDING_PX = 8
+    private const val CROP_PADDING_RATIO = 0.04f
 }

@@ -101,12 +101,12 @@
     <string name="photo_processed_status">Fotovorschau bereit; Palettenfarben wurden aus dem Bild extrahiert.</string>
     <string name="media_actions_unavailable_status">Die Fotoauswahl ist in dieser Sitzung nicht verfügbar. Du kannst dieses Kleidungsstück trotzdem ohne Foto speichern.</string>
     <string name="camera_hook_status">Die Kameraaufnahme speichert ein privates Bild für dieses Kleidungsstück.</string>
-    <string name="background_removal">Hintergrundentfernung</string>
-    <string name="background_removal_status">Optionale Hintergrundentfernung; das Originalfoto wird gespeichert, falls sie nicht verfügbar ist oder fehlschlägt.</string>
-    <string name="background_removal_processing_status">Hintergrund wird entfernt…</string>
-    <string name="background_removal_success_status">Hintergrund entfernt; Palettenfarben wurden aus dem verarbeiteten Foto extrahiert.</string>
-    <string name="background_removal_disabled_status">Hintergrundentfernung ist aus; das Originalfoto wird angezeigt und gespeichert.</string>
-    <string name="background_removal_fallback_status">Hintergrundentfernung war nicht verfügbar; das Originalfoto wird angezeigt und gespeichert.</string>
+    <string name="background_removal">Fotooptimierung</string>
+    <string name="background_removal_status">Fotooptimierung</string>
+    <string name="background_removal_processing_status">Foto wird verarbeitet…</string>
+    <string name="background_removal_success_status">Foto optimiert und Farben extrahiert.</string>
+    <string name="background_removal_disabled_status">Originalfoto.</string>
+    <string name="background_removal_fallback_status">Originalfoto beibehalten.</string>
     <string name="colors_section">Farben</string>
 
     <string name="raw_color_required">Rohfarbwert</string>
@@ -124,9 +124,9 @@
     <string name="metadata_fit_hint">Wie es sitzt</string>
     <string name="metadata_location">Ort</string>
     <string name="metadata_occasions">Anlässe</string>
-    <string name="fit_does_not_fit">Passt mir nicht</string>
+    <string name="fit_does_not_fit">Passt nicht</string>
     <string name="fit_snug">Eng</string>
-    <string name="fit_good">Passt mir</string>
+    <string name="fit_good">Passt</string>
     <string name="fit_relaxed">Locker</string>
     <string name="fit_oversized">Oversized</string>
     <string name="clear_fit">Passform löschen</string>
@@ -168,6 +168,8 @@
     <string name="content_open_item_detail">Kleidungsdetail öffnen</string>
     <string name="content_open_gallery">Galerieauswahl öffnen</string>
     <string name="content_open_camera">Kameraaufnahme öffnen</string>
+    <string name="content_post_processing_on">Fotooptimierung ein</string>
+    <string name="content_post_processing_off">Fotooptimierung aus</string>
     <string name="content_go_back">Zurück</string>
     <string name="content_add_tag">Tag hinzufügen</string>
     <string name="content_edit_tag">Tag bearbeiten</string>

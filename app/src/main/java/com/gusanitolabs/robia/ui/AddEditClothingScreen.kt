@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
@@ -44,6 +45,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -51,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -106,7 +107,7 @@ fun AddEditClothingScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var originalPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var backgroundRemovalEnabled by rememberSaveable { mutableStateOf(true) }
+    var postProcessingEnabled by rememberSaveable { mutableStateOf(true) }
     var selectedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fitValue by rememberSaveable { mutableStateOf<Int?>(null) }
     var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -114,6 +115,7 @@ fun AddEditClothingScreen(
     var captureStatus by rememberSaveable { mutableStateOf("") }
     var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+    var isPhotoProcessing by rememberSaveable { mutableStateOf(false) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
 
@@ -124,27 +126,18 @@ fun AddEditClothingScreen(
     val primaryLabel = remember(primaryRawColor) { ColorLabelResolver.fromRawValue(primaryRawColor) }
     val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
 
-    fun applyExtractedColors(colors: List<MainColor>) {
-        colors.getOrNull(0)?.let { selectedPrimaryColorId = it.id }
-        colors.getOrNull(1)?.let { selectedSecondaryColorId = it.id }
-    }
-
-    fun extractColorsFromPhoto(uriString: String, processedStatus: String = PhotoStatus.Processed) {
-        val token = ++photoProcessingToken
-        scope.launch {
-            val extracted = runCatching {
-                withContext(Dispatchers.IO) {
-                    ClothingImageStore.extractNearestPaletteColors(context, Uri.parse(uriString), mainColors)
-                }
-            }.getOrDefault(emptyList())
-            if (token != photoProcessingToken) return@launch
-            if (extracted.isNotEmpty()) {
-                applyExtractedColors(extracted)
-            }
-            if (captureStatus != PhotoStatus.BackgroundProcessing) {
-                captureStatus = processedStatus
-            }
+    fun applyExtractedColors(colors: List<ClothingImageStore.PaletteColorMatch>) {
+        val primaryColorId = colors.getOrNull(0)?.color?.id
+        if (primaryColorId != null) {
+            selectedPrimaryColorId = primaryColorId
         }
+        selectedSecondaryColorId = colors
+            .drop(1)
+            .firstOrNull { match ->
+                match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId
+            }
+            ?.color
+            ?.id
     }
 
     fun processSelectedPhoto(uriString: String, sourceStatus: String) {
@@ -152,9 +145,10 @@ fun AddEditClothingScreen(
         originalPhotoUri = uriString
         photoUri = uriString
         captureStatus = sourceStatus
-        if (!backgroundRemovalEnabled) {
+        isPhotoProcessing = postProcessingEnabled
+        if (!postProcessingEnabled) {
             captureStatus = PhotoStatus.BackgroundDisabled
-            extractColorsFromPhoto(uriString, PhotoStatus.BackgroundDisabled)
+            isPhotoProcessing = false
             return
         }
 
@@ -162,39 +156,53 @@ fun AddEditClothingScreen(
         scope.launch {
             val result = backgroundRemover.removeBackground(context, Uri.parse(uriString))
             if (token != photoProcessingToken) return@launch
-            val displayUri = result.outputUri.toString()
+            val croppedResult = runCatching {
+                withContext(Dispatchers.IO) {
+                    ClothingImageStore.cropTransparentPixels(context, result.outputUri)
+                }
+            }
+            val croppedUri = croppedResult.getOrDefault(result.originalUri)
+            if (token != photoProcessingToken) return@launch
+            val displayUri = croppedUri.toString()
             photoUri = displayUri
-            val finalStatus = if (result.usedFallback) {
+            val finalStatus = if (result.usedFallback || croppedResult.isFailure) {
                 PhotoStatus.BackgroundFallback
             } else {
                 PhotoStatus.BackgroundRemoved
             }
             captureStatus = finalStatus
-            val extracted = runCatching {
-                withContext(Dispatchers.IO) {
-                    ClothingImageStore.extractNearestPaletteColors(context, result.outputUri, mainColors)
-                }
-            }.getOrDefault(emptyList())
+            val extracted = if (finalStatus == PhotoStatus.BackgroundRemoved) {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        ClothingImageStore.extractPaletteColorMatches(context, croppedUri, mainColors)
+                    }
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
             if (token != photoProcessingToken) return@launch
             if (extracted.isNotEmpty()) {
                 applyExtractedColors(extracted)
             }
+            isPhotoProcessing = false
         }
     }
 
-    fun onBackgroundRemovalEnabledChange(enabled: Boolean) {
-        backgroundRemovalEnabled = enabled
+    fun onPostProcessingEnabledChange(enabled: Boolean) {
+        postProcessingEnabled = enabled
         val sourceUri = originalPhotoUri ?: photoUri
         if (sourceUri.isNullOrBlank()) {
             captureStatus = ""
+            isPhotoProcessing = false
             return
         }
         if (enabled) {
             processSelectedPhoto(sourceUri, PhotoStatus.BackgroundProcessing)
         } else {
+            photoProcessingToken++
             photoUri = sourceUri
             captureStatus = PhotoStatus.BackgroundDisabled
-            extractColorsFromPhoto(sourceUri, PhotoStatus.BackgroundDisabled)
+            isPhotoProcessing = false
         }
     }
 
@@ -204,7 +212,7 @@ fun AddEditClothingScreen(
         originalPhotoUri = existingItem?.photoUri
         photoUri = existingItem?.photoUri
         selectedTagIds = existingItem?.tags?.map(GarmentTag::id).orEmpty()
-        fitValue = existingItem?.fitValue
+        fitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
         selectedPrimaryColorId = existingItem?.colorMetrics?.primaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
@@ -213,12 +221,13 @@ fun AddEditClothingScreen(
     }
 
     val isEditing = existingItem != null
+    val initialFitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
     val untitledItem = stringResource(R.string.untitled_item)
     val hasUnsavedChanges = name != existingItem?.name.orEmpty() ||
         notes != existingItem?.notes.orEmpty() ||
         photoUri != existingItem?.photoUri ||
         selectedTagIds != existingItem?.tags?.map(GarmentTag::id).orEmpty() ||
-        fitValue != existingItem?.fitValue ||
+        fitValue != initialFitValue ||
         selectedPrimaryColorId != existingItem?.colorMetrics?.primaryPaletteColorId ||
         selectedSecondaryColorId != existingItem?.colorMetrics?.secondaryPaletteColorId
 
@@ -295,8 +304,9 @@ fun AddEditClothingScreen(
                 PhotoCaptureCardWithLaunchers(
                     photoUri = photoUri,
                     captureStatus = captureStatus,
-                    backgroundRemovalEnabled = backgroundRemovalEnabled,
-                    onBackgroundRemovalEnabledChange = ::onBackgroundRemovalEnabledChange,
+                    postProcessingEnabled = postProcessingEnabled,
+                    isPhotoProcessing = isPhotoProcessing,
+                    onPostProcessingEnabledChange = ::onPostProcessingEnabledChange,
                     onCaptureStatusChange = { captureStatus = it },
                     onPhotoSelected = ::processSelectedPhoto,
                 )
@@ -304,8 +314,9 @@ fun AddEditClothingScreen(
                 PhotoCaptureCard(
                     photoUri = photoUri,
                     captureStatus = PhotoStatus.MediaUnavailable,
-                    backgroundRemovalEnabled = false,
-                    onBackgroundRemovalEnabledChange = null,
+                    postProcessingEnabled = false,
+                    isPhotoProcessing = false,
+                    onPostProcessingEnabledChange = null,
                     onGalleryClick = null,
                     onCameraClick = null,
                 )
@@ -420,7 +431,7 @@ fun AddEditClothingScreen(
                             ),
                         )
                     },
-                    enabled = name.isNotBlank(),
+                    enabled = name.isNotBlank() && !isPhotoProcessing,
                     modifier = Modifier.weight(2f),
                 ) {
                     Icon(Icons.Rounded.Save, contentDescription = null)
@@ -576,29 +587,19 @@ private fun FitChoiceCard(
         icon = Icons.Rounded.Straighten,
         modifier = modifier,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FitChoiceChip(
-                label = stringResource(R.string.fit_good),
-                selected = fitValue == FIT_VALUE_FITS,
-                onClick = { onFitValueChange(FIT_VALUE_FITS) },
-                modifier = Modifier.weight(1f),
-            )
-            FitChoiceChip(
-                label = stringResource(R.string.fit_does_not_fit),
-                selected = fitValue == FIT_VALUE_DOES_NOT_FIT,
-                onClick = { onFitValueChange(FIT_VALUE_DOES_NOT_FIT) },
-                modifier = Modifier.weight(1f),
-            )
-        }
+        val fits = fitValue.indicatesFits()
+        FitChoiceChip(
+            label = stringResource(R.string.fit_good),
+            selected = fits,
+            onClick = { onFitValueChange(if (fits) FIT_VALUE_DOES_NOT_FIT else FIT_VALUE_FITS) },
+            modifier = Modifier.fillMaxWidth(),
+        )
         Text(
-            text = fitValue?.fitLabel() ?: stringResource(R.string.not_set),
+            text = stringResource(if (fits) R.string.fit_good else R.string.fit_does_not_fit),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        TextButton(onClick = { onFitValueChange(null) }) {
-            Text(stringResource(R.string.clear_fit))
-        }
     }
 }
 
@@ -815,8 +816,9 @@ fun ClothingDetailScreen(
 private fun PhotoCaptureCardWithLaunchers(
     photoUri: String?,
     captureStatus: String,
-    backgroundRemovalEnabled: Boolean,
-    onBackgroundRemovalEnabledChange: (Boolean) -> Unit,
+    postProcessingEnabled: Boolean,
+    isPhotoProcessing: Boolean,
+    onPostProcessingEnabledChange: (Boolean) -> Unit,
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
 ) {
@@ -855,8 +857,9 @@ private fun PhotoCaptureCardWithLaunchers(
     PhotoCaptureCard(
         photoUri = photoUri,
         captureStatus = captureStatus,
-        backgroundRemovalEnabled = backgroundRemovalEnabled,
-        onBackgroundRemovalEnabledChange = onBackgroundRemovalEnabledChange,
+        postProcessingEnabled = postProcessingEnabled,
+        isPhotoProcessing = isPhotoProcessing,
+        onPostProcessingEnabledChange = onPostProcessingEnabledChange,
         onGalleryClick = {
             runCatching { galleryLauncher.launch(arrayOf("image/*")) }
                 .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
@@ -878,8 +881,9 @@ private fun PhotoCaptureCardWithLaunchers(
 private fun PhotoCaptureCard(
     photoUri: String?,
     captureStatus: String,
-    backgroundRemovalEnabled: Boolean,
-    onBackgroundRemovalEnabledChange: ((Boolean) -> Unit)?,
+    postProcessingEnabled: Boolean,
+    isPhotoProcessing: Boolean,
+    onPostProcessingEnabledChange: ((Boolean) -> Unit)?,
     onGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
@@ -891,6 +895,7 @@ private fun PhotoCaptureCard(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PhotoPreview(
                 photoUri = photoUri,
+                isProcessing = isPhotoProcessing,
                 modifier = Modifier.fillMaxWidth(),
                 aspectRatio = 4f / 3f,
                 onEmptyPhotoClick = onCameraClick,
@@ -922,33 +927,13 @@ private fun PhotoCaptureCard(
                     )
                 }
             }
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.background_removal),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = stringResource(R.string.background_removal_status),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = backgroundRemovalEnabled,
-                        onCheckedChange = onBackgroundRemovalEnabledChange,
-                        enabled = onBackgroundRemovalEnabledChange != null,
-                    )
-                }
                 val statusText = when (captureStatus) {
                     PhotoStatus.Gallery -> R.string.gallery_selected_status
                     PhotoStatus.Camera -> R.string.camera_selected_status
@@ -964,6 +949,13 @@ private fun PhotoCaptureCard(
                     text = stringResource(statusText),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                PostProcessingToggleButton(
+                    enabled = onPostProcessingEnabledChange != null,
+                    selected = postProcessingEnabled,
+                    onClick = { onPostProcessingEnabledChange?.invoke(!postProcessingEnabled) },
                 )
             }
             Spacer(Modifier.height(4.dp))
@@ -972,8 +964,52 @@ private fun PhotoCaptureCard(
 }
 
 @Composable
+private fun PostProcessingToggleButton(
+    enabled: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val description = stringResource(
+        if (selected) R.string.content_post_processing_on else R.string.content_post_processing_off,
+    )
+    val backgroundColor = if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLowest
+    }
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+    val iconTint = if (selected) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .border(1.dp, borderColor, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.AutoFixHigh,
+            contentDescription = null,
+            tint = iconTint,
+        )
+    }
+}
+
+@Composable
 private fun PhotoPreview(
     photoUri: String?,
+    isProcessing: Boolean = false,
     modifier: Modifier = Modifier,
     aspectRatio: Float = 3f / 4f,
     onEmptyPhotoClick: (() -> Unit)? = null,
@@ -1007,6 +1043,16 @@ private fun PhotoPreview(
                 update = { imageView -> imageView.setImageURI(Uri.parse(uri)) },
                 modifier = Modifier.fillMaxSize(),
             )
+            if (isProcessing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            }
         } else {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1260,6 +1306,7 @@ private enum class ColorPickerTarget { Primary, Secondary }
 
 private const val FIT_VALUE_DOES_NOT_FIT = 0
 private const val FIT_VALUE_FITS = 2
+private const val SECONDARY_COLOR_MIN_RATIO = 0.20f
 
 private object PhotoStatus {
     const val Gallery = "gallery"
@@ -1272,14 +1319,7 @@ private object PhotoStatus {
     const val MediaUnavailable = "media_unavailable"
 }
 
-@Composable
-private fun Int.fitLabel(): String = when (coerceIn(0, 4)) {
-    0 -> stringResource(R.string.fit_does_not_fit)
-    1 -> stringResource(R.string.fit_snug)
-    2 -> stringResource(R.string.fit_good)
-    3 -> stringResource(R.string.fit_relaxed)
-    else -> stringResource(R.string.fit_oversized)
-}
+private fun Int?.indicatesFits(): Boolean = this != FIT_VALUE_DOES_NOT_FIT
 
 private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { color -> color.id == id }
 

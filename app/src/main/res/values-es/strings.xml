@@ -101,12 +101,12 @@
     <string name="photo_processed_status">Previsualización lista; se extrajeron colores de paleta de la imagen.</string>
     <string name="media_actions_unavailable_status">El selector de fotos no está disponible en esta sesión. Aun así puedes guardar esta prenda sin foto.</string>
     <string name="camera_hook_status">La captura de cámara guarda una imagen privada para esta prenda.</string>
-    <string name="background_removal">Eliminación de fondo</string>
-    <string name="background_removal_status">Eliminación de fondo opcional; se guarda la foto original si no está disponible o falla.</string>
-    <string name="background_removal_processing_status">Eliminando fondo…</string>
-    <string name="background_removal_success_status">Fondo eliminado; se extrajeron colores de la foto procesada.</string>
-    <string name="background_removal_disabled_status">La eliminación de fondo está desactivada; se muestra y guarda la foto original.</string>
-    <string name="background_removal_fallback_status">La eliminación de fondo no está disponible; se muestra y guarda la foto original.</string>
+    <string name="background_removal">Retoque de foto</string>
+    <string name="background_removal_status">Retoque de foto</string>
+    <string name="background_removal_processing_status">Procesando foto…</string>
+    <string name="background_removal_success_status">Foto retocada y colores extraídos.</string>
+    <string name="background_removal_disabled_status">Foto original.</string>
+    <string name="background_removal_fallback_status">Foto original conservada.</string>
     <string name="colors_section">Colores</string>
 
     <string name="raw_color_required">Valor de color original</string>
@@ -124,9 +124,9 @@
     <string name="metadata_fit_hint">Cómo queda</string>
     <string name="metadata_location">Ubicación</string>
     <string name="metadata_occasions">Ocasiones</string>
-    <string name="fit_does_not_fit">No me vale</string>
+    <string name="fit_does_not_fit">No queda</string>
     <string name="fit_snug">Ajustado</string>
-    <string name="fit_good">Me vale</string>
+    <string name="fit_good">Me queda</string>
     <string name="fit_relaxed">Holgado</string>
     <string name="fit_oversized">Oversize</string>
     <string name="clear_fit">Borrar ajuste</string>
@@ -168,6 +168,8 @@
     <string name="content_open_item_detail">Abrir detalle de la prenda</string>
     <string name="content_open_gallery">Abrir selector de galería</string>
     <string name="content_open_camera">Abrir captura de cámara</string>
+    <string name="content_post_processing_on">Retoque de foto activado</string>
+    <string name="content_post_processing_off">Retoque de foto desactivado</string>
     <string name="content_go_back">Volver</string>
     <string name="content_add_tag">Añadir etiqueta</string>
     <string name="content_edit_tag">Editar etiqueta</string>
