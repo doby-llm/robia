@@ -50,10 +50,26 @@ object ClothingImageStore {
         }
     }
 
-    private fun createImageFile(context: Context, prefix: String): File {
+    fun writeProcessedBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        prefix: String = "subject",
+    ): Uri {
+        val imageFile = createImageFile(context, prefix, extension = "png")
+        imageFile.outputStream().use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode processed image" }
+        }
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            imageFile,
+        )
+    }
+
+    private fun createImageFile(context: Context, prefix: String, extension: String = "jpg"): File {
         val picturesDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir
         val imageDir = File(picturesDir, IMAGE_DIRECTORY).apply { mkdirs() }
-        return File(imageDir, "$prefix-${UUID.randomUUID()}.jpg")
+        return File(imageDir, "$prefix-${UUID.randomUUID()}.$extension")
     }
 
     private inline fun <T> Bitmap.useForColors(block: (Bitmap) -> T): T = try {
