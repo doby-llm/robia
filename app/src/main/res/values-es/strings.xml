@@ -121,7 +121,7 @@
     <string name="metadata_category">Categoría</string>
     <string name="metadata_season">Temporada</string>
     <string name="metadata_fit">Ajuste</string>
-    <string name="metadata_fit_hint">Cómo queda</string>
+    <string name="metadata_fit_hint">Toca para alternar</string>
     <string name="metadata_location">Ubicación</string>
     <string name="metadata_occasions">Ocasiones</string>
     <string name="fit_does_not_fit">No queda</string>

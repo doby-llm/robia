@@ -121,7 +121,7 @@
     <string name="metadata_category">Category</string>
     <string name="metadata_season">Season</string>
     <string name="metadata_fit">Fit</string>
-    <string name="metadata_fit_hint">How it wears</string>
+    <string name="metadata_fit_hint">Tap to toggle</string>
     <string name="metadata_location">Location</string>
     <string name="metadata_occasions">Occasions</string>
     <string name="fit_does_not_fit">Doesn’t fit</string>

@@ -121,7 +121,7 @@
     <string name="metadata_category">Kategorie</string>
     <string name="metadata_season">Saison</string>
     <string name="metadata_fit">Passform</string>
-    <string name="metadata_fit_hint">Wie es sitzt</string>
+    <string name="metadata_fit_hint">Zum Umschalten tippen</string>
     <string name="metadata_location">Ort</string>
     <string name="metadata_occasions">Anlässe</string>
     <string name="fit_does_not_fit">Passt nicht</string>

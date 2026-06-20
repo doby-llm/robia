@@ -482,25 +482,18 @@ private fun MetadataCaptureSection(
                 singleSelect = false,
                 onSelectedTagIdsChange = onSelectedTagIdsChange,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FitChoiceCard(
-                    fitValue = fitValue,
-                    onFitValueChange = onFitValueChange,
-                    modifier = Modifier.weight(1f),
-                )
-                MetadataDropdownCard(
-                    title = stringResource(R.string.metadata_location),
-                    subtitle = stringResource(R.string.single_select_metadata_hint),
-                    icon = Icons.Rounded.Inventory2,
-                    tags = availableTags.forCategory("location"),
-                    selectedTagIds = selectedTagIds,
-                    onSelectedTagIdsChange = onSelectedTagIdsChange,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            FitChoiceCard(
+                fitValue = fitValue,
+                onFitValueChange = onFitValueChange,
+            )
+            MetadataDropdownCard(
+                title = stringResource(R.string.metadata_location),
+                subtitle = stringResource(R.string.single_select_metadata_hint),
+                icon = Icons.Rounded.Inventory2,
+                tags = availableTags.forCategory("location"),
+                selectedTagIds = selectedTagIds,
+                onSelectedTagIdsChange = onSelectedTagIdsChange,
+            )
             MetadataTagCard(
                 title = stringResource(R.string.metadata_occasions),
                 subtitle = stringResource(R.string.multi_select_metadata_hint),
@@ -588,18 +581,13 @@ private fun FitChoiceCard(
         modifier = modifier,
     ) {
         val fits = fitValue.indicatesFits()
-        FitChoiceChip(
-            label = stringResource(R.string.fit_good),
-            selected = fits,
-            onClick = { onFitValueChange(if (fits) FIT_VALUE_DOES_NOT_FIT else FIT_VALUE_FITS) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            text = stringResource(if (fits) R.string.fit_good else R.string.fit_does_not_fit),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        FlowChipRow {
+            FitChoiceChip(
+                label = stringResource(R.string.fit_good),
+                selected = fits,
+                onClick = { onFitValueChange(if (fits) FIT_VALUE_DOES_NOT_FIT else FIT_VALUE_FITS) },
+            )
+        }
     }
 }
 
@@ -608,7 +596,6 @@ private fun FitChoiceChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     FilterChip(
         selected = selected,
@@ -617,10 +604,8 @@ private fun FitChoiceChip(
             Text(
                 text = label,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         },
-        modifier = modifier,
     )
 }
 
