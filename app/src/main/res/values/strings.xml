@@ -193,13 +193,15 @@
     <string name="content_edit_color">Edit color</string>
     <string name="content_delete_color">Delete color</string>
     <string name="content_color_swatch">%1$s color swatch</string>
+    <string name="content_selected_color_swatch">Selected color %1$s</string>
     <string name="content_select_color_swatch">Select %1$s swatch</string>
     <string name="content_color_swatch_unavailable">%1$s swatch already exists</string>
     <string name="add_color_title">Add color</string>
     <string name="edit_color_title">Edit color</string>
     <string name="color_name_label">Color name</string>
     <string name="color_hex_label">Hex color</string>
-    <string name="color_palette_picker_label">Choose from palette</string>
+    <string name="color_palette_picker_label">Pick a color</string>
+    <string name="selected_color_hex_label">Selected hex</string>
     <string name="custom_hex_color">Use custom hex</string>
     <string name="color_hex_invalid">Enter a valid 6-digit hex color, for example #D6B84C.</string>
     <string name="color_name_duplicate">A color with this name already exists.</string>

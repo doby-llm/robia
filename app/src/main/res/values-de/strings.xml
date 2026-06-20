@@ -193,13 +193,15 @@
     <string name="content_edit_color">Farbe bearbeiten</string>
     <string name="content_delete_color">Farbe löschen</string>
     <string name="content_color_swatch">Farbfeld %1$s</string>
+    <string name="content_selected_color_swatch">Ausgewählte Farbe %1$s</string>
     <string name="content_select_color_swatch">Farbfeld %1$s auswählen</string>
     <string name="content_color_swatch_unavailable">Farbfeld %1$s existiert bereits</string>
     <string name="add_color_title">Farbe hinzufügen</string>
     <string name="edit_color_title">Farbe bearbeiten</string>
     <string name="color_name_label">Farbname</string>
     <string name="color_hex_label">Hex-Farbe</string>
-    <string name="color_palette_picker_label">Aus Palette wählen</string>
+    <string name="color_palette_picker_label">Farbe auswählen</string>
+    <string name="selected_color_hex_label">Ausgewählter Hexwert</string>
     <string name="custom_hex_color">Benutzerdefiniertes Hex verwenden</string>
     <string name="color_hex_invalid">Gib eine gültige 6-stellige Hex-Farbe ein, zum Beispiel #D6B84C.</string>
     <string name="color_name_duplicate">Eine Farbe mit diesem Namen existiert bereits.</string>

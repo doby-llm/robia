@@ -3,7 +3,6 @@ package com.gusanitolabs.robia.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,9 +10,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -50,6 +49,8 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.github.skydoves.colorpicker.compose.HsvColorPicker
+import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import java.util.Locale
 import java.util.UUID
 
@@ -65,25 +66,6 @@ private data class ColorEditorState(
     val existingColor: MainColor? = null,
 )
 
-private data class PaletteSwatch(
-    val hex: String,
-    val labelResId: Int,
-)
-
-private val CuratedPaletteSwatches = listOf(
-    PaletteSwatch("#1F1F1F", R.string.color_black),
-    PaletteSwatch("#F8F9FA", R.string.color_white),
-    PaletteSwatch("#5F6368", R.string.color_charcoal),
-    PaletteSwatch("#8B6848", R.string.color_brown),
-    PaletteSwatch("#D8C3A5", R.string.color_beige_cream),
-    PaletteSwatch("#315F8E", R.string.color_navy_blue),
-    PaletteSwatch("#5F6F48", R.string.color_green),
-    PaletteSwatch("#9E3D35", R.string.color_red),
-    PaletteSwatch("#D4879A", R.string.color_pink),
-    PaletteSwatch("#765A91", R.string.color_purple),
-    PaletteSwatch("#D6B84C", R.string.color_mustard),
-    PaletteSwatch("#B76E3D", R.string.color_orange),
-)
 
 @Composable
 fun ManageTagsScreen(
@@ -501,26 +483,15 @@ private fun ColorEditorDialog(
     onDismiss: () -> Unit,
     onSave: (MainColor) -> Unit,
 ) {
-    val curatedHexes = remember { CuratedPaletteSwatches.map(PaletteSwatch::hex).toSet() }
     val editingColorId = state.existingColor?.id
     val siblingColors = remember(colors, editingColorId) { colors.filterNot { color -> color.id == editingColorId } }
     val unavailableHexes = remember(siblingColors) { siblingColors.mapNotNull { color -> color.hex.toNormalizedHex() }.toSet() }
-    val firstAvailableSwatchHex = remember(unavailableHexes) {
-        CuratedPaletteSwatches.firstOrNull { swatch -> swatch.hex !in unavailableHexes }?.hex
-    }
-    val existingColorHex = state.existingColor?.hex?.toNormalizedHex()
+    val initialHex = state.existingColor?.hex?.toNormalizedHex() ?: DefaultCustomColorHex
+    val controller = rememberColorPickerController()
     var name by remember(state) { mutableStateOf(state.existingColor?.name.orEmpty()) }
-    var selectedHex by remember(state) {
-        mutableStateOf(existingColorHex ?: firstAvailableSwatchHex ?: CuratedPaletteSwatches.first().hex)
-    }
-    var customHex by remember(state) { mutableStateOf(state.existingColor?.hex ?: firstAvailableSwatchHex ?: DefaultCustomColorHex) }
-    var showCustomHex by remember(state) {
-        mutableStateOf(existingColorHex?.let { hex -> hex !in curatedHexes } ?: (firstAvailableSwatchHex == null))
-    }
+    var selectedHex by remember(state) { mutableStateOf(initialHex) }
     val trimmedName = name.trim()
-    val normalizedCustomHex = customHex.toNormalizedHex()
-    val selectedColorHex = if (showCustomHex) normalizedCustomHex else selectedHex
-    val showHexError = showCustomHex && customHex.isNotBlank() && normalizedCustomHex == null
+    val selectedColorHex = selectedHex.toNormalizedHex()
     val hasDuplicateName = trimmedName.isNotEmpty() && siblingColors.any { color ->
         color.name.toNormalizedName() == trimmedName.toNormalizedName()
     }
@@ -555,37 +526,43 @@ private fun ColorEditorDialog(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                CuratedColorGrid(
-                    selectedHex = selectedColorHex,
-                    unavailableHexes = unavailableHexes,
-                    onSelect = { swatch, label ->
-                        selectedHex = swatch.hex
-                        customHex = swatch.hex
-                        showCustomHex = false
-                        if (name.isBlank()) {
-                            name = label
-                        }
+                HsvColorPicker(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    controller = controller,
+                    initialColor = selectedColorHex?.toComposeColor(),
+                    onColorChanged = { envelope ->
+                        selectedHex = envelope.hexCode.toNormalizedRgbHex() ?: selectedHex
                     },
                 )
-                TextButton(onClick = { showCustomHex = !showCustomHex }) {
-                    Text(stringResource(R.string.custom_hex_color))
-                }
-                if (showCustomHex) {
-                    OutlinedTextField(
-                        value = customHex,
-                        onValueChange = { customHex = it },
-                        singleLine = true,
-                        isError = showHexError || hasDuplicateHex,
-                        label = { Text(stringResource(R.string.color_hex_label)) },
-                        placeholder = { Text("#D6B84C") },
-                        supportingText = {
-                            when {
-                                showHexError -> Text(stringResource(R.string.color_hex_invalid))
-                                hasDuplicateHex -> Text(stringResource(R.string.color_hex_duplicate))
-                            }
-                        },
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val swatchDescription = stringResource(R.string.content_selected_color_swatch, selectedColorHex.orEmpty())
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(selectedColorHex?.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                            .semantics { contentDescription = swatchDescription },
                     )
-                } else if (hasDuplicateHex) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = stringResource(R.string.selected_color_hex_label),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = selectedColorHex.orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                if (hasDuplicateHex) {
                     Text(
                         text = stringResource(R.string.color_hex_duplicate),
                         style = MaterialTheme.typography.bodySmall,
@@ -619,77 +596,6 @@ private fun ColorEditorDialog(
             }
         },
     )
-}
-
-@Composable
-private fun CuratedColorGrid(
-    selectedHex: String?,
-    unavailableHexes: Set<String>,
-    onSelect: (PaletteSwatch, String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CuratedPaletteSwatches.chunked(4).forEach { rowSwatches ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                rowSwatches.forEach { swatch ->
-                    val label = stringResource(swatch.labelResId)
-                    PaletteSwatchButton(
-                        swatch = swatch,
-                        label = label,
-                        selected = selectedHex == swatch.hex,
-                        enabled = swatch.hex !in unavailableHexes || selectedHex == swatch.hex,
-                        onClick = { onSelect(swatch, label) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PaletteSwatchButton(
-    swatch: PaletteSwatch,
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val swatchColor = swatch.hex.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh
-    val borderColor = when {
-        selected -> MaterialTheme.colorScheme.primary
-        enabled -> MaterialTheme.colorScheme.outlineVariant
-        else -> MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
-    }
-    val swatchDescription = stringResource(
-        if (enabled) R.string.content_select_color_swatch else R.string.content_color_swatch_unavailable,
-        label,
-    )
-    val labelColor = when {
-        selected -> MaterialTheme.colorScheme.primary
-        enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> MaterialTheme.colorScheme.error
-    }
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier
-            .width(72.dp)
-            .semantics { contentDescription = swatchDescription }
-            .clickable(enabled = enabled, onClick = onClick),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(if (enabled) swatchColor else swatchColor.copy(alpha = 0.38f))
-                .border(if (selected) 3.dp else 1.dp, borderColor, CircleShape),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = labelColor,
-        )
-    }
 }
 
 @Composable
@@ -751,6 +657,19 @@ private fun String.toNormalizedHex(): String? {
         return null
     }
     return "#${normalized.uppercase(Locale.ROOT)}"
+}
+
+private fun String.toNormalizedRgbHex(): String? {
+    val normalized = trim().removePrefix("#")
+    val rgbHex = when (normalized.length) {
+        6 -> normalized
+        8 -> normalized.takeLast(6)
+        else -> return null
+    }
+    if (rgbHex.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
+        return null
+    }
+    return "#${rgbHex.uppercase(Locale.ROOT)}"
 }
 
 private fun String.toComposeColor(): Color? = toNormalizedHex()?.let { normalized ->
