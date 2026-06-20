@@ -102,7 +102,11 @@
     <string name="media_actions_unavailable_status">Photo picker unavailable in this session. You can still save this item without a photo.</string>
     <string name="camera_hook_status">Camera capture saves a private image for this item.</string>
     <string name="background_removal">Background removal</string>
-    <string name="background_removal_status">Unavailable in this build; original photo is shown and saved unchanged.</string>
+    <string name="background_removal_status">Best-effort background removal; the original photo is saved if it is unavailable or fails.</string>
+    <string name="background_removal_processing_status">Removing background…</string>
+    <string name="background_removal_success_status">Background removed; palette colors were extracted from the processed photo.</string>
+    <string name="background_removal_disabled_status">Background removal is off; original photo is shown and saved.</string>
+    <string name="background_removal_fallback_status">Background removal was unavailable; original photo is shown and saved.</string>
     <string name="colors_section">Colors</string>
 
     <string name="raw_color_required">Raw color value</string>
@@ -120,9 +124,9 @@
     <string name="metadata_fit_hint">How it wears</string>
     <string name="metadata_location">Location</string>
     <string name="metadata_occasions">Occasions</string>
-    <string name="fit_does_not_fit">Doesn’t fit</string>
+    <string name="fit_does_not_fit">Doesn’t fit me</string>
     <string name="fit_snug">Snug</string>
-    <string name="fit_good">Fits well</string>
+    <string name="fit_good">Fits me</string>
     <string name="fit_relaxed">Relaxed</string>
     <string name="fit_oversized">Oversized</string>
     <string name="clear_fit">Clear fit</string>
