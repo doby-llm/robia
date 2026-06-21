@@ -95,7 +95,7 @@
     <string name="gallery">Galería</string>
     <string name="photo_placeholder">Añade una foto de la prenda</string>
     <string name="photo_placeholder_tap_camera">Toca para abrir la cámara</string>
-    <string name="photo_placeholder_status">Elige una imagen de la galería o toma una foto con la cámara para previsualizarla y guardarla.</string>
+    <string name="photo_placeholder_status">Previsualización de foto</string>
     <string name="gallery_selected_status">Foto de galería copiada en privado y previsualizada aquí.</string>
     <string name="camera_selected_status">Foto de cámara capturada en privado y previsualizada aquí.</string>
     <string name="photo_processed_status">Previsualización lista; se extrajeron colores de paleta de la imagen.</string>
@@ -107,6 +107,9 @@
     <string name="background_removal_success_status">Foto retocada y colores extraídos.</string>
     <string name="background_removal_disabled_status">Foto original.</string>
     <string name="background_removal_fallback_status">Foto original conservada.</string>
+    <string name="processing_stage_removing_background">Eliminando fondo</string>
+    <string name="processing_stage_cropping_picture">Recortando foto</string>
+    <string name="processing_stage_extracting_color">Extrayendo color</string>
     <string name="colors_section">Colores</string>
 
     <string name="raw_color_required">Valor de color original</string>

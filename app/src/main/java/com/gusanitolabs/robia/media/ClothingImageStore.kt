@@ -53,6 +53,16 @@ object ClothingImageStore {
         return bitmap.useForColors { source -> paletteMatches(source, palette) }
     }
 
+    fun readImageAspectRatio(context: Context, imageUri: Uri): Float? {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(imageUri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        } ?: return null
+        val width = options.outWidth
+        val height = options.outHeight
+        return if (width > 0 && height > 0) width.toFloat() / height.toFloat() else null
+    }
+
     fun cropTransparentPixels(
         context: Context,
         imageUri: Uri,

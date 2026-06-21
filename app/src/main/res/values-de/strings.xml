@@ -95,7 +95,7 @@
     <string name="gallery">Galerie</string>
     <string name="photo_placeholder">Kleidungsfoto hinzufügen</string>
     <string name="photo_placeholder_tap_camera">Zum Öffnen der Kamera tippen</string>
-    <string name="photo_placeholder_status">Wähle ein Galeriebild oder nimm ein Kamerafoto auf, um es vorzuschauen und zu speichern.</string>
+    <string name="photo_placeholder_status">Fotovorschau</string>
     <string name="gallery_selected_status">Galeriefoto wurde privat kopiert und wird hier angezeigt.</string>
     <string name="camera_selected_status">Kamerafoto wurde privat aufgenommen und wird hier angezeigt.</string>
     <string name="photo_processed_status">Fotovorschau bereit; Palettenfarben wurden aus dem Bild extrahiert.</string>
@@ -107,6 +107,9 @@
     <string name="background_removal_success_status">Foto optimiert und Farben extrahiert.</string>
     <string name="background_removal_disabled_status">Originalfoto.</string>
     <string name="background_removal_fallback_status">Originalfoto beibehalten.</string>
+    <string name="processing_stage_removing_background">Hintergrund wird entfernt</string>
+    <string name="processing_stage_cropping_picture">Bild wird zugeschnitten</string>
+    <string name="processing_stage_extracting_color">Farbe wird extrahiert</string>
     <string name="colors_section">Farben</string>
 
     <string name="raw_color_required">Rohfarbwert</string>

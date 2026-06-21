@@ -95,7 +95,7 @@
     <string name="gallery">Gallery</string>
     <string name="photo_placeholder">Add a clothing photo</string>
     <string name="photo_placeholder_tap_camera">Tap to open camera</string>
-    <string name="photo_placeholder_status">Choose a gallery image or take a camera photo to preview and save it.</string>
+    <string name="photo_placeholder_status">Photo preview</string>
     <string name="gallery_selected_status">Gallery photo copied privately and previewed here.</string>
     <string name="camera_selected_status">Camera photo captured privately and previewed here.</string>
     <string name="photo_processed_status">Photo preview ready; palette colors were extracted from the image.</string>
@@ -107,6 +107,9 @@
     <string name="background_removal_success_status">Photo cleaned up and colors extracted.</string>
     <string name="background_removal_disabled_status">Original photo.</string>
     <string name="background_removal_fallback_status">Original photo kept.</string>
+    <string name="processing_stage_removing_background">Removing background</string>
+    <string name="processing_stage_cropping_picture">Cropping picture</string>
+    <string name="processing_stage_extracting_color">Extracting color</string>
     <string name="colors_section">Colors</string>
 
     <string name="raw_color_required">Raw color value</string>

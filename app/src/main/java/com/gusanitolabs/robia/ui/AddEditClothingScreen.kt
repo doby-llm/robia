@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
@@ -107,7 +106,7 @@ fun AddEditClothingScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var originalPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var postProcessingEnabled by rememberSaveable { mutableStateOf(true) }
+    var photoAspectRatio by rememberSaveable { mutableStateOf<Float?>(null) }
     var selectedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fitValue by rememberSaveable { mutableStateOf<Int?>(null) }
     var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -116,6 +115,7 @@ fun AddEditClothingScreen(
     var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     var isPhotoProcessing by rememberSaveable { mutableStateOf(false) }
+    var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
 
@@ -145,64 +145,59 @@ fun AddEditClothingScreen(
         originalPhotoUri = uriString
         photoUri = uriString
         captureStatus = sourceStatus
-        isPhotoProcessing = postProcessingEnabled
-        if (!postProcessingEnabled) {
-            captureStatus = PhotoStatus.BackgroundDisabled
-            isPhotoProcessing = false
-            return
-        }
+        isPhotoProcessing = true
+        photoProcessingStage = PhotoProcessingStage.RemovingBackground
 
-        captureStatus = PhotoStatus.BackgroundProcessing
         scope.launch {
-            val result = backgroundRemover.removeBackground(context, Uri.parse(uriString))
-            if (token != photoProcessingToken) return@launch
-            val croppedResult = runCatching {
-                withContext(Dispatchers.IO) {
-                    ClothingImageStore.cropTransparentPixels(context, result.outputUri)
+            try {
+                photoAspectRatio = withContext(Dispatchers.IO) {
+                    ClothingImageStore.readImageAspectRatio(context, Uri.parse(uriString))
+                }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
+                val result = backgroundRemover.removeBackground(context, Uri.parse(uriString))
+                if (token != photoProcessingToken) return@launch
+                photoProcessingStage = PhotoProcessingStage.CroppingPicture
+                val croppedResult = runCatching {
+                    withContext(Dispatchers.IO) {
+                        ClothingImageStore.cropTransparentPixels(context, result.outputUri)
+                    }
+                }
+                val croppedUri = croppedResult.getOrDefault(result.originalUri)
+                if (token != photoProcessingToken) return@launch
+                photoAspectRatio = withContext(Dispatchers.IO) {
+                    ClothingImageStore.readImageAspectRatio(context, croppedUri)
+                }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: photoAspectRatio
+                val displayUri = croppedUri.toString()
+                photoUri = displayUri
+                val finalStatus = if (result.usedFallback || croppedResult.isFailure) {
+                    PhotoStatus.BackgroundFallback
+                } else {
+                    PhotoStatus.BackgroundRemoved
+                }
+                captureStatus = finalStatus
+                photoProcessingStage = PhotoProcessingStage.ExtractingColor
+                val extracted = if (finalStatus == PhotoStatus.BackgroundRemoved) {
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            ClothingImageStore.extractPaletteColorMatches(context, croppedUri, mainColors)
+                        }
+                    }.getOrDefault(emptyList())
+                } else {
+                    emptyList()
+                }
+                if (token != photoProcessingToken) return@launch
+                if (extracted.isNotEmpty()) {
+                    applyExtractedColors(extracted)
+                }
+            } catch (_: Exception) {
+                if (token != photoProcessingToken) return@launch
+                photoUri = uriString
+                captureStatus = PhotoStatus.BackgroundFallback
+            } finally {
+                if (token == photoProcessingToken) {
+                    isPhotoProcessing = false
+                    photoProcessingStage = null
                 }
             }
-            val croppedUri = croppedResult.getOrDefault(result.originalUri)
-            if (token != photoProcessingToken) return@launch
-            val displayUri = croppedUri.toString()
-            photoUri = displayUri
-            val finalStatus = if (result.usedFallback || croppedResult.isFailure) {
-                PhotoStatus.BackgroundFallback
-            } else {
-                PhotoStatus.BackgroundRemoved
-            }
-            captureStatus = finalStatus
-            val extracted = if (finalStatus == PhotoStatus.BackgroundRemoved) {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        ClothingImageStore.extractPaletteColorMatches(context, croppedUri, mainColors)
-                    }
-                }.getOrDefault(emptyList())
-            } else {
-                emptyList()
-            }
-            if (token != photoProcessingToken) return@launch
-            if (extracted.isNotEmpty()) {
-                applyExtractedColors(extracted)
-            }
-            isPhotoProcessing = false
-        }
-    }
-
-    fun onPostProcessingEnabledChange(enabled: Boolean) {
-        postProcessingEnabled = enabled
-        val sourceUri = originalPhotoUri ?: photoUri
-        if (sourceUri.isNullOrBlank()) {
-            captureStatus = ""
-            isPhotoProcessing = false
-            return
-        }
-        if (enabled) {
-            processSelectedPhoto(sourceUri, PhotoStatus.BackgroundProcessing)
-        } else {
-            photoProcessingToken++
-            photoUri = sourceUri
-            captureStatus = PhotoStatus.BackgroundDisabled
-            isPhotoProcessing = false
         }
     }
 
@@ -211,6 +206,7 @@ fun AddEditClothingScreen(
         notes = existingItem?.notes.orEmpty()
         originalPhotoUri = existingItem?.photoUri
         photoUri = existingItem?.photoUri
+        photoAspectRatio = null
         selectedTagIds = existingItem?.tags?.map(GarmentTag::id).orEmpty()
         fitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
         selectedPrimaryColorId = existingItem?.colorMetrics?.primaryPaletteColorId
@@ -303,20 +299,20 @@ fun AddEditClothingScreen(
             if (activityResultRegistryOwner != null) {
                 PhotoCaptureCardWithLaunchers(
                     photoUri = photoUri,
+                    photoAspectRatio = photoAspectRatio,
                     captureStatus = captureStatus,
-                    postProcessingEnabled = postProcessingEnabled,
                     isPhotoProcessing = isPhotoProcessing,
-                    onPostProcessingEnabledChange = ::onPostProcessingEnabledChange,
+                    processingStage = photoProcessingStage,
                     onCaptureStatusChange = { captureStatus = it },
                     onPhotoSelected = ::processSelectedPhoto,
                 )
             } else {
                 PhotoCaptureCard(
                     photoUri = photoUri,
+                    photoAspectRatio = photoAspectRatio,
                     captureStatus = PhotoStatus.MediaUnavailable,
-                    postProcessingEnabled = false,
                     isPhotoProcessing = false,
-                    onPostProcessingEnabledChange = null,
+                    processingStage = null,
                     onGalleryClick = null,
                     onCameraClick = null,
                 )
@@ -800,10 +796,10 @@ fun ClothingDetailScreen(
 @Composable
 private fun PhotoCaptureCardWithLaunchers(
     photoUri: String?,
+    photoAspectRatio: Float?,
     captureStatus: String,
-    postProcessingEnabled: Boolean,
     isPhotoProcessing: Boolean,
-    onPostProcessingEnabledChange: (Boolean) -> Unit,
+    processingStage: PhotoProcessingStage?,
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
 ) {
@@ -841,10 +837,10 @@ private fun PhotoCaptureCardWithLaunchers(
 
     PhotoCaptureCard(
         photoUri = photoUri,
+        photoAspectRatio = photoAspectRatio,
         captureStatus = captureStatus,
-        postProcessingEnabled = postProcessingEnabled,
         isPhotoProcessing = isPhotoProcessing,
-        onPostProcessingEnabledChange = onPostProcessingEnabledChange,
+        processingStage = processingStage,
         onGalleryClick = {
             runCatching { galleryLauncher.launch(arrayOf("image/*")) }
                 .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
@@ -865,10 +861,10 @@ private fun PhotoCaptureCardWithLaunchers(
 @Composable
 private fun PhotoCaptureCard(
     photoUri: String?,
+    photoAspectRatio: Float?,
     captureStatus: String,
-    postProcessingEnabled: Boolean,
     isPhotoProcessing: Boolean,
-    onPostProcessingEnabledChange: ((Boolean) -> Unit)?,
+    processingStage: PhotoProcessingStage?,
     onGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
@@ -878,11 +874,17 @@ private fun PhotoCaptureCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val processingLabel = if (processingStage != null) {
+                stringResource(processingStage.labelRes)
+            } else {
+                null
+            }
             PhotoPreview(
                 photoUri = photoUri,
                 isProcessing = isPhotoProcessing,
+                processingLabel = processingLabel,
                 modifier = Modifier.fillMaxWidth(),
-                aspectRatio = 4f / 3f,
+                aspectRatio = photoAspectRatio ?: 4f / 3f,
                 onEmptyPhotoClick = onCameraClick,
             )
             Row(
@@ -912,35 +914,21 @@ private fun PhotoCaptureCard(
                     )
                 }
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val statusText = when (captureStatus) {
-                    PhotoStatus.Gallery -> R.string.gallery_selected_status
-                    PhotoStatus.Camera -> R.string.camera_selected_status
-                    PhotoStatus.Processed -> R.string.photo_processed_status
-                    PhotoStatus.BackgroundProcessing -> R.string.background_removal_processing_status
-                    PhotoStatus.BackgroundRemoved -> R.string.background_removal_success_status
-                    PhotoStatus.BackgroundDisabled -> R.string.background_removal_disabled_status
-                    PhotoStatus.BackgroundFallback -> R.string.background_removal_fallback_status
-                    PhotoStatus.MediaUnavailable -> R.string.media_actions_unavailable_status
-                    else -> R.string.photo_placeholder_status
-                }
+            val statusText = when (captureStatus) {
+                PhotoStatus.Gallery -> R.string.gallery_selected_status
+                PhotoStatus.Camera -> R.string.camera_selected_status
+                PhotoStatus.Processed -> R.string.photo_processed_status
+                PhotoStatus.BackgroundRemoved -> R.string.background_removal_success_status
+                PhotoStatus.BackgroundFallback -> R.string.background_removal_fallback_status
+                PhotoStatus.MediaUnavailable -> R.string.media_actions_unavailable_status
+                else -> null
+            }
+            if (statusText != null) {
                 Text(
                     text = stringResource(statusText),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(12.dp))
-                PostProcessingToggleButton(
-                    enabled = onPostProcessingEnabledChange != null,
-                    selected = postProcessingEnabled,
-                    onClick = { onPostProcessingEnabledChange?.invoke(!postProcessingEnabled) },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
             Spacer(Modifier.height(4.dp))
@@ -949,52 +937,10 @@ private fun PhotoCaptureCard(
 }
 
 @Composable
-private fun PostProcessingToggleButton(
-    enabled: Boolean,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val description = stringResource(
-        if (selected) R.string.content_post_processing_on else R.string.content_post_processing_off,
-    )
-    val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLowest
-    }
-    val borderColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.outlineVariant
-    }
-    val iconTint = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(backgroundColor)
-            .border(1.dp, borderColor, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.AutoFixHigh,
-            contentDescription = null,
-            tint = iconTint,
-        )
-    }
-}
-
-@Composable
 private fun PhotoPreview(
     photoUri: String?,
     isProcessing: Boolean = false,
+    processingLabel: String? = null,
     modifier: Modifier = Modifier,
     aspectRatio: Float = 3f / 4f,
     onEmptyPhotoClick: (() -> Unit)? = null,
@@ -1021,7 +967,8 @@ private fun PhotoPreview(
             AndroidView(
                 factory = { context ->
                     ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        adjustViewBounds = true
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
                 },
@@ -1032,10 +979,24 @@ private fun PhotoPreview(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.18f)),
+                        .background(Color.Black.copy(alpha = 0.32f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(24.dp),
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        processingLabel?.let { label ->
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
             }
         } else {
@@ -1289,9 +1250,17 @@ private fun GarmentTag.localizedLabel(): String = when (id) {
 
 private enum class ColorPickerTarget { Primary, Secondary }
 
+private enum class PhotoProcessingStage(val labelRes: Int) {
+    RemovingBackground(R.string.processing_stage_removing_background),
+    CroppingPicture(R.string.processing_stage_cropping_picture),
+    ExtractingColor(R.string.processing_stage_extracting_color),
+}
+
 private const val FIT_VALUE_DOES_NOT_FIT = 0
 private const val FIT_VALUE_FITS = 2
 private const val SECONDARY_COLOR_MIN_RATIO = 0.20f
+private const val PHOTO_PREVIEW_MIN_ASPECT_RATIO = 0.66f
+private const val PHOTO_PREVIEW_MAX_ASPECT_RATIO = 1.6f
 
 private object PhotoStatus {
     const val Gallery = "gallery"
