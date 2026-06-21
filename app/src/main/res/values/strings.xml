@@ -135,6 +135,8 @@
     <string name="clear_fit">Clear fit</string>
     <string name="single_select_metadata_hint">Select one</string>
     <string name="multi_select_metadata_hint">Select all that apply</string>
+    <string name="choose_category">Choose category</string>
+    <string name="choose_location">Choose location</string>
     <string name="tags_empty">No tags are available yet.</string>
     <string name="no_tags_selected">No tags selected</string>
     <string name="not_set">Not set</string>

@@ -135,6 +135,8 @@
     <string name="clear_fit">Passform löschen</string>
     <string name="single_select_metadata_hint">Eine auswählen</string>
     <string name="multi_select_metadata_hint">Alle zutreffenden auswählen</string>
+    <string name="choose_category">Kategorie wählen</string>
+    <string name="choose_location">Ort wählen</string>
     <string name="tags_empty">Noch keine Tags verfügbar.</string>
     <string name="no_tags_selected">Keine Tags ausgewählt</string>
     <string name="not_set">Nicht festgelegt</string>

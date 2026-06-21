@@ -135,6 +135,8 @@
     <string name="clear_fit">Borrar ajuste</string>
     <string name="single_select_metadata_hint">Selecciona una</string>
     <string name="multi_select_metadata_hint">Selecciona las que correspondan</string>
+    <string name="choose_category">Elegir categoría</string>
+    <string name="choose_location">Elegir ubicación</string>
     <string name="tags_empty">Aún no hay etiquetas disponibles.</string>
     <string name="no_tags_selected">Sin etiquetas seleccionadas</string>
     <string name="not_set">Sin definir</string>

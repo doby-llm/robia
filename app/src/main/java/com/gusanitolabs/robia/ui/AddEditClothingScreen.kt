@@ -21,13 +21,16 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
@@ -45,8 +48,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -461,8 +462,9 @@ private fun MetadataCaptureSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            MetadataDropdownCard(
+            MetadataSelectorCard(
                 title = stringResource(R.string.metadata_category),
+                dialogTitle = stringResource(R.string.choose_category),
                 subtitle = stringResource(R.string.single_select_metadata_hint),
                 icon = Icons.Rounded.Checkroom,
                 tags = availableTags.forCategory("category"),
@@ -482,8 +484,9 @@ private fun MetadataCaptureSection(
                 fitValue = fitValue,
                 onFitValueChange = onFitValueChange,
             )
-            MetadataDropdownCard(
+            MetadataSelectorCard(
                 title = stringResource(R.string.metadata_location),
+                dialogTitle = stringResource(R.string.choose_location),
                 subtitle = stringResource(R.string.single_select_metadata_hint),
                 icon = Icons.Rounded.Inventory2,
                 tags = availableTags.forCategory("location"),
@@ -504,8 +507,9 @@ private fun MetadataCaptureSection(
 }
 
 @Composable
-private fun MetadataDropdownCard(
+private fun MetadataSelectorCard(
     title: String,
+    dialogTitle: String,
     subtitle: String,
     icon: ImageVector,
     tags: List<GarmentTag>,
@@ -515,7 +519,22 @@ private fun MetadataDropdownCard(
 ) {
     val selectedTag = tags.firstOrNull { tag -> tag.id in selectedTagIds }
     val categoryTagIds = remember(tags) { tags.map(GarmentTag::id).toSet() }
-    var expanded by remember { mutableStateOf(false) }
+    var showSelector by rememberSaveable { mutableStateOf(false) }
+
+    if (showSelector) {
+        SingleSelectMetadataDialog(
+            title = dialogTitle,
+            tags = tags,
+            selectedTagId = selectedTag?.id,
+            onDismiss = { showSelector = false },
+            onSelectionChange = { selectedId ->
+                showSelector = false
+                onSelectedTagIdsChange(
+                    selectedTagIds.filterNot { currentId -> currentId in categoryTagIds } + listOfNotNull(selectedId),
+                )
+            },
+        )
+    }
 
     MetadataShellCard(title = title, subtitle = subtitle, icon = icon, modifier = modifier) {
         if (tags.isEmpty()) {
@@ -525,42 +544,102 @@ private fun MetadataDropdownCard(
                 color = MaterialTheme.colorScheme.outline,
             )
         } else {
-            Box {
-                OutlinedButton(
-                    onClick = { expanded = true },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = selectedTag?.localizedLabel() ?: stringResource(R.string.not_set),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.not_set)) },
-                        onClick = {
-                            expanded = false
-                            onSelectedTagIdsChange(selectedTagIds.filterNot { selectedId -> selectedId in categoryTagIds })
-                        },
-                    )
-                    tags.forEach { tag ->
-                        DropdownMenuItem(
-                            text = { Text(tag.localizedLabel()) },
-                            onClick = {
-                                expanded = false
-                                onSelectedTagIdsChange(
-                                    selectedTagIds.filterNot { selectedId -> selectedId in categoryTagIds } + tag.id,
-                                )
-                            },
-                        )
-                    }
-                }
+            OutlinedButton(
+                onClick = { showSelector = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = selectedTag?.localizedLabel() ?: stringResource(R.string.not_set),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun SingleSelectMetadataDialog(
+    title: String,
+    tags: List<GarmentTag>,
+    selectedTagId: String?,
+    onDismiss: () -> Unit,
+    onSelectionChange: (String?) -> Unit,
+) {
+    val selectedIndex = selectedTagId?.let { currentId -> tags.indexOfFirst { tag -> tag.id == currentId } }
+        ?.takeIf { index -> index >= 0 }
+        ?.plus(1)
+        ?: 0
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+            ) {
+                item(key = "not-set") {
+                    MetadataSelectorRow(
+                        label = stringResource(R.string.not_set),
+                        selected = selectedTagId == null,
+                        onClick = { onSelectionChange(null) },
+                    )
+                }
+                items(
+                    count = tags.size,
+                    key = { index -> tags[index].id },
+                ) { index ->
+                    val tag = tags[index]
+                    MetadataSelectorRow(
+                        label = tag.localizedLabel(),
+                        selected = tag.id == selectedTagId,
+                        onClick = { onSelectionChange(tag.id) },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun MetadataSelectorRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
