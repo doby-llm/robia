@@ -37,23 +37,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -1072,11 +1068,11 @@ private fun DetailMetadataGrid(
 ) {
     val tags = item.tags
     val metadata = listOf(
-        DetailMetadataItem(Icons.Rounded.Checkroom, stringResource(R.string.metadata_category), tags.labelsInCategory("category")),
-        DetailMetadataItem(Icons.Rounded.WbSunny, stringResource(R.string.metadata_season), tags.labelsInCategory("season")),
+        DetailMetadataItem(categoryIconFor("category"), stringResource(R.string.metadata_category), tags.labelsInCategory("category")),
+        DetailMetadataItem(categoryIconFor("season"), stringResource(R.string.metadata_season), tags.labelsInCategory("season")),
         DetailMetadataItem(Icons.Rounded.Straighten, stringResource(R.string.metadata_fit), item.fitValue?.fitLabel()),
-        DetailMetadataItem(Icons.Rounded.Inventory2, stringResource(R.string.metadata_location), tags.labelsInCategory("location")),
-        DetailMetadataItem(Icons.Rounded.Event, stringResource(R.string.metadata_occasions), tags.labelsInCategory("occasion")),
+        DetailMetadataItem(categoryIconFor("location"), stringResource(R.string.metadata_location), tags.labelsInCategory("location")),
+        DetailMetadataItem(categoryIconFor("occasion"), stringResource(R.string.metadata_occasions), tags.labelsInCategory("occasion")),
     )
 
     Card(
@@ -1362,7 +1358,7 @@ private fun AdvancedFiltersScreen(
             }
         }
         item {
-            FilterSection(title = stringResource(R.string.filter_category)) {
+            FilterSection(title = stringResource(R.string.filter_category), icon = categoryIconFor("category")) {
                 FilterTagChips(
                     tags = categoryTags,
                     selectedTagIds = filters.selectedTagIds,
@@ -1372,7 +1368,7 @@ private fun AdvancedFiltersScreen(
             }
         }
         item {
-            FilterSection(title = stringResource(R.string.filter_season)) {
+            FilterSection(title = stringResource(R.string.filter_season), icon = categoryIconFor("season")) {
                 FilterTagChips(
                     tags = seasonTags,
                     selectedTagIds = filters.selectedTagIds,
@@ -1382,7 +1378,7 @@ private fun AdvancedFiltersScreen(
             }
         }
         item {
-            FilterSection(title = stringResource(R.string.filter_occasion)) {
+            FilterSection(title = stringResource(R.string.filter_occasion), icon = categoryIconFor("occasion")) {
                 FilterTagChips(
                     tags = occasionTags,
                     selectedTagIds = filters.selectedTagIds,
@@ -1392,7 +1388,7 @@ private fun AdvancedFiltersScreen(
             }
         }
         item {
-            FilterSection(title = stringResource(R.string.filter_location)) {
+            FilterSection(title = stringResource(R.string.filter_location), icon = categoryIconFor("location")) {
                 FilterTagChips(
                     tags = locationTags,
                     selectedTagIds = filters.selectedTagIds,
@@ -1428,15 +1424,29 @@ private fun AdvancedFiltersScreen(
 @Composable
 private fun FilterSection(
     title: String,
+    icon: ImageVector? = null,
     content: @Composable () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title.uppercase(),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.secondary,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon?.let { imageVector ->
+                Icon(
+                    imageVector = imageVector,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Text(
+                text = title.uppercase(),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
         content()
     }
 }

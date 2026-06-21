@@ -31,17 +31,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Event
-import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Style
-import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -466,7 +462,7 @@ private fun MetadataCaptureSection(
                 title = stringResource(R.string.metadata_category),
                 dialogTitle = stringResource(R.string.choose_category),
                 subtitle = stringResource(R.string.single_select_metadata_hint),
-                icon = Icons.Rounded.Checkroom,
+                icon = categoryIconFor("category"),
                 tags = availableTags.forCategory("category"),
                 selectedTagIds = selectedTagIds,
                 onSelectedTagIdsChange = onSelectedTagIdsChange,
@@ -474,7 +470,7 @@ private fun MetadataCaptureSection(
             MetadataTagCard(
                 title = stringResource(R.string.metadata_season),
                 subtitle = stringResource(R.string.multi_select_metadata_hint),
-                icon = Icons.Rounded.WbSunny,
+                icon = categoryIconFor("season"),
                 tags = availableTags.forCategory("season"),
                 selectedTagIds = selectedTagIds,
                 singleSelect = false,
@@ -488,7 +484,7 @@ private fun MetadataCaptureSection(
                 title = stringResource(R.string.metadata_location),
                 dialogTitle = stringResource(R.string.choose_location),
                 subtitle = stringResource(R.string.single_select_metadata_hint),
-                icon = Icons.Rounded.Inventory2,
+                icon = categoryIconFor("location"),
                 tags = availableTags.forCategory("location"),
                 selectedTagIds = selectedTagIds,
                 onSelectedTagIdsChange = onSelectedTagIdsChange,
@@ -496,7 +492,7 @@ private fun MetadataCaptureSection(
             MetadataTagCard(
                 title = stringResource(R.string.metadata_occasions),
                 subtitle = stringResource(R.string.multi_select_metadata_hint),
-                icon = Icons.Rounded.Event,
+                icon = categoryIconFor("occasion"),
                 tags = availableTags.forCategory("occasion"),
                 selectedTagIds = selectedTagIds,
                 singleSelect = false,
