@@ -555,8 +555,10 @@ private fun ColorEditorDialog(
                             .height(220.dp),
                         controller = controller,
                         initialColor = initialColor,
-                        onStart = { userHasPickedColor = true },
                         onColorChanged = { envelope ->
+                            if (envelope.fromUser) {
+                                userHasPickedColor = true
+                            }
                             val changedHex = envelope.hexCode.toNormalizedRgbHex()
                             if (changedHex != null && (userHasPickedColor || changedHex == initialHex)) {
                                 selectedHex = changedHex
