@@ -253,7 +253,7 @@ fun RobiaApp(
                 scope.launch { tagRepository.deleteCustomTag(tag.id) }
             },
             onDeleteMainColor = { color ->
-                scope.launch { tagRepository.deleteCustomMainColor(color.id) }
+                scope.launch { tagRepository.deleteMainColor(color.id) }
             },
         )
         }

@@ -32,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -354,7 +355,7 @@ private fun MainColorPaletteCard(
                     ColorListRow(
                         color = color,
                         canEdit = true,
-                        canDelete = !color.isDefault && colors.size > 1,
+                        canDelete = colors.size > 1,
                         onEdit = { onEditColor(color) },
                         onDelete = { onDeleteColor(color) },
                     )
@@ -501,8 +502,10 @@ private fun ColorEditorDialog(
     val siblingColors = remember(colors, editingColorId) { colors.filterNot { color -> color.id == editingColorId } }
     val unavailableHexes = remember(siblingColors) { siblingColors.mapNotNull { color -> color.hex.toNormalizedHex() }.toSet() }
     val initialHex = state.existingColor?.hex?.toNormalizedHex() ?: DefaultCustomColorHex
+    val initialColor = initialHex.toComposeColor() ?: Color(android.graphics.Color.parseColor(DefaultCustomColorHex))
     var name by remember(state) { mutableStateOf(state.existingColor?.name.orEmpty()) }
     var selectedHex by remember(state) { mutableStateOf(initialHex) }
+    var userHasPickedColor by remember(state) { mutableStateOf(false) }
     val trimmedName = name.trim()
     val selectedColorHex = selectedHex.toNormalizedHex()
     val hasDuplicateName = trimmedName.isNotEmpty() && siblingColors.any { color ->
@@ -541,14 +544,23 @@ private fun ColorEditorDialog(
                 )
                 key(editingColorId, initialHex) {
                     val controller = rememberColorPickerController()
+                    LaunchedEffect(editingColorId, initialHex) {
+                        selectedHex = initialHex
+                        userHasPickedColor = false
+                        controller.selectByColor(initialColor, fromUser = false)
+                    }
                     HsvColorPicker(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp),
                         controller = controller,
-                        initialColor = initialHex.toComposeColor(),
+                        initialColor = initialColor,
+                        onStart = { userHasPickedColor = true },
                         onColorChanged = { envelope ->
-                            selectedHex = envelope.hexCode.toNormalizedRgbHex() ?: selectedHex
+                            val changedHex = envelope.hexCode.toNormalizedRgbHex()
+                            if (changedHex != null && (userHasPickedColor || changedHex == initialHex)) {
+                                selectedHex = changedHex
+                            }
                         },
                     )
                 }

@@ -61,8 +61,11 @@ interface TagDao {
     @Query("DELETE FROM garment_tags WHERE id = :id AND category_id != 'season'")
     suspend fun deleteCustomTag(id: String)
 
-    @Query("DELETE FROM main_colors WHERE id = :id AND is_default = 0 AND (SELECT COUNT(*) FROM main_colors) > 1")
-    suspend fun deleteCustomMainColor(id: String)
+    @Query("DELETE FROM main_colors WHERE id = :id AND (SELECT COUNT(*) FROM main_colors) > 1")
+    suspend fun deleteMainColor(id: String)
+
+    @Query("SELECT COUNT(*) FROM main_colors")
+    suspend fun mainColorCount(): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun seedCategories(categories: List<TagCategoryEntity>)

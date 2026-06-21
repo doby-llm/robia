@@ -21,6 +21,6 @@ interface TagRepository {
     suspend fun upsertTag(tag: GarmentTag)
     suspend fun upsertMainColor(color: MainColor)
     suspend fun deleteCustomTag(id: String)
-    suspend fun deleteCustomMainColor(id: String)
+    suspend fun deleteMainColor(id: String)
     suspend fun seedDefaultsIfNeeded()
 }

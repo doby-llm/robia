@@ -208,7 +208,7 @@
     <string name="add_color_title">Farbe hinzufügen</string>
     <string name="edit_color_title">Farbe bearbeiten</string>
     <string name="delete_color_title">Farbe löschen?</string>
-    <string name="delete_color_body">%1$s aus deinen benutzerdefinierten Farben löschen?</string>
+    <string name="delete_color_body">%1$s aus deiner Hauptfarbpalette löschen?</string>
     <string name="color_name_label">Farbname</string>
     <string name="color_hex_label">Hex-Farbe</string>
     <string name="color_palette_picker_label">Farbe auswählen</string>

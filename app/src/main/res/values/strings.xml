@@ -208,7 +208,7 @@
     <string name="add_color_title">Add color</string>
     <string name="edit_color_title">Edit color</string>
     <string name="delete_color_title">Delete color?</string>
-    <string name="delete_color_body">Delete %1$s from your custom colors?</string>
+    <string name="delete_color_body">Delete %1$s from your main color palette?</string>
     <string name="color_name_label">Color name</string>
     <string name="color_hex_label">Hex color</string>
     <string name="color_palette_picker_label">Pick a color</string>

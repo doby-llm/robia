@@ -65,14 +65,16 @@ class LocalTagRepository(
         tagDao.deleteCustomTag(id)
     }
 
-    override suspend fun deleteCustomMainColor(id: String) {
-        tagDao.deleteCustomMainColor(id)
+    override suspend fun deleteMainColor(id: String) {
+        tagDao.deleteMainColor(id)
     }
 
     override suspend fun seedDefaultsIfNeeded() {
         tagDao.seedCategories(DefaultTags.categories.map(TagCategory::toEntity))
         tagDao.seedTags(DefaultTags.tags.map(GarmentTag::toEntity))
-        tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
+        if (tagDao.mainColorCount() == 0) {
+            tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
+        }
     }
 }
 
