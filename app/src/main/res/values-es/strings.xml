@@ -70,7 +70,7 @@
     <string name="color_beige_cream">Beige / Crema</string>
     <string name="color_navy_blue">Azul marino / Azul</string>
     <string name="color_mustard">Mostaza</string>
-    <string name="color_gray">Gris</string>
+    <string name="color_gray">Beige</string>
     <string name="color_green">Verde</string>
     <string name="color_orange">Naranja</string>
     <string name="color_pink">Rosa</string>
@@ -187,6 +187,7 @@
     <string name="edit_tag_title">Editar etiqueta</string>
     <string name="tag_name_label">Nombre de la etiqueta</string>
     <string name="save">Guardar</string>
+    <string name="delete">Eliminar</string>
     <string name="category_style">Estilo</string>
     <string name="category_season">Estaciones</string>
     <string name="category_occasion">Ocasiones</string>
@@ -204,6 +205,8 @@
     <string name="content_color_swatch_unavailable">La muestra %1$s ya existe</string>
     <string name="add_color_title">Añadir color</string>
     <string name="edit_color_title">Editar color</string>
+    <string name="delete_color_title">¿Eliminar color?</string>
+    <string name="delete_color_body">¿Eliminar %1$s de tus colores personalizados?</string>
     <string name="color_name_label">Nombre del color</string>
     <string name="color_hex_label">Color hexadecimal</string>
     <string name="color_palette_picker_label">Elige un color</string>

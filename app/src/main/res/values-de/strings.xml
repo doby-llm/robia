@@ -70,7 +70,7 @@
     <string name="color_beige_cream">Beige / Creme</string>
     <string name="color_navy_blue">Marineblau / Blau</string>
     <string name="color_mustard">Senfgelb</string>
-    <string name="color_gray">Grau</string>
+    <string name="color_gray">Beige</string>
     <string name="color_green">Grün</string>
     <string name="color_orange">Orange</string>
     <string name="color_pink">Rosa</string>
@@ -187,6 +187,7 @@
     <string name="edit_tag_title">Tag bearbeiten</string>
     <string name="tag_name_label">Tag-Name</string>
     <string name="save">Speichern</string>
+    <string name="delete">Löschen</string>
     <string name="category_style">Stil</string>
     <string name="category_season">Jahreszeiten</string>
     <string name="category_occasion">Anlässe</string>
@@ -204,6 +205,8 @@
     <string name="content_color_swatch_unavailable">Farbfeld %1$s existiert bereits</string>
     <string name="add_color_title">Farbe hinzufügen</string>
     <string name="edit_color_title">Farbe bearbeiten</string>
+    <string name="delete_color_title">Farbe löschen?</string>
+    <string name="delete_color_body">%1$s aus deinen benutzerdefinierten Farben löschen?</string>
     <string name="color_name_label">Farbname</string>
     <string name="color_hex_label">Hex-Farbe</string>
     <string name="color_palette_picker_label">Farbe auswählen</string>

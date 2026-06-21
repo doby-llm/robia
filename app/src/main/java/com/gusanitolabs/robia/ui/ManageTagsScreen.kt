@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -80,6 +81,7 @@ fun ManageTagsScreen(
 ) {
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
+    var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
     val visibleCategories = categories.filterNot { category -> category.id == "care" }
     val visibleTags = tags.filterNot { tag -> tag.categoryId == "care" }
 
@@ -110,7 +112,7 @@ fun ManageTagsScreen(
                 colors = mainColors,
                 onAddColor = { colorEditorState = ColorEditorState() },
                 onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
-                onDeleteColor = onDeleteMainColor,
+                onDeleteColor = { color -> pendingDeleteColor = color },
             )
         }
 
@@ -148,6 +150,17 @@ fun ManageTagsScreen(
             onSave = { color ->
                 onSaveMainColor(color)
                 colorEditorState = null
+            },
+        )
+    }
+
+    pendingDeleteColor?.let { color ->
+        DeleteColorConfirmationDialog(
+            color = color,
+            onDismiss = { pendingDeleteColor = null },
+            onConfirm = {
+                onDeleteMainColor(color)
+                pendingDeleteColor = null
             },
         )
     }
@@ -404,19 +417,20 @@ private fun ColorListRow(
                     modifier = Modifier.size(18.dp),
                 )
             }
-            IconButton(
-                modifier = Modifier
-                    .size(40.dp)
-                    .semantics { contentDescription = deleteDescription },
-                enabled = canDelete,
-                onClick = onDelete,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    contentDescription = null,
-                    tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(18.dp),
-                )
+            if (canDelete) {
+                IconButton(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics { contentDescription = deleteDescription },
+                    onClick = onDelete,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }
@@ -487,7 +501,6 @@ private fun ColorEditorDialog(
     val siblingColors = remember(colors, editingColorId) { colors.filterNot { color -> color.id == editingColorId } }
     val unavailableHexes = remember(siblingColors) { siblingColors.mapNotNull { color -> color.hex.toNormalizedHex() }.toSet() }
     val initialHex = state.existingColor?.hex?.toNormalizedHex() ?: DefaultCustomColorHex
-    val controller = rememberColorPickerController()
     var name by remember(state) { mutableStateOf(state.existingColor?.name.orEmpty()) }
     var selectedHex by remember(state) { mutableStateOf(initialHex) }
     val trimmedName = name.trim()
@@ -526,16 +539,19 @@ private fun ColorEditorDialog(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                HsvColorPicker(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    controller = controller,
-                    initialColor = selectedColorHex?.toComposeColor(),
-                    onColorChanged = { envelope ->
-                        selectedHex = envelope.hexCode.toNormalizedRgbHex() ?: selectedHex
-                    },
-                )
+                key(editingColorId, initialHex) {
+                    val controller = rememberColorPickerController()
+                    HsvColorPicker(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp),
+                        controller = controller,
+                        initialColor = initialHex.toComposeColor(),
+                        onColorChanged = { envelope ->
+                            selectedHex = envelope.hexCode.toNormalizedRgbHex() ?: selectedHex
+                        },
+                    )
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -588,6 +604,32 @@ private fun ColorEditorDialog(
                 },
             ) {
                 Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteColorConfirmationDialog(
+    color: MainColor,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_color_title)) },
+        text = { Text(stringResource(R.string.delete_color_body, color.name)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.delete),
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         },
         dismissButton = {

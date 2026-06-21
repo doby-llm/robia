@@ -20,6 +20,7 @@ class ColorLabelResolverTest {
 
     @Test
     fun preservesKnownTextLabels() {
+        assertEquals(DisplayColorLabel.Gray, ColorLabelResolver.fromRawValue("beige"))
         assertEquals(DisplayColorLabel.Brown, ColorLabelResolver.fromRawValue("brown"))
         assertEquals(DisplayColorLabel.Multicolor, ColorLabelResolver.fromRawValue("multi-color"))
     }

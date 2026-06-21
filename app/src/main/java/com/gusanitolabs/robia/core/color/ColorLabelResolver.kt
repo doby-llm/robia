@@ -72,7 +72,9 @@ object ColorLabelResolver {
     private val namedLabels = mapOf(
         "black" to DisplayColorLabel.Black,
         "blue" to DisplayColorLabel.Blue,
+        "beige" to DisplayColorLabel.Gray,
         "brown" to DisplayColorLabel.Brown,
+        "cream" to DisplayColorLabel.Gray,
         "gray" to DisplayColorLabel.Gray,
         "grey" to DisplayColorLabel.Gray,
         "green" to DisplayColorLabel.Green,

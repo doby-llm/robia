@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MainColorEntity::class,
         ClothingItemTagCrossRef::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -34,7 +34,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                     RobiaDatabase::class.java,
                     "robia.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }
@@ -80,6 +80,37 @@ abstract class RobiaDatabase : RoomDatabase() {
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE clothing_items ADD COLUMN fit_value INTEGER")
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    UPDATE main_colors
+                    SET name = 'Beige / Cream', hex = '#D8C3A5', sort_order = 30, is_default = 1
+                    WHERE id = 'gray-charcoal'
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    """
+                    UPDATE clothing_items
+                    SET color_primary_palette_color_id = 'gray-charcoal',
+                        color_primary_palette_color_name = 'Beige / Cream',
+                        color_primary_palette_color_hex = '#D8C3A5'
+                    WHERE color_primary_palette_color_id IN ('gray-charcoal', 'beige-cream')
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    """
+                    UPDATE clothing_items
+                    SET color_secondary_palette_color_id = 'gray-charcoal',
+                        color_secondary_palette_color_name = 'Beige / Cream',
+                        color_secondary_palette_color_hex = '#D8C3A5'
+                    WHERE color_secondary_palette_color_id IN ('gray-charcoal', 'beige-cream')
+                    """.trimIndent(),
+                )
+                database.execSQL("DELETE FROM main_colors WHERE id = 'beige-cream'")
             }
         }
     }

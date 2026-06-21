@@ -9,6 +9,9 @@ import androidx.core.content.FileProvider
 import com.gusanitolabs.robia.core.model.MainColor
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
 
 object ClothingImageStore {
@@ -196,11 +199,64 @@ object ClothingImageStore {
         return CropBounds(left = left, top = top, width = right - left + 1, height = bottom - top + 1)
     }
 
-    private fun List<MainColor>.nearestTo(rgb: Rgb): MainColor? = minByOrNull { color ->
-        val paletteRgb = color.hex.toRgbOrNull() ?: return@minByOrNull Double.MAX_VALUE
-        (rgb.red - paletteRgb.red).toDouble().pow(2) +
-            (rgb.green - paletteRgb.green).toDouble().pow(2) +
-            (rgb.blue - paletteRgb.blue).toDouble().pow(2)
+    private fun List<MainColor>.nearestTo(rgb: Rgb): MainColor? {
+        val scoredColors = mapNotNull { color ->
+            val paletteRgb = color.hex.toRgbOrNull() ?: return@mapNotNull null
+            ScoredColor(color = color, score = rgbDistance(rgb, paletteRgb))
+        }
+        val nearest = scoredColors.minByOrNull(ScoredColor::score) ?: return null
+
+        // Washed denim often has low red and a blue hue, but raw RGB distance can still
+        // drift toward the purple swatch. If the pixel hue is clearly blue and the navy
+        // palette score is close enough, prefer navy/blue over a misleading purple match.
+        if (nearest.color.id == "purple" && rgb.isDenimBlueCandidate()) {
+            val navyBlue = scoredColors.firstOrNull { scored -> scored.color.id == "navy-blue" }
+            if (navyBlue != null && navyBlue.score <= nearest.score * DENIM_BLUE_PURPLE_SCORE_TOLERANCE) {
+                return navyBlue.color
+            }
+        }
+
+        return nearest.color
+    }
+
+    private fun rgbDistance(first: Rgb, second: Rgb): Double =
+        (first.red - second.red).toDouble().pow(2) +
+            (first.green - second.green).toDouble().pow(2) +
+            (first.blue - second.blue).toDouble().pow(2)
+
+    private fun Rgb.isDenimBlueCandidate(): Boolean {
+        val hue = hueDegrees()
+        val saturation = saturation()
+        return hue in DENIM_BLUE_MIN_HUE..DENIM_BLUE_MAX_HUE &&
+            saturation >= DENIM_BLUE_MIN_SATURATION &&
+            blue >= red &&
+            blue >= green
+    }
+
+    private fun Rgb.hueDegrees(): Float {
+        val normalizedRed = red / 255f
+        val normalizedGreen = green / 255f
+        val normalizedBlue = blue / 255f
+        val maxChannel = max(normalizedRed, max(normalizedGreen, normalizedBlue))
+        val minChannel = min(normalizedRed, min(normalizedGreen, normalizedBlue))
+        val delta = maxChannel - minChannel
+        if (delta == 0f) return 0f
+
+        val hue = when (maxChannel) {
+            normalizedRed -> 60f * (((normalizedGreen - normalizedBlue) / delta) % 6f)
+            normalizedGreen -> 60f * (((normalizedBlue - normalizedRed) / delta) + 2f)
+            else -> 60f * (((normalizedRed - normalizedGreen) / delta) + 4f)
+        }
+        return if (hue < 0f) hue + 360f else hue
+    }
+
+    private fun Rgb.saturation(): Float {
+        val normalizedRed = red / 255f
+        val normalizedGreen = green / 255f
+        val normalizedBlue = blue / 255f
+        val maxChannel = max(normalizedRed, max(normalizedGreen, normalizedBlue))
+        val minChannel = min(normalizedRed, min(normalizedGreen, normalizedBlue))
+        return if (maxChannel == 0f) 0f else abs(maxChannel - minChannel) / maxChannel
     }
 
     private fun String.toRgbOrNull(): Rgb? {
@@ -216,6 +272,8 @@ object ClothingImageStore {
     }
 
     private data class Rgb(val red: Int, val green: Int, val blue: Int)
+
+    private data class ScoredColor(val color: MainColor, val score: Double)
 
     data class PaletteColorMatch(
         val color: MainColor,
@@ -237,4 +295,8 @@ object ClothingImageStore {
     private const val MIN_CROP_CONTENT_SIZE = 16
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f
+    private const val DENIM_BLUE_MIN_HUE = 190f
+    private const val DENIM_BLUE_MAX_HUE = 255f
+    private const val DENIM_BLUE_MIN_SATURATION = 0.08f
+    private const val DENIM_BLUE_PURPLE_SCORE_TOLERANCE = 1.45
 }

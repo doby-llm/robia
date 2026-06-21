@@ -70,7 +70,7 @@
     <string name="color_beige_cream">Beige / Cream</string>
     <string name="color_navy_blue">Navy / Blue</string>
     <string name="color_mustard">Mustard</string>
-    <string name="color_gray">Gray</string>
+    <string name="color_gray">Beige</string>
     <string name="color_green">Green</string>
     <string name="color_orange">Orange</string>
     <string name="color_pink">Pink</string>
@@ -187,6 +187,7 @@
     <string name="edit_tag_title">Edit tag</string>
     <string name="tag_name_label">Tag name</string>
     <string name="save">Save</string>
+    <string name="delete">Delete</string>
     <string name="category_style">Style</string>
     <string name="category_season">Seasons</string>
     <string name="category_occasion">Occasions</string>
@@ -204,6 +205,8 @@
     <string name="content_color_swatch_unavailable">%1$s swatch already exists</string>
     <string name="add_color_title">Add color</string>
     <string name="edit_color_title">Edit color</string>
+    <string name="delete_color_title">Delete color?</string>
+    <string name="delete_color_body">Delete %1$s from your custom colors?</string>
     <string name="color_name_label">Color name</string>
     <string name="color_hex_label">Hex color</string>
     <string name="color_palette_picker_label">Pick a color</string>

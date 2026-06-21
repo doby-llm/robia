@@ -28,7 +28,16 @@ class DefaultTagsTest {
 
     @Test
     fun mainColorPaletteContainsMinimumDefaultColors() {
-        assertEquals(12, DefaultTags.mainColors.count { color -> color.isDefault })
+        assertEquals(11, DefaultTags.mainColors.count { color -> color.isDefault })
         assertTrue(DefaultTags.mainColors.all { color -> color.hex.matches(Regex("#[0-9A-Fa-f]{6}")) })
+    }
+
+    @Test
+    fun mainColorPaletteHasSingleBeigeDefault() {
+        val beigeDefaults = DefaultTags.mainColors.filter { color ->
+            color.name.contains("Beige", ignoreCase = true)
+        }
+
+        assertEquals(listOf("gray-charcoal"), beigeDefaults.map { color -> color.id })
     }
 }
