@@ -153,6 +153,8 @@
     <string name="filter_season">Saison</string>
     <string name="filter_location">Ort</string>
     <string name="filter_location_main_closet">Hauptschrank</string>
+    <string name="filter_favorites">Favoriten</string>
+    <string name="favorites_only">Nur Favoriten</string>
     <string name="filter_color_palette">Farbpalette</string>
     <string name="show_results_count">%1$d Ergebnisse anzeigen</string>
     <string name="empty_filters_title">Keine passenden Kleidungsstücke</string>
@@ -168,6 +170,7 @@
     <string name="content_settings_menu">Einstellungsmenü öffnen</string>
     <string name="content_add_clothing">Kleidungsstück hinzufügen</string>
     <string name="content_favorite">Lieblingskleidungsstück</string>
+    <string name="content_download_image">PNG speichern</string>
     <string name="content_open_item_detail">Kleidungsdetail öffnen</string>
     <string name="content_open_gallery">Galerieauswahl öffnen</string>
     <string name="content_open_camera">Kameraaufnahme öffnen</string>
@@ -209,6 +212,8 @@
     <string name="color_hex_invalid">Gib eine gültige 6-stellige Hex-Farbe ein, zum Beispiel #D6B84C.</string>
     <string name="color_name_duplicate">Eine Farbe mit diesem Namen existiert bereits.</string>
     <string name="color_hex_duplicate">Eine Farbe mit diesem Farbfeld existiert bereits.</string>
+    <string name="image_saved">Bild gespeichert</string>
+    <string name="image_save_error">Bild konnte nicht gespeichert werden</string>
     <string name="category_category">Kategorie</string>
     <string name="category_location">Orte</string>
     <string name="tag_t_shirt">T-Shirt</string>

@@ -153,6 +153,8 @@
     <string name="filter_season">Temporada</string>
     <string name="filter_location">Ubicación</string>
     <string name="filter_location_main_closet">Armario principal</string>
+    <string name="filter_favorites">Favoritos</string>
+    <string name="favorites_only">Solo favoritos</string>
     <string name="filter_color_palette">Paleta de color</string>
     <string name="show_results_count">Mostrar %1$d resultados</string>
     <string name="empty_filters_title">No hay prendas coincidentes</string>
@@ -168,6 +170,7 @@
     <string name="content_settings_menu">Abrir menú de ajustes</string>
     <string name="content_add_clothing">Añadir una prenda</string>
     <string name="content_favorite">Prenda favorita</string>
+    <string name="content_download_image">Guardar PNG</string>
     <string name="content_open_item_detail">Abrir detalle de la prenda</string>
     <string name="content_open_gallery">Abrir selector de galería</string>
     <string name="content_open_camera">Abrir captura de cámara</string>
@@ -209,6 +212,8 @@
     <string name="color_hex_invalid">Introduce un color hexadecimal válido de 6 dígitos, por ejemplo #D6B84C.</string>
     <string name="color_name_duplicate">Ya existe un color con este nombre.</string>
     <string name="color_hex_duplicate">Ya existe un color con esta muestra.</string>
+    <string name="image_saved">Imagen guardada</string>
+    <string name="image_save_error">No se pudo guardar la imagen</string>
     <string name="category_category">Categoría</string>
     <string name="category_location">Ubicaciones</string>
     <string name="tag_t_shirt">Camiseta</string>

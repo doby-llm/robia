@@ -153,6 +153,8 @@
     <string name="filter_season">Season</string>
     <string name="filter_location">Location</string>
     <string name="filter_location_main_closet">Main closet</string>
+    <string name="filter_favorites">Favorites</string>
+    <string name="favorites_only">Favorites only</string>
     <string name="filter_color_palette">Color Palette</string>
     <string name="show_results_count">Show %1$d Results</string>
     <string name="empty_filters_title">No matching garments</string>
@@ -168,6 +170,7 @@
     <string name="content_settings_menu">Open settings menu</string>
     <string name="content_add_clothing">Add a clothing item</string>
     <string name="content_favorite">Favorite garment</string>
+    <string name="content_download_image">Save PNG</string>
     <string name="content_open_item_detail">Open garment detail</string>
     <string name="content_open_gallery">Open gallery picker</string>
     <string name="content_open_camera">Open camera capture</string>
@@ -209,6 +212,8 @@
     <string name="color_hex_invalid">Enter a valid 6-digit hex color, for example #D6B84C.</string>
     <string name="color_name_duplicate">A color with this name already exists.</string>
     <string name="color_hex_duplicate">A color with this swatch already exists.</string>
+    <string name="image_saved">Image saved</string>
+    <string name="image_save_error">Couldn’t save image</string>
     <string name="category_category">Category</string>
     <string name="category_location">Locations</string>
     <string name="tag_t_shirt">T-shirt</string>

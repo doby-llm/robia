@@ -3,9 +3,12 @@ package com.gusanitolabs.robia.ui
 import android.net.Uri
 import android.content.res.Configuration
 import android.os.LocaleList
+import android.widget.Toast
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -112,7 +116,10 @@ import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.media.ClothingImageStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 private sealed interface RobiaRoute {
@@ -180,16 +187,18 @@ private data class UiTag(
 private data class BrowseFilterState(
     val selectedTagIds: Set<String> = emptySet(),
     val selectedPaletteColorIds: Set<String> = emptySet(),
+    val favoritesOnly: Boolean = false,
 ) {
     val hasActiveFilters: Boolean
-        get() = selectedTagIds.isNotEmpty() || selectedPaletteColorIds.isNotEmpty()
+        get() = selectedTagIds.isNotEmpty() || selectedPaletteColorIds.isNotEmpty() || favoritesOnly
 
     val activeFilterCount: Int
-        get() = selectedTagIds.size + selectedPaletteColorIds.size
+        get() = selectedTagIds.size + selectedPaletteColorIds.size + if (favoritesOnly) 1 else 0
 
     fun matches(item: UiWardrobeItem, paletteColors: List<MainColor>): Boolean {
         val itemTagIds = item.tags.map(UiTag::id).toSet()
-        return selectedTagIds.all(itemTagIds::contains) &&
+        return (!favoritesOnly || item.isFavorite) &&
+            selectedTagIds.all(itemTagIds::contains) &&
             (selectedPaletteColorIds.isEmpty() || item.matchesAnyPaletteColor(selectedPaletteColors(paletteColors)))
     }
 
@@ -856,6 +865,27 @@ private fun ItemDetailScreen(
     item: UiWardrobeItem,
     onEditClick: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val imageSavedMessage = stringResource(R.string.image_saved)
+    val imageSaveErrorMessage = stringResource(R.string.image_save_error)
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { destinationUri ->
+        val sourceUri = item.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: return@rememberLauncherForActivityResult
+        if (destinationUri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val saved = runCatching {
+                withContext(Dispatchers.IO) {
+                    ClothingImageStore.exportImageAsPng(context, sourceUri, destinationUri)
+                }
+            }.isSuccess
+            Toast.makeText(
+                context,
+                if (saved) imageSavedMessage else imageSaveErrorMessage,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -864,7 +894,12 @@ private fun ItemDetailScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            DetailMediaCard(item)
+            DetailMediaCard(
+                item = item,
+                onDownloadImageClick = {
+                    exportLauncher.launch("${item.name.toPngFileName()}.png")
+                },
+            )
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -898,17 +933,44 @@ private fun ItemDetailScreen(
 }
 
 @Composable
-private fun DetailMediaCard(item: UiWardrobeItem) {
+private fun DetailMediaCard(
+    item: UiWardrobeItem,
+    onDownloadImageClick: () -> Unit,
+) {
+    val hasPhoto = !item.photoUri.isNullOrBlank()
+    val downloadDescription = stringResource(R.string.content_download_image)
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        GarmentPhotoPlaceholder(
-            item = item,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(3f / 4f),
-        )
+        Box {
+            GarmentPhotoPlaceholder(
+                item = item,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(3f / 4f),
+            )
+            if (hasPhoto) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp),
+                ) {
+                    IconButton(
+                        modifier = Modifier.semantics { contentDescription = downloadDescription },
+                        onClick = onDownloadImageClick,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Download,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1284,6 +1346,22 @@ private fun AdvancedFiltersScreen(
         }
 
         item {
+            FilterSection(title = stringResource(R.string.filter_favorites)) {
+                FilterChip(
+                    selected = filters.favoritesOnly,
+                    onClick = { onFiltersChange(filters.toggleFavoritesOnly()) },
+                    label = { Text(stringResource(R.string.favorites_only)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (filters.favoritesOnly) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                )
+            }
+        }
+        item {
             FilterSection(title = stringResource(R.string.filter_category)) {
                 FilterTagChips(
                     tags = categoryTags,
@@ -1453,6 +1531,10 @@ private fun BrowseFilterState.togglePaletteColor(colorId: String): BrowseFilterS
     selectedPaletteColorIds = selectedPaletteColorIds.toggle(colorId),
 )
 
+private fun BrowseFilterState.toggleFavoritesOnly(): BrowseFilterState = copy(
+    favoritesOnly = !favoritesOnly,
+)
+
 private fun <T> Set<T>.toggle(value: T): Set<T> = if (value in this) this - value else this + value
 
 private fun UiWardrobeItem.matchesAnyPaletteColor(colors: List<MainColor>): Boolean = colors.any { color ->
@@ -1485,6 +1567,12 @@ private fun String?.normalizedHexOrNull(): String? {
     }
     return normalized.uppercase(Locale.US)
 }
+
+private fun String.toPngFileName(): String = trim()
+    .lowercase(Locale.US)
+    .replace(Regex("[^a-z0-9]+"), "-")
+    .trim('-')
+    .ifBlank { "robia-garment" }
 
 private fun String.toComposeColor(): Color? = normalizedHexOrNull()?.let { normalized ->
     Color(android.graphics.Color.parseColor("#$normalized"))

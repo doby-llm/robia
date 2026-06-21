@@ -63,6 +63,20 @@ object ClothingImageStore {
         return if (width > 0 && height > 0) width.toFloat() / height.toFloat() else null
     }
 
+    fun exportImageAsPng(
+        context: Context,
+        sourceUri: Uri,
+        destinationUri: Uri,
+    ) {
+        val bitmap = context.contentResolver.openInputStream(sourceUri)?.use(BitmapFactory::decodeStream)
+            ?: error("Unable to open garment image")
+        bitmap.useForColors { source ->
+            context.contentResolver.openOutputStream(destinationUri)?.use { output ->
+                check(source.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode PNG" }
+            } ?: error("Unable to open export destination")
+        }
+    }
+
     fun cropTransparentPixels(
         context: Context,
         imageUri: Uri,
