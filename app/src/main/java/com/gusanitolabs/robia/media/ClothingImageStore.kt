@@ -6,13 +6,12 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
+import com.gusanitolabs.robia.core.color.GarmentColorAnalyzer
+import com.gusanitolabs.robia.core.color.PaletteColorMatch
+import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.MainColor
 import java.io.File
 import java.util.UUID
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.pow
 
 object ClothingImageStore {
     private const val IMAGE_DIRECTORY = "robia_clothing_images"
@@ -128,40 +127,26 @@ object ClothingImageStore {
     private fun paletteMatches(bitmap: Bitmap, palette: List<MainColor>): List<PaletteColorMatch> {
         val maxDimension = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
         val sampleStep = (maxDimension / 96).coerceAtLeast(1)
-        val counts = mutableMapOf<MainColor, Int>()
-        var visiblePixels = 0
-
-        var y = 0
-        while (y < bitmap.height) {
-            var x = 0
-            while (x < bitmap.width) {
-                val color = bitmap.getPixel(x, y)
-                val alpha = (color ushr 24) and 0xFF
-                if (alpha > 180) {
-                    val red = (color ushr 16) and 0xFF
-                    val green = (color ushr 8) and 0xFF
-                    val blue = color and 0xFF
-                    val nearest = palette.nearestTo(Rgb(red, green, blue))
-                    if (nearest != null) {
-                        counts[nearest] = (counts[nearest] ?: 0) + 1
-                        visiblePixels += 1
-                    }
+        val samples = sequence {
+            var y = sampleStep / 2
+            while (y < bitmap.height) {
+                var x = sampleStep / 2
+                while (x < bitmap.width) {
+                    val color = bitmap.getPixel(x, y)
+                    yield(
+                        RgbColor(
+                            red = (color ushr 16) and 0xFF,
+                            green = (color ushr 8) and 0xFF,
+                            blue = color and 0xFF,
+                            alpha = (color ushr 24) and 0xFF,
+                        ),
+                    )
+                    x += sampleStep
                 }
-                x += sampleStep
+                y += sampleStep
             }
-            y += sampleStep
         }
-
-        if (visiblePixels == 0) return emptyList()
-        return counts.entries
-            .sortedByDescending { it.value }
-            .map { (color, count) ->
-                PaletteColorMatch(
-                    color = color,
-                    pixelCount = count,
-                    ratio = count.toFloat() / visiblePixels.toFloat(),
-                )
-            }
+        return GarmentColorAnalyzer.dominantPaletteMatches(samples, palette)
     }
 
     private fun transparentContentBounds(bitmap: Bitmap): CropBounds? {
@@ -199,88 +184,6 @@ object ClothingImageStore {
         return CropBounds(left = left, top = top, width = right - left + 1, height = bottom - top + 1)
     }
 
-    private fun List<MainColor>.nearestTo(rgb: Rgb): MainColor? {
-        val scoredColors = mapNotNull { color ->
-            val paletteRgb = color.hex.toRgbOrNull() ?: return@mapNotNull null
-            ScoredColor(color = color, score = rgbDistance(rgb, paletteRgb))
-        }
-        val nearest = scoredColors.minByOrNull(ScoredColor::score) ?: return null
-
-        // Washed denim often has low red and a blue hue, but raw RGB distance can still
-        // drift toward the purple swatch. If the pixel hue is clearly blue and the navy
-        // palette score is close enough, prefer navy/blue over a misleading purple match.
-        if (nearest.color.id == "purple" && rgb.isDenimBlueCandidate()) {
-            val navyBlue = scoredColors.firstOrNull { scored -> scored.color.id == "navy-blue" }
-            if (navyBlue != null && navyBlue.score <= nearest.score * DENIM_BLUE_PURPLE_SCORE_TOLERANCE) {
-                return navyBlue.color
-            }
-        }
-
-        return nearest.color
-    }
-
-    private fun rgbDistance(first: Rgb, second: Rgb): Double =
-        (first.red - second.red).toDouble().pow(2) +
-            (first.green - second.green).toDouble().pow(2) +
-            (first.blue - second.blue).toDouble().pow(2)
-
-    private fun Rgb.isDenimBlueCandidate(): Boolean {
-        val hue = hueDegrees()
-        val saturation = saturation()
-        return hue in DENIM_BLUE_MIN_HUE..DENIM_BLUE_MAX_HUE &&
-            saturation >= DENIM_BLUE_MIN_SATURATION &&
-            blue >= red &&
-            blue >= green
-    }
-
-    private fun Rgb.hueDegrees(): Float {
-        val normalizedRed = red / 255f
-        val normalizedGreen = green / 255f
-        val normalizedBlue = blue / 255f
-        val maxChannel = max(normalizedRed, max(normalizedGreen, normalizedBlue))
-        val minChannel = min(normalizedRed, min(normalizedGreen, normalizedBlue))
-        val delta = maxChannel - minChannel
-        if (delta == 0f) return 0f
-
-        val hue = when (maxChannel) {
-            normalizedRed -> 60f * (((normalizedGreen - normalizedBlue) / delta) % 6f)
-            normalizedGreen -> 60f * (((normalizedBlue - normalizedRed) / delta) + 2f)
-            else -> 60f * (((normalizedRed - normalizedGreen) / delta) + 4f)
-        }
-        return if (hue < 0f) hue + 360f else hue
-    }
-
-    private fun Rgb.saturation(): Float {
-        val normalizedRed = red / 255f
-        val normalizedGreen = green / 255f
-        val normalizedBlue = blue / 255f
-        val maxChannel = max(normalizedRed, max(normalizedGreen, normalizedBlue))
-        val minChannel = min(normalizedRed, min(normalizedGreen, normalizedBlue))
-        return if (maxChannel == 0f) 0f else abs(maxChannel - minChannel) / maxChannel
-    }
-
-    private fun String.toRgbOrNull(): Rgb? {
-        val normalized = trim().removePrefix("#")
-        if (normalized.length != 6 || normalized.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
-            return null
-        }
-        return Rgb(
-            red = normalized.substring(0, 2).toInt(16),
-            green = normalized.substring(2, 4).toInt(16),
-            blue = normalized.substring(4, 6).toInt(16),
-        )
-    }
-
-    private data class Rgb(val red: Int, val green: Int, val blue: Int)
-
-    private data class ScoredColor(val color: MainColor, val score: Double)
-
-    data class PaletteColorMatch(
-        val color: MainColor,
-        val pixelCount: Int,
-        val ratio: Float,
-    )
-
     private data class CropBounds(
         val left: Int,
         val top: Int,
@@ -295,8 +198,4 @@ object ClothingImageStore {
     private const val MIN_CROP_CONTENT_SIZE = 16
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f
-    private const val DENIM_BLUE_MIN_HUE = 190f
-    private const val DENIM_BLUE_MAX_HUE = 255f
-    private const val DENIM_BLUE_MIN_SATURATION = 0.08f
-    private const val DENIM_BLUE_PURPLE_SCORE_TOLERANCE = 1.45
 }

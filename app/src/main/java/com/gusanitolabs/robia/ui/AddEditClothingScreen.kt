@@ -74,6 +74,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
+import com.gusanitolabs.robia.core.color.PaletteColorClassifier
+import com.gusanitolabs.robia.core.color.PaletteColorMatch
+import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -123,7 +126,7 @@ fun AddEditClothingScreen(
     val primaryLabel = remember(primaryRawColor) { ColorLabelResolver.fromRawValue(primaryRawColor) }
     val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
 
-    fun applyExtractedColors(colors: List<ClothingImageStore.PaletteColorMatch>) {
+    fun applyExtractedColors(colors: List<PaletteColorMatch>) {
         val primaryColorId = colors.getOrNull(0)?.color?.id
         if (primaryColorId != null) {
             selectedPrimaryColorId = primaryColorId
@@ -1337,27 +1340,8 @@ private fun Int?.indicatesFits(): Boolean = this != FIT_VALUE_DOES_NOT_FIT
 private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { color -> color.id == id }
 
 private fun List<MainColor>.nearestColor(rawHex: String?): MainColor? {
-    val rgb = rawHex?.toRgbOrNull() ?: return null
-    return minByOrNull { color ->
-        val paletteRgb = color.hex.toRgbOrNull() ?: return@minByOrNull Int.MAX_VALUE
-        (rgb.red - paletteRgb.red) * (rgb.red - paletteRgb.red) +
-            (rgb.green - paletteRgb.green) * (rgb.green - paletteRgb.green) +
-            (rgb.blue - paletteRgb.blue) * (rgb.blue - paletteRgb.blue)
-    }
-}
-
-private data class RgbColor(val red: Int, val green: Int, val blue: Int)
-
-private fun String.toRgbOrNull(): RgbColor? {
-    val normalized = trim().removePrefix("#")
-    if (normalized.length != 6 || normalized.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) {
-        return null
-    }
-    return RgbColor(
-        red = normalized.substring(0, 2).toInt(16),
-        green = normalized.substring(2, 4).toInt(16),
-        blue = normalized.substring(4, 6).toInt(16),
-    )
+    val rgb = RgbColor.fromHexOrNull(rawHex) ?: return null
+    return PaletteColorClassifier.Default.nearestColor(this, rgb)?.color
 }
 
 private val DisplayColorLabel.stringRes: Int
