@@ -86,7 +86,6 @@
     <string name="edit_clothing_title">Editar prenda</string>
     <string name="add_edit_body">Captura una foto de la prenda, conserva colores manuales y añade etiquetas al armario local.</string>
     <string name="item_details_section">Detalles de la prenda</string>
-    <string name="item_details_refined_hint">Mantén compactos el nombre y las notas editables para que la previsualización y las cajas de metadatos destaquen.</string>
     <string name="item_name_label">Nombre de la prenda</string>
     <string name="item_name_placeholder">p. ej., Jersey de lana mostaza</string>
     <string name="item_notes_label">Descripción</string>
@@ -116,11 +115,9 @@
     <string name="raw_color_optional">Valor de color original (opcional)</string>
     <string name="raw_color_placeholder">Hex o etiqueta, p. ej., #D6B84C u oliva</string>
     <string name="raw_color_summary">Original: %1$s • Etiqueta: %2$s</string>
-    <string name="palette_selector_hint">Toca para cambiar</string>
     <string name="palette_empty">Aún no hay colores de paleta disponibles. Añade colores en la paleta de color principal primero.</string>
     <string name="tags_section">Etiquetas</string>
     <string name="metadata_section">Información adicional</string>
-    <string name="metadata_section_body">Elige detalles del armario con controles enfocados en vez de una nube genérica de etiquetas.</string>
     <string name="metadata_category">Categoría</string>
     <string name="metadata_season">Temporada</string>
     <string name="metadata_fit">Ajuste</string>

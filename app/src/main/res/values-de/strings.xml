@@ -86,7 +86,6 @@
     <string name="edit_clothing_title">Kleidungsstück bearbeiten</string>
     <string name="add_edit_body">Erfasse ein Foto, bewahre manuelle Farbwerte und füge Tags zur lokalen Garderobe hinzu.</string>
     <string name="item_details_section">Kleidungsdetails</string>
-    <string name="item_details_refined_hint">Halte den bearbeitbaren Namen und die Notizen kompakt, damit Medienvorschau und Metadatenboxen im Fokus bleiben.</string>
     <string name="item_name_label">Name des Kleidungsstücks</string>
     <string name="item_name_placeholder">z. B. Senfgelber Wollpullover</string>
     <string name="item_notes_label">Beschreibung</string>
@@ -116,11 +115,9 @@
     <string name="raw_color_optional">Rohfarbwert (optional)</string>
     <string name="raw_color_placeholder">Hex oder Label, z. B. #D6B84C oder Oliv</string>
     <string name="raw_color_summary">Rohwert: %1$s • Label: %2$s</string>
-    <string name="palette_selector_hint">Zum Ändern tippen</string>
     <string name="palette_empty">Noch keine Palettenfarben verfügbar. Füge zuerst Farben in der Hauptfarbpalette hinzu.</string>
     <string name="tags_section">Tags</string>
     <string name="metadata_section">Zusätzliche Informationen</string>
-    <string name="metadata_section_body">Wähle Garderobendetails mit fokussierten Steuerelementen statt in einer generischen Tag-Wolke.</string>
     <string name="metadata_category">Kategorie</string>
     <string name="metadata_season">Saison</string>
     <string name="metadata_fit">Passform</string>

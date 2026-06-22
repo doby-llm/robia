@@ -86,7 +86,6 @@
     <string name="edit_clothing_title">Edit clothing</string>
     <string name="add_edit_body">Capture a garment photo, preserve manual colors, and add tags for the local wardrobe.</string>
     <string name="item_details_section">Item details</string>
-    <string name="item_details_refined_hint">Keep the editable garment name and notes compact so the media preview and metadata boxes stay prominent.</string>
     <string name="item_name_label">Item name</string>
     <string name="item_name_placeholder">e.g., Mustard wool sweater</string>
     <string name="item_notes_label">Description</string>
@@ -116,11 +115,9 @@
     <string name="raw_color_optional">Raw color value (optional)</string>
     <string name="raw_color_placeholder">Hex or label, e.g., #D6B84C or olive</string>
     <string name="raw_color_summary">Raw: %1$s • Label: %2$s</string>
-    <string name="palette_selector_hint">Tap to change</string>
     <string name="palette_empty">No palette colors are available yet. Add colors in Manage Color Palette first.</string>
     <string name="tags_section">Tags</string>
     <string name="metadata_section">Additional information</string>
-    <string name="metadata_section_body">Choose wardrobe details from focused controls instead of one generic tag cloud.</string>
     <string name="metadata_category">Category</string>
     <string name="metadata_season">Season</string>
     <string name="metadata_fit">Fit</string>

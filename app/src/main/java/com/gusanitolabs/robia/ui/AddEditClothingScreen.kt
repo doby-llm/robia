@@ -318,11 +318,6 @@ fun AddEditClothingScreen(
 
         item {
             CardSection(title = stringResource(R.string.item_details_section)) {
-                Text(
-                    text = stringResource(R.string.item_details_refined_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -362,11 +357,6 @@ fun AddEditClothingScreen(
                         onClick = { colorPickerTarget = ColorPickerTarget.Secondary },
                     )
                 }
-                Text(
-                    text = stringResource(R.string.palette_selector_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 
@@ -445,12 +435,6 @@ private fun MetadataCaptureSection(
     onFitValueChange: (Int?) -> Unit,
 ) {
     CardSection(title = stringResource(R.string.metadata_section)) {
-        Text(
-            text = stringResource(R.string.metadata_section_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
         if (availableTags.isEmpty()) {
             Text(
                 text = stringResource(R.string.tags_empty),
