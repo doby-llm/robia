@@ -170,6 +170,7 @@
     <string name="content_add_clothing">Add a clothing item</string>
     <string name="content_favorite">Favorite garment</string>
     <string name="content_download_image">Save PNG</string>
+    <string name="content_share_item">Share item</string>
     <string name="content_open_item_detail">Open garment detail</string>
     <string name="content_open_gallery">Open gallery picker</string>
     <string name="content_open_camera">Open camera capture</string>
@@ -216,6 +217,11 @@
     <string name="color_hex_duplicate">A color with this swatch already exists.</string>
     <string name="image_saved">Image saved</string>
     <string name="image_save_error">Couldn’t save image</string>
+    <string name="share_image">Share image</string>
+    <string name="share_pdf">Share PDF</string>
+    <string name="share_garment_chooser_title">Share garment</string>
+    <string name="image_share_error">Couldn’t share image</string>
+    <string name="pdf_share_error">Couldn’t create PDF</string>
     <string name="category_category">Category</string>
     <string name="category_location">Locations</string>
     <string name="tag_t_shirt">T-shirt</string>

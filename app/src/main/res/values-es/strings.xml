@@ -170,6 +170,7 @@
     <string name="content_add_clothing">Añadir una prenda</string>
     <string name="content_favorite">Prenda favorita</string>
     <string name="content_download_image">Guardar PNG</string>
+    <string name="content_share_item">Compartir prenda</string>
     <string name="content_open_item_detail">Abrir detalle de la prenda</string>
     <string name="content_open_gallery">Abrir selector de galería</string>
     <string name="content_open_camera">Abrir captura de cámara</string>
@@ -216,6 +217,11 @@
     <string name="color_hex_duplicate">Ya existe un color con esta muestra.</string>
     <string name="image_saved">Imagen guardada</string>
     <string name="image_save_error">No se pudo guardar la imagen</string>
+    <string name="share_image">Compartir imagen</string>
+    <string name="share_pdf">Compartir PDF</string>
+    <string name="share_garment_chooser_title">Compartir prenda</string>
+    <string name="image_share_error">No se pudo compartir la imagen</string>
+    <string name="pdf_share_error">No se pudo crear el PDF</string>
     <string name="category_category">Categoría</string>
     <string name="category_location">Ubicaciones</string>
     <string name="tag_t_shirt">Camiseta</string>

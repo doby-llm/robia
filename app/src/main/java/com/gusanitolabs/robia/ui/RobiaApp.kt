@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.ui
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.content.res.Configuration
 import android.os.LocaleList
@@ -7,8 +9,6 @@ import android.widget.Toast
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -47,6 +46,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
@@ -112,7 +112,10 @@ import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
-import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.GarmentShareColor
+import com.gusanitolabs.robia.media.GarmentShareExporter
+import com.gusanitolabs.robia.media.GarmentShareItem
+import com.gusanitolabs.robia.media.GarmentShareMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -863,37 +866,58 @@ private fun ItemDetailScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val imageSavedMessage = stringResource(R.string.image_saved)
-    val imageSaveErrorMessage = stringResource(R.string.image_save_error)
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { destinationUri ->
-        val sourceUri = item.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: return@rememberLauncherForActivityResult
-        if (destinationUri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val saved = runCatching {
-                withContext(Dispatchers.IO) {
-                    ClothingImageStore.exportImageAsPng(context, sourceUri, destinationUri)
-                }
-            }.isSuccess
-            Toast.makeText(
-                context,
-                if (saved) imageSavedMessage else imageSaveErrorMessage,
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
+    val chooserTitle = stringResource(R.string.share_garment_chooser_title)
+    val imageShareErrorMessage = stringResource(R.string.image_share_error)
+    val pdfShareErrorMessage = stringResource(R.string.pdf_share_error)
+    val pdfShareItem = item.toGarmentShareItem()
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
             DetailMediaCard(
                 item = item,
-                onDownloadImageClick = {
-                    exportLauncher.launch("${item.name.toPngFileName()}.png")
+                onShareImageClick = {
+                    item.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)?.let { sourceUri ->
+                        scope.launch {
+                            val shareUri = runCatching {
+                                withContext(Dispatchers.IO) {
+                                    GarmentShareExporter.createShareImage(context, sourceUri, item.name)
+                                }
+                            }.getOrNull()
+                            if (shareUri != null) {
+                                context.launchShareChooser(
+                                    uri = shareUri,
+                                    mimeType = "image/png",
+                                    chooserTitle = chooserTitle,
+                                )
+                            } else {
+                                Toast.makeText(context, imageShareErrorMessage, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                },
+                onSharePdfClick = {
+                    scope.launch {
+                        val shareUri = runCatching {
+                            withContext(Dispatchers.IO) {
+                                GarmentShareExporter.createSharePdf(context, pdfShareItem)
+                            }
+                        }.getOrNull()
+                        if (shareUri != null) {
+                            context.launchShareChooser(
+                                uri = shareUri,
+                                mimeType = "application/pdf",
+                                chooserTitle = chooserTitle,
+                            )
+                        } else {
+                            Toast.makeText(context, pdfShareErrorMessage, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 },
             )
         }
@@ -931,10 +955,12 @@ private fun ItemDetailScreen(
 @Composable
 private fun DetailMediaCard(
     item: UiWardrobeItem,
-    onDownloadImageClick: () -> Unit,
+    onShareImageClick: () -> Unit,
+    onSharePdfClick: () -> Unit,
 ) {
     val hasPhoto = !item.photoUri.isNullOrBlank()
-    val downloadDescription = stringResource(R.string.content_download_image)
+    val shareDescription = stringResource(R.string.content_share_item)
+    var shareMenuExpanded by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         modifier = Modifier.fillMaxWidth(),
@@ -955,13 +981,32 @@ private fun DetailMediaCard(
                         .padding(10.dp),
                 ) {
                     IconButton(
-                        modifier = Modifier.semantics { contentDescription = downloadDescription },
-                        onClick = onDownloadImageClick,
+                        modifier = Modifier.semantics { contentDescription = shareDescription },
+                        onClick = { shareMenuExpanded = true },
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Download,
+                            imageVector = Icons.Rounded.Share,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = shareMenuExpanded,
+                        onDismissRequest = { shareMenuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.share_image)) },
+                            onClick = {
+                                shareMenuExpanded = false
+                                onShareImageClick()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.share_pdf)) },
+                            onClick = {
+                                shareMenuExpanded = false
+                                onSharePdfClick()
+                            },
                         )
                     }
                 }
@@ -1578,11 +1623,62 @@ private fun String?.normalizedHexOrNull(): String? {
     return normalized.uppercase(Locale.US)
 }
 
-private fun String.toPngFileName(): String = trim()
-    .lowercase(Locale.US)
-    .replace(Regex("[^a-z0-9]+"), "-")
-    .trim('-')
-    .ifBlank { "robia-garment" }
+private fun Context.launchShareChooser(
+    uri: Uri,
+    mimeType: String,
+    chooserTitle: String,
+) {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = mimeType
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    startActivity(Intent.createChooser(shareIntent, chooserTitle))
+}
+
+@Composable
+private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShareItem(
+    name = name,
+    notes = notes,
+    imageUri = Uri.parse(photoUri.orEmpty()),
+    metadata = listOf(
+        GarmentShareMetadata(stringResource(R.string.metadata_category), tags.valuesInCategory("category")),
+        GarmentShareMetadata(stringResource(R.string.metadata_season), tags.valuesInCategory("season")),
+        GarmentShareMetadata(stringResource(R.string.metadata_fit), fitValue?.fitLabel()?.let { listOf(it) }.orEmpty()),
+        GarmentShareMetadata(stringResource(R.string.metadata_location), tags.valuesInCategory("location")),
+        GarmentShareMetadata(stringResource(R.string.metadata_occasions), tags.valuesInCategory("occasion")),
+    ),
+    colorSectionLabel = stringResource(R.string.colors_section),
+    primaryColor = GarmentShareColor(
+        role = stringResource(R.string.primary_color),
+        name = shareColorName(primaryColor, primaryPaletteColorName, primaryRawValue),
+        hex = primaryPaletteColorHex?.takeIf { it.isNotBlank() } ?: primaryRawValue?.normalizedHexOrNull()?.let { "#$it" },
+    ),
+    secondaryColor = GarmentShareColor(
+        role = stringResource(R.string.secondary_color),
+        name = shareColorName(secondaryColor, secondaryPaletteColorName, secondaryRawValue),
+        hex = secondaryPaletteColorHex?.takeIf { it.isNotBlank() } ?: secondaryRawValue?.normalizedHexOrNull()?.let { "#$it" },
+    ),
+    noColorLabel = stringResource(R.string.no_color),
+)
+
+@Composable
+private fun shareColorName(
+    color: DisplayColorLabel,
+    paletteName: String?,
+    rawValue: String?,
+): String {
+    val hasStoredColor = !paletteName.isNullOrBlank() || !rawValue.isNullOrBlank() || color != DisplayColorLabel.Unknown
+    return when {
+        !hasStoredColor -> stringResource(R.string.no_color)
+        !paletteName.isNullOrBlank() -> paletteName
+        color != DisplayColorLabel.Unknown -> color.localizedLabel()
+        else -> stringResource(R.string.color_unknown)
+    }
+}
+
+private fun List<UiTag>.valuesInCategory(categoryId: String): List<String> =
+    filter { tag -> tag.categoryId == categoryId }.map(UiTag::label)
 
 private fun String.toComposeColor(): Color? = normalizedHexOrNull()?.let { normalized ->
     Color(android.graphics.Color.parseColor("#$normalized"))

@@ -6,4 +6,7 @@
     <files-path
         name="private_clothing_images"
         path="robia_clothing_images/" />
+    <cache-path
+        name="robia_shares"
+        path="robia_shares/" />
 </paths>

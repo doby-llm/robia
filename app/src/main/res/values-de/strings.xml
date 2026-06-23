@@ -170,6 +170,7 @@
     <string name="content_add_clothing">Kleidungsstück hinzufügen</string>
     <string name="content_favorite">Lieblingskleidungsstück</string>
     <string name="content_download_image">PNG speichern</string>
+    <string name="content_share_item">Kleidungsstück teilen</string>
     <string name="content_open_item_detail">Kleidungsdetail öffnen</string>
     <string name="content_open_gallery">Galerieauswahl öffnen</string>
     <string name="content_open_camera">Kameraaufnahme öffnen</string>
@@ -216,6 +217,11 @@
     <string name="color_hex_duplicate">Eine Farbe mit diesem Farbfeld existiert bereits.</string>
     <string name="image_saved">Bild gespeichert</string>
     <string name="image_save_error">Bild konnte nicht gespeichert werden</string>
+    <string name="share_image">Bild teilen</string>
+    <string name="share_pdf">PDF teilen</string>
+    <string name="share_garment_chooser_title">Kleidungsstück teilen</string>
+    <string name="image_share_error">Bild konnte nicht geteilt werden</string>
+    <string name="pdf_share_error">PDF konnte nicht erstellt werden</string>
     <string name="category_category">Kategorie</string>
     <string name="category_location">Orte</string>
     <string name="tag_t_shirt">T-Shirt</string>
