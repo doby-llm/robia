@@ -162,9 +162,9 @@ object GarmentShareExporter {
         labelPaint: Paint,
     ) {
         val centerY = top + 24f
-        val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color.hex?.toAndroidColorOrNull() ?: Color.TRANSPARENT }
+        val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color.hex?.toAndroidColorOrNull() ?: Color.TRANSPARENT }
         val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(198, 187, 174)
+            this.color = Color.rgb(198, 187, 174)
             style = Paint.Style.STROKE
             strokeWidth = 2f
         }
