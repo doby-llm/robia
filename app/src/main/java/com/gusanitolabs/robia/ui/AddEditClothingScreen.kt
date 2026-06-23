@@ -84,6 +84,7 @@ import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -102,6 +103,7 @@ fun AddEditClothingScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val backgroundRemover = remember { PhotoBackgroundRemover() }
+    val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     var name by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
     var originalPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -142,6 +144,7 @@ fun AddEditClothingScreen(
 
     fun processSelectedPhoto(uriString: String, sourceStatus: String) {
         val token = ++photoProcessingToken
+        val tagIdsBeforeProcessing = selectedTagIds.toSet()
         originalPhotoUri = uriString
         photoUri = uriString
         captureStatus = sourceStatus
@@ -187,6 +190,22 @@ fun AddEditClothingScreen(
                 if (token != photoProcessingToken) return@launch
                 if (extracted.isNotEmpty()) {
                     applyExtractedColors(extracted)
+                }
+                photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
+                val detectionResult = runCatching {
+                    withContext(Dispatchers.IO) {
+                        additionalInfoDetector.detect(context, croppedUri, availableTags)
+                    }
+                }.getOrNull()
+                if (token != photoProcessingToken) return@launch
+                detectionResult?.prediction?.let { prediction ->
+                    if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
+                        selectedTagIds = mergePredictedAdditionalInfoTags(
+                            currentTagIds = selectedTagIds,
+                            predictedTagIds = prediction.selectedTagIds,
+                            availableTags = availableTags,
+                        )
+                    }
                 }
             } catch (_: Exception) {
                 if (token != photoProcessingToken) return@launch
@@ -1295,17 +1314,35 @@ private fun DetailTonalTag(text: String) {
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = when (id) {
-    "category-t-shirt" -> stringResource(R.string.tag_t_shirt)
-    "category-pants" -> stringResource(R.string.tag_pants)
-    "category-shirt" -> stringResource(R.string.tag_shirt)
+    "category-shorts" -> stringResource(R.string.tag_shorts)
+    "category-jackets" -> stringResource(R.string.tag_jackets)
+    "category-jumpsuits" -> stringResource(R.string.tag_jumpsuits)
+    "category-blouses" -> stringResource(R.string.tag_blouses)
+    "category-dresses" -> stringResource(R.string.tag_dresses)
+    "category-skirts" -> stringResource(R.string.tag_skirts)
+    "category-blazers" -> stringResource(R.string.tag_blazers)
+    "category-cardigans" -> stringResource(R.string.tag_cardigans)
+    "category-bags" -> stringResource(R.string.tag_bags)
+    "category-tops" -> stringResource(R.string.tag_tops)
+    "category-knitwear" -> stringResource(R.string.tag_knitwear)
+    "category-trousers" -> stringResource(R.string.tag_trousers)
+    "category-sweaters" -> stringResource(R.string.tag_sweaters)
     "category-shoes" -> stringResource(R.string.tag_shoes)
+    "category-shirts" -> stringResource(R.string.tag_shirts)
+    "category-vests" -> stringResource(R.string.tag_vests)
+    "category-jewelry" -> stringResource(R.string.tag_jewelry)
+    "category-accessories" -> stringResource(R.string.tag_accessories)
+    "category-coats" -> stringResource(R.string.tag_coats)
     "season-spring" -> stringResource(R.string.tag_spring)
     "season-summer" -> stringResource(R.string.tag_summer)
-    "season-autumn" -> stringResource(R.string.tag_autumn)
+    "season-fall" -> stringResource(R.string.tag_fall)
     "season-winter" -> stringResource(R.string.tag_winter)
+    "occasion-active" -> stringResource(R.string.tag_active)
+    "occasion-statement" -> stringResource(R.string.tag_statement)
+    "occasion-dressed-up" -> stringResource(R.string.tag_dressed_up)
+    "occasion-formal" -> stringResource(R.string.tag_formal)
     "occasion-everyday" -> stringResource(R.string.tag_everyday)
-    "occasion-work" -> stringResource(R.string.tag_work)
-    "occasion-travel" -> stringResource(R.string.tag_travel)
+    "occasion-business" -> stringResource(R.string.tag_business)
     "location-main-closet" -> stringResource(R.string.tag_main_closet)
     else -> name
 }
@@ -1316,7 +1353,25 @@ private enum class PhotoProcessingStage(val labelRes: Int) {
     RemovingBackground(R.string.processing_stage_removing_background),
     CroppingPicture(R.string.processing_stage_cropping_picture),
     ExtractingColor(R.string.processing_stage_extracting_color),
+    DetectingAdditionalInformation(R.string.processing_stage_detecting_additional_information),
 }
+
+private fun mergePredictedAdditionalInfoTags(
+    currentTagIds: List<String>,
+    predictedTagIds: Set<String>,
+    availableTags: List<GarmentTag>,
+): List<String> {
+    if (predictedTagIds.isEmpty()) return currentTagIds
+    val tagsById = availableTags.associateBy(GarmentTag::id)
+    val currentCategories = currentTagIds.mapNotNull { tagId -> tagsById[tagId]?.categoryId }.toSet()
+    val inferredTagIds = predictedTagIds.filter { tagId ->
+        val categoryId = tagsById[tagId]?.categoryId ?: return@filter false
+        categoryId in MODEL_PREDICTED_CATEGORIES && categoryId !in currentCategories
+    }
+    return (currentTagIds + inferredTagIds).distinct()
+}
+
+private val MODEL_PREDICTED_CATEGORIES = setOf("category", "season", "occasion")
 
 private const val FIT_VALUE_DOES_NOT_FIT = 0
 private const val FIT_VALUE_FITS = 2

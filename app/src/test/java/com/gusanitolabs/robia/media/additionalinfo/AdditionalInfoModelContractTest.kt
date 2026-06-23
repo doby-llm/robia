@@ -1,0 +1,103 @@
+package com.gusanitolabs.robia.media.additionalinfo
+
+import com.gusanitolabs.robia.core.model.DefaultTags
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AdditionalInfoModelContractTest {
+    @Test
+    fun manifestDeclaresExpectedModelContract() {
+        val manifest = readManifest()
+
+        assertTrue(manifest.contains("\"shape\": [1, 224, 224, 3]"))
+        assertTrue(manifest.contains("\"name\": \"category\""))
+        assertTrue(manifest.contains("\"shape\": [1, 19]"))
+        assertTrue(manifest.contains("\"name\": \"occasion\""))
+        assertTrue(manifest.contains("\"shape\": [1, 6]"))
+        assertTrue(manifest.contains("\"name\": \"season\""))
+        assertTrue(manifest.contains("\"shape\": [1, 5]"))
+        assertTrue(manifest.contains("\"normalization\""))
+        assertTrue(manifest.contains("\"mobilenet_v3_preprocess_input\""))
+    }
+
+    @Test
+    fun manifestLabelsMatchTrainingOrder() {
+        val manifest = readManifest()
+
+        assertEquals(
+            listOf("Shorts", "Jackets", "Jumpsuits", "Blouses", "Dresses", "Skirts", "Blazers", "Cardigans", "Bags", "Tops", "Knitwear", "Trousers", "Sweaters", "Shoes", "Shirts", "Vests", "Jewelry", "Accessories", "Coats"),
+            labelsFor(manifest, "category"),
+        )
+        assertEquals(
+            listOf("Active", "Statement", "Dressed-up", "Formal", "Everyday", "Business"),
+            labelsFor(manifest, "occasion"),
+        )
+        assertEquals(
+            listOf("Spring", "Summer", "Fall", "Winter", "Multi Season"),
+            labelsFor(manifest, "season"),
+        )
+    }
+
+    @Test
+    fun deterministicNoiseBaselineIsPinnedForDriftReview() {
+        val manifest = readManifest()
+
+        assertTrue(manifest.contains("\"argmax\": 16"))
+        assertTrue(manifest.contains("\"maxScore\": 0.73013633"))
+        assertTrue(manifest.contains("\"argmax\": 2"))
+        assertTrue(manifest.contains("\"maxScore\": 0.9040952"))
+        assertTrue(manifest.contains("\"argmax\": 4"))
+        assertTrue(manifest.contains("\"maxScore\": 0.48142487"))
+    }
+
+    @Test
+    fun multiSeasonIsNeverExposedAsDefaultManageTag() {
+        assertFalse(DefaultTags.tags.any { tag -> tag.name == "Multi Season" || tag.id.contains("multi", ignoreCase = true) })
+    }
+
+    @Test
+    fun everyNonMultiSeasonManifestLabelMapsToDefaultTag() {
+        val manifest = readManifest()
+        val defaultTagIds = DefaultTags.tags.map { tag -> tag.id }.toSet()
+        val missing = listOf("category", "occasion", "season").flatMap { head ->
+            labelsFor(manifest, head).zip(tagIdsFor(manifest, head)).mapNotNull { (label, tagId) ->
+                when {
+                    label == "Multi Season" -> null
+                    tagId == null || tagId !in defaultTagIds -> "$head:$label"
+                    else -> null
+                }
+            }
+        }
+
+        assertEquals(emptyList<String>(), missing)
+    }
+
+    private fun readManifest(): String = java.io.File("src/main/assets/additional_info/mobilenet_v3_large.json").readText()
+
+    private fun labelsFor(manifest: String, headName: String): List<String> {
+        val headStart = manifest.indexOf("\"name\": \"$headName\"")
+        check(headStart >= 0) { "Missing head $headName" }
+        val labelsStart = manifest.indexOf("\"labels\": [", headStart)
+        val labelsEnd = manifest.indexOf(']', labelsStart)
+        return manifest.substring(labelsStart, labelsEnd)
+            .substringAfter('[')
+            .split(',')
+            .map { value -> value.trim().trim('"') }
+            .filter(String::isNotBlank)
+    }
+
+    private fun tagIdsFor(manifest: String, headName: String): List<String?> {
+        val headStart = manifest.indexOf("\"name\": \"$headName\"")
+        check(headStart >= 0) { "Missing head $headName" }
+        val tagIdsStart = manifest.indexOf("\"tagIds\": [", headStart)
+        val tagIdsEnd = manifest.indexOf(']', tagIdsStart)
+        return manifest.substring(tagIdsStart, tagIdsEnd)
+            .substringAfter('[')
+            .split(',')
+            .map { value -> value.trim().trim('"') }
+            .filter(String::isNotBlank)
+            .map { value -> value.takeUnless { it == "null" } }
+    }
+}

@@ -40,6 +40,28 @@
     <string name="sample_tee_name">Graphic band tee</string>
     <string name="sample_tee_brand">Vintage</string>
     <string name="sample_tee_notes">Soft washed black cotton tee with a subtle front graphic.</string>
+    <string name="tag_shorts">Shorts</string>
+    <string name="tag_jackets">Jackets</string>
+    <string name="tag_jumpsuits">Jumpsuits</string>
+    <string name="tag_blouses">Blouses</string>
+    <string name="tag_dresses">Dresses</string>
+    <string name="tag_skirts">Skirts</string>
+    <string name="tag_blazers">Blazers</string>
+    <string name="tag_cardigans">Cardigans</string>
+    <string name="tag_bags">Bags</string>
+    <string name="tag_knitwear">Knitwear</string>
+    <string name="tag_trousers">Trousers</string>
+    <string name="tag_sweaters">Sweaters</string>
+    <string name="tag_shirts">Shirts</string>
+    <string name="tag_vests">Vests</string>
+    <string name="tag_jewelry">Jewelry</string>
+    <string name="tag_accessories">Accessories</string>
+    <string name="tag_coats">Coats</string>
+    <string name="tag_fall">Fall</string>
+    <string name="tag_active">Active</string>
+    <string name="tag_statement">Statement</string>
+    <string name="tag_dressed_up">Dressed-up</string>
+    <string name="tag_business">Business</string>
     <string name="tag_summer">Summer</string>
     <string name="tag_casual">Casual</string>
     <string name="tag_all_season">All season</string>
@@ -109,6 +131,7 @@
     <string name="processing_stage_removing_background">Removing background</string>
     <string name="processing_stage_cropping_picture">Cropping picture</string>
     <string name="processing_stage_extracting_color">Extracting color</string>
+    <string name="processing_stage_detecting_additional_information">Detecting additional information</string>
     <string name="colors_section">Colors</string>
 
     <string name="raw_color_required">Raw color value</string>

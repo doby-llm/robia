@@ -27,6 +27,40 @@ class DefaultTagsTest {
     }
 
     @Test
+    fun modelAlignedDefaultTagsAreAvailable() {
+        val tagIds = DefaultTags.tags.map(GarmentTag::id).toSet()
+
+        assertTrue(
+            tagIds.containsAll(
+                listOf(
+                    "category-shorts",
+                    "category-jackets",
+                    "category-jumpsuits",
+                    "category-blouses",
+                    "category-dresses",
+                    "category-skirts",
+                    "category-blazers",
+                    "category-cardigans",
+                    "category-bags",
+                    "category-tops",
+                    "category-knitwear",
+                    "category-trousers",
+                    "category-sweaters",
+                    "category-shoes",
+                    "category-shirts",
+                    "category-vests",
+                    "category-jewelry",
+                    "category-accessories",
+                    "category-coats",
+                ),
+            ),
+        )
+        assertTrue(tagIds.containsAll(listOf("season-spring", "season-summer", "season-fall", "season-winter")))
+        assertTrue(tagIds.containsAll(listOf("occasion-active", "occasion-statement", "occasion-dressed-up", "occasion-formal", "occasion-everyday", "occasion-business")))
+        assertFalse(tagIds.any { id -> id.contains("multi", ignoreCase = true) })
+    }
+
+    @Test
     fun mainColorPaletteContainsMinimumDefaultColors() {
         assertEquals(11, DefaultTags.mainColors.count { color -> color.isDefault })
         assertTrue(DefaultTags.mainColors.all { color -> color.hex.matches(Regex("#[0-9A-Fa-f]{6}")) })

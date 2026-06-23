@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "modelVersion": "mobilenet_v3_large-2026-06-24",
+  "modelFile": "mobilenet_v3_large.tflite",
+  "input": {
+    "name": "serving_default_image:0",
+    "shape": [1, 224, 224, 3],
+    "dtype": "float32",
+    "normalization": {
+      "type": "mobilenet_v3_preprocess_input",
+      "range": [-1.0, 1.0],
+      "formula": "rgb / 127.5 - 1.0",
+      "transparentPixels": "composite_over_white"
+    }
+  },
+  "outputs": [
+    {
+      "name": "category",
+      "shape": [1, 19],
+      "labels": ["Shorts", "Jackets", "Jumpsuits", "Blouses", "Dresses", "Skirts", "Blazers", "Cardigans", "Bags", "Tops", "Knitwear", "Trousers", "Sweaters", "Shoes", "Shirts", "Vests", "Jewelry", "Accessories", "Coats"],
+      "tagIds": ["category-shorts", "category-jackets", "category-jumpsuits", "category-blouses", "category-dresses", "category-skirts", "category-blazers", "category-cardigans", "category-bags", "category-tops", "category-knitwear", "category-trousers", "category-sweaters", "category-shoes", "category-shirts", "category-vests", "category-jewelry", "category-accessories", "category-coats"],
+      "policy": "single_confident_winner",
+      "threshold": 0.55,
+      "margin": 0.15
+    },
+    {
+      "name": "occasion",
+      "shape": [1, 6],
+      "labels": ["Active", "Statement", "Dressed-up", "Formal", "Everyday", "Business"],
+      "tagIds": ["occasion-active", "occasion-statement", "occasion-dressed-up", "occasion-formal", "occasion-everyday", "occasion-business"],
+      "policy": "multi_confident_or_near_tie",
+      "threshold": 0.45,
+      "multiSelectThreshold": 0.40,
+      "nearTieMargin": 0.08
+    },
+    {
+      "name": "season",
+      "shape": [1, 5],
+      "labels": ["Spring", "Summer", "Fall", "Winter", "Multi Season"],
+      "tagIds": ["season-spring", "season-summer", "season-fall", "season-winter", null],
+      "policy": "multi_confident_or_near_tie_with_multi_season_expansion",
+      "threshold": 0.45,
+      "multiSelectThreshold": 0.40,
+      "nearTieMargin": 0.08,
+      "multiSeasonLabel": "Multi Season",
+      "multiSeasonTagIds": ["season-spring", "season-summer", "season-fall", "season-winter"]
+    }
+  ],
+  "deterministicNoiseBaseline": {
+    "generator": "python numpy default_rng(seed=123), normalized RGB float32 [-1,1]",
+    "category": { "argmax": 16, "maxScore": 0.73013633, "shape": [1, 19] },
+    "occasion": { "argmax": 2, "maxScore": 0.9040952, "shape": [1, 6] },
+    "season": { "argmax": 4, "maxScore": 0.48142487, "shape": [1, 5] },
+    "tolerance": 0.0005
+  }
+}

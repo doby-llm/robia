@@ -40,6 +40,28 @@
     <string name="sample_tee_name">Grafisches Bandshirt</string>
     <string name="sample_tee_brand">Vintage</string>
     <string name="sample_tee_notes">Weiches, gewaschenes schwarzes Baumwollshirt mit dezenter Frontgrafik.</string>
+    <string name="tag_shorts">Shorts</string>
+    <string name="tag_jackets">Jacken</string>
+    <string name="tag_jumpsuits">Jumpsuits</string>
+    <string name="tag_blouses">Blusen</string>
+    <string name="tag_dresses">Kleider</string>
+    <string name="tag_skirts">Röcke</string>
+    <string name="tag_blazers">Blazer</string>
+    <string name="tag_cardigans">Cardigans</string>
+    <string name="tag_bags">Taschen</string>
+    <string name="tag_knitwear">Strickwaren</string>
+    <string name="tag_trousers">Hosen</string>
+    <string name="tag_sweaters">Pullover</string>
+    <string name="tag_shirts">Hemden</string>
+    <string name="tag_vests">Westen</string>
+    <string name="tag_jewelry">Schmuck</string>
+    <string name="tag_accessories">Accessoires</string>
+    <string name="tag_coats">Mäntel</string>
+    <string name="tag_fall">Herbst</string>
+    <string name="tag_active">Aktiv</string>
+    <string name="tag_statement">Statement</string>
+    <string name="tag_dressed_up">Elegant</string>
+    <string name="tag_business">Business</string>
     <string name="tag_summer">Sommer</string>
     <string name="tag_casual">Leger</string>
     <string name="tag_all_season">Ganzjährig</string>
@@ -109,6 +131,7 @@
     <string name="processing_stage_removing_background">Hintergrund wird entfernt</string>
     <string name="processing_stage_cropping_picture">Bild wird zugeschnitten</string>
     <string name="processing_stage_extracting_color">Farbe wird extrahiert</string>
+    <string name="processing_stage_detecting_additional_information">Zusätzliche Informationen werden erkannt</string>
     <string name="colors_section">Farben</string>
 
     <string name="raw_color_required">Rohfarbwert</string>

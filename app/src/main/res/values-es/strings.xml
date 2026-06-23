@@ -40,6 +40,28 @@
     <string name="sample_tee_name">Camiseta gráfica de banda</string>
     <string name="sample_tee_brand">Vintage</string>
     <string name="sample_tee_notes">Camiseta negra de algodón lavado con un gráfico frontal sutil.</string>
+    <string name="tag_shorts">Pantalones cortos</string>
+    <string name="tag_jackets">Chaquetas</string>
+    <string name="tag_jumpsuits">Monos</string>
+    <string name="tag_blouses">Blusas</string>
+    <string name="tag_dresses">Vestidos</string>
+    <string name="tag_skirts">Faldas</string>
+    <string name="tag_blazers">Blazers</string>
+    <string name="tag_cardigans">Cárdigans</string>
+    <string name="tag_bags">Bolsos</string>
+    <string name="tag_knitwear">Punto</string>
+    <string name="tag_trousers">Pantalones</string>
+    <string name="tag_sweaters">Jerséis</string>
+    <string name="tag_shirts">Camisas</string>
+    <string name="tag_vests">Chalecos</string>
+    <string name="tag_jewelry">Joyería</string>
+    <string name="tag_accessories">Accesorios</string>
+    <string name="tag_coats">Abrigos</string>
+    <string name="tag_fall">Otoño</string>
+    <string name="tag_active">Activo</string>
+    <string name="tag_statement">Llamativo</string>
+    <string name="tag_dressed_up">Arreglado</string>
+    <string name="tag_business">Negocios</string>
     <string name="tag_summer">Verano</string>
     <string name="tag_casual">Casual</string>
     <string name="tag_all_season">Todo el año</string>
@@ -109,6 +131,7 @@
     <string name="processing_stage_removing_background">Eliminando fondo</string>
     <string name="processing_stage_cropping_picture">Recortando foto</string>
     <string name="processing_stage_extracting_color">Extrayendo color</string>
+    <string name="processing_stage_detecting_additional_information">Detectando información adicional</string>
     <string name="colors_section">Colores</string>
 
     <string name="raw_color_required">Valor de color original</string>
