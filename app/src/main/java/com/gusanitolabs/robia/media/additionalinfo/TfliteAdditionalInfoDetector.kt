@@ -39,7 +39,7 @@ class TfliteAdditionalInfoDetector(
         config: AdditionalInfoModelConfig,
         input: ByteBuffer,
     ): Map<String, FloatArray> {
-        val interpreter = Interpreter(loadModel(context))
+        val interpreter = Interpreter(loadModel(context, config))
         try {
             val outputMap = mutableMapOf<Int, Any>()
             val outputNamesByIndex = mutableMapOf<Int, String>()
@@ -65,8 +65,8 @@ class TfliteAdditionalInfoDetector(
         }
     }
 
-    private fun loadModel(context: Context): MappedByteBuffer = context.assets
-        .openFd(AdditionalInfoModelAssets.MODEL_FILE)
+    private fun loadModel(context: Context, config: AdditionalInfoModelConfig): MappedByteBuffer = context.assets
+        .openFd(AdditionalInfoModelAssets.modelAssetPath(config.modelFile))
         .use { assetFileDescriptor ->
             FileInputStream(assetFileDescriptor.fileDescriptor).channel.use { channel ->
                 channel.map(

@@ -8,6 +8,19 @@ object AdditionalInfoModelAssets {
     const val DIRECTORY = "additional_info"
     const val MODEL_FILE = "$DIRECTORY/mobilenet_v3_large.tflite"
     const val MANIFEST_FILE = "$DIRECTORY/mobilenet_v3_large.json"
+
+    private val SAFE_MODEL_FILE = Regex("[A-Za-z0-9][A-Za-z0-9._-]*\\.tflite")
+
+    fun modelAssetPath(modelFile: String): String {
+        require(isSafeModelFile(modelFile)) { "Unsafe additional-info model file: $modelFile" }
+        return "$DIRECTORY/$modelFile"
+    }
+
+    fun isSafeModelFile(modelFile: String): Boolean =
+        SAFE_MODEL_FILE.matches(modelFile) &&
+            '/' !in modelFile &&
+            '\\' !in modelFile &&
+            ".." !in modelFile
 }
 
 data class AdditionalInfoModelConfig(
@@ -96,6 +109,7 @@ object AdditionalInfoModelConfigLoader {
     }
 
     fun validate(config: AdditionalInfoModelConfig): Boolean {
+        if (!AdditionalInfoModelAssets.isSafeModelFile(config.modelFile)) return false
         if (config.input.shape != listOf(1, 224, 224, 3)) return false
         return config.heads.all { head ->
             head.shape.size == 2 &&

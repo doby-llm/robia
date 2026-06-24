@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,16 +24,31 @@ except ImportError as exc:  # pragma: no cover - exercised by CI environment set
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = REPO_ROOT / "app" / "src" / "main" / "assets" / "additional_info"
 MANIFEST_PATH = ASSET_DIR / "mobilenet_v3_large.json"
-MODEL_PATH = ASSET_DIR / "mobilenet_v3_large.tflite"
+RUNTIME_DETECTOR_PATH = (
+    REPO_ROOT
+    / "app"
+    / "src"
+    / "main"
+    / "java"
+    / "com"
+    / "gusanitolabs"
+    / "robia"
+    / "media"
+    / "additionalinfo"
+    / "TfliteAdditionalInfoDetector.kt"
+)
 EXPECTED_GENERATOR = "python numpy default_rng(seed=123), normalized RGB float32 [-1,1]"
 EXPECTED_INPUT_SHAPE = [1, 224, 224, 3]
+SAFE_MODEL_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.tflite")
 
 
 def main() -> int:
     manifest = load_manifest(MANIFEST_PATH)
+    model_path = resolve_model_path(manifest)
     assert_manifest_contract(manifest)
+    assert_manifest_driven_model_selection()
 
-    interpreter = Interpreter(model_path=str(MODEL_PATH))
+    interpreter = Interpreter(model_path=str(model_path))
     interpreter.allocate_tensors()
 
     input_details = interpreter.get_input_details()
@@ -72,14 +88,32 @@ def main() -> int:
 def load_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file():
         fail(f"Missing manifest: {path}")
-    if not MODEL_PATH.is_file():
-        fail(f"Missing model: {MODEL_PATH}")
     with path.open(encoding="utf-8") as manifest_file:
         return json.load(manifest_file)
 
 
+def resolve_model_path(manifest: dict[str, Any]) -> Path:
+    model_file = manifest.get("modelFile")
+    if not isinstance(model_file, str):
+        fail("manifest modelFile must be a string")
+    if not is_safe_model_file(model_file):
+        fail(f"Unsafe manifest modelFile: {model_file!r}")
+    model_path = ASSET_DIR / model_file
+    if not model_path.is_file():
+        fail(f"Missing model selected by manifest modelFile: {model_path}")
+    return model_path
+
+
+def is_safe_model_file(model_file: str) -> bool:
+    return (
+        SAFE_MODEL_FILE.fullmatch(model_file) is not None
+        and "/" not in model_file
+        and "\\" not in model_file
+        and ".." not in model_file
+    )
+
+
 def assert_manifest_contract(manifest: dict[str, Any]) -> None:
-    assert_equal(manifest.get("modelFile"), MODEL_PATH.name, "manifest modelFile")
     input_spec = manifest.get("input", {})
     assert_equal(input_spec.get("shape"), EXPECTED_INPUT_SHAPE, "manifest input shape")
     assert_equal(input_spec.get("dtype"), "float32", "manifest input dtype")
@@ -91,6 +125,27 @@ def assert_manifest_contract(manifest: dict[str, Any]) -> None:
         EXPECTED_GENERATOR,
         "baseline generator",
     )
+
+
+def assert_manifest_driven_model_selection() -> None:
+    """Static guard: runtime and CI must both select the model from manifest.modelFile."""
+    runtime_source = RUNTIME_DETECTOR_PATH.read_text(encoding="utf-8")
+    script_source = Path(__file__).read_text(encoding="utf-8")
+    main_source = script_source[script_source.index("def main()"): script_source.index("\n\ndef load_manifest")]
+
+    assert_contains(runtime_source, "loadModel(context, config)", "runtime passes parsed manifest config to loadModel")
+    assert_contains(
+        runtime_source,
+        "AdditionalInfoModelAssets.modelAssetPath(config.modelFile)",
+        "runtime opens manifest-selected model asset",
+    )
+    assert_not_contains(
+        runtime_source,
+        "openFd(AdditionalInfoModelAssets.MODEL_FILE)",
+        "runtime must not hard-code the model asset path",
+    )
+    assert_contains(main_source, "model_path = resolve_model_path(manifest)", "CI resolves model path from manifest")
+    assert_contains(main_source, "Interpreter(model_path=str(model_path))", "CI opens manifest-selected model path")
 
 
 def deterministic_normalized_noise(shape: list[int]) -> np.ndarray:
@@ -127,6 +182,16 @@ def assert_softmax(name: str, scores: np.ndarray) -> None:
 def assert_equal(actual: Any, expected: Any, label: str) -> None:
     if actual != expected:
         fail(f"Unexpected {label}: expected {expected!r}, got {actual!r}")
+
+
+def assert_contains(source: str, needle: str, label: str) -> None:
+    if needle not in source:
+        fail(f"Missing source contract: {label}")
+
+
+def assert_not_contains(source: str, needle: str, label: str) -> None:
+    if needle in source:
+        fail(f"Unexpected source contract violation: {label}")
 
 
 def fail(message: str) -> None:

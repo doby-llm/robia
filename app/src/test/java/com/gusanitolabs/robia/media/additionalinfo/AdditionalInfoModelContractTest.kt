@@ -53,6 +53,30 @@ class AdditionalInfoModelContractTest {
     }
 
     @Test
+    fun modelAssetPathUsesManifestModelFileInsideAdditionalInfoDirectory() {
+        assertEquals(
+            "additional_info/replacement-model_01.tflite",
+            AdditionalInfoModelAssets.modelAssetPath("replacement-model_01.tflite"),
+        )
+    }
+
+    @Test
+    fun unsafeManifestModelFileFragmentsAreRejected() {
+        listOf(
+            "../mobilenet_v3_large.tflite",
+            "nested/mobilenet_v3_large.tflite",
+            "nested\\mobilenet_v3_large.tflite",
+            ".hidden.tflite",
+            "mobilenet_v3_large.pb",
+        ).forEach { modelFile ->
+            assertFalse(
+                "Expected unsafe modelFile to be rejected: $modelFile",
+                AdditionalInfoModelAssets.isSafeModelFile(modelFile),
+            )
+        }
+    }
+
+    @Test
     fun multiSeasonIsNeverExposedAsDefaultManageTag() {
         assertFalse(DefaultTags.tags.any { tag -> tag.name == "Multi Season" || tag.id.contains("multi", ignoreCase = true) })
     }
