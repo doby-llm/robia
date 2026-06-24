@@ -56,9 +56,9 @@ class TfliteAdditionalInfoDetector(
             }
             input.rewind()
             interpreter.runForMultipleInputsOutputs(arrayOf(input), outputMap)
-            return outputNamesByIndex.mapValues { (index, _) ->
+            return outputNamesByIndex.entries.associate { (index, name) ->
                 @Suppress("UNCHECKED_CAST")
-                (outputMap.getValue(index) as Array<FloatArray>)[0]
+                name to (outputMap.getValue(index) as Array<FloatArray>)[0]
             }
         } finally {
             interpreter.close()
