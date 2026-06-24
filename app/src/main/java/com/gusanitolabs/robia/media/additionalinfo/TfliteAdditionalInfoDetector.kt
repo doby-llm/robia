@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.media.additionalinfo
 
 import android.content.Context
 import android.net.Uri
+import com.gusanitolabs.robia.core.model.AdditionalInfoDetectionDebug
 import com.gusanitolabs.robia.core.model.AdditionalInfoDetectionResult
 import com.gusanitolabs.robia.core.model.GarmentTag
 import org.tensorflow.lite.Interpreter
@@ -24,14 +25,22 @@ class TfliteAdditionalInfoDetector(
         if (!AdditionalInfoModelConfigLoader.validate(config)) {
             return AdditionalInfoDetectionResult(failureReason = AdditionalInfoDetectionResult.FailureReason.ManifestInvalid)
         }
-        val input = AdditionalInfoImagePreprocessor.preprocess(context, imageUri, config.input)
+        val input = AdditionalInfoImagePreprocessor.preprocessWithDiagnostics(context, imageUri, config.input)
             ?: return AdditionalInfoDetectionResult(failureReason = AdditionalInfoDetectionResult.FailureReason.PreprocessingFailed)
-        val rawScores = runCatching { runModel(context, config, input) }.getOrElse {
-            return AdditionalInfoDetectionResult(failureReason = AdditionalInfoDetectionResult.FailureReason.OutputShapeMismatch)
+        val baseDebug = input.toDebug(imageUri, config)
+        val rawScores = runCatching { runModel(context, config, input.tensor) }.getOrElse {
+            return AdditionalInfoDetectionResult(
+                failureReason = AdditionalInfoDetectionResult.FailureReason.OutputShapeMismatch,
+                debug = baseDebug,
+            )
         }
+        val debug = baseDebug.copy(outputShapes = rawScores.mapValues { (_, scores) -> listOf(1, scores.size) })
         val prediction = AdditionalInfoTagMapper.map(rawScores, availableTags, config)
-            ?: return AdditionalInfoDetectionResult(failureReason = AdditionalInfoDetectionResult.FailureReason.MappingFailed)
-        return AdditionalInfoDetectionResult(prediction = prediction)
+            ?: return AdditionalInfoDetectionResult(
+                failureReason = AdditionalInfoDetectionResult.FailureReason.MappingFailed,
+                debug = debug,
+            )
+        return AdditionalInfoDetectionResult(prediction = prediction, debug = debug)
     }
 
     internal fun runModel(
@@ -64,6 +73,21 @@ class TfliteAdditionalInfoDetector(
             interpreter.close()
         }
     }
+
+    private fun AdditionalInfoImagePreprocessor.PreprocessedInput.toDebug(
+        imageUri: Uri,
+        config: AdditionalInfoModelConfig,
+    ): AdditionalInfoDetectionDebug = AdditionalInfoDetectionDebug(
+        sourceUri = imageUri.toString(),
+        sourceWidth = sourceWidth,
+        sourceHeight = sourceHeight,
+        modelVersion = config.modelVersion,
+        modelFile = config.modelFile,
+        inputShape = config.input.shape,
+        normalizationType = config.input.normalizationType,
+        preprocessing = preprocessing,
+        tensorStats = stats,
+    )
 
     private fun loadModel(context: Context, config: AdditionalInfoModelConfig): MappedByteBuffer = context.assets
         .openFd(AdditionalInfoModelAssets.modelAssetPath(config.modelFile))

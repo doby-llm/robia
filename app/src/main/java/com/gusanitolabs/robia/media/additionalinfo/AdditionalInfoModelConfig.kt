@@ -149,6 +149,7 @@ object AdditionalInfoModelConfigLoader {
     fun validate(config: AdditionalInfoModelConfig): Boolean {
         if (!AdditionalInfoModelAssets.isSafeModelFile(config.modelFile)) return false
         if (config.input.shape != listOf(1, 224, 224, 3)) return false
+        if (config.input.normalizationType != "mobilenet_v3_preprocess_input") return false
         return config.heads.all { head ->
             head.shape.size == 2 &&
                 head.shape.first() == 1 &&

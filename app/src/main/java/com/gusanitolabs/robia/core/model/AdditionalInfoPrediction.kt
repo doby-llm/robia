@@ -15,9 +15,35 @@ data class AdditionalInfoPrediction(
     val occasionScores: List<AdditionalInfoLabelScore>,
 )
 
+data class AdditionalInfoTensorStats(
+    val min: Float,
+    val max: Float,
+    val mean: Float,
+    val standardDeviation: Float,
+    val channelMeans: List<Float>,
+    val channelMins: List<Float>,
+    val channelMaxs: List<Float>,
+    val nonFiniteCount: Int,
+    val checksum: String,
+)
+
+data class AdditionalInfoDetectionDebug(
+    val sourceUri: String,
+    val sourceWidth: Int,
+    val sourceHeight: Int,
+    val modelVersion: String,
+    val modelFile: String,
+    val inputShape: List<Int>,
+    val normalizationType: String,
+    val preprocessing: String,
+    val tensorStats: AdditionalInfoTensorStats,
+    val outputShapes: Map<String, List<Int>> = emptyMap(),
+)
+
 data class AdditionalInfoDetectionResult(
     val prediction: AdditionalInfoPrediction? = null,
     val failureReason: FailureReason? = null,
+    val debug: AdditionalInfoDetectionDebug? = null,
 ) {
     enum class FailureReason {
         ModelUnavailable,

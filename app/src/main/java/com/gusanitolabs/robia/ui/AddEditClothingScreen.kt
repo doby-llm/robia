@@ -278,13 +278,26 @@ fun AddEditClothingScreen(
                 photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
                 val detectionStart = SystemClock.elapsedRealtime()
                 val tagsForDetection = latestAvailableTags
-                val detectionResult = runCatching {
+                val classifierUri = Uri.parse(originalPhotoUri ?: uriString)
+                addLine("Additional-info classifier source: original uri=$classifierUri")
+                var detectionResult = runCatching {
                     withContext(Dispatchers.IO) {
-                        additionalInfoDetector.detect(context, croppedUri, tagsForDetection)
+                        additionalInfoDetector.detect(context, classifierUri, tagsForDetection)
                     }
                 }.getOrElse { throwable ->
-                    addLine("Additional-info detector exception: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                    addLine("Additional-info detector exception on original: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
                     null
+                }
+                if (detectionResult?.prediction == null && classifierUri != croppedUri) {
+                    addLine("Additional-info original-source detection failed; falling back to cropped foreground uri=$croppedUri")
+                    detectionResult = runCatching {
+                        withContext(Dispatchers.IO) {
+                            additionalInfoDetector.detect(context, croppedUri, tagsForDetection)
+                        }
+                    }.getOrElse { throwable ->
+                        addLine("Additional-info detector exception on cropped fallback: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                        detectionResult
+                    }
                 }
                 addLine("Additional-info detection duration: ${SystemClock.elapsedRealtime() - detectionStart}ms")
                 addDetectionDebugLines(diagnostics, detectionResult)
@@ -585,6 +598,21 @@ private fun addDetectionDebugLines(
 
     detectionResult.failureReason?.let { reason ->
         lines += "Additional info failure: $reason"
+    }
+    detectionResult.debug?.let { debug ->
+        val stats = debug.tensorStats
+        lines += "Additional info sourceUri: ${debug.sourceUri}"
+        lines += "Additional info sourceSize: ${debug.sourceWidth}x${debug.sourceHeight}"
+        lines += "Additional info model: version=${debug.modelVersion}, file=${debug.modelFile}"
+        lines += "Additional info input: shape=${debug.inputShape}, normalization=${debug.normalizationType}"
+        lines += "Additional info preprocessing: ${debug.preprocessing}"
+        lines += "Additional info tensor: min=${stats.min.formatDebugFloat()}, max=${stats.max.formatDebugFloat()}, mean=${stats.mean.formatDebugFloat()}, std=${stats.standardDeviation.formatDebugFloat()}, nonFinite=${stats.nonFiniteCount}, checksum=${stats.checksum}"
+        lines += "Additional info tensor channelMeans: ${stats.channelMeans.joinToString { it.formatDebugFloat() }}"
+        lines += "Additional info tensor channelMins: ${stats.channelMins.joinToString { it.formatDebugFloat() }}"
+        lines += "Additional info tensor channelMaxs: ${stats.channelMaxs.joinToString { it.formatDebugFloat() }}"
+        if (debug.outputShapes.isNotEmpty()) {
+            lines += "Additional info outputShapes: ${debug.outputShapes.entries.joinToString { (name, shape) -> "$name=$shape" }}"
+        }
     }
     val prediction = detectionResult.prediction
     if (prediction == null) {
