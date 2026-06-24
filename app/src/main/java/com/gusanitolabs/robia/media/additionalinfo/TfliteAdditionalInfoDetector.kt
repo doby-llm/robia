@@ -35,8 +35,11 @@ class TfliteAdditionalInfoDetector(
             )
         }
         val debug = baseDebug.copy(outputShapes = rawScores.mapValues { (_, scores) -> listOf(1, scores.size) })
-        val prediction = AdditionalInfoTagMapper.map(rawScores, availableTags, config)
-            ?: return AdditionalInfoDetectionResult(
+        val prediction = AdditionalInfoTagMapper.map(
+            scoresByHead = rawScores,
+            availableTagIds = availableTags.map(GarmentTag::id).toSet(),
+            config = config,
+        ) ?: return AdditionalInfoDetectionResult(
                 failureReason = AdditionalInfoDetectionResult.FailureReason.MappingFailed,
                 debug = debug,
             )

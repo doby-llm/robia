@@ -2,15 +2,13 @@ package com.gusanitolabs.robia.media.additionalinfo
 
 import com.gusanitolabs.robia.core.model.AdditionalInfoLabelScore
 import com.gusanitolabs.robia.core.model.AdditionalInfoPrediction
-import com.gusanitolabs.robia.core.model.GarmentTag
 
 object AdditionalInfoTagMapper {
     fun map(
         scoresByHead: Map<String, FloatArray>,
-        availableTags: List<GarmentTag>,
+        availableTagIds: Set<String>,
         config: AdditionalInfoModelConfig,
     ): AdditionalInfoPrediction? {
-        val availableTagIds = availableTags.map(GarmentTag::id).toSet()
         val categoryHead = config.requireHead(CATEGORY_HEAD)
         val seasonHead = config.requireHead(SEASON_HEAD)
         val occasionHead = config.requireHead(OCCASION_HEAD)
@@ -33,16 +31,13 @@ object AdditionalInfoTagMapper {
 
     fun unmappedRequiredLabels(
         config: AdditionalInfoModelConfig,
-        defaultTags: List<GarmentTag>,
-    ): List<String> {
-        val defaultTagIds = defaultTags.map(GarmentTag::id).toSet()
-        return config.heads.flatMap { head ->
-            head.labels.zip(head.tagIds).mapNotNull { (label, tagId) ->
-                when {
-                    label == head.multiSeasonLabel -> null
-                    tagId == null || tagId !in defaultTagIds -> "${head.name}:$label"
-                    else -> null
-                }
+        defaultTagIds: Set<String>,
+    ): List<String> = config.heads.flatMap { head ->
+        head.labels.zip(head.tagIds).mapNotNull { (label, tagId) ->
+            when {
+                label == head.multiSeasonLabel -> null
+                tagId == null || tagId !in defaultTagIds -> "${head.name}:$label"
+                else -> null
             }
         }
     }

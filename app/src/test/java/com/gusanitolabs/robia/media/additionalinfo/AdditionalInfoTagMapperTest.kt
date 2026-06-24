@@ -109,13 +109,19 @@ class AdditionalInfoTagMapperTest {
 
         assertEquals(
             listOf("occasion:Everyday"),
-            AdditionalInfoTagMapper.unmappedRequiredLabels(configWithMissingOccasionMapping, DefaultTags.tags),
+            AdditionalInfoTagMapper.unmappedRequiredLabels(
+                configWithMissingOccasionMapping,
+                DefaultTags.tags.map { tag -> tag.id }.toSet(),
+            ),
         )
     }
 
     @Test
     fun allManifestLabelsMapToDefaultTagsExceptMultiSeason() {
-        assertEquals(emptyList<String>(), AdditionalInfoTagMapper.unmappedRequiredLabels(config, DefaultTags.tags))
+        assertEquals(
+            emptyList<String>(),
+            AdditionalInfoTagMapper.unmappedRequiredLabels(config, DefaultTags.tags.map { tag -> tag.id }.toSet()),
+        )
     }
 
     private fun map(
@@ -128,7 +134,7 @@ class AdditionalInfoTagMapperTest {
             "season" to season,
             "occasion" to occasion,
         ),
-        availableTags = DefaultTags.tags,
+        availableTagIds = DefaultTags.tags.map { tag -> tag.id }.toSet(),
         config = config,
     ) ?: error("Expected prediction")
 }

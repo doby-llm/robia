@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Offline parity/debug harness for Robia's Android additional-info classifier.
+"""Offline parity/debug fallback for Robia's Android additional-info classifier.
+
+Prefer the Kotlin/JVM CLI (`scripts/run_additional_info_shared_cli.sh`) when Gradle
+is available because it reuses the Android app's shared classifier core. This
+Python fallback remains useful on machines where Kotlin/TFLite cannot run; it is
+manifest-driven and intentionally mirrors the same documented contract.
 
 Given an image path, this script reproduces the Android model-input contract from
 app/src/main/assets/additional_info/mobilenet_v3_large.json: RGBA decode,

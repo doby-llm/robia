@@ -15,10 +15,15 @@ from typing import NoReturn
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = REPO_ROOT / "app/src/main/assets/additional_info/mobilenet_v3_large.json"
 PREPROCESSOR = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoImagePreprocessor.kt"
-CONFIG = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoModelConfig.kt"
+CONFIG_LOADER = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoModelConfig.kt"
 DETECTOR = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/TfliteAdditionalInfoDetector.kt"
+SHARED_CONFIG = REPO_ROOT / "additional-info-core/src/main/kotlin/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoModelConfig.kt"
+SHARED_TENSOR = REPO_ROOT / "additional-info-core/src/main/kotlin/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoTensorBuilder.kt"
+SHARED_MAPPER = REPO_ROOT / "additional-info-core/src/main/kotlin/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoTagMapper.kt"
+CLI = REPO_ROOT / "additional-info-cli/src/main/kotlin/com/gusanitolabs/robia/additionalinfo/cli/AdditionalInfoCli.kt"
 ADD_EDIT = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt"
 DEBUG_SCRIPT = REPO_ROOT / "scripts/debug_additional_info_inference.py"
+DOC = REPO_ROOT / "docs/additional_info_classifier_debug.md"
 
 
 def main() -> int:
@@ -30,20 +35,41 @@ def main() -> int:
     assert_equal(normalization["formula"], "rgb / 127.5 - 1.0", "manifest normalization formula")
     assert_equal(normalization.get("transparentPixels"), "composite_over_white", "transparent pixel policy")
 
+    shared_config = SHARED_CONFIG.read_text(encoding="utf-8")
+    assert_contains(shared_config, "object AdditionalInfoModelManifest", "shared manifest parser exists")
+    assert_contains(shared_config, "AdditionalInfoPreprocessingPolicy.expectedShape", "manifest validation uses shared input policy")
+    assert_contains(shared_config, "AdditionalInfoPreprocessingPolicy.normalizationType", "manifest validation uses shared normalization policy")
+
+    shared_tensor = SHARED_TENSOR.read_text(encoding="utf-8")
+    assert_contains(shared_tensor, "object AdditionalInfoPreprocessingPolicy", "shared preprocessing policy exists")
+    assert_contains(shared_tensor, "fun fromRgbPixels", "shared tensor builder exists")
+    assert_contains(shared_tensor, "channel / 127.5f - 1f", "shared MobileNetV3 normalization math")
+    assert_contains(shared_tensor, "AdditionalInfoTensorStats", "shared tensor stats collected")
+
+    shared_mapper = SHARED_MAPPER.read_text(encoding="utf-8")
+    assert_contains(shared_mapper, "object AdditionalInfoTagMapper", "shared mapper exists")
+    assert_contains(shared_mapper, "selectCategory", "category policy shared")
+    assert_contains(shared_mapper, "selectMultiHead", "season/occasion policy shared")
+
     preprocessor_source = PREPROCESSOR.read_text(encoding="utf-8")
     assert_contains(preprocessor_source, "compositeAlphaOverWhite(source)", "composite alpha before resize")
-    assert_contains(preprocessor_source, "Bitmap.createScaledBitmap(composited", "resize composited RGB image")
-    assert_contains(preprocessor_source, "preprocessWithDiagnostics", "diagnostic preprocessing entry point")
-    assert_contains(preprocessor_source, "AdditionalInfoTensorStats", "tensor stats collected")
-    assert_contains(preprocessor_source, "inputSpec.normalizationType != NORMALIZATION_TYPE", "normalization type guarded")
+    assert_contains(preprocessor_source, "Bitmap.createScaledBitmap", "Android wrapper still owns Bitmap resize")
+    assert_contains(preprocessor_source, "AdditionalInfoTensorBuilder.fromRgbPixels", "Android uses shared tensor builder")
+    assert_contains(preprocessor_source, "AdditionalInfoPreprocessingPolicy.normalizationType", "Android guards normalization via shared policy")
 
-    config_source = CONFIG.read_text(encoding="utf-8")
-    assert_contains(config_source, "config.input.normalizationType != \"mobilenet_v3_preprocess_input\"", "manifest validation guards normalization type")
+    loader_source = CONFIG_LOADER.read_text(encoding="utf-8")
+    assert_contains(loader_source, "AdditionalInfoModelManifest.parse", "Android loader delegates parsing to shared manifest parser")
+    assert_contains(loader_source, "AdditionalInfoModelManifest.validate", "Android loader delegates validation to shared manifest parser")
 
     detector_source = DETECTOR.read_text(encoding="utf-8")
     assert_contains(detector_source, "preprocessWithDiagnostics", "detector uses diagnostic preprocessor")
-    assert_contains(detector_source, "debug = debug", "detector returns debug metadata")
+    assert_contains(detector_source, "availableTags.map(GarmentTag::id).toSet()", "detector passes available tag ids to shared mapper")
     assert_contains(detector_source, "outputShapes = rawScores.mapValues", "detector reports output shapes")
+
+    cli_source = CLI.read_text(encoding="utf-8")
+    assert_contains(cli_source, "AdditionalInfoModelManifest.parse", "CLI uses shared manifest parser")
+    assert_contains(cli_source, "AdditionalInfoTensorBuilder.fromRgbPixels", "CLI uses shared tensor builder")
+    assert_contains(cli_source, "AdditionalInfoTagMapper.map", "CLI uses shared tag mapper")
 
     add_edit_source = ADD_EDIT.read_text(encoding="utf-8")
     assert_contains(add_edit_source, "val classifierUri = Uri.parse(originalPhotoUri ?: uriString)", "additional-info classifier defaults to original photo")
@@ -53,9 +79,13 @@ def main() -> int:
 
     debug_script_source = DEBUG_SCRIPT.read_text(encoding="utf-8")
     assert_contains(debug_script_source, "alpha-over-white before resize", "offline harness documents fixed preprocessing order")
-    assert_contains(debug_script_source, "select_tags(outputs, manifest)", "offline harness mirrors Android tag policy")
+    assert_contains(debug_script_source, "select_tags(outputs, manifest)", "Python harness remains available as comparison fallback")
 
-    print("Android additional-info parity static checks passed")
+    doc_source = DOC.read_text(encoding="utf-8")
+    assert_contains(doc_source, "./gradlew :additional-info-cli:run", "Raspberry Pi CLI command documented")
+    assert_contains(doc_source, "Shared-code boundary", "shared-code boundary documented")
+
+    print("Android additional-info shared-core static checks passed")
     return 0
 
 

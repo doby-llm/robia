@@ -51,6 +51,7 @@ ksp {
 }
 
 dependencies {
+    implementation(project(":additional-info-core"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)

@@ -101,7 +101,7 @@ class AdditionalInfoModelContractTest {
     @Test
     fun modelOutputTagIdsMatchManifestIncludingMultiSeasonExpansion() {
         val manifest = readManifest()
-        val config = AdditionalInfoModelConfigLoader.parse(manifest)
+        val config = AdditionalInfoModelManifest.parse(manifest)
         val expectedTagIds = listOf("category", "occasion", "season")
             .flatMap { head -> tagIdsFor(manifest, head).filterNotNull() }
             .toSet() + setOf("season-spring", "season-summer", "season-fall", "season-winter")
