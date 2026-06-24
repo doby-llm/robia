@@ -56,6 +56,7 @@ class DefaultTagsTest {
             ),
         )
         assertTrue(tagIds.containsAll(listOf("season-spring", "season-summer", "season-fall", "season-winter")))
+        assertFalse(tagIds.contains("season-autumn"))
         assertTrue(tagIds.containsAll(listOf("occasion-active", "occasion-statement", "occasion-dressed-up", "occasion-formal", "occasion-everyday", "occasion-business")))
         assertFalse(tagIds.any { id -> id.contains("multi", ignoreCase = true) })
     }

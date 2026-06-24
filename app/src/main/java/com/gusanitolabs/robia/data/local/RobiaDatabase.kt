@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MainColorEntity::class,
         ClothingItemTagCrossRef::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -34,7 +34,14 @@ abstract class RobiaDatabase : RoomDatabase() {
                     RobiaDatabase::class.java,
                     "robia.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                    )
                     .build()
                     .also { instance = it }
             }
@@ -111,6 +118,34 @@ abstract class RobiaDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 database.execSQL("DELETE FROM main_colors WHERE id = 'beige-cream'")
+            }
+        }
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // The classifier contract uses Fall. Preserve existing garment selections by
+                // moving legacy Autumn references to the stable model-aligned season-fall id.
+                database.execSQL(
+                    """
+                    INSERT OR IGNORE INTO garment_tags (id, category_id, name, sort_order, is_system)
+                    VALUES ('season-fall', 'season', 'Fall', 30, 1)
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    """
+                    UPDATE clothing_item_tags
+                    SET tag_id = 'season-fall'
+                    WHERE tag_id = 'season-autumn'
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM clothing_item_tags existing
+                            WHERE existing.clothing_item_id = clothing_item_tags.clothing_item_id
+                                AND existing.tag_id = 'season-fall'
+                        )
+                    """.trimIndent(),
+                )
+                database.execSQL("DELETE FROM clothing_item_tags WHERE tag_id = 'season-autumn'")
+                database.execSQL("DELETE FROM garment_tags WHERE id = 'season-autumn'")
             }
         }
     }
