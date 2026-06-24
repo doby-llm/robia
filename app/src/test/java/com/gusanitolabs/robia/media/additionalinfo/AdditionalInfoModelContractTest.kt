@@ -98,6 +98,19 @@ class AdditionalInfoModelContractTest {
         assertEquals(emptyList<String>(), missing)
     }
 
+    @Test
+    fun modelOutputTagIdsMatchManifestIncludingMultiSeasonExpansion() {
+        val manifest = readManifest()
+        val config = AdditionalInfoModelConfigLoader.parse(manifest)
+        val expectedTagIds = listOf("category", "occasion", "season")
+            .flatMap { head -> tagIdsFor(manifest, head).filterNotNull() }
+            .toSet() + setOf("season-spring", "season-summer", "season-fall", "season-winter")
+
+        assertEquals(expectedTagIds, config.modelOutputTagIds())
+        assertEquals(expectedTagIds, AdditionalInfoModelOutputTags.ids)
+        assertFalse(AdditionalInfoModelOutputTags.ids.contains("location-main-closet"))
+    }
+
     private fun readManifest(): String = java.io.File("src/main/assets/additional_info/mobilenet_v3_large.json").readText()
 
     private fun labelsFor(manifest: String, headName: String): List<String> {

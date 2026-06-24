@@ -34,6 +34,44 @@ data class AdditionalInfoModelConfig(
 
     fun requireHead(name: String): AdditionalInfoHeadSpec = headsByName[name]
         ?: error("Missing additional-info output head: $name")
+
+    fun modelOutputTagIds(): Set<String> = heads
+        .flatMap { head -> head.tagIds.filterNotNull() + head.multiSeasonTagIds }
+        .toSet()
+}
+
+object AdditionalInfoModelOutputTags {
+    val ids: Set<String> = setOf(
+        "category-shorts",
+        "category-jackets",
+        "category-jumpsuits",
+        "category-blouses",
+        "category-dresses",
+        "category-skirts",
+        "category-blazers",
+        "category-cardigans",
+        "category-bags",
+        "category-tops",
+        "category-knitwear",
+        "category-trousers",
+        "category-sweaters",
+        "category-shoes",
+        "category-shirts",
+        "category-vests",
+        "category-jewelry",
+        "category-accessories",
+        "category-coats",
+        "occasion-active",
+        "occasion-statement",
+        "occasion-dressed-up",
+        "occasion-formal",
+        "occasion-everyday",
+        "occasion-business",
+        "season-spring",
+        "season-summer",
+        "season-fall",
+        "season-winter",
+    )
 }
 
 data class AdditionalInfoInputSpec(

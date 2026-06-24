@@ -238,6 +238,7 @@
     <string name="custom_hex_color">Use custom hex</string>
     <string name="color_hex_invalid">Enter a valid 6-digit hex color, for example #D6B84C.</string>
     <string name="color_name_duplicate">A color with this name already exists.</string>
+    <string name="tag_name_duplicate">A tag with this name already exists.</string>
     <string name="color_hex_duplicate">A color with this swatch already exists.</string>
     <string name="image_saved">Image saved</string>
     <string name="image_save_error">Couldn’t save image</string>
@@ -246,6 +247,13 @@
     <string name="share_garment_chooser_title">Share garment</string>
     <string name="image_share_error">Couldn’t share image</string>
     <string name="pdf_share_error">Couldn’t create PDF</string>
+    <string name="share_no_app_error">No app available to share this garment.</string>
+    <string name="rename_ai_tag_title">Rename AI-detected tag?</string>
+    <string name="rename_ai_tag_body">Robia’s AI currently uses “%1$s” as a prediction label. If you rename it, the AI may no longer identify this label automatically for new garments.</string>
+    <string name="rename_anyway">Rename anyway</string>
+    <string name="delete_ai_tag_title">Delete AI-detected tag?</string>
+    <string name="delete_ai_tag_body">Robia’s AI currently uses “%1$s” as a prediction label. If you delete it, the AI will no longer be able to identify this label automatically for new garments.</string>
+    <string name="delete_anyway">Delete anyway</string>
     <string name="category_category">Category</string>
     <string name="category_location">Locations</string>
     <string name="tag_t_shirt">T-shirt</string>

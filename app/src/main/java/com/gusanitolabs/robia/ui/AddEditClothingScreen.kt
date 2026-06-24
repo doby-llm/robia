@@ -1323,39 +1323,7 @@ private fun DetailTonalTag(text: String) {
 }
 
 @Composable
-private fun GarmentTag.localizedLabel(): String = when (id) {
-    "category-shorts" -> stringResource(R.string.tag_shorts)
-    "category-jackets" -> stringResource(R.string.tag_jackets)
-    "category-jumpsuits" -> stringResource(R.string.tag_jumpsuits)
-    "category-blouses" -> stringResource(R.string.tag_blouses)
-    "category-dresses" -> stringResource(R.string.tag_dresses)
-    "category-skirts" -> stringResource(R.string.tag_skirts)
-    "category-blazers" -> stringResource(R.string.tag_blazers)
-    "category-cardigans" -> stringResource(R.string.tag_cardigans)
-    "category-bags" -> stringResource(R.string.tag_bags)
-    "category-tops" -> stringResource(R.string.tag_tops)
-    "category-knitwear" -> stringResource(R.string.tag_knitwear)
-    "category-trousers" -> stringResource(R.string.tag_trousers)
-    "category-sweaters" -> stringResource(R.string.tag_sweaters)
-    "category-shoes" -> stringResource(R.string.tag_shoes)
-    "category-shirts" -> stringResource(R.string.tag_shirts)
-    "category-vests" -> stringResource(R.string.tag_vests)
-    "category-jewelry" -> stringResource(R.string.tag_jewelry)
-    "category-accessories" -> stringResource(R.string.tag_accessories)
-    "category-coats" -> stringResource(R.string.tag_coats)
-    "season-spring" -> stringResource(R.string.tag_spring)
-    "season-summer" -> stringResource(R.string.tag_summer)
-    "season-fall" -> stringResource(R.string.tag_fall)
-    "season-winter" -> stringResource(R.string.tag_winter)
-    "occasion-active" -> stringResource(R.string.tag_active)
-    "occasion-statement" -> stringResource(R.string.tag_statement)
-    "occasion-dressed-up" -> stringResource(R.string.tag_dressed_up)
-    "occasion-formal" -> stringResource(R.string.tag_formal)
-    "occasion-everyday" -> stringResource(R.string.tag_everyday)
-    "occasion-business" -> stringResource(R.string.tag_business)
-    "location-main-closet" -> stringResource(R.string.tag_main_closet)
-    else -> name
-}
+private fun GarmentTag.localizedLabel(): String = localizedTagLabel()
 
 private enum class ColorPickerTarget { Primary, Secondary }
 

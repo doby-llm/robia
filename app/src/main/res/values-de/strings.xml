@@ -238,6 +238,7 @@
     <string name="custom_hex_color">Benutzerdefiniertes Hex verwenden</string>
     <string name="color_hex_invalid">Gib eine gültige 6-stellige Hex-Farbe ein, zum Beispiel #D6B84C.</string>
     <string name="color_name_duplicate">Eine Farbe mit diesem Namen existiert bereits.</string>
+    <string name="tag_name_duplicate">Ein Tag mit diesem Namen existiert bereits.</string>
     <string name="color_hex_duplicate">Eine Farbe mit diesem Farbfeld existiert bereits.</string>
     <string name="image_saved">Bild gespeichert</string>
     <string name="image_save_error">Bild konnte nicht gespeichert werden</string>
@@ -246,6 +247,13 @@
     <string name="share_garment_chooser_title">Kleidungsstück teilen</string>
     <string name="image_share_error">Bild konnte nicht geteilt werden</string>
     <string name="pdf_share_error">PDF konnte nicht erstellt werden</string>
+    <string name="share_no_app_error">Keine App zum Teilen dieses Kleidungsstücks verfügbar.</string>
+    <string name="rename_ai_tag_title">KI-erkanntes Tag umbenennen?</string>
+    <string name="rename_ai_tag_body">Robias KI verwendet „%1$s“ derzeit als Vorhersage-Label. Wenn du es umbenennst, erkennt die KI dieses Label bei neuen Kleidungsstücken möglicherweise nicht mehr automatisch.</string>
+    <string name="rename_anyway">Trotzdem umbenennen</string>
+    <string name="delete_ai_tag_title">KI-erkanntes Tag löschen?</string>
+    <string name="delete_ai_tag_body">Robias KI verwendet „%1$s“ derzeit als Vorhersage-Label. Wenn du es löschst, kann die KI dieses Label bei neuen Kleidungsstücken nicht mehr automatisch erkennen.</string>
+    <string name="delete_anyway">Trotzdem löschen</string>
     <string name="category_category">Kategorie</string>
     <string name="category_location">Orte</string>
     <string name="tag_t_shirt">T-Shirt</string>

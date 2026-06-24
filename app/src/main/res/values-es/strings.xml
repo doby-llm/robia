@@ -238,6 +238,7 @@
     <string name="custom_hex_color">Usar hex personalizado</string>
     <string name="color_hex_invalid">Introduce un color hexadecimal válido de 6 dígitos, por ejemplo #D6B84C.</string>
     <string name="color_name_duplicate">Ya existe un color con este nombre.</string>
+    <string name="tag_name_duplicate">Ya existe una etiqueta con este nombre.</string>
     <string name="color_hex_duplicate">Ya existe un color con esta muestra.</string>
     <string name="image_saved">Imagen guardada</string>
     <string name="image_save_error">No se pudo guardar la imagen</string>
@@ -246,6 +247,13 @@
     <string name="share_garment_chooser_title">Compartir prenda</string>
     <string name="image_share_error">No se pudo compartir la imagen</string>
     <string name="pdf_share_error">No se pudo crear el PDF</string>
+    <string name="share_no_app_error">No hay ninguna app disponible para compartir esta prenda.</string>
+    <string name="rename_ai_tag_title">¿Renombrar etiqueta detectada por IA?</string>
+    <string name="rename_ai_tag_body">La IA de Robia usa actualmente «%1$s» como etiqueta de predicción. Si la renombras, es posible que la IA ya no identifique esta etiqueta automáticamente en prendas nuevas.</string>
+    <string name="rename_anyway">Renombrar de todos modos</string>
+    <string name="delete_ai_tag_title">¿Eliminar etiqueta detectada por IA?</string>
+    <string name="delete_ai_tag_body">La IA de Robia usa actualmente «%1$s» como etiqueta de predicción. Si la eliminas, la IA ya no podrá identificar esta etiqueta automáticamente en prendas nuevas.</string>
+    <string name="delete_anyway">Eliminar de todos modos</string>
     <string name="category_category">Categoría</string>
     <string name="category_location">Ubicaciones</string>
     <string name="tag_t_shirt">Camiseta</string>
