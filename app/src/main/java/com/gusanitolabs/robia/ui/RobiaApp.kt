@@ -322,7 +322,7 @@ private fun RobiaShell(
     var settingsExpanded by remember { mutableStateOf(false) }
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
-    val items = remember(clothingItems) { clothingItems.toUiWardrobeItems() }
+    val items = clothingItems.toUiWardrobeItems()
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
     }
