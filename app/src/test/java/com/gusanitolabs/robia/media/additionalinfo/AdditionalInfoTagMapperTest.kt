@@ -76,6 +76,44 @@ class AdditionalInfoTagMapperTest {
     }
 
     @Test
+    fun nearTieSeasonsCanSelectMultipleRealSeasonTags() {
+        val prediction = map(season = floatArrayOf(0.50f, 0.47f, 0.05f, 0.02f, 0.01f))
+
+        assertEquals(
+            setOf("season-spring", "season-summer"),
+            prediction.selectedTagIds.filter { id -> id.startsWith("season-") }.toSet(),
+        )
+    }
+
+    @Test
+    fun nearTieOccasionsCanSelectMultipleTags() {
+        val prediction = map(occasion = floatArrayOf(0.49f, 0.43f))
+
+        assertEquals(
+            setOf("occasion-active", "occasion-everyday"),
+            prediction.selectedTagIds.filter { id -> id.startsWith("occasion-") }.toSet(),
+        )
+    }
+
+    @Test
+    fun missingMappingsAreReportedForRequiredLabels() {
+        val configWithMissingOccasionMapping = config.copy(
+            heads = config.heads.map { head ->
+                if (head.name == "occasion") {
+                    head.copy(tagIds = listOf("occasion-active", "occasion-missing"))
+                } else {
+                    head
+                }
+            },
+        )
+
+        assertEquals(
+            listOf("occasion:Everyday"),
+            AdditionalInfoTagMapper.unmappedRequiredLabels(configWithMissingOccasionMapping, DefaultTags.tags),
+        )
+    }
+
+    @Test
     fun allManifestLabelsMapToDefaultTagsExceptMultiSeason() {
         assertEquals(emptyList<String>(), AdditionalInfoTagMapper.unmappedRequiredLabels(config, DefaultTags.tags))
     }

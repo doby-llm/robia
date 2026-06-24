@@ -1363,10 +1363,10 @@ private fun mergePredictedAdditionalInfoTags(
 ): List<String> {
     if (predictedTagIds.isEmpty()) return currentTagIds
     val tagsById = availableTags.associateBy(GarmentTag::id)
-    val currentCategories = currentTagIds.mapNotNull { tagId -> tagsById[tagId]?.categoryId }.toSet()
+    val hasCurrentCategory = currentTagIds.any { tagId -> tagsById[tagId]?.categoryId == "category" }
     val inferredTagIds = predictedTagIds.filter { tagId ->
         val categoryId = tagsById[tagId]?.categoryId ?: return@filter false
-        categoryId in MODEL_PREDICTED_CATEGORIES && categoryId !in currentCategories
+        categoryId in MODEL_PREDICTED_CATEGORIES && (categoryId != "category" || !hasCurrentCategory)
     }
     return (currentTagIds + inferredTagIds).distinct()
 }
