@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -90,6 +91,7 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -108,9 +110,10 @@ fun AddEditClothingScreen(
     onSave: (ClothingItem) -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val backgroundRemover = remember { PhotoBackgroundRemover() }
     val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
+    val latestMainColors by rememberUpdatedState(mainColors)
+    val latestAvailableTags by rememberUpdatedState(availableTags)
     var name by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
     var originalPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -127,6 +130,8 @@ fun AddEditClothingScreen(
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var photoProcessingToken by remember { mutableStateOf(0) }
+    var nextPhotoInputId by remember { mutableStateOf(0L) }
+    var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
 
     val primaryPaletteColor = mainColors.colorForId(selectedPrimaryColorId)
@@ -150,7 +155,28 @@ fun AddEditClothingScreen(
             ?.id
     }
 
-    fun processSelectedPhoto(uriString: String, sourceStatus: String) {
+    fun queuePhotoForProcessing(uriString: String, sourceStatus: String) {
+        val inputId = ++nextPhotoInputId
+        photoProcessingToken += 1 // Immediately invalidate any older in-flight pipeline.
+        originalPhotoUri = uriString
+        photoUri = uriString
+        captureStatus = sourceStatus
+        isPhotoProcessing = true
+        photoProcessingStage = PhotoProcessingStage.RemovingBackground
+        developerDiagnostics = listOf(
+            "Photo processing queued",
+            "source=$sourceStatus",
+            "uri=$uriString",
+            "event=$inputId",
+        )
+        pendingPhotoInput = PendingPhotoInput(
+            id = inputId,
+            uriString = uriString,
+            sourceStatus = sourceStatus,
+        )
+    }
+
+    suspend fun processSelectedPhoto(inputId: Long, uriString: String, sourceStatus: String) {
         val token = ++photoProcessingToken
         val tagIdsBeforeProcessing = selectedTagIds.toSet()
         originalPhotoUri = uriString
@@ -164,21 +190,21 @@ fun AddEditClothingScreen(
             "uri=$uriString",
         )
 
-        scope.launch {
-            val startedAt = SystemClock.elapsedRealtime()
-            val diagnostics = mutableListOf(
-                "Source: $sourceStatus",
-                "Input URI: $uriString",
-                "Palette colors available: ${mainColors.size}",
-                "Tags available: ${availableTags.size}",
-            )
+        val startedAt = SystemClock.elapsedRealtime()
+        val diagnostics = mutableListOf(
+            "Source: $sourceStatus",
+            "Input URI: $uriString",
+            "Pipeline event: $inputId",
+            "Palette colors available at start: ${latestMainColors.size}",
+            "Tags available at start: ${latestAvailableTags.size}",
+        )
 
-            fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
-            fun addLine(line: String) {
-                diagnostics += "${elapsed()}ms  $line"
-            }
+        fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
+        fun addLine(line: String) {
+            diagnostics += "${elapsed()}ms  $line"
+        }
 
-            try {
+        try {
                 val aspectStart = SystemClock.elapsedRealtime()
                 val sourceAspectRatio = withContext(Dispatchers.IO) {
                     ClothingImageStore.readImageAspectRatio(context, Uri.parse(uriString))
@@ -193,7 +219,7 @@ fun AddEditClothingScreen(
                     addLine("Background failure: reason=${failure.reason}, cause=${failure.causeClass ?: "n/a"}, message=${failure.message ?: "n/a"}")
                 }
                 addLine("Background removal duration: ${SystemClock.elapsedRealtime() - backgroundStart}ms")
-                if (token != photoProcessingToken) return@launch
+                if (token != photoProcessingToken) return
 
                 photoProcessingStage = PhotoProcessingStage.CroppingPicture
                 val cropStart = SystemClock.elapsedRealtime()
@@ -207,7 +233,7 @@ fun AddEditClothingScreen(
                 croppedResult.exceptionOrNull()?.let { throwable ->
                     addLine("Crop failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
                 }
-                if (token != photoProcessingToken) return@launch
+                if (token != photoProcessingToken) return
 
                 val finalAspectRatio = withContext(Dispatchers.IO) {
                     ClothingImageStore.readImageAspectRatio(context, croppedUri)
@@ -226,9 +252,10 @@ fun AddEditClothingScreen(
 
                 photoProcessingStage = PhotoProcessingStage.ExtractingColor
                 val colorStart = SystemClock.elapsedRealtime()
+                val colorPalette = latestMainColors
                 val colorResult = runCatching {
                     withContext(Dispatchers.IO) {
-                        ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors)
+                        ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, colorPalette)
                     }
                 }
                 val colorDiagnostics = colorResult.getOrNull()
@@ -243,16 +270,17 @@ fun AddEditClothingScreen(
                 extracted.forEachIndexed { index, match ->
                     addLine("Color[$index]: ${match.color.name} ${match.color.hex}, pixels=${match.pixelCount}, ratio=${match.ratio.formatDebugFloat()}")
                 }
-                if (token != photoProcessingToken) return@launch
+                if (token != photoProcessingToken) return
                 if (extracted.isNotEmpty()) {
                     applyExtractedColors(extracted)
                 }
 
                 photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
                 val detectionStart = SystemClock.elapsedRealtime()
+                val tagsForDetection = latestAvailableTags
                 val detectionResult = runCatching {
                     withContext(Dispatchers.IO) {
-                        additionalInfoDetector.detect(context, croppedUri, availableTags)
+                        additionalInfoDetector.detect(context, croppedUri, tagsForDetection)
                     }
                 }.getOrElse { throwable ->
                     addLine("Additional-info detector exception: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
@@ -260,32 +288,39 @@ fun AddEditClothingScreen(
                 }
                 addLine("Additional-info detection duration: ${SystemClock.elapsedRealtime() - detectionStart}ms")
                 addDetectionDebugLines(diagnostics, detectionResult)
-                if (token != photoProcessingToken) return@launch
+                if (token != photoProcessingToken) return
                 detectionResult?.prediction?.let { prediction ->
                     if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
                         selectedTagIds = mergePredictedAdditionalInfoTags(
                             currentTagIds = selectedTagIds,
                             predictedTagIds = prediction.selectedTagIds,
-                            availableTags = availableTags,
+                            availableTags = tagsForDetection,
                         )
                     } else {
                         addLine("Predicted tags not merged because user changed tag selection during processing")
                     }
                 }
-            } catch (throwable: Exception) {
-                if (token != photoProcessingToken) return@launch
+        } catch (throwable: CancellationException) {
+            addLine("Pipeline cancelled because a newer photo input superseded this one")
+            throw throwable
+        } catch (throwable: Exception) {
+                if (token != photoProcessingToken) return
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
                 addLine("Pipeline failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-            } finally {
-                if (token == photoProcessingToken) {
-                    addLine("Total duration: ${elapsed()}ms")
-                    developerDiagnostics = diagnostics
-                    isPhotoProcessing = false
-                    photoProcessingStage = null
-                }
+        } finally {
+            if (token == photoProcessingToken) {
+                addLine("Total duration: ${elapsed()}ms")
+                developerDiagnostics = diagnostics
+                isPhotoProcessing = false
+                photoProcessingStage = null
             }
         }
+    }
+
+    LaunchedEffect(pendingPhotoInput) {
+        val input = pendingPhotoInput ?: return@LaunchedEffect
+        processSelectedPhoto(input.id, input.uriString, input.sourceStatus)
     }
 
     LaunchedEffect(existingItem?.id) {
@@ -392,7 +427,7 @@ fun AddEditClothingScreen(
                     isPhotoProcessing = isPhotoProcessing,
                     processingStage = photoProcessingStage,
                     onCaptureStatusChange = { captureStatus = it },
-                    onPhotoSelected = ::processSelectedPhoto,
+                    onPhotoSelected = ::queuePhotoForProcessing,
                 )
             } else {
                 PhotoCaptureCard(
@@ -1451,6 +1486,12 @@ private fun DetailTonalTag(text: String) {
 private fun GarmentTag.localizedLabel(): String = localizedTagLabel()
 
 private enum class ColorPickerTarget { Primary, Secondary }
+
+private data class PendingPhotoInput(
+    val id: Long,
+    val uriString: String,
+    val sourceStatus: String,
+)
 
 private enum class PhotoProcessingStage(val labelRes: Int) {
     RemovingBackground(R.string.processing_stage_removing_background),
