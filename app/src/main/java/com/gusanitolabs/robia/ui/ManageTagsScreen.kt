@@ -83,8 +83,9 @@ fun ManageTagsScreen(
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
     var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
-    val visibleCategories = categories.filterNot { category -> category.id == "care" }
-    val visibleTags = tags.filterNot { tag -> tag.categoryId == "care" }
+    val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
+    val visibleTags = remember(tags) { tags.filterNot { tag -> tag.categoryId == "care" } }
+    val tagsByCategory = remember(visibleTags) { visibleTags.groupBy(GarmentTag::categoryId) }
 
     LazyColumn(
         modifier = Modifier
@@ -119,7 +120,7 @@ fun ManageTagsScreen(
 
         visibleCategories.forEach { category ->
             item(key = category.id) {
-                val categoryTags = visibleTags.filter { tag -> tag.categoryId == category.id }
+                val categoryTags = tagsByCategory[category.id].orEmpty()
                 TagCategoryCard(
                     category = category,
                     tags = categoryTags,
@@ -134,7 +135,7 @@ fun ManageTagsScreen(
     editorState?.let { state ->
         TagEditorDialog(
             state = state,
-            categoryTags = visibleTags.filter { tag -> tag.categoryId == state.categoryId },
+            categoryTags = tagsByCategory[state.categoryId].orEmpty(),
             onDismiss = { editorState = null },
             onSave = { tag ->
                 onSaveTag(tag)
@@ -229,12 +230,14 @@ private fun TagCategoryCard(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     tags.forEach { tag ->
-                        TagListRow(
-                            tag = tag,
-                            canEdit = !isImmutable,
-                            onEdit = { onEditTag(tag) },
-                            onDelete = { onDeleteTag(tag) },
-                        )
+                        key(tag.id) {
+                            TagListRow(
+                                tag = tag,
+                                canEdit = !isImmutable,
+                                onEdit = { onEditTag(tag) },
+                                onDelete = { onDeleteTag(tag) },
+                            )
+                        }
                     }
                 }
             }
@@ -352,13 +355,15 @@ private fun MainColorPaletteCard(
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 colors.forEach { color ->
-                    ColorListRow(
-                        color = color,
-                        canEdit = true,
-                        canDelete = colors.size > 1,
-                        onEdit = { onEditColor(color) },
-                        onDelete = { onDeleteColor(color) },
-                    )
+                    key(color.id) {
+                        ColorListRow(
+                            color = color,
+                            canEdit = true,
+                            canDelete = colors.size > 1,
+                            onEdit = { onEditColor(color) },
+                            onDelete = { onDeleteColor(color) },
+                        )
+                    }
                 }
             }
         }

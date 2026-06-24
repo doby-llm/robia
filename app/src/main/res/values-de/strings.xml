@@ -163,6 +163,7 @@
     <string name="tap_edit_to_add">Zum Hinzufügen bearbeiten</string>
     <string name="none">Keiner</string>
     <string name="no_color">Keine Farbe</string>
+    <string name="no_secondary_color">Keine Sekundärfarbe</string>
     <string name="cancel">Abbrechen</string>
     <string name="save_item">Teil speichern</string>
     <string name="untitled_item">Unbenanntes Kleidungsstück</string>

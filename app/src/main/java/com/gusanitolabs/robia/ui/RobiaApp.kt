@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -319,7 +322,7 @@ private fun RobiaShell(
     var settingsExpanded by remember { mutableStateOf(false) }
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
-    val items = clothingItems.toUiWardrobeItems()
+    val items = remember(clothingItems) { clothingItems.toUiWardrobeItems() }
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
     }
@@ -819,7 +822,12 @@ private fun GarmentPhotoPlaceholder(
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
                 },
-                update = { imageView -> imageView.setImageURI(Uri.parse(photoUri)) },
+                update = { imageView ->
+                    if (imageView.tag != photoUri) {
+                        imageView.tag = photoUri
+                        imageView.setImageURI(Uri.parse(photoUri))
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -1060,12 +1068,18 @@ private fun ColorSwatch(
 ) {
     val colorValue = paletteHex?.takeIf { it.isNotBlank() } ?: rawValue?.takeIf { it.isNotBlank() }
     val hasStoredColor = !colorValue.isNullOrBlank() || !paletteName.isNullOrBlank()
+    val isNoColor = !hasStoredColor
     val swatchColor = colorValue?.toComposeColor() ?: color.swatchColor()
     val displayLabel = when {
-        !hasStoredColor -> stringResource(R.string.no_color)
+        isNoColor -> stringResource(R.string.no_color)
         !paletteName.isNullOrBlank() -> paletteName
         color != DisplayColorLabel.Unknown -> color.localizedLabel()
-        else -> colorValue.orEmpty()
+        else -> stringResource(R.string.color_unknown)
+    }
+    val swatchDescription = if (isNoColor && role == stringResource(R.string.secondary_color)) {
+        stringResource(R.string.no_secondary_color)
+    } else {
+        displayLabel
     }
 
     Column(
@@ -1076,9 +1090,20 @@ private fun ColorSwatch(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(if (hasStoredColor) swatchColor else MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-        )
+                .background(if (hasStoredColor) swatchColor else MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                .semantics { contentDescription = swatchDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isNoColor) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
         Text(
             text = role.uppercase(),
             style = MaterialTheme.typography.labelMedium,
@@ -1093,13 +1118,6 @@ private fun ColorSwatch(
             Text(
                 text = name,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        colorValue?.let { value ->
-            Text(
-                text = value,
-                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1135,7 +1153,9 @@ private fun DetailMetadataGrid(
             )
             metadata.chunked(2).forEach { rowItems ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     rowItems.forEach { metadataItem ->
@@ -1144,7 +1164,9 @@ private fun DetailMetadataGrid(
                             label = metadataItem.label,
                             value = metadataItem.value,
                             onEditClick = onEditClick,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
                         )
                     }
                     if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
@@ -1190,13 +1212,6 @@ private fun DetailMetadataCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (value == null) {
-                Text(
-                    text = stringResource(R.string.tap_edit_to_add),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
         }
     }
 }

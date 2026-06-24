@@ -163,6 +163,7 @@
     <string name="tap_edit_to_add">Tap edit to add</string>
     <string name="none">None</string>
     <string name="no_color">No color</string>
+    <string name="no_secondary_color">No secondary color</string>
     <string name="cancel">Cancel</string>
     <string name="save_item">Save item</string>
     <string name="untitled_item">Untitled item</string>
