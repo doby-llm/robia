@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.content.res.Configuration
 import android.os.LocaleList
+import android.os.SystemClock
 import android.widget.Toast
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
@@ -75,6 +76,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -126,6 +128,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+
+private const val DEVELOPER_UNLOCK_TAP_COUNT = 10
+private const val DEVELOPER_UNLOCK_WINDOW_MILLIS = 5_000L
 
 private sealed interface RobiaRoute {
     @get:StringRes
@@ -245,6 +250,12 @@ fun RobiaApp(
             onLanguageSelected = { language ->
                 scope.launch { settingsRepository.setLanguagePreference(language) }
             },
+            onDeveloperModeUnlocked = {
+                scope.launch { settingsRepository.setDeveloperModeUnlocked(true) }
+            },
+            onDeveloperModeEnabledChange = { enabled ->
+                scope.launch { settingsRepository.setDeveloperModeEnabled(enabled) }
+            },
             onSaveItem = { item ->
                 scope.launch { wardrobeRepository.upsertItem(item) }
             },
@@ -314,6 +325,8 @@ private fun RobiaShell(
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
     onLanguageSelected: (LanguagePreference) -> Unit,
+    onDeveloperModeUnlocked: () -> Unit,
+    onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
     onSaveMainColor: (MainColor) -> Unit,
@@ -323,6 +336,9 @@ private fun RobiaShell(
     val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
     val currentRoute = routeStack.last()
     var settingsExpanded by remember { mutableStateOf(false) }
+    val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
+    val context = LocalContext.current
+    val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     val items = clothingItems.toUiWardrobeItems()
@@ -362,6 +378,20 @@ private fun RobiaShell(
                 updatedAtEpochMillis = System.currentTimeMillis(),
             ),
         )
+    }
+
+    fun handleSettingsClick() {
+        settingsExpanded = true
+        if (settings.developerModeUnlocked) return
+
+        val now = SystemClock.elapsedRealtime()
+        settingsTapTimestamps.removeAll { timestamp -> now - timestamp > DEVELOPER_UNLOCK_WINDOW_MILLIS }
+        settingsTapTimestamps.add(now)
+        if (settingsTapTimestamps.size >= DEVELOPER_UNLOCK_TAP_COUNT) {
+            settingsTapTimestamps.clear()
+            onDeveloperModeUnlocked()
+            Toast.makeText(context, developerModeUnlockedMessage, Toast.LENGTH_SHORT).show()
+        }
     }
 
     BackHandler(enabled = routeStack.size > 1) { popRoute() }
@@ -407,7 +437,7 @@ private fun RobiaShell(
                             val settingsDescription = stringResource(R.string.content_settings_menu)
                             IconButton(
                                 modifier = Modifier.semantics { contentDescription = settingsDescription },
-                                onClick = { settingsExpanded = true },
+                                onClick = ::handleSettingsClick,
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Settings,
@@ -417,6 +447,9 @@ private fun RobiaShell(
                             SettingsMenu(
                                 expanded = settingsExpanded,
                                 currentLanguage = settings.languagePreference,
+                                developerModeUnlocked = settings.developerModeUnlocked,
+                                developerModeEnabled = settings.developerModeEnabled,
+                                onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
                                 onLanguageSelected = { language ->
                                     onLanguageSelected(language)
                                     settingsExpanded = false
@@ -463,6 +496,7 @@ private fun RobiaShell(
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
+            developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
@@ -494,6 +528,9 @@ private fun RobiaShell(
 private fun SettingsMenu(
     expanded: Boolean,
     currentLanguage: LanguagePreference,
+    developerModeUnlocked: Boolean,
+    developerModeEnabled: Boolean,
+    onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
@@ -519,6 +556,28 @@ private fun SettingsMenu(
             )
         }
         Divider()
+        if (developerModeUnlocked) {
+            DropdownMenuItem(
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stringResource(R.string.developer_mode))
+                        Text(
+                            text = stringResource(R.string.developer_mode_summary),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                },
+                leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                trailingIcon = {
+                    Switch(
+                        checked = developerModeEnabled,
+                        onCheckedChange = onDeveloperModeEnabledChange,
+                    )
+                },
+                onClick = { onDeveloperModeEnabledChange(!developerModeEnabled) },
+            )
+            Divider()
+        }
         DropdownMenuItem(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -576,6 +635,7 @@ private fun RobiaNavHost(
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
+    developerModeEnabled: Boolean,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -617,6 +677,7 @@ private fun RobiaNavHost(
             availableTags = availableTags,
             mainColors = mainColors,
             existingItem = selectedDomainItem,
+            developerModeEnabled = developerModeEnabled,
             onCancel = onCancelAddEdit,
             onSave = onSaveItem,
         )
@@ -1855,6 +1916,8 @@ private fun RobiaAppPreview() {
             availableTags = emptyList(),
             mainColors = emptyList(),
             onLanguageSelected = {},
+            onDeveloperModeUnlocked = {},
+            onDeveloperModeEnabledChange = {},
             onSaveItem = {},
             onSaveTag = {},
             onSaveMainColor = {},

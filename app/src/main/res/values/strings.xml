@@ -12,6 +12,9 @@
     <string name="language_german">German</string>
     <string name="data_sync">Data sync</string>
     <string name="data_sync_coming_soon">Google Drive sync coming soon</string>
+    <string name="developer_mode">Developer Mode</string>
+    <string name="developer_mode_summary">Show Add Garment diagnostics</string>
+    <string name="developer_mode_unlocked">Developer mode unlocked</string>
     <string name="wardrobe_title">Your wardrobe</string>
     <string name="wardrobe_intro">Start building a local catalog of clothes, tags, and outfit-ready details.</string>
     <string name="filters">Filters</string>

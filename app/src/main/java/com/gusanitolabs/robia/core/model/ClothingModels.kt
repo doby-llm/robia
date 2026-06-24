@@ -76,4 +76,6 @@ enum class LanguagePreference(val storageValue: String?) {
 
 data class RobiaSettings(
     val languagePreference: LanguagePreference = LanguagePreference.System,
+    val developerModeUnlocked: Boolean = false,
+    val developerModeEnabled: Boolean = false,
 )

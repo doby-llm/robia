@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.ui
 
 import android.net.Uri
+import android.os.SystemClock
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -69,6 +70,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +80,8 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.model.AdditionalInfoDetectionResult
+import com.gusanitolabs.robia.core.model.AdditionalInfoLabelScore
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -89,6 +93,7 @@ import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import java.util.UUID
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -98,6 +103,7 @@ fun AddEditClothingScreen(
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
     existingItem: ClothingItem?,
+    developerModeEnabled: Boolean,
     onCancel: () -> Unit,
     onSave: (ClothingItem) -> Unit,
 ) {
@@ -119,6 +125,7 @@ fun AddEditClothingScreen(
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     var isPhotoProcessing by rememberSaveable { mutableStateOf(false) }
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
+    var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
 
@@ -151,25 +158,62 @@ fun AddEditClothingScreen(
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
+        developerDiagnostics = listOf(
+            "Photo processing started",
+            "source=$sourceStatus",
+            "uri=$uriString",
+        )
 
         scope.launch {
+            val startedAt = SystemClock.elapsedRealtime()
+            val diagnostics = mutableListOf(
+                "Source: $sourceStatus",
+                "Input URI: $uriString",
+                "Palette colors available: ${mainColors.size}",
+                "Tags available: ${availableTags.size}",
+            )
+
+            fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
+            fun addLine(line: String) {
+                diagnostics += "${elapsed()}ms  $line"
+            }
+
             try {
-                photoAspectRatio = withContext(Dispatchers.IO) {
+                val aspectStart = SystemClock.elapsedRealtime()
+                val sourceAspectRatio = withContext(Dispatchers.IO) {
                     ClothingImageStore.readImageAspectRatio(context, Uri.parse(uriString))
-                }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
+                }
+                photoAspectRatio = sourceAspectRatio?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
+                addLine("Source aspect ratio: ${sourceAspectRatio?.formatDebugFloat() ?: "unknown"} (${SystemClock.elapsedRealtime() - aspectStart}ms)")
+
+                val backgroundStart = SystemClock.elapsedRealtime()
                 val result = backgroundRemover.removeBackground(context, Uri.parse(uriString))
+                addLine("Background removal: status=${result.status}, usedFallback=${result.usedFallback}, output=${result.outputUri}")
+                result.failure?.let { failure ->
+                    addLine("Background failure: reason=${failure.reason}, cause=${failure.causeClass ?: "n/a"}, message=${failure.message ?: "n/a"}")
+                }
+                addLine("Background removal duration: ${SystemClock.elapsedRealtime() - backgroundStart}ms")
                 if (token != photoProcessingToken) return@launch
+
                 photoProcessingStage = PhotoProcessingStage.CroppingPicture
+                val cropStart = SystemClock.elapsedRealtime()
                 val croppedResult = runCatching {
                     withContext(Dispatchers.IO) {
                         ClothingImageStore.cropTransparentPixels(context, result.outputUri)
                     }
                 }
-                val croppedUri = croppedResult.getOrDefault(result.originalUri)
+                val croppedUri = croppedResult.getOrDefault(result.outputUri)
+                addLine("Crop: success=${croppedResult.isSuccess}, uri=$croppedUri, duration=${SystemClock.elapsedRealtime() - cropStart}ms")
+                croppedResult.exceptionOrNull()?.let { throwable ->
+                    addLine("Crop failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                }
                 if (token != photoProcessingToken) return@launch
-                photoAspectRatio = withContext(Dispatchers.IO) {
+
+                val finalAspectRatio = withContext(Dispatchers.IO) {
                     ClothingImageStore.readImageAspectRatio(context, croppedUri)
-                }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: photoAspectRatio
+                }
+                photoAspectRatio = finalAspectRatio?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: photoAspectRatio
+                addLine("Display aspect ratio: ${finalAspectRatio?.formatDebugFloat() ?: "unknown"}")
                 val displayUri = croppedUri.toString()
                 photoUri = displayUri
                 val finalStatus = if (result.usedFallback || croppedResult.isFailure) {
@@ -178,26 +222,44 @@ fun AddEditClothingScreen(
                     PhotoStatus.BackgroundRemoved
                 }
                 captureStatus = finalStatus
+                addLine("Final photo status: $finalStatus")
+
                 photoProcessingStage = PhotoProcessingStage.ExtractingColor
-                val extracted = if (finalStatus == PhotoStatus.BackgroundRemoved) {
-                    runCatching {
-                        withContext(Dispatchers.IO) {
-                            ClothingImageStore.extractPaletteColorMatches(context, croppedUri, mainColors)
-                        }
-                    }.getOrDefault(emptyList())
-                } else {
-                    emptyList()
+                val colorStart = SystemClock.elapsedRealtime()
+                val colorResult = runCatching {
+                    withContext(Dispatchers.IO) {
+                        ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors)
+                    }
+                }
+                val colorDiagnostics = colorResult.getOrNull()
+                val extracted = colorDiagnostics?.matches.orEmpty()
+                addLine("Color extraction: success=${colorResult.isSuccess}, matches=${extracted.size}, duration=${SystemClock.elapsedRealtime() - colorStart}ms")
+                colorDiagnostics?.let { stats ->
+                    addLine("Color stats: bitmap=${stats.width ?: "unknown"}x${stats.height ?: "unknown"}, sampleStep=${stats.sampleStep ?: "n/a"}, estimatedSamples=${stats.sampleGridEstimate ?: "n/a"}, paletteSize=${stats.paletteSize}")
+                }
+                colorResult.exceptionOrNull()?.let { throwable ->
+                    addLine("Color extraction failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                }
+                extracted.forEachIndexed { index, match ->
+                    addLine("Color[$index]: ${match.color.name} ${match.color.hex}, pixels=${match.pixelCount}, ratio=${match.ratio.formatDebugFloat()}")
                 }
                 if (token != photoProcessingToken) return@launch
                 if (extracted.isNotEmpty()) {
                     applyExtractedColors(extracted)
                 }
+
                 photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
+                val detectionStart = SystemClock.elapsedRealtime()
                 val detectionResult = runCatching {
                     withContext(Dispatchers.IO) {
                         additionalInfoDetector.detect(context, croppedUri, availableTags)
                     }
-                }.getOrNull()
+                }.getOrElse { throwable ->
+                    addLine("Additional-info detector exception: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                    null
+                }
+                addLine("Additional-info detection duration: ${SystemClock.elapsedRealtime() - detectionStart}ms")
+                addDetectionDebugLines(diagnostics, detectionResult)
                 if (token != photoProcessingToken) return@launch
                 detectionResult?.prediction?.let { prediction ->
                     if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
@@ -206,14 +268,19 @@ fun AddEditClothingScreen(
                             predictedTagIds = prediction.selectedTagIds,
                             availableTags = availableTags,
                         )
+                    } else {
+                        addLine("Predicted tags not merged because user changed tag selection during processing")
                     }
                 }
-            } catch (_: Exception) {
+            } catch (throwable: Exception) {
                 if (token != photoProcessingToken) return@launch
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
+                addLine("Pipeline failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
             } finally {
                 if (token == photoProcessingToken) {
+                    addLine("Total duration: ${elapsed()}ms")
+                    developerDiagnostics = diagnostics
                     isPhotoProcessing = false
                     photoProcessingStage = null
                 }
@@ -221,7 +288,7 @@ fun AddEditClothingScreen(
         }
     }
 
-    LaunchedEffect(existingItem?.id, mainColors) {
+    LaunchedEffect(existingItem?.id) {
         name = existingItem?.name.orEmpty()
         notes = existingItem?.notes.orEmpty()
         originalPhotoUri = existingItem?.photoUri
@@ -234,6 +301,7 @@ fun AddEditClothingScreen(
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
         captureStatus = ""
+        developerDiagnostics = emptyList()
     }
 
     val isEditing = existingItem != null
@@ -437,7 +505,7 @@ fun AddEditClothingScreen(
                             ),
                         )
                     },
-                    enabled = name.isNotBlank() && !isPhotoProcessing,
+                    enabled = name.isNotBlank(),
                     modifier = Modifier.weight(2f),
                 ) {
                     Icon(Icons.Rounded.Save, contentDescription = null)
@@ -446,8 +514,65 @@ fun AddEditClothingScreen(
                 }
             }
         }
+
+        if (developerModeEnabled) {
+            item {
+                DeveloperDiagnosticsSection(
+                    lines = developerDiagnostics.ifEmpty {
+                        listOf("No photo diagnostics yet. Select or capture a photo to populate pipeline, color, and TFLite data.")
+                    },
+                )
+            }
+        }
     }
 }
+
+@Composable
+private fun DeveloperDiagnosticsSection(lines: List<String>) {
+    CardSection(title = "Developer diagnostics") {
+        Text(
+            text = lines.joinToString(separator = "\n"),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun addDetectionDebugLines(
+    lines: MutableList<String>,
+    detectionResult: AdditionalInfoDetectionResult?,
+) {
+    if (detectionResult == null) {
+        lines += "Additional info: detector returned no result"
+        return
+    }
+
+    detectionResult.failureReason?.let { reason ->
+        lines += "Additional info failure: $reason"
+    }
+    val prediction = detectionResult.prediction
+    if (prediction == null) {
+        lines += "Additional info: no prediction"
+        return
+    }
+
+    lines += "Additional info selectedTagIds: ${prediction.selectedTagIds.sorted().joinToString().ifBlank { "none" }}"
+    lines += "Additional info category scores (${prediction.categoryScores.size}):"
+    prediction.categoryScores.appendDebugScores(lines)
+    lines += "Additional info season scores (${prediction.seasonScores.size}):"
+    prediction.seasonScores.appendDebugScores(lines)
+    lines += "Additional info occasion scores (${prediction.occasionScores.size}):"
+    prediction.occasionScores.appendDebugScores(lines)
+}
+
+private fun List<AdditionalInfoLabelScore>.appendDebugScores(lines: MutableList<String>) {
+    sortedByDescending(AdditionalInfoLabelScore::score).forEach { score ->
+        lines += "  ${score.label} tag=${score.tagId ?: "n/a"} score=${score.score.formatDebugFloat()}"
+    }
+}
+
+private fun Float.formatDebugFloat(): String = String.format(Locale.US, "%.4f", this)
 
 @Composable
 private fun MetadataCaptureSection(

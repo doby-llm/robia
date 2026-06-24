@@ -49,10 +49,27 @@ object ClothingImageStore {
         context: Context,
         imageUri: Uri,
         palette: List<MainColor>,
-    ): List<PaletteColorMatch> {
-        if (palette.isEmpty()) return emptyList()
-        val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream) ?: return emptyList()
-        return bitmap.useForColors { source -> paletteMatches(source, palette) }
+    ): List<PaletteColorMatch> = extractPaletteColorDiagnostics(context, imageUri, palette).matches
+
+    fun extractPaletteColorDiagnostics(
+        context: Context,
+        imageUri: Uri,
+        palette: List<MainColor>,
+    ): PaletteColorDiagnostics {
+        if (palette.isEmpty()) return PaletteColorDiagnostics(paletteSize = 0)
+        val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream)
+            ?: return PaletteColorDiagnostics(paletteSize = palette.size)
+        return bitmap.useForColors { source ->
+            val sampleStep = colorSampleStep(source)
+            PaletteColorDiagnostics(
+                width = source.width,
+                height = source.height,
+                sampleStep = sampleStep,
+                sampleGridEstimate = sampleGridEstimate(source, sampleStep),
+                paletteSize = palette.size,
+                matches = paletteMatches(source, palette, sampleStep),
+            )
+        }
     }
 
     fun readImageAspectRatio(context: Context, imageUri: Uri): Float? {
@@ -124,9 +141,18 @@ object ClothingImageStore {
         recycle()
     }
 
-    private fun paletteMatches(bitmap: Bitmap, palette: List<MainColor>): List<PaletteColorMatch> {
+    private fun colorSampleStep(bitmap: Bitmap): Int {
         val maxDimension = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
-        val sampleStep = (maxDimension / 96).coerceAtLeast(1)
+        return (maxDimension / 96).coerceAtLeast(1)
+    }
+
+    private fun sampleGridEstimate(bitmap: Bitmap, sampleStep: Int): Int {
+        val xCount = ((bitmap.width - 1 - sampleStep / 2) / sampleStep + 1).coerceAtLeast(0)
+        val yCount = ((bitmap.height - 1 - sampleStep / 2) / sampleStep + 1).coerceAtLeast(0)
+        return xCount * yCount
+    }
+
+    private fun paletteMatches(bitmap: Bitmap, palette: List<MainColor>, sampleStep: Int): List<PaletteColorMatch> {
         val samples = sequence {
             var y = sampleStep / 2
             while (y < bitmap.height) {
@@ -199,3 +225,12 @@ object ClothingImageStore {
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f
 }
+
+data class PaletteColorDiagnostics(
+    val width: Int? = null,
+    val height: Int? = null,
+    val sampleStep: Int? = null,
+    val sampleGridEstimate: Int? = null,
+    val paletteSize: Int,
+    val matches: List<PaletteColorMatch> = emptyList(),
+)
