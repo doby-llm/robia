@@ -57,7 +57,6 @@ import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import java.util.Locale
 import java.util.UUID
 
-private const val SeasonCategoryId = "season"
 private const val DefaultCustomColorHex = "#A8644E"
 
 private data class TagEditorState(
@@ -221,7 +220,7 @@ private fun TagCategoryCard(
     onDeleteTag: (GarmentTag) -> Unit,
 ) {
     val addDescription = stringResource(R.string.content_add_tag)
-    val isImmutable = category.id == SeasonCategoryId
+    val allowsNewTags = category.id != "season"
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -255,7 +254,7 @@ private fun TagCategoryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (!isImmutable) {
+                if (allowsNewTags) {
                     IconButton(
                         modifier = Modifier.semantics { contentDescription = addDescription },
                         onClick = onAddTag,
@@ -277,7 +276,7 @@ private fun TagCategoryCard(
                         key(tag.id) {
                             TagListRow(
                                 tag = tag,
-                                canEdit = !isImmutable,
+                                canEdit = category.id != "season" || tag.id in AdditionalInfoModelOutputTags.ids,
                                 onEdit = { onEditTag(tag) },
                                 onDelete = { onDeleteTag(tag) },
                             )

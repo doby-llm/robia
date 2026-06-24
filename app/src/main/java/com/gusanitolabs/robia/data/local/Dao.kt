@@ -58,7 +58,7 @@ interface TagDao {
     @Upsert
     suspend fun upsertMainColor(color: MainColorEntity)
 
-    @Query("DELETE FROM garment_tags WHERE id = :id AND category_id != 'season'")
+    @Query("DELETE FROM garment_tags WHERE id = :id")
     suspend fun deleteCustomTag(id: String)
 
     @Query("DELETE FROM main_colors WHERE id = :id AND (SELECT COUNT(*) FROM main_colors) > 1")
