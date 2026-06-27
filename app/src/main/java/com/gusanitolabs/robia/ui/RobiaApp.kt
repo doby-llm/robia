@@ -2248,8 +2248,6 @@ private fun RobiaAppPreview() {
             onSaveMainColor = {},
             onDeleteCustomTag = {},
             onDeleteMainColor = {},
-            onApplyColorReviewChanges = {},
-            onCloseColorReview = {},
         )
     }
 }
