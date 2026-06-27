@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -91,6 +92,7 @@ import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -136,10 +138,13 @@ fun AddEditClothingScreen(
     var isPhotoProcessing by rememberSaveable { mutableStateOf(false) }
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
+    var developerExportStatus by rememberSaveable { mutableStateOf<String?>(null) }
+    var additionalInfoSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     var nextPhotoInputId by remember { mutableStateOf(0L) }
     var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     val primaryPaletteColor = mainColors.colorForId(selectedPrimaryColorId)
     val secondaryPaletteColor = mainColors.colorForId(selectedSecondaryColorId)
@@ -170,6 +175,8 @@ fun AddEditClothingScreen(
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
+        developerExportStatus = null
+        additionalInfoSourceUri = null
         developerDiagnostics = listOf(
             "Photo processing queued",
             "source=$sourceStatus",
@@ -191,6 +198,8 @@ fun AddEditClothingScreen(
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
+        developerExportStatus = null
+        additionalInfoSourceUri = null
         developerDiagnostics = listOf(
             "Photo processing started",
             "source=$sourceStatus",
@@ -286,6 +295,7 @@ fun AddEditClothingScreen(
                 val detectionStart = SystemClock.elapsedRealtime()
                 val tagsForDetection = latestAvailableTags
                 val classifierUri = Uri.parse(originalPhotoUri ?: uriString)
+                additionalInfoSourceUri = classifierUri.toString()
                 addLine("Additional-info classifier source: original uri=$classifierUri")
                 var detectionResult = runCatching {
                     withContext(Dispatchers.IO) {
@@ -297,6 +307,7 @@ fun AddEditClothingScreen(
                 }
                 if (detectionResult?.prediction == null && classifierUri != croppedUri) {
                     addLine("Additional-info original-source detection failed; falling back to cropped foreground uri=$croppedUri")
+                    additionalInfoSourceUri = croppedUri.toString()
                     detectionResult = runCatching {
                         withContext(Dispatchers.IO) {
                             additionalInfoDetector.detect(context, croppedUri, tagsForDetection)
@@ -357,11 +368,16 @@ fun AddEditClothingScreen(
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
         captureStatus = ""
         developerDiagnostics = emptyList()
+        developerExportStatus = null
+        additionalInfoSourceUri = existingItem?.photoUri
     }
 
     val isEditing = existingItem != null
     val initialFitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
     val untitledItem = stringResource(R.string.untitled_item)
+    val developerExportNoPhotoStatus = stringResource(R.string.developer_export_input_image_no_photo)
+    val developerExportSavedStatus = stringResource(R.string.developer_export_input_image_saved)
+    val developerExportErrorStatus = stringResource(R.string.developer_export_input_image_error)
     val hasUnsavedChanges = name != existingItem?.name.orEmpty() ||
         notes != existingItem?.notes.orEmpty() ||
         photoUri != existingItem?.photoUri ||
@@ -375,6 +391,29 @@ fun AddEditClothingScreen(
             showDiscardDialog = true
         } else {
             onCancel()
+        }
+    }
+
+    fun exportAdditionalInfoInputImage() {
+        val source = additionalInfoSourceUri ?: originalPhotoUri ?: photoUri
+        if (source.isNullOrBlank()) {
+            developerExportStatus = developerExportNoPhotoStatus
+            return
+        }
+
+        coroutineScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    AdditionalInfoInputImageExporter.exportToGallery(context, Uri.parse(source))
+                }
+            }
+            developerExportStatus = result.getOrNull()?.let { export ->
+                "$developerExportSavedStatus: ${export.uri}"
+            } ?: developerExportErrorStatus
+            developerDiagnostics = developerDiagnostics + listOf(
+                "Developer export additional-info sourceUri=$source",
+                "Developer export status=${developerExportStatus.orEmpty()}",
+            )
         }
     }
 
@@ -613,8 +652,10 @@ fun AddEditClothingScreen(
             item {
                 DeveloperDiagnosticsSection(
                     lines = developerDiagnostics.ifEmpty {
-                        listOf("No photo diagnostics yet. Select or capture a photo to populate pipeline, color, and TFLite data.")
+                        listOf(stringResource(R.string.developer_diagnostics_empty))
                     },
+                    exportStatus = developerExportStatus,
+                    onExportInputImage = ::exportAdditionalInfoInputImage,
                 )
             }
         }
@@ -622,8 +663,24 @@ fun AddEditClothingScreen(
 }
 
 @Composable
-private fun DeveloperDiagnosticsSection(lines: List<String>) {
-    CardSection(title = "Developer diagnostics") {
+private fun DeveloperDiagnosticsSection(
+    lines: List<String>,
+    exportStatus: String?,
+    onExportInputImage: () -> Unit,
+) {
+    CardSection(title = stringResource(R.string.developer_diagnostics_title)) {
+        OutlinedButton(onClick = onExportInputImage) {
+            Icon(Icons.Rounded.Download, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.developer_export_input_image))
+        }
+        exportStatus?.let { status ->
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             text = lines.joinToString(separator = "\n"),
             style = MaterialTheme.typography.bodySmall,

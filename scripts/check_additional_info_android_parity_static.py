@@ -15,6 +15,7 @@ from typing import NoReturn
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = REPO_ROOT / "app/src/main/assets/additional_info/mobilenet_v3_large.json"
 PREPROCESSOR = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoImagePreprocessor.kt"
+EXPORTER = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoInputImageExporter.kt"
 CONFIG_LOADER = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoModelConfig.kt"
 DETECTOR = REPO_ROOT / "app/src/main/java/com/gusanitolabs/robia/media/additionalinfo/TfliteAdditionalInfoDetector.kt"
 SHARED_CONFIG = REPO_ROOT / "additional-info-core/src/main/kotlin/com/gusanitolabs/robia/media/additionalinfo/AdditionalInfoModelConfig.kt"
@@ -56,6 +57,13 @@ def main() -> int:
     assert_contains(preprocessor_source, "Bitmap.createScaledBitmap", "Android wrapper still owns Bitmap resize")
     assert_contains(preprocessor_source, "AdditionalInfoTensorBuilder.fromRgbPixels", "Android uses shared tensor builder")
     assert_contains(preprocessor_source, "AdditionalInfoPreprocessingPolicy.normalizationType", "Android guards normalization via shared policy")
+    assert_contains(preprocessor_source, "fun createExactInputBitmap", "Android exposes exact preprocessed bitmap for developer export")
+    assert_contains(preprocessor_source, "ExactInputBitmap", "developer export receives the same resized composited bitmap used for tensor creation")
+
+    exporter_source = EXPORTER.read_text(encoding="utf-8")
+    assert_contains(exporter_source, "createExactInputBitmap", "developer export reuses exact preprocessor bitmap")
+    assert_contains(exporter_source, "MediaStore.Images.Media", "developer export saves through MediaStore gallery")
+    assert_contains(exporter_source, "Bitmap.CompressFormat.PNG", "developer export writes lossless PNG")
 
     loader_source = CONFIG_LOADER.read_text(encoding="utf-8")
     assert_contains(loader_source, "AdditionalInfoModelManifest.parse", "Android loader delegates parsing to shared manifest parser")
@@ -74,6 +82,8 @@ def main() -> int:
     add_edit_source = ADD_EDIT.read_text(encoding="utf-8")
     assert_contains(add_edit_source, "val classifierUri = Uri.parse(originalPhotoUri ?: uriString)", "additional-info classifier defaults to original photo")
     assert_contains(add_edit_source, "falling back to cropped foreground", "cropped foreground fallback is diagnostic-visible")
+    assert_contains(add_edit_source, "exportAdditionalInfoInputImage", "developer mode can export exact NN input image")
+    assert_contains(add_edit_source, "developerModeEnabled", "developer input-image export remains gated by developer mode")
     assert_contains(add_edit_source, "Additional info tensor:", "developer diagnostics show tensor stats")
     assert_contains(add_edit_source, "Additional info sourceUri:", "developer diagnostics show classifier source")
 
@@ -83,6 +93,7 @@ def main() -> int:
 
     doc_source = DOC.read_text(encoding="utf-8")
     assert_contains(doc_source, "./gradlew :additional-info-cli:run", "Raspberry Pi CLI command documented")
+    assert_contains(doc_source, "Developer Mode export", "developer input-image export documented")
     assert_contains(doc_source, "Shared-code boundary", "shared-code boundary documented")
 
     print("Android additional-info shared-core static checks passed")

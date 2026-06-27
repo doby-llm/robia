@@ -18,6 +18,13 @@ object AdditionalInfoImagePreprocessor {
         val preprocessing: String,
     )
 
+    data class ExactInputBitmap(
+        val bitmap: Bitmap,
+        val sourceWidth: Int,
+        val sourceHeight: Int,
+        val preprocessing: String,
+    )
+
     fun preprocess(context: Context, imageUri: Uri, inputSpec: AdditionalInfoInputSpec): ByteBuffer? =
         preprocessWithDiagnostics(context, imageUri, inputSpec)?.tensor
 
@@ -26,6 +33,29 @@ object AdditionalInfoImagePreprocessor {
         imageUri: Uri,
         inputSpec: AdditionalInfoInputSpec,
     ): PreprocessedInput? {
+        if (inputSpec.shape != AdditionalInfoPreprocessingPolicy.expectedShape) return null
+        if (inputSpec.normalizationType != AdditionalInfoPreprocessingPolicy.normalizationType) return null
+
+        val exactInput = createExactInputBitmap(context, imageUri, inputSpec) ?: return null
+        return try {
+            val tensorWithStats = AdditionalInfoTensorBuilder.fromRgbPixels(exactInput.bitmap.toRgbPixels())
+            PreprocessedInput(
+                tensor = tensorWithStats.tensor,
+                stats = tensorWithStats.stats,
+                sourceWidth = exactInput.sourceWidth,
+                sourceHeight = exactInput.sourceHeight,
+                preprocessing = exactInput.preprocessing,
+            )
+        } finally {
+            exactInput.bitmap.recycle()
+        }
+    }
+
+    fun createExactInputBitmap(
+        context: Context,
+        imageUri: Uri,
+        inputSpec: AdditionalInfoInputSpec,
+    ): ExactInputBitmap? {
         if (inputSpec.shape != AdditionalInfoPreprocessingPolicy.expectedShape) return null
         if (inputSpec.normalizationType != AdditionalInfoPreprocessingPolicy.normalizationType) return null
 
@@ -39,20 +69,14 @@ object AdditionalInfoImagePreprocessor {
                 AdditionalInfoPreprocessingPolicy.inputSize,
                 true,
             )
-            try {
-                val tensorWithStats = AdditionalInfoTensorBuilder.fromRgbPixels(resized.toRgbPixels())
-                PreprocessedInput(
-                    tensor = tensorWithStats.tensor,
-                    stats = tensorWithStats.stats,
-                    sourceWidth = decoded.width,
-                    sourceHeight = decoded.height,
-                    preprocessing = AdditionalInfoPreprocessingPolicy.description,
-                )
-            } finally {
-                if (resized !== composited) resized.recycle()
-                if (composited !== source) composited.recycle()
-                if (source !== decoded) source.recycle()
-            }
+            if (resized !== composited) composited.recycle()
+            if (source !== decoded) source.recycle()
+            ExactInputBitmap(
+                bitmap = resized,
+                sourceWidth = decoded.width,
+                sourceHeight = decoded.height,
+                preprocessing = AdditionalInfoPreprocessingPolicy.description,
+            )
         } finally {
             decoded.recycle()
         }

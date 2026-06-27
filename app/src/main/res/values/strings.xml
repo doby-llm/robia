@@ -272,6 +272,12 @@
     <string name="color_name_duplicate">A color with this name already exists.</string>
     <string name="tag_name_duplicate">A tag with this name already exists.</string>
     <string name="color_hex_duplicate">A color with this swatch already exists.</string>
+    <string name="developer_diagnostics_title">Developer diagnostics</string>
+    <string name="developer_diagnostics_empty">No photo diagnostics yet. Select or capture a photo to populate pipeline, color, and TFLite data.</string>
+    <string name="developer_export_input_image">Export NN input image</string>
+    <string name="developer_export_input_image_saved">Exact NN input image saved to gallery</string>
+    <string name="developer_export_input_image_error">Couldn’t export exact NN input image</string>
+    <string name="developer_export_input_image_no_photo">Select or capture a photo before exporting the NN input image.</string>
     <string name="image_saved">Image saved</string>
     <string name="image_save_error">Couldn’t save image</string>
     <string name="share_image">Share image</string>

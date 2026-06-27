@@ -272,6 +272,12 @@
     <string name="color_name_duplicate">Eine Farbe mit diesem Namen existiert bereits.</string>
     <string name="tag_name_duplicate">Ein Tag mit diesem Namen existiert bereits.</string>
     <string name="color_hex_duplicate">Eine Farbe mit diesem Farbfeld existiert bereits.</string>
+    <string name="developer_diagnostics_title">Entwicklerdiagnosen</string>
+    <string name="developer_diagnostics_empty">Noch keine Fotodiagnosen. Wähle ein Foto aus oder nimm eines auf, um Pipeline-, Farb- und TFLite-Daten zu füllen.</string>
+    <string name="developer_export_input_image">NN-Eingabebild exportieren</string>
+    <string name="developer_export_input_image_saved">Exaktes NN-Eingabebild in der Galerie gespeichert</string>
+    <string name="developer_export_input_image_error">Exaktes NN-Eingabebild konnte nicht exportiert werden</string>
+    <string name="developer_export_input_image_no_photo">Wähle ein Foto aus oder nimm eines auf, bevor du das NN-Eingabebild exportierst.</string>
     <string name="image_saved">Bild gespeichert</string>
     <string name="image_save_error">Bild konnte nicht gespeichert werden</string>
     <string name="share_image">Bild teilen</string>
