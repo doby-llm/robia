@@ -292,6 +292,24 @@
     <string name="tag_pants">Hosen</string>
     <string name="tag_shirt">Hemd</string>
     <string name="tag_main_closet">Hauptschrank</string>
+    <string name="not_now">Jetzt nicht</string>
+    <string name="done">Fertig</string>
+    <string name="accept">Akzeptieren</string>
+    <string name="reject">Ablehnen</string>
+    <string name="color_review_title">Farben prüfen</string>
+    <string name="color_review_prompt_title">Garderobenfarben prüfen?</string>
+    <string name="color_review_prompt_body">Robia kann Kleidungsstücke erneut prüfen, die zu deiner aktualisierten Palette passen könnten. Du entscheidest, welche Änderungen übernommen werden.</string>
+    <string name="color_review_prompt_confirm">Farben prüfen</string>
+    <string name="color_review_scanning_count">%1$d/%2$d Teile werden geprüft</string>
+    <string name="color_review_suggestions_count">%1$d vorgeschlagene Änderungen prüfen</string>
+    <string name="color_review_checking_helper">Garderobe wird geprüft…</string>
+    <string name="color_review_complete_all_helper">Prüfe noch %1$d Vorschläge vor dem Speichern.</string>
+    <string name="color_review_ready_helper">Bereit, %1$d Farbaktualisierungen zu speichern.</string>
+    <string name="color_review_save_updates">Farbaktualisierungen speichern</string>
+    <string name="color_review_empty_title">Keine Garderobenfarben müssen geprüft werden</string>
+    <string name="color_review_empty_body">Deine gespeicherten Kleidungsstücke passen weiterhin zur aktualisierten Farbpalette.</string>
+    <string name="color_review_suggested_colors">Vorgeschlagene Farben</string>
+    <string name="color_review_chip_description">%1$s-Farbe, vorgeschlagen %2$s</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

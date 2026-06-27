@@ -292,6 +292,24 @@
     <string name="tag_pants">Pantalones</string>
     <string name="tag_shirt">Camisa</string>
     <string name="tag_main_closet">Armario principal</string>
+    <string name="not_now">Ahora no</string>
+    <string name="done">Listo</string>
+    <string name="accept">Aceptar</string>
+    <string name="reject">Rechazar</string>
+    <string name="color_review_title">Revisar colores</string>
+    <string name="color_review_prompt_title">¿Revisar los colores del armario?</string>
+    <string name="color_review_prompt_body">Robia puede volver a comprobar las prendas que quizá coincidan con tu paleta actualizada. Tú eliges qué cambios conservar.</string>
+    <string name="color_review_prompt_confirm">Revisar colores</string>
+    <string name="color_review_scanning_count">Comprobando %1$d/%2$d prendas</string>
+    <string name="color_review_suggestions_count">Revisa %1$d cambios sugeridos</string>
+    <string name="color_review_checking_helper">Comprobando armario…</string>
+    <string name="color_review_complete_all_helper">Revisa %1$d sugerencias más antes de guardar.</string>
+    <string name="color_review_ready_helper">Listo para guardar %1$d actualizaciones de color.</string>
+    <string name="color_review_save_updates">Guardar cambios de color</string>
+    <string name="color_review_empty_title">No hay colores del armario que revisar</string>
+    <string name="color_review_empty_body">Tus prendas guardadas siguen coincidiendo con la paleta actualizada.</string>
+    <string name="color_review_suggested_colors">Colores sugeridos</string>
+    <string name="color_review_chip_description">Color %1$s, propuesta %2$s</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

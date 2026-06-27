@@ -292,6 +292,24 @@
     <string name="tag_pants">Pants</string>
     <string name="tag_shirt">Shirt</string>
     <string name="tag_main_closet">Main closet</string>
+    <string name="not_now">Not now</string>
+    <string name="done">Done</string>
+    <string name="accept">Accept</string>
+    <string name="reject">Reject</string>
+    <string name="color_review_title">Review colors</string>
+    <string name="color_review_prompt_title">Review wardrobe colors?</string>
+    <string name="color_review_prompt_body">Robia can re-check garments that may match your updated palette. You choose which changes to keep.</string>
+    <string name="color_review_prompt_confirm">Review colors</string>
+    <string name="color_review_scanning_count">Checking %1$d/%2$d items</string>
+    <string name="color_review_suggestions_count">Review %1$d suggested changes</string>
+    <string name="color_review_checking_helper">Checking wardrobe…</string>
+    <string name="color_review_complete_all_helper">Review %1$d more suggestions before saving.</string>
+    <string name="color_review_ready_helper">Ready to save %1$d color updates.</string>
+    <string name="color_review_save_updates">Save color updates</string>
+    <string name="color_review_empty_title">No wardrobe colors need review</string>
+    <string name="color_review_empty_body">Your saved garments still match the updated color palette.</string>
+    <string name="color_review_suggested_colors">Suggested colors</string>
+    <string name="color_review_chip_description">%1$s color, proposed %2$s</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

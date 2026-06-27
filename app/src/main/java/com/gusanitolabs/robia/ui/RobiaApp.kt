@@ -148,6 +148,10 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.manage
     }
 
+    data object ColorReview : RobiaRoute {
+        override val titleRes = R.string.color_review_title
+    }
+
     data object AddEditClothing : RobiaRoute {
         override val titleRes = R.string.add_clothing
     }
@@ -366,6 +370,8 @@ private fun RobiaShell(
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
     var showBrowseDeleteDialog by remember { mutableStateOf(false) }
+    var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
+    var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     val items = clothingItems.toUiWardrobeItems()
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
@@ -451,6 +457,36 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.Browse)
     }
 
+    fun saveMainColorAndOfferReview(color: MainColor) {
+        val beforePalette = mainColors
+        val operation = if (beforePalette.any { existing -> existing.id == color.id }) {
+            ColorPaletteOperation.Edited
+        } else {
+            ColorPaletteOperation.Added
+        }
+        val afterPalette = (beforePalette.filterNot { existing -> existing.id == color.id } + color)
+            .sortedWith(compareBy<MainColor> { it.sortOrder }.thenBy { it.name }.thenBy { it.id })
+        onSaveMainColor(color)
+        pendingColorReviewChangeSet = ColorPaletteChangeSet(
+            beforePalette = beforePalette,
+            afterPalette = afterPalette,
+            touchedColorId = color.id,
+            operation = operation,
+        )
+    }
+
+    fun deleteMainColorAndOfferReview(color: MainColor) {
+        val beforePalette = mainColors
+        val afterPalette = beforePalette.filterNot { existing -> existing.id == color.id }
+        onDeleteMainColor(color)
+        pendingColorReviewChangeSet = ColorPaletteChangeSet(
+            beforePalette = beforePalette,
+            afterPalette = afterPalette,
+            touchedColorId = color.id,
+            operation = ColorPaletteOperation.Deleted,
+        )
+    }
+
     fun handleSettingsClick() {
         settingsExpanded = true
         if (settings.developerModeUnlocked) return
@@ -494,6 +530,17 @@ private fun RobiaShell(
             },
             dismissButton = {
                 TextButton(onClick = { showBrowseDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    pendingColorReviewChangeSet?.let { changeSet ->
+        ColorReviewPromptDialog(
+            onDismiss = { pendingColorReviewChangeSet = null },
+            onReview = {
+                activeColorReviewChangeSet = changeSet
+                pendingColorReviewChangeSet = null
+                replaceRoute(RobiaRoute.ColorReview)
             },
         )
     }
@@ -608,7 +655,8 @@ private fun RobiaShell(
             if (currentRoute != RobiaRoute.ItemDetail &&
                 currentRoute != RobiaRoute.AdvancedFilters &&
                 currentRoute != RobiaRoute.BatchAddClothing &&
-                currentRoute != RobiaRoute.BatchEditClothing
+                currentRoute != RobiaRoute.BatchEditClothing &&
+                currentRoute != RobiaRoute.ColorReview
             ) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
@@ -626,6 +674,7 @@ private fun RobiaShell(
             innerPadding = innerPadding,
             items = filteredItems,
             allItems = items,
+            domainItems = clothingItems,
             totalItemCount = items.size,
             filters = browseFilters,
             selectedBrowseItemIds = selectedBrowseItemIds,
@@ -636,6 +685,7 @@ private fun RobiaShell(
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
+            colorReviewChangeSet = activeColorReviewChangeSet,
             developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
@@ -680,9 +730,14 @@ private fun RobiaShell(
             onFiltersChange = { browseFilters = it },
             onResetFilters = { browseFilters = BrowseFilterState() },
             onSaveTag = onSaveTag,
-            onSaveMainColor = onSaveMainColor,
+            onSaveMainColor = ::saveMainColorAndOfferReview,
             onDeleteCustomTag = onDeleteCustomTag,
-            onDeleteMainColor = onDeleteMainColor,
+            onDeleteMainColor = ::deleteMainColorAndOfferReview,
+            onApplyColorReviewChanges = onSaveItems,
+            onCloseColorReview = {
+                activeColorReviewChangeSet = null
+                replaceRoute(RobiaRoute.Browse)
+            },
         )
     }
 }
@@ -791,6 +846,7 @@ private fun RobiaNavHost(
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
     allItems: List<UiWardrobeItem>,
+    domainItems: List<ClothingItem>,
     totalItemCount: Int,
     filters: BrowseFilterState,
     selectedBrowseItemIds: Set<String>,
@@ -801,6 +857,7 @@ private fun RobiaNavHost(
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
+    colorReviewChangeSet: ColorPaletteChangeSet?,
     developerModeEnabled: Boolean,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
@@ -822,6 +879,8 @@ private fun RobiaNavHost(
     onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
     onDeleteMainColor: (MainColor) -> Unit,
+    onApplyColorReviewChanges: (List<ClothingItem>) -> Unit,
+    onCloseColorReview: () -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -848,6 +907,15 @@ private fun RobiaNavHost(
             onSaveMainColor = onSaveMainColor,
             onDeleteMainColor = onDeleteMainColor,
         )
+        RobiaRoute.ColorReview -> colorReviewChangeSet?.let { changeSet ->
+            ColorReviewScreen(
+                innerPadding = innerPadding,
+                items = domainItems,
+                changeSet = changeSet,
+                onApplyChanges = onApplyColorReviewChanges,
+                onDone = onCloseColorReview,
+            )
+        } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(
             innerPadding = innerPadding,
             availableTags = availableTags,
@@ -2180,6 +2248,8 @@ private fun RobiaAppPreview() {
             onSaveMainColor = {},
             onDeleteCustomTag = {},
             onDeleteMainColor = {},
+            onApplyColorReviewChanges = {},
+            onCloseColorReview = {},
         )
     }
 }
