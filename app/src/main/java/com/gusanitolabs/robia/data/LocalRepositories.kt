@@ -30,6 +30,13 @@ class LocalWardrobeRepository(
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
     }
 
+    override suspend fun upsertItems(items: List<ClothingItem>) {
+        wardrobeDao.upsertItemsWithTags(
+            items = items.map(ClothingItem::toEntity),
+            tagIdsByItemId = items.associate { item -> item.id to item.tags.map(GarmentTag::id) },
+        )
+    }
+
     override suspend fun archiveItem(id: String, updatedAtEpochMillis: Long) {
         wardrobeDao.archiveItem(id, updatedAtEpochMillis)
     }

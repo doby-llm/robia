@@ -106,8 +106,12 @@ fun AddEditClothingScreen(
     mainColors: List<MainColor>,
     existingItem: ClothingItem?,
     developerModeEnabled: Boolean,
+    titleRes: Int? = null,
+    bodyRes: Int = R.string.add_edit_body,
+    saveButtonTextRes: Int = R.string.save_item,
     onCancel: () -> Unit,
     onSave: (ClothingItem) -> Unit,
+    onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val backgroundRemover = remember { PhotoBackgroundRemover() }
@@ -419,12 +423,12 @@ fun AddEditClothingScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = stringResource(if (isEditing) R.string.edit_clothing_title else R.string.add_edit_title),
+                    text = stringResource(titleRes ?: if (isEditing) R.string.edit_clothing_title else R.string.add_edit_title),
                     style = MaterialTheme.typography.headlineLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = stringResource(R.string.add_edit_body),
+                    text = stringResource(bodyRes),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -441,6 +445,7 @@ fun AddEditClothingScreen(
                     processingStage = photoProcessingStage,
                     onCaptureStatusChange = { captureStatus = it },
                     onPhotoSelected = ::queuePhotoForProcessing,
+                    onBatchPhotosSelected = onBatchPhotosSelected,
                 )
             } else {
                 PhotoCaptureCard(
@@ -450,6 +455,7 @@ fun AddEditClothingScreen(
                     isPhotoProcessing = false,
                     processingStage = null,
                     onGalleryClick = null,
+                    onBatchGalleryClick = null,
                     onCameraClick = null,
                 )
             }
@@ -558,7 +564,7 @@ fun AddEditClothingScreen(
                 ) {
                     Icon(Icons.Rounded.Save, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.save_item))
+                    Text(stringResource(saveButtonTextRes))
                 }
             }
         }
@@ -1081,6 +1087,7 @@ private fun PhotoCaptureCardWithLaunchers(
     processingStage: PhotoProcessingStage?,
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
+    onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1104,6 +1111,25 @@ private fun PhotoCaptureCardWithLaunchers(
         }
     }
 
+    val batchGalleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isEmpty()) {
+            onCaptureStatusChange("")
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val storedUris = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri ->
+                    runCatching { ClothingImageStore.copyContentUriToPrivateStorage(context, uri).toString() }.getOrNull()
+                }
+            }
+            when {
+                storedUris.size > 1 -> onBatchPhotosSelected?.invoke(storedUris)
+                storedUris.size == 1 -> onPhotoSelected(storedUris.single(), PhotoStatus.Gallery)
+                else -> onCaptureStatusChange(PhotoStatus.MediaUnavailable)
+            }
+        }
+    }
+
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
         val capturedUri = pendingCameraUri
         if (captured && capturedUri != null) {
@@ -1123,6 +1149,12 @@ private fun PhotoCaptureCardWithLaunchers(
         onGalleryClick = {
             runCatching { galleryLauncher.launch(arrayOf("image/*")) }
                 .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
+        },
+        onBatchGalleryClick = onBatchPhotosSelected?.let {
+            {
+                runCatching { batchGalleryLauncher.launch(arrayOf("image/*")) }
+                    .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
+            }
         },
         onCameraClick = {
             runCatching {
@@ -1145,6 +1177,7 @@ private fun PhotoCaptureCard(
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
     onGalleryClick: (() -> Unit)?,
+    onBatchGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
     Card(
@@ -1174,13 +1207,25 @@ private fun PhotoCaptureCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = { onGalleryClick?.invoke() }, enabled = onGalleryClick != null) {
-                    Icon(
-                        Icons.Rounded.PhotoLibrary,
-                        contentDescription = stringResource(R.string.content_open_gallery),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.gallery))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { onGalleryClick?.invoke() }, enabled = onGalleryClick != null) {
+                        Icon(
+                            Icons.Rounded.PhotoLibrary,
+                            contentDescription = stringResource(R.string.content_open_gallery),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.gallery))
+                    }
+                    if (onBatchGalleryClick != null) {
+                        TextButton(onClick = onBatchGalleryClick) {
+                            Icon(
+                                Icons.Rounded.PhotoLibrary,
+                                contentDescription = stringResource(R.string.content_open_batch_gallery),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.batch_gallery))
+                        }
+                    }
                 }
                 Button(
                     onClick = { onCameraClick?.invoke() },

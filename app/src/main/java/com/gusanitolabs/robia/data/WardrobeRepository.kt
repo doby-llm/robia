@@ -10,6 +10,7 @@ interface WardrobeRepository {
     fun observeActiveItems(): Flow<List<ClothingItem>>
     fun observeItem(id: String): Flow<ClothingItem?>
     suspend fun upsertItem(item: ClothingItem)
+    suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)
 }
 

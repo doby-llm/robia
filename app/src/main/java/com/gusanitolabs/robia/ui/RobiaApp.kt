@@ -58,6 +58,7 @@ import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -146,6 +147,14 @@ private sealed interface RobiaRoute {
 
     data object AddEditClothing : RobiaRoute {
         override val titleRes = R.string.add_clothing
+    }
+
+    data object BatchAddClothing : RobiaRoute {
+        override val titleRes = R.string.batch_add_title
+    }
+
+    data object BatchEditClothing : RobiaRoute {
+        override val titleRes = R.string.batch_edit_title
     }
 
     data object ItemDetail : RobiaRoute {
@@ -259,6 +268,9 @@ fun RobiaApp(
             onSaveItem = { item ->
                 scope.launch { wardrobeRepository.upsertItem(item) }
             },
+            onSaveItems = { items ->
+                scope.launch { wardrobeRepository.upsertItems(items) }
+            },
             onSaveTag = { tag ->
                 scope.launch { tagRepository.upsertTag(tag) }
             },
@@ -328,6 +340,7 @@ private fun RobiaShell(
     onDeveloperModeUnlocked: () -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
+    onSaveItems: (List<ClothingItem>) -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
     onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
@@ -341,6 +354,9 @@ private fun RobiaShell(
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
+    val batchDrafts = remember { mutableStateListOf<BatchDraftItem>() }
+    var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
+    var showBatchDiscardDialog by remember { mutableStateOf(false) }
     val items = clothingItems.toUiWardrobeItems()
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
@@ -380,6 +396,27 @@ private fun RobiaShell(
         )
     }
 
+    fun startBatchAdd(photoUris: List<String>) {
+        batchDrafts.clear()
+        photoUris.forEachIndexed { index, uri ->
+            batchDrafts += BatchDraftItem(orderIndex = index, originalPhotoUri = uri)
+        }
+        selectedBatchDraftId = null
+        replaceRoute(RobiaRoute.BatchAddClothing)
+    }
+
+    fun updateBatchDraft(updated: BatchDraftItem) {
+        val index = batchDrafts.indexOfFirst { draft -> draft.id == updated.id }
+        if (index >= 0) batchDrafts[index] = updated
+    }
+
+    fun cancelBatchAdd() {
+        batchDrafts.clear()
+        selectedBatchDraftId = null
+        showBatchDiscardDialog = false
+        replaceRoute(RobiaRoute.Browse)
+    }
+
     fun handleSettingsClick() {
         settingsExpanded = true
         if (settings.developerModeUnlocked) return
@@ -396,12 +433,34 @@ private fun RobiaShell(
 
     BackHandler(enabled = routeStack.size > 1) { popRoute() }
 
+    if (showBatchDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchDiscardDialog = false },
+            title = { Text(stringResource(R.string.batch_discard_title)) },
+            text = { Text(stringResource(R.string.batch_discard_body)) },
+            confirmButton = {
+                TextButton(onClick = ::cancelBatchAdd) { Text(stringResource(R.string.discard_changes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
                     if (routeStack.size > 1 && currentRoute != RobiaRoute.AddEditClothing) {
-                        IconButton(onClick = ::popRoute) {
+                        IconButton(
+                            onClick = {
+                                if (currentRoute == RobiaRoute.BatchAddClothing && batchDrafts.isNotEmpty()) {
+                                    showBatchDiscardDialog = true
+                                } else {
+                                    popRoute()
+                                }
+                            },
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.ArrowBack,
                                 contentDescription = stringResource(R.string.content_go_back),
@@ -472,7 +531,11 @@ private fun RobiaShell(
             )
         },
         bottomBar = {
-            if (currentRoute != RobiaRoute.ItemDetail && currentRoute != RobiaRoute.AdvancedFilters) {
+            if (currentRoute != RobiaRoute.ItemDetail &&
+                currentRoute != RobiaRoute.AdvancedFilters &&
+                currentRoute != RobiaRoute.BatchAddClothing &&
+                currentRoute != RobiaRoute.BatchEditClothing
+            ) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
                     onRouteSelected = { route ->
@@ -493,6 +556,8 @@ private fun RobiaShell(
             filters = browseFilters,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
+            batchDrafts = batchDrafts,
+            selectedBatchDraft = batchDrafts.firstOrNull { draft -> draft.id == selectedBatchDraftId },
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
@@ -513,6 +578,27 @@ private fun RobiaShell(
                 selectedItemId = item.id
                 replaceRoute(RobiaRoute.Browse)
                 pushRoute(RobiaRoute.ItemDetail)
+            },
+            onBatchPhotosSelected = ::startBatchAdd,
+            onDraftUpdated = ::updateBatchDraft,
+            onDraftSelected = { draft ->
+                selectedBatchDraftId = draft.id
+                pushRoute(RobiaRoute.BatchEditClothing)
+            },
+            onSaveBatch = { batchItems ->
+                onSaveItems(batchItems)
+                batchDrafts.clear()
+                selectedBatchDraftId = null
+                replaceRoute(RobiaRoute.Browse)
+            },
+            onCancelBatch = {
+                cancelBatchAdd()
+            },
+            onSaveBatchDraft = { item ->
+                batchDrafts.firstOrNull { draft -> draft.id == item.id }?.let { previous ->
+                    updateBatchDraft(item.toBatchDraftFromExisting(previous, mainColors))
+                }
+                popRoute()
             },
             onFiltersChange = { browseFilters = it },
             onResetFilters = { browseFilters = BrowseFilterState() },
@@ -632,6 +718,8 @@ private fun RobiaNavHost(
     filters: BrowseFilterState,
     selectedItem: UiWardrobeItem?,
     selectedDomainItem: ClothingItem?,
+    batchDrafts: List<BatchDraftItem>,
+    selectedBatchDraft: BatchDraftItem?,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
@@ -642,6 +730,12 @@ private fun RobiaNavHost(
     onToggleFavorite: (String) -> Unit,
     onCancelAddEdit: () -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
+    onBatchPhotosSelected: (List<String>) -> Unit,
+    onDraftUpdated: (BatchDraftItem) -> Unit,
+    onDraftSelected: (BatchDraftItem) -> Unit,
+    onSaveBatch: (List<ClothingItem>) -> Unit,
+    onCancelBatch: () -> Unit,
+    onSaveBatchDraft: (ClothingItem) -> Unit,
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
@@ -680,6 +774,40 @@ private fun RobiaNavHost(
             developerModeEnabled = developerModeEnabled,
             onCancel = onCancelAddEdit,
             onSave = onSaveItem,
+            onBatchPhotosSelected = if (selectedDomainItem == null) onBatchPhotosSelected else null,
+        )
+        RobiaRoute.BatchAddClothing -> BatchAddClothingScreen(
+            innerPadding = innerPadding,
+            drafts = batchDrafts,
+            availableTags = availableTags,
+            mainColors = mainColors,
+            onDraftUpdated = onDraftUpdated,
+            onDraftSelected = onDraftSelected,
+            onSaveBatch = onSaveBatch,
+            onCancelBatch = onCancelBatch,
+        )
+        RobiaRoute.BatchEditClothing -> selectedBatchDraft?.let { draft ->
+            AddEditClothingScreen(
+                innerPadding = innerPadding,
+                availableTags = availableTags,
+                mainColors = mainColors,
+                existingItem = draft.toBatchEditItem(availableTags, mainColors),
+                developerModeEnabled = developerModeEnabled,
+                titleRes = R.string.batch_edit_title,
+                bodyRes = R.string.batch_edit_body,
+                saveButtonTextRes = R.string.batch_return_to_batch,
+                onCancel = onBack,
+                onSave = onSaveBatchDraft,
+            )
+        } ?: BatchAddClothingScreen(
+            innerPadding = innerPadding,
+            drafts = batchDrafts,
+            availableTags = availableTags,
+            mainColors = mainColors,
+            onDraftUpdated = onDraftUpdated,
+            onDraftSelected = onDraftSelected,
+            onSaveBatch = onSaveBatch,
+            onCancelBatch = onCancelBatch,
         )
         RobiaRoute.ItemDetail -> selectedItem?.let { item ->
             ItemDetailScreen(
@@ -1919,6 +2047,7 @@ private fun RobiaAppPreview() {
             onDeveloperModeUnlocked = {},
             onDeveloperModeEnabledChange = {},
             onSaveItem = {},
+            onSaveItems = {},
             onSaveTag = {},
             onSaveMainColor = {},
             onDeleteCustomTag = {},

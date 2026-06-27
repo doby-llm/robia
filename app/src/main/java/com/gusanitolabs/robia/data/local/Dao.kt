@@ -36,6 +36,13 @@ interface WardrobeDao {
         clearTags(item.id)
         insertTagRefs(tagIds.map { tagId -> ClothingItemTagCrossRef(item.id, tagId) })
     }
+
+    @Transaction
+    suspend fun upsertItemsWithTags(items: List<ClothingItemEntity>, tagIdsByItemId: Map<String, List<String>>) {
+        items.forEach { item ->
+            upsertItemWithTags(item, tagIdsByItemId[item.id].orEmpty())
+        }
+    }
 }
 
 @Dao
