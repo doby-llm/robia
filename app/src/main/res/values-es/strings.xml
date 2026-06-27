@@ -237,6 +237,13 @@
     <string name="tag_name_label">Nombre de la etiqueta</string>
     <string name="save">Guardar</string>
     <string name="delete">Eliminar</string>
+    <string name="delete_item_title">¿Eliminar prenda?</string>
+    <string name="delete_item_body">¿Eliminar «%1$s» de tu armario?</string>
+    <string name="delete_selected_items_title">¿Eliminar prendas seleccionadas?</string>
+    <string name="delete_selected_items_body">¿Eliminar %1$d prendas seleccionadas de tu armario?</string>
+    <string name="browse_selection_count">%1$d seleccionadas</string>
+    <string name="content_delete_selected_items">Eliminar prendas seleccionadas</string>
+    <string name="content_select_garment">Seleccionar prenda</string>
     <string name="category_style">Estilo</string>
     <string name="category_season">Estaciones</string>
     <string name="category_occasion">Ocasiones</string>

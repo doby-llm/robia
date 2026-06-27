@@ -40,6 +40,10 @@ class LocalWardrobeRepository(
     override suspend fun archiveItem(id: String, updatedAtEpochMillis: Long) {
         wardrobeDao.archiveItem(id, updatedAtEpochMillis)
     }
+
+    override suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long) {
+        wardrobeDao.archiveItems(ids, updatedAtEpochMillis)
+    }
 }
 
 class LocalTagRepository(

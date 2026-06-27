@@ -12,6 +12,7 @@ interface WardrobeRepository {
     suspend fun upsertItem(item: ClothingItem)
     suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)
+    suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long)
 }
 
 interface TagRepository {

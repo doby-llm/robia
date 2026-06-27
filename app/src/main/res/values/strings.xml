@@ -237,6 +237,13 @@
     <string name="tag_name_label">Tag name</string>
     <string name="save">Save</string>
     <string name="delete">Delete</string>
+    <string name="delete_item_title">Delete garment?</string>
+    <string name="delete_item_body">Delete “%1$s” from your wardrobe?</string>
+    <string name="delete_selected_items_title">Delete selected garments?</string>
+    <string name="delete_selected_items_body">Delete %1$d selected garments from your wardrobe?</string>
+    <string name="browse_selection_count">%1$d selected</string>
+    <string name="content_delete_selected_items">Delete selected garments</string>
+    <string name="content_select_garment">Select garment</string>
     <string name="category_style">Style</string>
     <string name="category_season">Seasons</string>
     <string name="category_occasion">Occasions</string>

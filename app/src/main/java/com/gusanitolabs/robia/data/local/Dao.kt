@@ -30,6 +30,9 @@ interface WardrobeDao {
     @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis WHERE id = :itemId")
     suspend fun archiveItem(itemId: String, updatedAtEpochMillis: Long)
 
+    @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis WHERE id IN (:itemIds)")
+    suspend fun archiveItems(itemIds: List<String>, updatedAtEpochMillis: Long)
+
     @Transaction
     suspend fun upsertItemWithTags(item: ClothingItemEntity, tagIds: List<String>) {
         upsertItem(item)

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -111,6 +112,7 @@ fun AddEditClothingScreen(
     saveButtonTextRes: Int = R.string.save_item,
     onCancel: () -> Unit,
     onSave: (ClothingItem) -> Unit,
+    onDelete: ((ClothingItem) -> Unit)? = null,
     onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -130,6 +132,7 @@ fun AddEditClothingScreen(
     var captureStatus by rememberSaveable { mutableStateOf("") }
     var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var isPhotoProcessing by rememberSaveable { mutableStateOf(false) }
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -396,6 +399,25 @@ fun AddEditClothingScreen(
         )
     }
 
+    if (showDeleteDialog && existingItem != null && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(stringResource(R.string.delete_item_title)) },
+            text = { Text(stringResource(R.string.delete_item_body, existingItem.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete(existingItem)
+                    },
+                ) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
     colorPickerTarget?.let { target ->
         ColorPalettePickerDialog(
             title = stringResource(if (target == ColorPickerTarget.Primary) R.string.primary_color else R.string.secondary_color),
@@ -520,13 +542,31 @@ fun AddEditClothingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                TextButton(
-                    onClick = ::requestClose,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Rounded.Close, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.cancel))
+                if (existingItem != null && onDelete != null) {
+                    OutlinedButton(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.delete),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else {
+                    TextButton(
+                        onClick = ::requestClose,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Rounded.Close, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.cancel))
+                    }
                 }
                 Button(
                     onClick = {

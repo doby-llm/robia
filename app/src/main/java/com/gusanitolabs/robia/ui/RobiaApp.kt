@@ -14,8 +14,10 @@ import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +48,7 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -271,6 +274,9 @@ fun RobiaApp(
             onSaveItems = { items ->
                 scope.launch { wardrobeRepository.upsertItems(items) }
             },
+            onDeleteItems = { itemIds ->
+                scope.launch { wardrobeRepository.archiveItems(itemIds, System.currentTimeMillis()) }
+            },
             onSaveTag = { tag ->
                 scope.launch { tagRepository.upsertTag(tag) }
             },
@@ -341,6 +347,7 @@ private fun RobiaShell(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
+    onDeleteItems: (List<String>) -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
     onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
@@ -357,12 +364,22 @@ private fun RobiaShell(
     val batchDrafts = remember { mutableStateListOf<BatchDraftItem>() }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
+    var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
+    var showBrowseDeleteDialog by remember { mutableStateOf(false) }
     val items = clothingItems.toUiWardrobeItems()
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
     }
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
+
+    LaunchedEffect(items) {
+        val activeIds = items.map(UiWardrobeItem::id).toSet()
+        selectedBrowseItemIds = selectedBrowseItemIds.intersect(activeIds)
+        selectedItemId?.let { itemId ->
+            if (itemId !in activeIds) selectedItemId = null
+        }
+    }
 
     fun pushRoute(route: RobiaRoute) {
         if (routeStack.lastOrNull() != route) routeStack.add(route)
@@ -394,6 +411,23 @@ private fun RobiaShell(
                 updatedAtEpochMillis = System.currentTimeMillis(),
             ),
         )
+    }
+
+    fun toggleBrowseSelection(itemId: String) {
+        selectedBrowseItemIds = if (itemId in selectedBrowseItemIds) {
+            selectedBrowseItemIds - itemId
+        } else {
+            selectedBrowseItemIds + itemId
+        }
+    }
+
+    fun deleteItemsAndReturnToBrowse(itemIds: Set<String>) {
+        if (itemIds.isEmpty()) return
+        onDeleteItems(itemIds.toList())
+        selectedBrowseItemIds = emptySet()
+        selectedItemId = null
+        showBrowseDeleteDialog = false
+        replaceRoute(RobiaRoute.Browse)
     }
 
     fun startBatchAdd(photoUris: List<String>) {
@@ -447,11 +481,35 @@ private fun RobiaShell(
         )
     }
 
+    if (showBrowseDeleteDialog) {
+        val selectedCount = selectedBrowseItemIds.size
+        AlertDialog(
+            onDismissRequest = { showBrowseDeleteDialog = false },
+            title = { Text(stringResource(R.string.delete_selected_items_title)) },
+            text = { Text(stringResource(R.string.delete_selected_items_body, selectedCount)) },
+            confirmButton = {
+                TextButton(onClick = { deleteItemsAndReturnToBrowse(selectedBrowseItemIds) }) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBrowseDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    if (routeStack.size > 1 && currentRoute != RobiaRoute.AddEditClothing) {
+                    if (currentRoute == RobiaRoute.Browse && selectedBrowseItemIds.isNotEmpty()) {
+                        IconButton(onClick = { selectedBrowseItemIds = emptySet() }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.cancel),
+                            )
+                        }
+                    } else if (routeStack.size > 1 && currentRoute != RobiaRoute.AddEditClothing) {
                         IconButton(
                             onClick = {
                                 if (currentRoute == RobiaRoute.BatchAddClothing && batchDrafts.isNotEmpty()) {
@@ -470,13 +528,29 @@ private fun RobiaShell(
                 },
                 title = {
                     Text(
-                        text = stringResource(currentRoute.titleRes),
+                        text = if (currentRoute == RobiaRoute.Browse && selectedBrowseItemIds.isNotEmpty()) {
+                            stringResource(R.string.browse_selection_count, selectedBrowseItemIds.size)
+                        } else {
+                            stringResource(currentRoute.titleRes)
+                        },
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                     )
                 },
                 actions = {
-                    if (currentRoute == RobiaRoute.ItemDetail && selectedItem != null) {
+                    if (currentRoute == RobiaRoute.Browse && selectedBrowseItemIds.isNotEmpty()) {
+                        val deleteDescription = stringResource(R.string.content_delete_selected_items)
+                        IconButton(
+                            modifier = Modifier.semantics { contentDescription = deleteDescription },
+                            onClick = { showBrowseDeleteDialog = true },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else if (currentRoute == RobiaRoute.ItemDetail && selectedItem != null) {
                         val favoriteDescription = stringResource(R.string.content_favorite)
                         IconButton(
                             modifier = Modifier.semantics {
@@ -554,6 +628,7 @@ private fun RobiaShell(
             allItems = items,
             totalItemCount = items.size,
             filters = browseFilters,
+            selectedBrowseItemIds = selectedBrowseItemIds,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
             batchDrafts = batchDrafts,
@@ -572,6 +647,7 @@ private fun RobiaShell(
                 pushRoute(RobiaRoute.ItemDetail)
             },
             onToggleFavorite = ::toggleFavorite,
+            onBrowseSelectionToggle = ::toggleBrowseSelection,
             onCancelAddEdit = ::closeAddEdit,
             onSaveItem = { item ->
                 onSaveItem(item)
@@ -579,6 +655,7 @@ private fun RobiaShell(
                 replaceRoute(RobiaRoute.Browse)
                 pushRoute(RobiaRoute.ItemDetail)
             },
+            onDeleteItem = { item -> deleteItemsAndReturnToBrowse(setOf(item.id)) },
             onBatchPhotosSelected = ::startBatchAdd,
             onDraftUpdated = ::updateBatchDraft,
             onDraftSelected = { draft ->
@@ -716,6 +793,7 @@ private fun RobiaNavHost(
     allItems: List<UiWardrobeItem>,
     totalItemCount: Int,
     filters: BrowseFilterState,
+    selectedBrowseItemIds: Set<String>,
     selectedItem: UiWardrobeItem?,
     selectedDomainItem: ClothingItem?,
     batchDrafts: List<BatchDraftItem>,
@@ -728,8 +806,10 @@ private fun RobiaNavHost(
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
+    onBrowseSelectionToggle: (String) -> Unit,
     onCancelAddEdit: () -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
+    onDeleteItem: (ClothingItem) -> Unit,
     onBatchPhotosSelected: (List<String>) -> Unit,
     onDraftUpdated: (BatchDraftItem) -> Unit,
     onDraftSelected: (BatchDraftItem) -> Unit,
@@ -750,8 +830,10 @@ private fun RobiaNavHost(
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             activeFilterCount = filters.activeFilterCount,
+            selectedItemIds = selectedBrowseItemIds,
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
+            onSelectionToggle = onBrowseSelectionToggle,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
             onResetFilters = onResetFilters,
@@ -774,6 +856,7 @@ private fun RobiaNavHost(
             developerModeEnabled = developerModeEnabled,
             onCancel = onCancelAddEdit,
             onSave = onSaveItem,
+            onDelete = onDeleteItem,
             onBatchPhotosSelected = if (selectedDomainItem == null) onBatchPhotosSelected else null,
         )
         RobiaRoute.BatchAddClothing -> BatchAddClothingScreen(
@@ -838,12 +921,16 @@ private fun BrowseWardrobeScreen(
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    selectedItemIds: Set<String>,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
+    onSelectionToggle: (String) -> Unit,
     onAddClick: () -> Unit,
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
 ) {
+    val isSelectionMode = selectedItemIds.isNotEmpty()
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
         modifier = Modifier
@@ -872,7 +959,16 @@ private fun BrowseWardrobeScreen(
         items(items, key = { it.id }) { item ->
             GarmentGridCard(
                 item = item,
-                onClick = { onItemSelected(item) },
+                isSelected = item.id in selectedItemIds,
+                isSelectionMode = isSelectionMode,
+                onClick = {
+                    if (isSelectionMode) {
+                        onSelectionToggle(item.id)
+                    } else {
+                        onItemSelected(item)
+                    }
+                },
+                onLongClick = { onSelectionToggle(item.id) },
                 onFavoriteClick = { onToggleFavorite(item.id) },
             )
         }
@@ -918,12 +1014,17 @@ private fun FilterBar(
 
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun GarmentGridCard(
     item: UiWardrobeItem,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
 ) {
     val itemDescription = stringResource(R.string.content_open_item_detail)
+    val selectDescription = stringResource(R.string.content_select_garment)
     val favoriteDescription = stringResource(R.string.content_favorite)
 
     Card(
@@ -931,8 +1032,16 @@ private fun GarmentGridCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = itemDescription }
-            .clickable(onClick = onClick),
+            .border(
+                width = if (isSelected) 2.dp else 0.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = MaterialTheme.shapes.medium,
+            )
+            .semantics {
+                contentDescription = if (isSelectionMode) selectDescription else itemDescription
+                selected = isSelected
+            }
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Box {
             GarmentPhotoPlaceholder(
@@ -959,6 +1068,24 @@ private fun GarmentGridCard(
                     tint = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(6.dp),
                 )
+            }
+            if (isSelected) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(6.dp)
+                            .size(18.dp),
+                    )
+                }
             }
         }
         Column(
@@ -2048,6 +2175,7 @@ private fun RobiaAppPreview() {
             onDeveloperModeEnabledChange = {},
             onSaveItem = {},
             onSaveItems = {},
+            onDeleteItems = {},
             onSaveTag = {},
             onSaveMainColor = {},
             onDeleteCustomTag = {},

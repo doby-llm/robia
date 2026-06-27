@@ -237,6 +237,13 @@
     <string name="tag_name_label">Tag-Name</string>
     <string name="save">Speichern</string>
     <string name="delete">Löschen</string>
+    <string name="delete_item_title">Kleidungsstück löschen?</string>
+    <string name="delete_item_body">„%1$s“ aus deinem Kleiderschrank löschen?</string>
+    <string name="delete_selected_items_title">Ausgewählte Kleidungsstücke löschen?</string>
+    <string name="delete_selected_items_body">%1$d ausgewählte Kleidungsstücke aus deinem Kleiderschrank löschen?</string>
+    <string name="browse_selection_count">%1$d ausgewählt</string>
+    <string name="content_delete_selected_items">Ausgewählte Kleidungsstücke löschen</string>
+    <string name="content_select_garment">Kleidungsstück auswählen</string>
     <string name="category_style">Stil</string>
     <string name="category_season">Jahreszeiten</string>
     <string name="category_occasion">Anlässe</string>
