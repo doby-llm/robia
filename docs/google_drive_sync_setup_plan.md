@@ -197,6 +197,30 @@ These tasks are safe before Manu provides OAuth/client setup:
 - Add UI state models and localized string resources for sync statuses without wiring real OAuth.
 - Add CI static checks that do not require secrets and do not run local Gradle on this host.
 
+### Implemented foundation in this slice
+
+This repository now includes credential-free Drive sync seams that intentionally do not
+perform real OAuth or Drive API calls:
+
+- `WardrobeSyncGateway` exposes a queue-oriented domain boundary for item upserts,
+  app-initiated item-folder deletes, tag changes, and palette changes.
+- `NoOpWardrobeSyncGateway` keeps production runtime safely local-only and reports
+  `NotConfigured` until the Google Cloud checklist above is complete.
+- `RecordingWardrobeSyncGateway` gives future JVM tests a deterministic way to assert
+  which sync operations would have been queued without contacting Google services.
+- `DriveWardrobeRepository` defines the future Drive adapter contract for manifest,
+  item, delete, and palette writes. `NotConfiguredDriveWardrobeRepository` blocks all
+  calls with an explicit setup-required result, and `InMemoryDriveWardrobeRepository`
+  supports fake merge/delete tests.
+- Settings and wardrobe item status copy now derive from sync state and are localized
+  in English, Spanish, and German. The Google Drive menu item remains disabled while
+  the app is not configured.
+
+No OAuth client IDs, Drive folder IDs, access tokens, client secrets, service accounts,
+or release-signing assumptions were added. Real Google account connection remains
+blocked until Manu completes the Google Cloud/OAuth steps and a follow-up worker wires
+the chosen credential/config channel.
+
 ## 5. What remains blocked until credentials/human action
 
 These parts should wait until the Google Cloud checklist is complete:

@@ -12,6 +12,14 @@
     <string name="language_german">Alemán</string>
     <string name="data_sync">Sincronización de datos</string>
     <string name="data_sync_coming_soon">Sincronización con Google Drive próximamente</string>
+    <string name="data_sync_google_drive">Sincronización con Google Drive</string>
+    <string name="data_sync_google_drive_setup_required">Configuración necesaria antes de conectar</string>
+    <string name="drive_sync_status_disabled">Desactivada</string>
+    <string name="drive_sync_status_not_configured">Sin configurar</string>
+    <string name="drive_sync_status_disconnected">Cuenta de Google desconectada</string>
+    <string name="drive_sync_status_connected">Lista para sincronizar</string>
+    <string name="drive_sync_status_syncing">Sincronizando…</string>
+    <string name="drive_sync_status_needs_attention">La sincronización requiere atención</string>
     <string name="developer_mode">Modo de desarrollador</string>
     <string name="developer_mode_summary">Mostrar diagnósticos al añadir prenda</string>
     <string name="developer_mode_unlocked">Modo de desarrollador desbloqueado</string>

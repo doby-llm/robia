@@ -1,15 +1,87 @@
 package com.gusanitolabs.robia.sync
 
-import com.gusanitolabs.robia.core.model.ClothingItem
-import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
+import com.gusanitolabs.robia.core.model.MainColor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 
-/** Future seam for Drive or another backend; MVP deliberately stays local-only. */
+/** Future seam for Drive or another backend; MVP deliberately stays credential-gated. */
 interface WardrobeSyncGateway {
-    suspend fun enqueueItemChanged(item: ClothingItem)
-    suspend fun enqueueTagChanged(tag: GarmentTag)
+    val state: Flow<WardrobeSyncState>
+
+    suspend fun enqueue(operation: WardrobeSyncOperation)
 }
 
 object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
-    override suspend fun enqueueItemChanged(item: ClothingItem) = Unit
-    override suspend fun enqueueTagChanged(tag: GarmentTag) = Unit
+    override val state: Flow<WardrobeSyncState> = flowOf(WardrobeSyncState.notConfigured())
+    override suspend fun enqueue(operation: WardrobeSyncOperation) = Unit
 }
+
+/** Testable queue-only gateway that never talks to Google services. */
+class RecordingWardrobeSyncGateway(
+    initialState: WardrobeSyncState = WardrobeSyncState.notConfigured(),
+) : WardrobeSyncGateway {
+    private val mutableState = MutableStateFlow(initialState)
+    private val operations = mutableListOf<WardrobeSyncOperation>()
+
+    override val state: Flow<WardrobeSyncState> = mutableState
+
+    val pendingOperations: List<WardrobeSyncOperation>
+        get() = operations.toList()
+
+    override suspend fun enqueue(operation: WardrobeSyncOperation) {
+        operations += operation
+        mutableState.value = mutableState.value.copy(pendingOperationCount = operations.size)
+    }
+}
+
+data class WardrobeSyncState(
+    val connectionStatus: DriveSyncConnectionStatus,
+    val disabledReason: DriveSyncDisabledReason? = null,
+    val pendingOperationCount: Int = 0,
+    val lastSyncedAtEpochMillis: Long? = null,
+) {
+    val canAttemptGoogleDriveSync: Boolean
+        get() = connectionStatus == DriveSyncConnectionStatus.Connected
+
+    companion object {
+        fun notConfigured(): WardrobeSyncState = WardrobeSyncState(
+            connectionStatus = DriveSyncConnectionStatus.NotConfigured,
+            disabledReason = DriveSyncDisabledReason.GoogleCloudSetupRequired,
+        )
+    }
+}
+
+sealed interface WardrobeSyncOperation {
+    val localOperationId: String
+    val createdAtEpochMillis: Long
+
+    data class UpsertItem(
+        val itemId: String,
+        override val localOperationId: String = operationId("item_upsert", itemId),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class DeleteItemFolder(
+        val itemId: String,
+        override val localOperationId: String = operationId("item_delete", itemId),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class UpsertTags(
+        val touchedTagIds: Set<String>,
+        override val localOperationId: String = operationId("tags_upsert", touchedTagIds.sorted().joinToString("_")),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class UpsertPalette(
+        val colors: List<MainColor>,
+        override val localOperationId: String = operationId("palette_upsert", colors.map(MainColor::id).sorted().joinToString("_")),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+}
+
+private fun operationId(prefix: String, key: String): String =
+    "$prefix:${key.ifBlank { "all" }}:${System.currentTimeMillis()}"

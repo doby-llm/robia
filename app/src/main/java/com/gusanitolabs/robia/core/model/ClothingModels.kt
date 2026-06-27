@@ -78,4 +78,5 @@ data class RobiaSettings(
     val languagePreference: LanguagePreference = LanguagePreference.System,
     val developerModeUnlocked: Boolean = false,
     val developerModeEnabled: Boolean = false,
+    val driveSyncConnectionStatus: DriveSyncConnectionStatus = DriveSyncConnectionStatus.NotConfigured,
 )

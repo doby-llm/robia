@@ -12,6 +12,14 @@
     <string name="language_german">Deutsch</string>
     <string name="data_sync">Datensynchronisierung</string>
     <string name="data_sync_coming_soon">Google-Drive-Synchronisierung kommt später</string>
+    <string name="data_sync_google_drive">Google-Drive-Synchronisierung</string>
+    <string name="data_sync_google_drive_setup_required">Einrichtung vor dem Verbinden erforderlich</string>
+    <string name="drive_sync_status_disabled">Deaktiviert</string>
+    <string name="drive_sync_status_not_configured">Nicht konfiguriert</string>
+    <string name="drive_sync_status_disconnected">Google-Konto getrennt</string>
+    <string name="drive_sync_status_connected">Bereit zum Synchronisieren</string>
+    <string name="drive_sync_status_syncing">Synchronisierung läuft…</string>
+    <string name="drive_sync_status_needs_attention">Synchronisierung benötigt Aufmerksamkeit</string>
     <string name="developer_mode">Entwicklermodus</string>
     <string name="developer_mode_summary">Diagnosen beim Hinzufügen anzeigen</string>
     <string name="developer_mode_unlocked">Entwicklermodus freigeschaltet</string>

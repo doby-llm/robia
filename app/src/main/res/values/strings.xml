@@ -12,6 +12,14 @@
     <string name="language_german">German</string>
     <string name="data_sync">Data sync</string>
     <string name="data_sync_coming_soon">Google Drive sync coming soon</string>
+    <string name="data_sync_google_drive">Google Drive sync</string>
+    <string name="data_sync_google_drive_setup_required">Setup required before connecting</string>
+    <string name="drive_sync_status_disabled">Disabled</string>
+    <string name="drive_sync_status_not_configured">Not configured</string>
+    <string name="drive_sync_status_disconnected">Google account disconnected</string>
+    <string name="drive_sync_status_connected">Ready to sync</string>
+    <string name="drive_sync_status_syncing">Syncing…</string>
+    <string name="drive_sync_status_needs_attention">Sync needs attention</string>
     <string name="developer_mode">Developer Mode</string>
     <string name="developer_mode_summary">Show Add Garment diagnostics</string>
     <string name="developer_mode_unlocked">Developer mode unlocked</string>

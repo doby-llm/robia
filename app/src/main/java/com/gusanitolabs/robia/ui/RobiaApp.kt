@@ -116,6 +116,7 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
+import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.MainColor
@@ -128,6 +129,10 @@ import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
+import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
+import com.gusanitolabs.robia.sync.WardrobeSyncGateway
+import com.gusanitolabs.robia.sync.WardrobeSyncOperation
+import com.gusanitolabs.robia.sync.WardrobeSyncState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -243,8 +248,10 @@ fun RobiaApp(
     settingsRepository: SettingsRepository,
     wardrobeRepository: WardrobeRepository,
     tagRepository: TagRepository,
+    syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
 ) {
     val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
+    val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
     val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
@@ -257,8 +264,9 @@ fun RobiaApp(
 
     LocalizedRobiaContent(settings.languagePreference) {
         RobiaTheme {
+        val displaySettings = settings.copy(driveSyncConnectionStatus = syncState.connectionStatus)
         RobiaShell(
-            settings = settings,
+            settings = displaySettings,
             clothingItems = clothingItems,
             tagCategories = tagCategories,
             availableTags = availableTags,
@@ -273,25 +281,46 @@ fun RobiaApp(
                 scope.launch { settingsRepository.setDeveloperModeEnabled(enabled) }
             },
             onSaveItem = { item ->
-                scope.launch { wardrobeRepository.upsertItem(item) }
+                scope.launch {
+                    wardrobeRepository.upsertItem(item)
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id))
+                }
             },
             onSaveItems = { items ->
-                scope.launch { wardrobeRepository.upsertItems(items) }
+                scope.launch {
+                    wardrobeRepository.upsertItems(items)
+                    items.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
+                }
             },
             onDeleteItems = { itemIds ->
-                scope.launch { wardrobeRepository.archiveItems(itemIds, System.currentTimeMillis()) }
+                scope.launch {
+                    wardrobeRepository.archiveItems(itemIds, System.currentTimeMillis())
+                    itemIds.forEach { itemId -> syncGateway.enqueue(WardrobeSyncOperation.DeleteItemFolder(itemId)) }
+                }
             },
             onSaveTag = { tag ->
-                scope.launch { tagRepository.upsertTag(tag) }
+                scope.launch {
+                    tagRepository.upsertTag(tag)
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
+                }
             },
             onSaveMainColor = { color ->
-                scope.launch { tagRepository.upsertMainColor(color) }
+                scope.launch {
+                    tagRepository.upsertMainColor(color)
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
+                }
             },
             onDeleteCustomTag = { tag ->
-                scope.launch { tagRepository.deleteCustomTag(tag.id) }
+                scope.launch {
+                    tagRepository.deleteCustomTag(tag.id)
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
+                }
             },
             onDeleteMainColor = { color ->
-                scope.launch { tagRepository.deleteMainColor(color.id) }
+                scope.launch {
+                    tagRepository.deleteMainColor(color.id)
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
+                }
             },
         )
         }
@@ -372,7 +401,7 @@ private fun RobiaShell(
     var showBrowseDeleteDialog by remember { mutableStateOf(false) }
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
-    val items = clothingItems.toUiWardrobeItems()
+    val items = clothingItems.toUiWardrobeItems(settings.driveSyncConnectionStatus)
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
     }
@@ -627,6 +656,7 @@ private fun RobiaShell(
                             SettingsMenu(
                                 expanded = settingsExpanded,
                                 currentLanguage = settings.languagePreference,
+                                driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
                                 developerModeUnlocked = settings.developerModeUnlocked,
                                 developerModeEnabled = settings.developerModeEnabled,
                                 onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
@@ -746,6 +776,7 @@ private fun RobiaShell(
 private fun SettingsMenu(
     expanded: Boolean,
     currentLanguage: LanguagePreference,
+    driveSyncConnectionStatus: DriveSyncConnectionStatus,
     developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
@@ -799,10 +830,15 @@ private fun SettingsMenu(
         DropdownMenuItem(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(stringResource(R.string.data_sync))
+                    Text(stringResource(R.string.data_sync_google_drive))
                     Text(
-                        text = stringResource(R.string.data_sync_coming_soon),
+                        text = stringResource(driveSyncConnectionStatus.statusLabelRes),
                         style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.data_sync_google_drive_setup_required),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
@@ -812,6 +848,16 @@ private fun SettingsMenu(
         )
     }
 }
+
+private val DriveSyncConnectionStatus.statusLabelRes: Int
+    get() = when (this) {
+        DriveSyncConnectionStatus.Disabled -> R.string.drive_sync_status_disabled
+        DriveSyncConnectionStatus.NotConfigured -> R.string.drive_sync_status_not_configured
+        DriveSyncConnectionStatus.Disconnected -> R.string.drive_sync_status_disconnected
+        DriveSyncConnectionStatus.Connected -> R.string.drive_sync_status_connected
+        DriveSyncConnectionStatus.Syncing -> R.string.drive_sync_status_syncing
+        DriveSyncConnectionStatus.NeedsAttention -> R.string.drive_sync_status_needs_attention
+    }
 
 private val LanguagePreference.labelRes: Int
     get() = when (this) {
@@ -2158,11 +2204,13 @@ private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
 }
 
 @Composable
-private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map { item ->
+private fun List<ClothingItem>.toUiWardrobeItems(
+    driveSyncConnectionStatus: DriveSyncConnectionStatus,
+): List<UiWardrobeItem> = map { item ->
     UiWardrobeItem(
         id = item.id,
         name = item.name,
-        subtitle = item.notes.ifBlank { stringResource(R.string.wardrobe_item_saved_locally) },
+        subtitle = item.notes.ifBlank { stringResource(driveSyncConnectionStatus.itemStatusLabelRes) },
         notes = item.notes,
         photoUri = item.photoUri,
         tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
@@ -2180,6 +2228,16 @@ private fun List<ClothingItem>.toUiWardrobeItems(): List<UiWardrobeItem> = map {
         isFavorite = item.isFavorite,
     )
 }
+
+private val DriveSyncConnectionStatus.itemStatusLabelRes: Int
+    get() = when (this) {
+        DriveSyncConnectionStatus.Connected -> R.string.drive_sync_status_connected
+        DriveSyncConnectionStatus.Syncing -> R.string.drive_sync_status_syncing
+        DriveSyncConnectionStatus.NeedsAttention -> R.string.drive_sync_status_needs_attention
+        DriveSyncConnectionStatus.Disabled,
+        DriveSyncConnectionStatus.NotConfigured,
+        DriveSyncConnectionStatus.Disconnected -> R.string.wardrobe_item_saved_locally
+    }
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = localizedTagLabel()
