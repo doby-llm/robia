@@ -84,7 +84,7 @@ internal data class ColorPaletteChangeSet(
     val id: String = UUID.randomUUID().toString(),
 )
 
-internal enum class ColorPaletteOperation { Added, Edited, Deleted }
+internal enum class ColorPaletteOperation { Added, Edited, Deleted, RestoredDefault }
 
 @Composable
 internal fun ColorReviewPromptDialog(

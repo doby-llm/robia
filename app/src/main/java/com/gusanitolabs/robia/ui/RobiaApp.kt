@@ -14,8 +14,6 @@ import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,7 +74,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -129,7 +126,6 @@ import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
-import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
@@ -145,17 +141,6 @@ import java.util.Locale
 
 private const val DEVELOPER_UNLOCK_TAP_COUNT = 10
 private const val DEVELOPER_UNLOCK_WINDOW_MILLIS = 5_000L
-
-private data class ColorResetRecomputeProgress(
-    val totalCount: Int,
-    val processedCount: Int = 0,
-    val updatedCount: Int = 0,
-    val skippedCount: Int = 0,
-    val isWriting: Boolean = false,
-) {
-    val progress: Float
-        get() = if (totalCount == 0) 1f else processedCount.toFloat() / totalCount.toFloat()
-}
 
 private sealed interface RobiaRoute {
     @get:StringRes
@@ -273,9 +258,6 @@ fun RobiaApp(
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    var colorResetProgress by remember { mutableStateOf<ColorResetRecomputeProgress?>(null) }
-
     LaunchedEffect(tagRepository) {
         tagRepository.seedDefaultsIfNeeded()
     }
@@ -352,138 +334,13 @@ fun RobiaApp(
             },
             onRestoreDefaultMainColors = {
                 scope.launch {
-                    val recomputeResult = recomputeItemsForDefaultPalette(
-                        items = clothingItems,
-                        context = context,
-                        onProgress = { progress -> colorResetProgress = progress },
-                    )
-                    colorResetProgress = recomputeResult.progress.copy(isWriting = true)
                     tagRepository.resetMainColorsToDefaults()
-                    if (recomputeResult.updatedItems.isNotEmpty()) {
-                        wardrobeRepository.upsertItems(recomputeResult.updatedItems)
-                    }
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
-                    recomputeResult.updatedItems.forEach { item ->
-                        syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id))
-                    }
-                    Toast.makeText(
-                        context,
-                        context.getString(
-                            R.string.restore_default_colors_recompute_complete,
-                            recomputeResult.progress.updatedCount,
-                            recomputeResult.progress.skippedCount,
-                        ),
-                        Toast.LENGTH_LONG,
-                    ).show()
-                    colorResetProgress = null
                 }
             },
         )
-        colorResetProgress?.let { progress ->
-            ColorResetRecomputeDialog(progress = progress)
-        }
         }
     }
-}
-
-private data class ColorResetRecomputeResult(
-    val updatedItems: List<ClothingItem>,
-    val progress: ColorResetRecomputeProgress,
-)
-
-private suspend fun recomputeItemsForDefaultPalette(
-    items: List<ClothingItem>,
-    context: Context,
-    onProgress: (ColorResetRecomputeProgress) -> Unit,
-): ColorResetRecomputeResult {
-    val updatedItems = mutableListOf<ClothingItem>()
-    var processedCount = 0
-    var skippedCount = 0
-    onProgress(ColorResetRecomputeProgress(totalCount = items.size))
-    items.forEach { item ->
-        val imageUri = item.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
-        val updatedItem = imageUri?.let { uri ->
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    ClothingImageStore.extractPaletteColorDiagnostics(context, uri, DefaultTags.mainColors).matches
-                }
-            }.getOrDefault(emptyList())
-                .takeIf { matches -> matches.isNotEmpty() }
-                ?.toColorMetrics()
-                ?.let { metrics ->
-                    item.copy(
-                        colorMetrics = metrics,
-                        updatedAtEpochMillis = System.currentTimeMillis(),
-                    )
-                }
-        }
-        if (updatedItem != null) {
-            updatedItems += updatedItem
-        } else {
-            skippedCount += 1
-        }
-        processedCount += 1
-        onProgress(
-            ColorResetRecomputeProgress(
-                totalCount = items.size,
-                processedCount = processedCount,
-                updatedCount = updatedItems.size,
-                skippedCount = skippedCount,
-            ),
-        )
-    }
-    return ColorResetRecomputeResult(
-        updatedItems = updatedItems,
-        progress = ColorResetRecomputeProgress(
-            totalCount = items.size,
-            processedCount = processedCount,
-            updatedCount = updatedItems.size,
-            skippedCount = skippedCount,
-        ),
-    )
-}
-
-@Composable
-private fun ColorResetRecomputeDialog(progress: ColorResetRecomputeProgress) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 300),
-        label = "colorResetRecomputeProgress",
-    )
-    BackHandler(enabled = true) { /* DB writes must not be interrupted once the reset is confirmed. */ }
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text(stringResource(R.string.restore_default_colors_recompute_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = if (progress.isWriting) {
-                        stringResource(R.string.restore_default_colors_recompute_writing)
-                    } else {
-                        stringResource(
-                            R.string.restore_default_colors_recompute_count,
-                            progress.processedCount,
-                            progress.totalCount,
-                        )
-                    },
-                )
-                LinearProgressIndicator(
-                    progress = { animatedProgress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = stringResource(
-                        R.string.restore_default_colors_recompute_summary,
-                        progress.updatedCount,
-                        progress.skippedCount,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {},
-    )
 }
 
 @Composable
@@ -678,8 +535,17 @@ private fun RobiaShell(
         )
     }
 
-    fun restoreDefaultMainColorsAndOfferReview() {
+    fun restoreDefaultMainColorsAndStartReview() {
+        val beforePalette = mainColors
         onRestoreDefaultMainColors()
+        pendingColorReviewChangeSet = null
+        activeColorReviewChangeSet = ColorPaletteChangeSet(
+            beforePalette = beforePalette,
+            afterPalette = DefaultTags.mainColors,
+            touchedColorId = null,
+            operation = ColorPaletteOperation.RestoredDefault,
+        )
+        replaceRoute(RobiaRoute.ColorReview)
     }
 
     fun requestColorReviewDiscard() {
@@ -973,7 +839,7 @@ private fun RobiaShell(
             onDeleteCustomTag = onDeleteCustomTag,
             onDeleteMainColor = ::deleteMainColorAndOfferReview,
             onRestoreDefaultTags = onRestoreDefaultTags,
-            onRestoreDefaultMainColors = ::restoreDefaultMainColorsAndOfferReview,
+            onRestoreDefaultMainColors = ::restoreDefaultMainColorsAndStartReview,
             onApplyColorReviewChanges = onSaveItems,
             onCloseColorReview = {
                 activeColorReviewChangeSet = null
