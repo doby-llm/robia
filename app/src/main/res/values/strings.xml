@@ -306,6 +306,12 @@
     <string name="delete_anyway">Delete anyway</string>
     <string name="category_category">Category</string>
     <string name="category_location">Locations</string>
+    <string name="restore_default_button">Default</string>
+    <string name="restore_default_confirm">Restore default</string>
+    <string name="restore_default_colors_title">Restore default colors?</string>
+    <string name="restore_default_colors_body">This replaces your custom main color palette with Robia’s factory colors. Robia will then offer to recompute garment color suggestions so saved palettes and tags stay consistent.</string>
+    <string name="restore_default_tags_title">Restore default %1$s?</string>
+    <string name="restore_default_tags_body">Robia will add back the factory %1$s tags without deleting your custom tags or changing garments that already reference them.</string>
     <string name="tag_t_shirt">T-shirt</string>
     <string name="tag_pants">Pants</string>
     <string name="tag_shirt">Shirt</string>

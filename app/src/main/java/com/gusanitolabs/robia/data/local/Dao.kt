@@ -66,9 +66,12 @@ interface TagDao {
     suspend fun upsertTag(tag: GarmentTagEntity)
 
     @Upsert
+    suspend fun upsertTags(tags: List<GarmentTagEntity>)
+
+    @Upsert
     suspend fun upsertMainColor(color: MainColorEntity)
 
-    @Query("DELETE FROM garment_tags WHERE id = :id")
+    @Query("DELETE FROM garment_tags WHERE id = :id AND is_system = 0")
     suspend fun deleteCustomTag(id: String)
 
     @Query("DELETE FROM main_colors WHERE id = :id AND (SELECT COUNT(*) FROM main_colors) > 1")
@@ -85,4 +88,13 @@ interface TagDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun seedMainColors(colors: List<MainColorEntity>)
+
+    @Query("DELETE FROM main_colors")
+    suspend fun deleteAllMainColors()
+
+    @Transaction
+    suspend fun replaceMainColors(colors: List<MainColorEntity>) {
+        deleteAllMainColors()
+        seedMainColors(colors)
+    }
 }

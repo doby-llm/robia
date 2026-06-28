@@ -115,6 +115,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -322,6 +323,22 @@ fun RobiaApp(
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
+            onRestoreDefaultTags = { category ->
+                scope.launch {
+                    tagRepository.restoreDefaultTags(category.id)
+                    val restoredTagIds = DefaultTags.tags
+                        .filter { tag -> tag.categoryId == category.id }
+                        .map(GarmentTag::id)
+                        .toSet()
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(restoredTagIds))
+                }
+            },
+            onRestoreDefaultMainColors = {
+                scope.launch {
+                    tagRepository.resetMainColorsToDefaults()
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
+                }
+            },
         )
         }
     }
@@ -385,6 +402,8 @@ private fun RobiaShell(
     onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
     onDeleteMainColor: (MainColor) -> Unit,
+    onRestoreDefaultTags: (TagCategory) -> Unit,
+    onRestoreDefaultMainColors: () -> Unit,
 ) {
     val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
     val currentRoute = routeStack.last()
@@ -514,6 +533,18 @@ private fun RobiaShell(
             afterPalette = afterPalette,
             touchedColorId = color.id,
             operation = ColorPaletteOperation.Deleted,
+        )
+    }
+
+    fun restoreDefaultMainColorsAndOfferReview() {
+        val beforePalette = mainColors
+        val afterPalette = DefaultTags.mainColors
+        onRestoreDefaultMainColors()
+        pendingColorReviewChangeSet = ColorPaletteChangeSet(
+            beforePalette = beforePalette,
+            afterPalette = afterPalette,
+            touchedColorId = null,
+            operation = ColorPaletteOperation.Edited,
         )
     }
 
@@ -807,6 +838,8 @@ private fun RobiaShell(
             onSaveMainColor = ::saveMainColorAndOfferReview,
             onDeleteCustomTag = onDeleteCustomTag,
             onDeleteMainColor = ::deleteMainColorAndOfferReview,
+            onRestoreDefaultTags = onRestoreDefaultTags,
+            onRestoreDefaultMainColors = ::restoreDefaultMainColorsAndOfferReview,
             onApplyColorReviewChanges = onSaveItems,
             onCloseColorReview = {
                 activeColorReviewChangeSet = null
@@ -970,6 +1003,8 @@ private fun RobiaNavHost(
     onSaveMainColor: (MainColor) -> Unit,
     onDeleteCustomTag: (GarmentTag) -> Unit,
     onDeleteMainColor: (MainColor) -> Unit,
+    onRestoreDefaultTags: (TagCategory) -> Unit,
+    onRestoreDefaultMainColors: () -> Unit,
     onApplyColorReviewChanges: (List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
@@ -998,6 +1033,8 @@ private fun RobiaNavHost(
             onDeleteTag = onDeleteCustomTag,
             onSaveMainColor = onSaveMainColor,
             onDeleteMainColor = onDeleteMainColor,
+            onRestoreDefaultTags = onRestoreDefaultTags,
+            onRestoreDefaultMainColors = onRestoreDefaultMainColors,
         )
         RobiaRoute.ColorReview -> colorReviewChangeSet?.let { changeSet ->
             ColorReviewScreen(

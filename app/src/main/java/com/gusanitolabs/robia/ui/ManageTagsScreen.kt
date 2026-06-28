@@ -68,6 +68,11 @@ private data class ColorEditorState(
     val existingColor: MainColor? = null,
 )
 
+private sealed interface RestoreDefaultTarget {
+    data object MainColors : RestoreDefaultTarget
+    data class Tags(val category: TagCategory) : RestoreDefaultTarget
+}
+
 
 @Composable
 fun ManageTagsScreen(
@@ -79,12 +84,15 @@ fun ManageTagsScreen(
     onDeleteTag: (GarmentTag) -> Unit,
     onSaveMainColor: (MainColor) -> Unit,
     onDeleteMainColor: (MainColor) -> Unit,
+    onRestoreDefaultTags: (TagCategory) -> Unit,
+    onRestoreDefaultMainColors: () -> Unit,
 ) {
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
     var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
     var pendingDeleteTag by remember { mutableStateOf<GarmentTag?>(null) }
     var pendingModelTagRename by remember { mutableStateOf<GarmentTag?>(null) }
+    var pendingRestoreDefault by remember { mutableStateOf<RestoreDefaultTarget?>(null) }
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
     val visibleTags = remember(tags) { tags.filterNot { tag -> tag.categoryId == "care" } }
     val tagsByCategory = remember(visibleTags) { visibleTags.groupBy(GarmentTag::categoryId) }
@@ -117,6 +125,7 @@ fun ManageTagsScreen(
                 onAddColor = { colorEditorState = ColorEditorState() },
                 onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
                 onDeleteColor = { color -> pendingDeleteColor = color },
+                onRestoreDefault = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
             )
         }
 
@@ -134,6 +143,11 @@ fun ManageTagsScreen(
                         } else {
                             onDeleteTag(tag)
                         }
+                    },
+                    onRestoreDefault = if (category.id in RestorableTagCategoryIds) {
+                        { pendingRestoreDefault = RestoreDefaultTarget.Tags(category) }
+                    } else {
+                        null
                     },
                 )
             }
@@ -209,6 +223,20 @@ fun ManageTagsScreen(
             },
         )
     }
+
+    pendingRestoreDefault?.let { target ->
+        RestoreDefaultConfirmationDialog(
+            target = target,
+            onDismiss = { pendingRestoreDefault = null },
+            onConfirm = {
+                when (target) {
+                    RestoreDefaultTarget.MainColors -> onRestoreDefaultMainColors()
+                    is RestoreDefaultTarget.Tags -> onRestoreDefaultTags(target.category)
+                }
+                pendingRestoreDefault = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -218,6 +246,7 @@ private fun TagCategoryCard(
     onAddTag: () -> Unit,
     onEditTag: (GarmentTag) -> Unit,
     onDeleteTag: (GarmentTag) -> Unit,
+    onRestoreDefault: (() -> Unit)?,
 ) {
     val addDescription = stringResource(R.string.content_add_tag)
     val allowsNewTags = category.id != "season"
@@ -260,6 +289,11 @@ private fun TagCategoryCard(
                         onClick = onAddTag,
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null)
+                    }
+                }
+                onRestoreDefault?.let { restoreDefault ->
+                    TextButton(onClick = restoreDefault) {
+                        Text(stringResource(R.string.restore_default_button))
                     }
                 }
             }
@@ -353,6 +387,7 @@ private fun MainColorPaletteCard(
     onAddColor: () -> Unit,
     onEditColor: (MainColor) -> Unit,
     onDeleteColor: (MainColor) -> Unit,
+    onRestoreDefault: () -> Unit,
 ) {
     val addDescription = stringResource(R.string.content_add_color)
 
@@ -393,6 +428,9 @@ private fun MainColorPaletteCard(
                     onClick = onAddColor,
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
+                }
+                TextButton(onClick = onRestoreDefault) {
+                    Text(stringResource(R.string.restore_default_button))
                 }
             }
 
@@ -723,6 +761,38 @@ private fun ColorEditorDialog(
 }
 
 @Composable
+private fun RestoreDefaultConfirmationDialog(
+    target: RestoreDefaultTarget,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val title = when (target) {
+        RestoreDefaultTarget.MainColors -> stringResource(R.string.restore_default_colors_title)
+        is RestoreDefaultTarget.Tags -> stringResource(R.string.restore_default_tags_title, target.category.localizedName())
+    }
+    val body = when (target) {
+        RestoreDefaultTarget.MainColors -> stringResource(R.string.restore_default_colors_body)
+        is RestoreDefaultTarget.Tags -> stringResource(R.string.restore_default_tags_body, target.category.localizedName())
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.restore_default_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun DeleteColorConfirmationDialog(
     color: MainColor,
     onDismiss: () -> Unit,
@@ -774,6 +844,8 @@ private fun List<GarmentTag>.nextTagSortOrder(): Int =
 
 private fun List<MainColor>.nextColorSortOrder(): Int =
     (maxOfOrNull(MainColor::sortOrder) ?: 0) + 10
+
+private val RestorableTagCategoryIds = setOf("category", "season", "occasion")
 
 private fun customId(prefix: String, name: String): String {
     val slug = name

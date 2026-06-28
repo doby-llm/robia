@@ -80,6 +80,21 @@ class LocalTagRepository(
         tagDao.deleteMainColor(id)
     }
 
+    override suspend fun restoreDefaultTags(categoryId: String) {
+        DefaultTags.categories
+            .firstOrNull { category -> category.id == categoryId }
+            ?.let { category -> tagDao.upsertCategory(category.toEntity()) }
+        tagDao.upsertTags(
+            DefaultTags.tags
+                .filter { tag -> tag.categoryId == categoryId }
+                .map(GarmentTag::toEntity),
+        )
+    }
+
+    override suspend fun resetMainColorsToDefaults() {
+        tagDao.replaceMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
+    }
+
     override suspend fun seedDefaultsIfNeeded() {
         tagDao.seedCategories(DefaultTags.categories.map(TagCategory::toEntity))
         tagDao.seedTags(DefaultTags.tags.map(GarmentTag::toEntity))

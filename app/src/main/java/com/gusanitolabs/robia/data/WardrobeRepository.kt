@@ -24,5 +24,7 @@ interface TagRepository {
     suspend fun upsertMainColor(color: MainColor)
     suspend fun deleteCustomTag(id: String)
     suspend fun deleteMainColor(id: String)
+    suspend fun restoreDefaultTags(categoryId: String)
+    suspend fun resetMainColorsToDefaults()
     suspend fun seedDefaultsIfNeeded()
 }

@@ -306,6 +306,12 @@
     <string name="delete_anyway">Trotzdem löschen</string>
     <string name="category_category">Kategorie</string>
     <string name="category_location">Orte</string>
+    <string name="restore_default_button">Standard</string>
+    <string name="restore_default_confirm">Standard wiederherstellen</string>
+    <string name="restore_default_colors_title">Standardfarben wiederherstellen?</string>
+    <string name="restore_default_colors_body">Dies ersetzt deine benutzerdefinierte Hauptfarbpalette durch Robias Werkseinstellungen. Danach bietet Robia an, Farbvorschläge für Kleidungsstücke neu zu berechnen, damit gespeicherte Paletten und Tags konsistent bleiben.</string>
+    <string name="restore_default_tags_title">Standard für %1$s wiederherstellen?</string>
+    <string name="restore_default_tags_body">Robia fügt die werkseitigen Tags für %1$s wieder hinzu, ohne deine benutzerdefinierten Tags zu löschen oder Kleidungsstücke zu ändern, die bereits darauf verweisen.</string>
     <string name="tag_t_shirt">T-Shirt</string>
     <string name="tag_pants">Hosen</string>
     <string name="tag_shirt">Hemd</string>
