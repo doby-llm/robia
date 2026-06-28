@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Style
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -99,6 +100,7 @@ internal data class BatchDraftItem(
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
     Queued(R.string.batch_status_queued),
     Processing(R.string.batch_status_processing),
+    NeedsReview(R.string.batch_status_needs_review),
     Ready(R.string.batch_status_ready),
     Failed(R.string.batch_status_failed),
 }
@@ -168,11 +170,13 @@ internal fun BatchAddClothingScreen(
 
     val processedCount = drafts.count { it.status != BatchDraftStatus.Queued && it.status != BatchDraftStatus.Processing }
     val processingCount = drafts.count { it.status == BatchDraftStatus.Queued || it.status == BatchDraftStatus.Processing }
+    val needsReviewCount = drafts.count { it.status == BatchDraftStatus.NeedsReview }
     val failedCount = drafts.count { it.status == BatchDraftStatus.Failed }
     val progress = if (drafts.isEmpty()) 0f else processedCount.toFloat() / drafts.size.toFloat()
     val canSave = drafts.isNotEmpty() && drafts.all { it.status == BatchDraftStatus.Ready }
     val saveHelper = when {
         processingCount > 0 -> stringResource(R.string.batch_helper_processing, processingCount)
+        needsReviewCount > 0 -> stringResource(R.string.batch_helper_needs_review, needsReviewCount)
         failedCount > 0 -> stringResource(R.string.batch_helper_failed, failedCount)
         drafts.isEmpty() -> stringResource(R.string.batch_helper_empty)
         else -> stringResource(R.string.batch_helper_ready, drafts.size)
@@ -205,7 +209,7 @@ internal fun BatchAddClothingScreen(
                     position = draft.orderIndex + 1,
                     totalCount = drafts.size,
                     onClick = {
-                        if (draft.status == BatchDraftStatus.Ready || draft.status == BatchDraftStatus.Failed) {
+                        if (draft.status.isSelectable) {
                             onDraftSelected(draft)
                         }
                     },
@@ -334,7 +338,7 @@ private fun BatchDraftTile(
             }
             .alpha(if (draft.status == BatchDraftStatus.Queued) 0.62f else 1f)
             .clickable(
-                enabled = draft.status == BatchDraftStatus.Ready || draft.status == BatchDraftStatus.Failed,
+                enabled = draft.status.isSelectable,
                 onClick = onClick,
             ),
     ) {
@@ -439,11 +443,13 @@ private fun BatchStatusBadge(
     val containerColor = when (status) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.primaryContainer
         BatchDraftStatus.Failed -> MaterialTheme.colorScheme.errorContainer
+        BatchDraftStatus.NeedsReview -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     }
     val contentColor = when (status) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.onPrimaryContainer
         BatchDraftStatus.Failed -> MaterialTheme.colorScheme.onErrorContainer
+        BatchDraftStatus.NeedsReview -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
     Surface(
@@ -460,6 +466,7 @@ private fun BatchStatusBadge(
             when (status) {
                 BatchDraftStatus.Ready -> Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                 BatchDraftStatus.Failed -> Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(14.dp))
+                BatchDraftStatus.NeedsReview -> Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(14.dp))
                 else -> Unit
             }
             Text(
@@ -506,15 +513,22 @@ private suspend fun processBatchDraft(
         }.getOrNull()
         val detectedTagIds = detectionResult?.prediction?.selectedTagIds.orEmpty()
         val mergedTags = mergePredictedTags(draft.selectedTagIds, detectedTagIds, availableTags)
+        val needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri
+        val resolvedStatus = if (needsOriginalFallbackReview) BatchDraftStatus.NeedsReview else BatchDraftStatus.Ready
+        val resolvedMessage = if (needsOriginalFallbackReview) {
+            context.getString(R.string.batch_original_fallback_message)
+        } else {
+            null
+        }
         onDraftUpdated(
             draft.copy(
                 photoUri = croppedUri.toString(),
                 photoAspectRatio = displayAspectRatio,
-                status = BatchDraftStatus.Ready,
+                status = resolvedStatus,
                 selectedPrimaryColorId = primaryColorId,
                 selectedSecondaryColorId = secondaryColorId,
                 selectedTagIds = mergedTags,
-                errorMessage = null,
+                errorMessage = resolvedMessage,
             ),
         )
     } catch (throwable: CancellationException) {
@@ -528,6 +542,9 @@ private suspend fun processBatchDraft(
         )
     }
 }
+
+private val BatchDraftStatus.isSelectable: Boolean
+    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview || this == BatchDraftStatus.Failed
 
 internal fun BatchDraftItem.toClothingItem(
     availableTags: List<GarmentTag>,

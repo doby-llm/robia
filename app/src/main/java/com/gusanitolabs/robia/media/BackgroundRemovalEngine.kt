@@ -6,8 +6,9 @@ import android.net.Uri
 /**
  * Port for best-effort photo background removal.
  *
- * Callers must treat every response as saveable: even failures return the original URI so
- * Add/Edit can continue without making segmentation a required step.
+ * Failures keep the original URI available so users do not lose the photo, but callers must
+ * treat [BackgroundRemovalStatus.ORIGINAL_FALLBACK] as a reviewable warning state instead of a
+ * normal processed success.
  */
 interface BackgroundRemovalEngine {
     suspend fun removeBackground(context: Context, sourceUri: Uri): BackgroundRemovalResult

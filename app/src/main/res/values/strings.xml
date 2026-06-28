@@ -141,7 +141,8 @@
     <string name="background_removal_processing_status">Processing photo…</string>
     <string name="background_removal_success_status">Photo cleaned up and colors extracted.</string>
     <string name="background_removal_disabled_status">Original photo.</string>
-    <string name="background_removal_fallback_status">Original photo kept.</string>
+    <string name="background_removal_fallback_status">Photo cleanup failed. Original photo kept — you can save it or retry cleanup.</string>
+    <string name="retry_photo_cleanup">Retry cleanup</string>
     <string name="processing_stage_removing_background">Removing background</string>
     <string name="processing_stage_cropping_picture">Cropping picture</string>
     <string name="processing_stage_extracting_color">Extracting color</string>
@@ -191,11 +192,14 @@
     <string name="batch_status_queued">Queued</string>
     <string name="batch_status_processing">Processing</string>
     <string name="batch_status_needs_name">Needs review</string>
+    <string name="batch_status_needs_review">Needs review</string>
     <string name="batch_status_ready">Ready</string>
     <string name="batch_status_failed">Failed</string>
     <string name="batch_helper_processing">Processing %1$d items…</string>
     <string name="batch_helper_failed">Resolve %1$d failed items.</string>
     <string name="batch_helper_needs_name">Review %1$d more items to save.</string>
+    <string name="batch_helper_needs_review">Review %1$d original-photo items before saving.</string>
+    <string name="batch_original_fallback_message">Photo cleanup failed. Original photo kept — open to retry or keep it.</string>
     <string name="batch_helper_empty">Choose multiple gallery photos to start a batch.</string>
     <string name="batch_helper_ready">Ready to save %1$d items.</string>
     <string name="batch_discard_title">Discard this batch?</string>

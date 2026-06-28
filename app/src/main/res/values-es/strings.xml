@@ -141,7 +141,8 @@
     <string name="background_removal_processing_status">Procesando foto…</string>
     <string name="background_removal_success_status">Foto retocada y colores extraídos.</string>
     <string name="background_removal_disabled_status">Foto original.</string>
-    <string name="background_removal_fallback_status">Foto original conservada.</string>
+    <string name="background_removal_fallback_status">Falló el retoque de foto. Se conservó la foto original: puedes guardarla o reintentar el retoque.</string>
+    <string name="retry_photo_cleanup">Reintentar retoque</string>
     <string name="processing_stage_removing_background">Eliminando fondo</string>
     <string name="processing_stage_cropping_picture">Recortando foto</string>
     <string name="processing_stage_extracting_color">Extrayendo color</string>
@@ -191,11 +192,14 @@
     <string name="batch_status_queued">En cola</string>
     <string name="batch_status_processing">Procesando</string>
     <string name="batch_status_needs_name">Requiere revisión</string>
+    <string name="batch_status_needs_review">Requiere revisión</string>
     <string name="batch_status_ready">Lista</string>
     <string name="batch_status_failed">Falló</string>
     <string name="batch_helper_processing">Procesando %1$d prendas…</string>
     <string name="batch_helper_failed">Resuelve %1$d prendas fallidas.</string>
     <string name="batch_helper_needs_name">Revisa %1$d prendas más para guardar.</string>
+    <string name="batch_helper_needs_review">Revisa %1$d prendas con foto original antes de guardar.</string>
+    <string name="batch_original_fallback_message">Falló el retoque de foto. Se conservó la foto original: abre la prenda para reintentar o conservarla.</string>
     <string name="batch_helper_empty">Elige varias fotos de galería para iniciar un lote.</string>
     <string name="batch_helper_ready">Listo para guardar %1$d prendas.</string>
     <string name="batch_discard_title">¿Descartar este lote?</string>

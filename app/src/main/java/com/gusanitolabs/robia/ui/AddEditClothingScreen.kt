@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Style
@@ -138,6 +139,7 @@ fun AddEditClothingScreen(
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var isPhotoProcessing by rememberSaveable { mutableStateOf(false) }
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
+    var photoRetrySource by remember { mutableStateOf<PendingPhotoInput?>(null) }
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var developerExportStatus by rememberSaveable { mutableStateOf<String?>(null) }
     var additionalInfoSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -178,6 +180,11 @@ fun AddEditClothingScreen(
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
         developerExportStatus = null
         additionalInfoSourceUri = null
+        photoRetrySource = PendingPhotoInput(
+            id = inputId,
+            uriString = uriString,
+            sourceStatus = sourceStatus,
+        )
         developerDiagnostics = listOf(
             "Photo processing queued",
             "source=$sourceStatus",
@@ -266,6 +273,9 @@ fun AddEditClothingScreen(
                 }
                 captureStatus = finalStatus
                 addLine("Final photo status: $finalStatus")
+                if (finalStatus != PhotoStatus.BackgroundFallback) {
+                    photoRetrySource = null
+                }
 
                 photoProcessingStage = PhotoProcessingStage.ExtractingColor
                 val colorStart = SystemClock.elapsedRealtime()
@@ -340,6 +350,11 @@ fun AddEditClothingScreen(
                 if (token != photoProcessingToken) return
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
+                photoRetrySource = PendingPhotoInput(
+                    id = inputId,
+                    uriString = uriString,
+                    sourceStatus = sourceStatus,
+                )
                 addLine("Pipeline failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
         } finally {
             if (token == photoProcessingToken) {
@@ -520,6 +535,9 @@ fun AddEditClothingScreen(
                     processingStage = photoProcessingStage,
                     onCaptureStatusChange = { captureStatus = it },
                     onPhotoSelected = ::queuePhotoForProcessing,
+                    onRetryPhotoProcessing = photoRetrySource?.let { retryInput ->
+                        { queuePhotoForProcessing(retryInput.uriString, retryInput.sourceStatus) }
+                    },
                     onBatchPhotosSelected = onBatchPhotosSelected,
                 )
             } else {
@@ -529,6 +547,7 @@ fun AddEditClothingScreen(
                     captureStatus = PhotoStatus.MediaUnavailable,
                     isPhotoProcessing = false,
                     processingStage = null,
+                    onRetryPhotoProcessing = null,
                     onGalleryClick = null,
                     onCameraClick = null,
                 )
@@ -1221,6 +1240,7 @@ private fun PhotoCaptureCardWithLaunchers(
     processingStage: PhotoProcessingStage?,
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
+    onRetryPhotoProcessing: (() -> Unit)?,
     onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -1262,6 +1282,7 @@ private fun PhotoCaptureCardWithLaunchers(
         captureStatus = captureStatus,
         isPhotoProcessing = isPhotoProcessing,
         processingStage = processingStage,
+        onRetryPhotoProcessing = onRetryPhotoProcessing,
         onGalleryClick = {
             runCatching { galleryLauncher.launch(arrayOf("image/*")) }
                 .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
@@ -1286,6 +1307,7 @@ private fun PhotoCaptureCard(
     captureStatus: String,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
+    onRetryPhotoProcessing: (() -> Unit)?,
     onGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
@@ -1347,12 +1369,26 @@ private fun PhotoCaptureCard(
                 else -> null
             }
             if (statusText != null) {
-                Text(
-                    text = stringResource(statusText),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Column(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = stringResource(statusText),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (captureStatus == PhotoStatus.BackgroundFallback && onRetryPhotoProcessing != null) {
+                        OutlinedButton(
+                            onClick = onRetryPhotoProcessing,
+                            enabled = !isPhotoProcessing,
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.retry_photo_cleanup))
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(4.dp))
         }

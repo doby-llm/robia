@@ -141,7 +141,8 @@
     <string name="background_removal_processing_status">Foto wird verarbeitet…</string>
     <string name="background_removal_success_status">Foto optimiert und Farben extrahiert.</string>
     <string name="background_removal_disabled_status">Originalfoto.</string>
-    <string name="background_removal_fallback_status">Originalfoto beibehalten.</string>
+    <string name="background_removal_fallback_status">Fotooptimierung fehlgeschlagen. Originalfoto beibehalten – du kannst es speichern oder die Optimierung erneut versuchen.</string>
+    <string name="retry_photo_cleanup">Optimierung erneut versuchen</string>
     <string name="processing_stage_removing_background">Hintergrund wird entfernt</string>
     <string name="processing_stage_cropping_picture">Bild wird zugeschnitten</string>
     <string name="processing_stage_extracting_color">Farbe wird extrahiert</string>
@@ -191,11 +192,14 @@
     <string name="batch_status_queued">Wartet</string>
     <string name="batch_status_processing">Verarbeitung</string>
     <string name="batch_status_needs_name">Prüfung nötig</string>
+    <string name="batch_status_needs_review">Prüfung nötig</string>
     <string name="batch_status_ready">Bereit</string>
     <string name="batch_status_failed">Fehler</string>
     <string name="batch_helper_processing">%1$d Teile werden verarbeitet…</string>
     <string name="batch_helper_failed">Behebe %1$d fehlgeschlagene Teile.</string>
     <string name="batch_helper_needs_name">Prüfe noch %1$d Teile zum Speichern.</string>
+    <string name="batch_helper_needs_review">Prüfe %1$d Teile mit Originalfoto vor dem Speichern.</string>
+    <string name="batch_original_fallback_message">Fotooptimierung fehlgeschlagen. Originalfoto beibehalten – öffne das Teil, um es erneut zu versuchen oder zu behalten.</string>
     <string name="batch_helper_empty">Wähle mehrere Galeriefotos, um einen Batch zu starten.</string>
     <string name="batch_helper_ready">Bereit, %1$d Teile zu speichern.</string>
     <string name="batch_discard_title">Diesen Batch verwerfen?</string>
