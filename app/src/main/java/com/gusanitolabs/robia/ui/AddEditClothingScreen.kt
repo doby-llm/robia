@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -378,6 +379,13 @@ fun AddEditClothingScreen(
     val developerExportNoPhotoStatus = stringResource(R.string.developer_export_input_image_no_photo)
     val developerExportSavedStatus = stringResource(R.string.developer_export_input_image_saved)
     val developerExportErrorStatus = stringResource(R.string.developer_export_input_image_error)
+    val hasUsablePhoto = !photoUri.isNullOrBlank()
+    val canSaveItem = hasUsablePhoto && !isPhotoProcessing
+    val saveHelperTextRes = when {
+        isPhotoProcessing -> R.string.item_save_photo_processing_helper
+        canSaveItem -> R.string.item_save_ready_helper
+        else -> R.string.item_save_photo_required_helper
+    }
     val hasUnsavedChanges = name != existingItem?.name.orEmpty() ||
         notes != existingItem?.notes.orEmpty() ||
         photoUri != existingItem?.photoUri ||
@@ -522,6 +530,14 @@ fun AddEditClothingScreen(
         }
 
         item {
+            Text(
+                text = stringResource(saveHelperTextRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (canSaveItem) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        item {
             CardSection(title = stringResource(R.string.item_details_section)) {
                 OutlinedTextField(
                     value = notes,
@@ -594,6 +610,7 @@ fun AddEditClothingScreen(
                     }
                 }
                 Button(
+                    enabled = canSaveItem,
                     onClick = {
                         val now = System.currentTimeMillis()
                         val selectedTags = availableTags.filter { it.id in selectedTagIds }
@@ -805,6 +822,9 @@ private fun MetadataSelectorCard(
     modifier: Modifier = Modifier,
 ) {
     val selectedTag = tags.firstOrNull { tag -> tag.id in selectedTagIds }
+    val hasSelectedTag = selectedTag != null
+    val collapsedLabel = selectedTag?.localizedLabel() ?: stringResource(R.string.not_set)
+    val collapsedDescription = stringResource(R.string.metadata_selection_content_description, title, collapsedLabel)
     val categoryTagIds = remember(tags) { tags.map(GarmentTag::id).toSet() }
     var showSelector by rememberSaveable { mutableStateOf(false) }
 
@@ -833,12 +853,30 @@ private fun MetadataSelectorCard(
         } else {
             OutlinedButton(
                 onClick = { showSelector = true },
-                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (hasSelectedTag) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                    contentColor = if (hasSelectedTag) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = collapsedDescription
+                        selected = hasSelectedTag
+                    },
             ) {
+                if (hasSelectedTag) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(
-                    text = selectedTag?.localizedLabel() ?: stringResource(R.string.not_set),
+                    text = collapsedLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (hasSelectedTag) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
         }

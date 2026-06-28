@@ -124,6 +124,9 @@
     <string name="item_notes_label">Description</string>
     <string name="item_notes_placeholder">Add notes, fabric, brand, or anything useful (optional)</string>
     <string name="item_name_required_to_save">Review required before saving.</string>
+    <string name="item_save_photo_required_helper">Choose a garment photo before saving.</string>
+    <string name="item_save_photo_processing_helper">Finish photo processing before saving.</string>
+    <string name="item_save_ready_helper">Ready to save.</string>
     <string name="gallery">Gallery</string>
     <string name="photo_placeholder">Add a clothing photo</string>
     <string name="photo_placeholder_tap_camera">Tap to open camera</string>
@@ -131,7 +134,7 @@
     <string name="gallery_selected_status">Gallery photo copied privately and previewed here.</string>
     <string name="camera_selected_status">Camera photo captured privately and previewed here.</string>
     <string name="photo_processed_status">Photo preview ready; palette colors were extracted from the image.</string>
-    <string name="media_actions_unavailable_status">Photo picker unavailable in this session. You can still save this item without a photo.</string>
+    <string name="media_actions_unavailable_status">Photo picker unavailable in this session. Add a photo before saving this item.</string>
     <string name="camera_hook_status">Camera capture saves a private image for this item.</string>
     <string name="background_removal">Photo cleanup</string>
     <string name="background_removal_status">Photo cleanup</string>
@@ -171,6 +174,7 @@
     <string name="tags_empty">No tags are available yet.</string>
     <string name="no_tags_selected">No tags selected</string>
     <string name="not_set">Not set</string>
+    <string name="metadata_selection_content_description">%1$s: %2$s</string>
     <string name="tap_edit_to_add">Tap edit to add</string>
     <string name="none">None</string>
     <string name="no_color">No color</string>

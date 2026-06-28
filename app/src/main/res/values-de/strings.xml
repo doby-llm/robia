@@ -124,6 +124,9 @@
     <string name="item_notes_label">Beschreibung</string>
     <string name="item_notes_placeholder">Notizen, Stoff, Marke oder nützliche Details hinzufügen (optional)</string>
     <string name="item_name_required_to_save">Vor dem Speichern ist eine Prüfung nötig.</string>
+    <string name="item_save_photo_required_helper">Wähle vor dem Speichern ein Kleidungsfoto aus.</string>
+    <string name="item_save_photo_processing_helper">Schließe die Fotoverarbeitung vor dem Speichern ab.</string>
+    <string name="item_save_ready_helper">Bereit zum Speichern.</string>
     <string name="gallery">Galerie</string>
     <string name="photo_placeholder">Kleidungsfoto hinzufügen</string>
     <string name="photo_placeholder_tap_camera">Zum Öffnen der Kamera tippen</string>
@@ -131,7 +134,7 @@
     <string name="gallery_selected_status">Galeriefoto wurde privat kopiert und wird hier angezeigt.</string>
     <string name="camera_selected_status">Kamerafoto wurde privat aufgenommen und wird hier angezeigt.</string>
     <string name="photo_processed_status">Fotovorschau bereit; Palettenfarben wurden aus dem Bild extrahiert.</string>
-    <string name="media_actions_unavailable_status">Die Fotoauswahl ist in dieser Sitzung nicht verfügbar. Du kannst dieses Kleidungsstück trotzdem ohne Foto speichern.</string>
+    <string name="media_actions_unavailable_status">Die Fotoauswahl ist in dieser Sitzung nicht verfügbar. Füge vor dem Speichern dieses Kleidungsstücks ein Foto hinzu.</string>
     <string name="camera_hook_status">Die Kameraaufnahme speichert ein privates Bild für dieses Kleidungsstück.</string>
     <string name="background_removal">Fotooptimierung</string>
     <string name="background_removal_status">Fotooptimierung</string>
@@ -171,6 +174,7 @@
     <string name="tags_empty">Noch keine Tags verfügbar.</string>
     <string name="no_tags_selected">Keine Tags ausgewählt</string>
     <string name="not_set">Nicht festgelegt</string>
+    <string name="metadata_selection_content_description">%1$s: %2$s</string>
     <string name="tap_edit_to_add">Zum Hinzufügen bearbeiten</string>
     <string name="none">Keiner</string>
     <string name="no_color">Keine Farbe</string>
