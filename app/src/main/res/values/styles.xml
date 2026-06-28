@@ -2,8 +2,8 @@
 <resources>
     <style name="Theme.Robia" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">@color/robia_background</item>
-        <item name="android:navigationBarColor">@color/robia_background</item>
+        <item name="android:statusBarColor">@color/robia_red</item>
+        <item name="android:navigationBarColor">@color/robia_blue</item>
         <item name="android:fontFamily">sans</item>
     </style>
 </resources>

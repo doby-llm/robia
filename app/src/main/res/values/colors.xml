@@ -2,4 +2,6 @@
 <resources>
     <color name="robia_primary">#1D100D</color>
     <color name="robia_background">#F9F9F9</color>
+    <color name="robia_blue">#08519C</color>
+  <color name="robia_red">#FA003F</color>
 </resources>
