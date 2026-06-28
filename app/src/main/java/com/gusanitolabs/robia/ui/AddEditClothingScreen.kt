@@ -12,7 +12,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -575,31 +574,14 @@ fun AddEditClothingScreen(
                     OutlinedButton(
                         onClick = { showDeleteDialog = true },
                         modifier = Modifier
-                            .weight(1f)
+                            .width(64.dp)
                             .semantics { contentDescription = deleteLabel },
                     ) {
-                        BoxWithConstraints(contentAlignment = Alignment.Center) {
-                            val showText = maxWidth >= 96.dp
-                            Row(
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                                if (showText) {
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = deleteLabel,
-                                        color = MaterialTheme.colorScheme.error,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
                     }
                 } else {
                     TextButton(
