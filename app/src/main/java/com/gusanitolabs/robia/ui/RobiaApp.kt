@@ -2391,6 +2391,8 @@ private fun RobiaAppPreview() {
             onSaveMainColor = {},
             onDeleteCustomTag = {},
             onDeleteMainColor = {},
+            onRestoreDefaultTags = {},
+            onRestoreDefaultMainColors = {},
         )
     }
 }
