@@ -6,7 +6,7 @@ colors:
   surface-bright: '#f9f9f9'
   surface-container-lowest: '#ffffff'
   surface-container-low: '#f3f3f4'
-  surface-container: '#eeeeee'
+  surface-container: '#efe5d9'
   surface-container-high: '#e8e8e8'
   surface-container-highest: '#e2e2e2'
   on-surface: '#1a1c1c'

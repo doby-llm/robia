@@ -282,6 +282,13 @@
     <string name="color_name_label">Color name</string>
     <string name="color_hex_label">Hex color</string>
     <string name="color_palette_picker_label">Pick a color</string>
+    <string name="neutral_color_presets_label">Neutral presets</string>
+    <string name="neutral_color_black">Black</string>
+    <string name="neutral_color_charcoal">Charcoal</string>
+    <string name="neutral_color_gray">Gray</string>
+    <string name="neutral_color_warm_neutral">Warm neutral</string>
+    <string name="neutral_color_white">White</string>
+    <string name="content_select_neutral_color_swatch">Select %1$s neutral swatch</string>
     <string name="selected_color_hex_label">Selected hex</string>
     <string name="custom_hex_color">Use custom hex</string>
     <string name="color_hex_invalid">Enter a valid 6-digit hex color, for example #D6B84C.</string>

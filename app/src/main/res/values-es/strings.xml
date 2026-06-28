@@ -282,6 +282,13 @@
     <string name="color_name_label">Nombre del color</string>
     <string name="color_hex_label">Color hexadecimal</string>
     <string name="color_palette_picker_label">Elige un color</string>
+    <string name="neutral_color_presets_label">Neutros predefinidos</string>
+    <string name="neutral_color_black">Negro</string>
+    <string name="neutral_color_charcoal">Carbón</string>
+    <string name="neutral_color_gray">Gris</string>
+    <string name="neutral_color_warm_neutral">Neutro cálido</string>
+    <string name="neutral_color_white">Blanco</string>
+    <string name="content_select_neutral_color_swatch">Seleccionar muestra neutra %1$s</string>
     <string name="selected_color_hex_label">Hex seleccionado</string>
     <string name="custom_hex_color">Usar hex personalizado</string>
     <string name="color_hex_invalid">Introduce un color hexadecimal válido de 6 dígitos, por ejemplo #D6B84C.</string>

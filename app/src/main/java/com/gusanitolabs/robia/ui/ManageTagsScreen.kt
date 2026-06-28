@@ -1,8 +1,10 @@
 package com.gusanitolabs.robia.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +60,19 @@ import java.util.Locale
 import java.util.UUID
 
 private const val DefaultCustomColorHex = "#A8644E"
+
+private data class NeutralColorPreset(
+    @StringRes val nameRes: Int,
+    val hex: String,
+)
+
+private val NeutralColorPresets = listOf(
+    NeutralColorPreset(R.string.neutral_color_black, "#1F1F1F"),
+    NeutralColorPreset(R.string.neutral_color_charcoal, "#3F3F3F"),
+    NeutralColorPreset(R.string.neutral_color_gray, "#777777"),
+    NeutralColorPreset(R.string.neutral_color_warm_neutral, "#EFE5D9"),
+    NeutralColorPreset(R.string.neutral_color_white, "#F8F9FA"),
+)
 
 private data class TagEditorState(
     val categoryId: String,
@@ -681,22 +696,33 @@ private fun ColorEditorDialog(
                         userHasPickedColor = false
                         controller.selectByColor(initialColor, fromUser = false)
                     }
-                    HsvColorPicker(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp),
-                        controller = controller,
-                        initialColor = initialColor,
-                        onColorChanged = { envelope ->
-                            if (envelope.fromUser) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        HsvColorPicker(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            controller = controller,
+                            initialColor = initialColor,
+                            onColorChanged = { envelope ->
+                                if (envelope.fromUser) {
+                                    userHasPickedColor = true
+                                }
+                                val changedHex = envelope.hexCode.toNormalizedRgbHex()
+                                if (changedHex != null && (userHasPickedColor || changedHex == initialHex)) {
+                                    selectedHex = changedHex
+                                }
+                            },
+                        )
+                        NeutralColorPresetRow(
+                            selectedHex = selectedColorHex,
+                            onSelect = { preset ->
+                                val presetColor = preset.hex.toComposeColor() ?: return@NeutralColorPresetRow
                                 userHasPickedColor = true
-                            }
-                            val changedHex = envelope.hexCode.toNormalizedRgbHex()
-                            if (changedHex != null && (userHasPickedColor || changedHex == initialHex)) {
-                                selectedHex = changedHex
-                            }
-                        },
-                    )
+                                selectedHex = preset.hex
+                                controller.selectByColor(presetColor, fromUser = true)
+                            },
+                        )
+                    }
                 }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -757,6 +783,56 @@ private fun ColorEditorDialog(
                 Text(stringResource(R.string.cancel))
             }
         },
+    )
+}
+
+@Composable
+private fun NeutralColorPresetRow(
+    selectedHex: String?,
+    onSelect: (NeutralColorPreset) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.neutral_color_presets_label),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NeutralColorPresets.forEach { preset ->
+                NeutralColorPresetSwatch(
+                    preset = preset,
+                    selected = preset.hex == selectedHex,
+                    onSelect = { onSelect(preset) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NeutralColorPresetSwatch(
+    preset: NeutralColorPreset,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val presetName = stringResource(preset.nameRes)
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+
+    // Low-saturation HSV choices are ambiguous by gesture alone; exact neutral presets make
+    // black, gray, white, and the shared warm neutral selectable without guessing a hue.
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(preset.hex.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(if (selected) 2.dp else 1.dp, borderColor, CircleShape)
+            .clickable(onClick = onSelect)
+            .semantics {
+                contentDescription = stringResource(R.string.content_select_neutral_color_swatch, presetName)
+            },
     )
 }
 
