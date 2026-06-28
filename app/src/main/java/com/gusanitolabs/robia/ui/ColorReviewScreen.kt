@@ -14,18 +14,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Style
@@ -52,13 +53,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -117,17 +118,18 @@ internal fun ColorReviewScreen(
     onRequestDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
+    val eligibleItems = remember(items) { items.filter(ClothingItem::isEligibleForColorReview) }
     val candidates = remember(changeSet.id) { mutableStateListOf<ColorReviewCandidate>() }
     var processedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var pickerTarget by remember(changeSet.id) { mutableStateOf<ColorReviewPickerTarget?>(null) }
 
-    LaunchedEffect(changeSet.id, items) {
+    LaunchedEffect(changeSet.id, eligibleItems) {
         candidates.clear()
         processedCount = 0
         isScanning = true
-        items.forEach { item ->
-            val imageUri = item.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        eligibleItems.forEach { item ->
+            val imageUri = item.photoUri?.let(Uri::parse)
             if (imageUri != null && changeSet.afterPalette.isNotEmpty()) {
                 val matches = runCatching {
                     withContext(Dispatchers.IO) {
@@ -174,8 +176,8 @@ internal fun ColorReviewScreen(
     val unresolvedCount = candidates.count { candidate -> candidate.decision == null }
     val acceptedItems = candidates.filter { candidate -> candidate.decision == ColorReviewDecision.Accepted }
         .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
-    val canSave = !isScanning && unresolvedCount == 0
-    val totalCount = items.size.coerceAtLeast(1)
+    val canFinish = !isScanning && unresolvedCount == 0
+    val totalCount = eligibleItems.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
     val animatedProgress by animateFloatAsState(
         targetValue = if (isScanning) progress else 1f,
@@ -185,124 +187,168 @@ internal fun ColorReviewScreen(
 
     BackHandler { onRequestDiscard() }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 96.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = stringResource(R.string.color_review_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = if (isScanning) {
-                        stringResource(R.string.color_review_scanning_count, processedCount, items.size)
-                    } else {
-                        stringResource(R.string.color_review_suggestions_count, candidates.size)
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LinearProgressIndicator(
-                    progress = { animatedProgress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        if (!isScanning && candidates.isEmpty()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 128.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                ColorReviewEmptyCard(onDone = onDone)
+                ColorReviewProgressHeader(
+                    processedCount = processedCount,
+                    totalCount = eligibleItems.size,
+                    progress = animatedProgress,
+                )
+            }
+
+            if (!isScanning && candidates.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ColorReviewEmptyCard(hasEligibleItems = eligibleItems.isNotEmpty())
+                }
+            }
+
+            items(
+                items = candidates,
+                key = { candidate -> candidate.item.id },
+            ) { candidate ->
+                ColorReviewCandidateCard(
+                    candidate = candidate,
+                    palette = changeSet.afterPalette,
+                    onPrimaryClick = {
+                        pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Primary)
+                    },
+                    onSecondaryClick = {
+                        pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Secondary)
+                    },
+                    onAccept = {
+                        val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
+                        if (index >= 0) candidates[index] = candidates[index].copy(decision = ColorReviewDecision.Accepted)
+                    },
+                    onReject = {
+                        val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
+                        if (index >= 0) candidates[index] = candidates[index].copy(decision = ColorReviewDecision.Rejected)
+                    },
+                    onUndo = {
+                        val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
+                        if (index >= 0) candidates[index] = candidates[index].copy(decision = null)
+                    },
+                )
+            }
+
+            if (isScanning || unresolvedCount > 0) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ColorReviewHelperRow(
+                        isScanning = isScanning,
+                        unresolvedCount = unresolvedCount,
+                    )
+                }
             }
         }
 
-        items(
-            items = candidates.filter { candidate -> candidate.decision == null },
-            key = { candidate -> candidate.item.id },
-        ) { candidate ->
-            ColorReviewCandidateCard(
-                candidate = candidate,
-                palette = changeSet.afterPalette,
-                onPrimaryClick = {
-                    pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Primary)
+        Surface(
+            tonalElevation = 3.dp,
+            shadowElevation = 6.dp,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+        ) {
+            Button(
+                onClick = {
+                    if (candidates.isNotEmpty()) onApplyChanges(acceptedItems)
+                    onDone()
                 },
-                onSecondaryClick = {
-                    pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Secondary)
-                },
-                onAccept = {
-                    val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
-                    if (index >= 0) candidates[index] = candidates[index].copy(decision = ColorReviewDecision.Accepted)
-                },
-                onReject = {
-                    val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
-                    if (index >= 0) candidates[index] = candidates[index].copy(decision = ColorReviewDecision.Rejected)
-                },
-            )
-        }
-
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (isScanning) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text(
-                            text = stringResource(R.string.color_review_checking_helper),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else if (unresolvedCount > 0) {
-                    Text(
-                        text = stringResource(R.string.color_review_complete_all_helper, unresolvedCount),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else if (candidates.isNotEmpty()) {
-                    Text(
-                        text = stringResource(R.string.color_review_ready_helper, acceptedItems.size),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Button(
-                    onClick = {
-                        onApplyChanges(acceptedItems)
-                        onDone()
+                enabled = canFinish,
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(
+                    text = if (!isScanning && candidates.isEmpty()) {
+                        stringResource(R.string.done)
+                    } else {
+                        stringResource(R.string.color_review_save_accepted_mappings, acceptedItems.size)
                     },
-                    enabled = canSave,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        if (candidates.isEmpty() && !isScanning) {
-                            stringResource(R.string.done)
-                        } else {
-                            stringResource(R.string.color_review_save_updates)
-                        },
-                    )
-                }
-                TextButton(onClick = onRequestDiscard, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.cancel))
-                }
+                    modifier = Modifier.padding(start = 10.dp),
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ColorReviewEmptyCard(onDone: () -> Unit) {
+private fun ColorReviewProgressHeader(
+    processedCount: Int,
+    totalCount: Int,
+    progress: Float,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.color_review_batch_progress),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.color_review_scanning_count, processedCount, totalCount),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(CircleShape),
+        )
+    }
+}
+
+@Composable
+private fun ColorReviewHelperRow(
+    isScanning: Boolean,
+    unresolvedCount: Int,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isScanning) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        }
+        Text(
+            text = if (isScanning) {
+                stringResource(R.string.color_review_checking_helper)
+            } else {
+                stringResource(R.string.color_review_complete_all_helper, unresolvedCount)
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ColorReviewEmptyCard(hasEligibleItems: Boolean) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -312,18 +358,21 @@ private fun ColorReviewEmptyCard(onDone: () -> Unit) {
         ) {
             Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text(
-                text = stringResource(R.string.color_review_empty_title),
+                text = stringResource(
+                    if (hasEligibleItems) R.string.color_review_empty_title else R.string.color_review_no_eligible_title,
+                ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
             )
             Text(
-                text = stringResource(R.string.color_review_empty_body),
+                text = stringResource(
+                    if (hasEligibleItems) R.string.color_review_empty_body else R.string.color_review_no_eligible_body,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
-            Button(onClick = onDone) {
-                Text(stringResource(R.string.done))
-            }
         }
     }
 }
@@ -336,73 +385,65 @@ private fun ColorReviewCandidateCard(
     onSecondaryClick: () -> Unit,
     onAccept: () -> Unit,
     onReject: () -> Unit,
+    onUndo: () -> Unit,
 ) {
     val primaryColor = palette.colorForId(candidate.editablePrimaryColorId)
     val secondaryColor = palette.colorForId(candidate.editableSecondaryColorId)
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column {
             ColorReviewPhoto(candidate.item)
             Column(
-                modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
                     text = candidate.item.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = stringResource(R.string.color_review_suggested_colors),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ColorMappingStrip(
+                    currentMetrics = candidate.item.colorMetrics,
+                    primaryColor = primaryColor,
+                    secondaryColor = secondaryColor,
+                    onPrimaryClick = onPrimaryClick,
+                    onSecondaryClick = onSecondaryClick,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ReviewColorChip(
-                        role = stringResource(R.string.primary_color),
-                        color = primaryColor,
-                        onClick = onPrimaryClick,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ReviewColorChip(
-                        role = stringResource(R.string.secondary_color),
-                        color = secondaryColor,
-                        onClick = onSecondaryClick,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onReject,
+                when (candidate.decision) {
+                    ColorReviewDecision.Accepted -> OutlinedButton(
+                        onClick = onUndo,
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .height(48.dp),
-                        contentPadding = PaddingValues(0.dp),
                     ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.reject),
-                            modifier = Modifier.size(20.dp),
-                        )
+                        Text(stringResource(R.string.undo), fontWeight = FontWeight.SemiBold)
                     }
-                    Button(
-                        onClick = onAccept,
+                    ColorReviewDecision.Rejected -> OutlinedButton(
+                        onClick = onUndo,
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .height(48.dp),
-                        contentPadding = PaddingValues(0.dp),
                     ) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            contentDescription = stringResource(R.string.accept),
-                            modifier = Modifier.size(20.dp),
-                        )
+                        Text(stringResource(R.string.color_review_rejected_undo), fontWeight = FontWeight.SemiBold)
+                    }
+                    null -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Button(
+                            onClick = onAccept,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                        ) {
+                            Text(stringResource(R.string.accept), fontWeight = FontWeight.SemiBold)
+                        }
+                        TextButton(onClick = onReject, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.reject))
+                        }
                     }
                 }
             }
@@ -412,20 +453,11 @@ private fun ColorReviewCandidateCard(
 
 @Composable
 private fun ColorReviewPhoto(item: ClothingItem) {
-    val swatchColor = item.colorMetrics.primaryPaletteColorHex.toComposeColor() ?: Color(0xFFDADADA)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(3f / 4f)
-            .clip(MaterialTheme.shapes.large)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surfaceContainerLow,
-                        swatchColor.copy(alpha = 0.26f),
-                    ),
-                ),
-            ),
+            .height(132.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }
@@ -433,7 +465,7 @@ private fun ColorReviewPhoto(item: ClothingItem) {
             AndroidView(
                 factory = { context ->
                     ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        scaleType = ImageView.ScaleType.CENTER_CROP
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
                 },
@@ -446,50 +478,112 @@ private fun ColorReviewPhoto(item: ClothingItem) {
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Icon(Icons.Rounded.Style, contentDescription = null, tint = swatchColor, modifier = Modifier.size(56.dp))
+            Icon(
+                Icons.Rounded.Style,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.size(56.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun ReviewColorChip(
-    role: String,
-    color: MainColor?,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun ColorMappingStrip(
+    currentMetrics: ClothingColorMetrics,
+    primaryColor: MainColor?,
+    secondaryColor: MainColor?,
+    onPrimaryClick: () -> Unit,
+    onSecondaryClick: () -> Unit,
 ) {
-    val label = color?.name ?: stringResource(R.string.no_color)
-    val chipDescription = stringResource(R.string.color_review_chip_description, role, label)
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier
-            .height(52.dp)
-            .semantics { contentDescription = chipDescription }
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(color?.hex.toComposeColor() ?: MaterialTheme.colorScheme.surface)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (color == null) {
-                    Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(14.dp))
-                }
-            }
-            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            OverlappingColorDots(
+                primaryHex = currentMetrics.primaryPaletteColorHex ?: currentMetrics.primaryRawValue,
+                secondaryHex = currentMetrics.secondaryPaletteColorHex ?: currentMetrics.secondaryRawValue,
+            )
+            Icon(
+                Icons.Rounded.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            OverlappingColorDots(
+                primaryHex = primaryColor?.hex,
+                secondaryHex = secondaryColor?.hex,
+                primaryDescription = stringResource(
+                    R.string.color_review_chip_description,
+                    stringResource(R.string.primary_color),
+                    primaryColor?.name ?: stringResource(R.string.no_color),
+                ),
+                secondaryDescription = stringResource(
+                    R.string.color_review_chip_description,
+                    stringResource(R.string.secondary_color),
+                    secondaryColor?.name ?: stringResource(R.string.no_color),
+                ),
+                onPrimaryClick = onPrimaryClick,
+                onSecondaryClick = onSecondaryClick,
+            )
         }
     }
 }
+
+@Composable
+private fun OverlappingColorDots(
+    primaryHex: String?,
+    secondaryHex: String?,
+    primaryDescription: String? = null,
+    secondaryDescription: String? = null,
+    onPrimaryClick: (() -> Unit)? = null,
+    onSecondaryClick: (() -> Unit)? = null,
+) {
+    Box(modifier = Modifier.width(48.dp)) {
+        ReviewColorDot(
+            hex = primaryHex,
+            contentDescription = primaryDescription,
+            onClick = onPrimaryClick,
+            modifier = Modifier.align(Alignment.CenterStart),
+        )
+        ReviewColorDot(
+            hex = secondaryHex,
+            contentDescription = secondaryDescription,
+            onClick = onSecondaryClick,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
+    }
+}
+
+@Composable
+private fun ReviewColorDot(
+    hex: String?,
+    contentDescription: String?,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val color = hex.toComposeColor()
+    val clickableModifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
+    Box(
+        modifier = clickableModifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(color ?: MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            .semantics { contentDescription?.let { this.contentDescription = it } },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (color == null) Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+    }
+}
+
 
 @Composable
 private fun ColorReviewPalettePickerDialog(
@@ -624,6 +718,8 @@ private fun ClothingColorMetrics.colorReviewSignature(): List<String?> = listOf(
     secondaryPaletteColorName,
     secondaryPaletteColorHex,
 )
+
+private fun ClothingItem.isEligibleForColorReview(): Boolean = !isArchived && !photoUri.isNullOrBlank()
 
 private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { color -> color.id == id }
 
