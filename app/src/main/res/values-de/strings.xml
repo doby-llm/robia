@@ -309,7 +309,12 @@
     <string name="restore_default_button">Standard</string>
     <string name="restore_default_confirm">Standard wiederherstellen</string>
     <string name="restore_default_colors_title">Standardfarben wiederherstellen?</string>
-    <string name="restore_default_colors_body">Dies ersetzt deine benutzerdefinierte Hauptfarbpalette durch Robias Werkseinstellungen. Danach bietet Robia an, Farbvorschläge für Kleidungsstücke neu zu berechnen, damit gespeicherte Paletten und Tags konsistent bleiben.</string>
+    <string name="restore_default_colors_body">Dies ersetzt deine benutzerdefinierte Hauptfarbpalette durch Robias Werkseinstellungen. Robia berechnet aktive Kleidungsstücke mit nutzbaren Fotos neu; Kleidungsstücke ohne nutzbare Fotos werden übersprungen und bleiben unverändert.</string>
+    <string name="restore_default_colors_recompute_title">Standardfarben werden neu berechnet</string>
+    <string name="restore_default_colors_recompute_count">%1$d/%2$d Kleidungsstücke werden geprüft</string>
+    <string name="restore_default_colors_recompute_writing">Palette und Kleidungsfarben werden gespeichert…</string>
+    <string name="restore_default_colors_recompute_summary">%1$d aktualisiert, %2$d ohne nutzbare Fotos übersprungen.</string>
+    <string name="restore_default_colors_recompute_complete">Standardfarben wiederhergestellt. %1$d Kleidungsstücke aktualisiert; %2$d ohne nutzbare Fotos übersprungen.</string>
     <string name="restore_default_tags_title">Standard für %1$s wiederherstellen?</string>
     <string name="restore_default_tags_body">Robia fügt die werkseitigen Tags für %1$s wieder hinzu, ohne deine benutzerdefinierten Tags zu löschen oder Kleidungsstücke zu ändern, die bereits darauf verweisen.</string>
     <string name="tag_t_shirt">T-Shirt</string>

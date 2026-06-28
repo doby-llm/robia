@@ -309,7 +309,12 @@
     <string name="restore_default_button">Default</string>
     <string name="restore_default_confirm">Restore default</string>
     <string name="restore_default_colors_title">Restore default colors?</string>
-    <string name="restore_default_colors_body">This replaces your custom main color palette with Robia’s factory colors. Robia will then offer to recompute garment color suggestions so saved palettes and tags stay consistent.</string>
+    <string name="restore_default_colors_body">This replaces your custom main color palette with Robia’s factory colors. Robia will recompute active garments that have usable photos; garments without usable photos are skipped and kept unchanged.</string>
+    <string name="restore_default_colors_recompute_title">Recomputing default colors</string>
+    <string name="restore_default_colors_recompute_count">Checking %1$d/%2$d garments</string>
+    <string name="restore_default_colors_recompute_writing">Saving palette and garment colors…</string>
+    <string name="restore_default_colors_recompute_summary">Updated %1$d, skipped %2$d without usable photos.</string>
+    <string name="restore_default_colors_recompute_complete">Default colors restored. Updated %1$d garments; skipped %2$d without usable photos.</string>
     <string name="restore_default_tags_title">Restore default %1$s?</string>
     <string name="restore_default_tags_body">Robia will add back the factory %1$s tags without deleting your custom tags or changing garments that already reference them.</string>
     <string name="tag_t_shirt">T-shirt</string>

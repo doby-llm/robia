@@ -4,6 +4,8 @@ import android.net.Uri
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -278,6 +280,11 @@ private fun BatchProgressHeader(
 
 @Composable
 private fun BatchProgressBar(progress: Float) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 300),
+        label = "batchProgress",
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,7 +294,7 @@ private fun BatchProgressBar(progress: Float) {
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .fillMaxWidth(animatedProgress)
                 .height(8.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary),

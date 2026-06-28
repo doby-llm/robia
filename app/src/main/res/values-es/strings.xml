@@ -309,7 +309,12 @@
     <string name="restore_default_button">Por defecto</string>
     <string name="restore_default_confirm">Restaurar por defecto</string>
     <string name="restore_default_colors_title">¿Restaurar colores por defecto?</string>
-    <string name="restore_default_colors_body">Esto reemplaza tu paleta principal personalizada con los colores de fábrica de Robia. Después, Robia ofrecerá recalcular sugerencias de color para que las paletas y etiquetas guardadas sigan siendo coherentes.</string>
+    <string name="restore_default_colors_body">Esto reemplaza tu paleta principal personalizada por los colores de fábrica de Robia. Robia recalculará las prendas activas que tengan fotos utilizables; las prendas sin fotos utilizables se omiten y quedan sin cambios.</string>
+    <string name="restore_default_colors_recompute_title">Recalculando colores por defecto</string>
+    <string name="restore_default_colors_recompute_count">Revisando %1$d/%2$d prendas</string>
+    <string name="restore_default_colors_recompute_writing">Guardando paleta y colores de prendas…</string>
+    <string name="restore_default_colors_recompute_summary">Actualizadas %1$d, omitidas %2$d sin fotos utilizables.</string>
+    <string name="restore_default_colors_recompute_complete">Colores por defecto restaurados. %1$d prendas actualizadas; %2$d omitidas sin fotos utilizables.</string>
     <string name="restore_default_tags_title">¿Restaurar %1$s por defecto?</string>
     <string name="restore_default_tags_body">Robia volverá a añadir las etiquetas de fábrica de %1$s sin eliminar tus etiquetas personalizadas ni cambiar prendas que ya las referencian.</string>
     <string name="tag_t_shirt">Camiseta</string>

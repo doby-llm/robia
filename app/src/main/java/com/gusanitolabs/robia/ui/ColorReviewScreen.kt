@@ -3,6 +3,8 @@ package com.gusanitolabs.robia.ui
 import android.net.Uri
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -175,6 +177,11 @@ internal fun ColorReviewScreen(
     val canSave = !isScanning && unresolvedCount == 0
     val totalCount = items.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
+    val animatedProgress by animateFloatAsState(
+        targetValue = if (isScanning) progress else 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "colorReviewProgress",
+    )
 
     BackHandler { onRequestDiscard() }
 
@@ -205,7 +212,7 @@ internal fun ColorReviewScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 LinearProgressIndicator(
-                    progress = { if (isScanning) progress else 1f },
+                    progress = { animatedProgress.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -579,7 +586,7 @@ private fun ColorReviewCandidate.toUpdatedItem(palette: List<MainColor>): Clothi
     )
 }
 
-private fun List<PaletteColorMatch>.toColorMetrics(): ClothingColorMetrics {
+internal fun List<PaletteColorMatch>.toColorMetrics(): ClothingColorMetrics {
     val primary = getOrNull(0)?.color
     val secondary = drop(1)
         .firstOrNull { match -> match.ratio >= COLOR_REVIEW_SECONDARY_MIN_RATIO && match.color.id != primary?.id }
