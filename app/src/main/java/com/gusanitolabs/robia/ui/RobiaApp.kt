@@ -14,6 +14,8 @@ import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -443,6 +445,11 @@ private suspend fun recomputeItemsForDefaultPalette(
 
 @Composable
 private fun ColorResetRecomputeDialog(progress: ColorResetRecomputeProgress) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 300),
+        label = "colorResetRecomputeProgress",
+    )
     BackHandler(enabled = true) { /* DB writes must not be interrupted once the reset is confirmed. */ }
     AlertDialog(
         onDismissRequest = {},
@@ -461,7 +468,7 @@ private fun ColorResetRecomputeDialog(progress: ColorResetRecomputeProgress) {
                     },
                 )
                 LinearProgressIndicator(
-                    progress = { progress.progress.coerceIn(0f, 1f) },
+                    progress = { animatedProgress.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
