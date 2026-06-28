@@ -502,7 +502,7 @@ private suspend fun processBatchDraft(
             ?.color
             ?.id
         val detectionResult = runCatching {
-            withContext(Dispatchers.IO) { additionalInfoDetector.detect(context, sourceUri, availableTags) }
+            withContext(Dispatchers.IO) { additionalInfoDetector.detect(context, croppedUri, availableTags) }
         }.getOrNull()
         val detectedTagIds = detectionResult?.prediction?.selectedTagIds.orEmpty()
         val mergedTags = mergePredictedTags(draft.selectedTagIds, detectedTagIds, availableTags)

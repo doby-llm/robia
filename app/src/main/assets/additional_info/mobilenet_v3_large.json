@@ -10,7 +10,7 @@
       "type": "mobilenet_v3_preprocess_input",
       "range": [-1.0, 1.0],
       "formula": "rgb / 127.5 - 1.0",
-      "transparentPixels": "composite_over_white"
+      "transparentPixels": "auto_composite_black_or_white_after_square_pad"
     }
   },
   "outputs": [

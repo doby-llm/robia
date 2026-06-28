@@ -13,6 +13,7 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.ByteBuffer
 import javax.imageio.ImageIO
+import kotlin.math.max
 
 fun main(rawArgs: Array<String>) {
     val args = CliArgs.parse(rawArgs)
@@ -24,7 +25,7 @@ fun main(rawArgs: Array<String>) {
         "image" to args.image.absolutePath,
         "manifest" to args.manifest.absolutePath,
         "modelVersion" to config.modelVersion,
-        "preprocessing" to AdditionalInfoPreprocessingPolicy.description,
+        "preprocessing" to preprocessed.preprocessing,
         "sourceWidth" to preprocessed.sourceWidth,
         "sourceHeight" to preprocessed.sourceHeight,
         "inputShape" to config.input.shape,
@@ -51,16 +52,19 @@ private data class PreprocessedImage(
     val tensor: com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoTensorWithStats,
     val sourceWidth: Int,
     val sourceHeight: Int,
+    val preprocessing: String,
 )
 
 private fun preprocessImage(file: File): PreprocessedImage {
     val decoded = ImageIO.read(file) ?: error("Unsupported image file: $file")
-    val composited = BufferedImage(decoded.width, decoded.height, BufferedImage.TYPE_INT_RGB)
-    val compositeGraphics = composited.createGraphics()
+    val background = chooseCompositeBackground(decoded)
+    val squareSize = max(decoded.width, decoded.height)
+    val square = BufferedImage(squareSize, squareSize, BufferedImage.TYPE_INT_RGB)
+    val compositeGraphics = square.createGraphics()
     try {
-        compositeGraphics.color = Color.WHITE
-        compositeGraphics.fillRect(0, 0, composited.width, composited.height)
-        compositeGraphics.drawImage(decoded, 0, 0, null)
+        compositeGraphics.color = background.color
+        compositeGraphics.fillRect(0, 0, square.width, square.height)
+        compositeGraphics.drawImage(decoded, (squareSize - decoded.width) / 2, (squareSize - decoded.height) / 2, null)
     } finally {
         compositeGraphics.dispose()
     }
@@ -71,7 +75,7 @@ private fun preprocessImage(file: File): PreprocessedImage {
     try {
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
         graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-        graphics.drawImage(composited, 0, 0, size, size, null)
+        graphics.drawImage(square, 0, 0, size, size, null)
     } finally {
         graphics.dispose()
     }
@@ -82,7 +86,45 @@ private fun preprocessImage(file: File): PreprocessedImage {
         tensor = AdditionalInfoTensorBuilder.fromRgbPixels(pixels),
         sourceWidth = decoded.width,
         sourceHeight = decoded.height,
+        preprocessing = "${AdditionalInfoPreprocessingPolicy.description}__background_${background.descriptionName}",
     )
+}
+
+private data class CompositeBackground(val color: Color, val descriptionName: String)
+
+private fun chooseCompositeBackground(source: BufferedImage): CompositeBackground {
+    val sampleStep = max(1, max(source.width, source.height) / 128)
+    var weightedLuminance = 0.0
+    var weightSum = 0.0
+    for (y in 0 until source.height step sampleStep) {
+        for (x in 0 until source.width step sampleStep) {
+            val pixel = source.getRGB(x, y)
+            val alpha = (pixel ushr 24) and 0xff
+            if (alpha < 64) continue
+            val weight = alpha / 255.0
+            val red = (pixel ushr 16) and 0xff
+            val green = (pixel ushr 8) and 0xff
+            val blue = pixel and 0xff
+            weightedLuminance += ((0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0) * weight
+            weightSum += weight
+        }
+    }
+    if (weightSum < 8.0) return CompositeBackground(Color.WHITE, "white")
+
+    val foregroundLuminance = (weightedLuminance / weightSum).coerceIn(0.0, 1.0)
+    val contrastAgainstWhite = contrastRatio(foregroundLuminance, 1.0)
+    val contrastAgainstBlack = contrastRatio(foregroundLuminance, 0.0)
+    return if (foregroundLuminance >= 0.58 && contrastAgainstBlack - contrastAgainstWhite >= 1.0) {
+        CompositeBackground(Color.BLACK, "black")
+    } else {
+        CompositeBackground(Color.WHITE, "white")
+    }
+}
+
+private fun contrastRatio(first: Double, second: Double): Double {
+    val lighter = max(first, second)
+    val darker = minOf(first, second)
+    return (lighter + 0.05) / (darker + 0.05)
 }
 
 private fun runTflite(model: File, config: AdditionalInfoModelConfig, input: ByteBuffer): Map<String, FloatArray> {

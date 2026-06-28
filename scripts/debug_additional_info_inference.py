@@ -8,8 +8,8 @@ manifest-driven and intentionally mirrors the same documented contract.
 
 Given an image path, this script reproduces the Android model-input contract from
 app/src/main/assets/additional_info/mobilenet_v3_large.json: RGBA decode,
-alpha-over-white compositing before resize, RGB float32 NHWC, and MobileNetV3
-normalization (rgb / 127.5 - 1.0). When tflite_runtime or TensorFlow is
+square-pad then auto-composite transparent/padded pixels over black or white,
+RGB float32 NHWC, and MobileNetV3 normalization (rgb / 127.5 - 1.0). When tflite_runtime or TensorFlow is
 installed it also runs the bundled TFLite model and prints top-k scores plus the
 same selection policy as the Android mapper.
 """
@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
         "--preprocess",
         choices=("android", "android_legacy_resize_then_composite"),
         default="android",
-        help="android matches the fixed app path: alpha-over-white before resize; legacy shows the old order.",
+        help="android matches the app path: square-pad then auto-composite; legacy shows the old stretch/white path.",
     )
     return parser.parse_args()
 
@@ -114,10 +114,12 @@ def preprocess_image(path: Path, mode: str) -> tuple[np.ndarray, dict[str, Any]]
         alpha_channel = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
         has_alpha = bool(alpha_channel.min() < 255)
         if mode == "android":
-            rgb = composite_over_white(rgba).resize((224, 224), Image.Resampling.BILINEAR)
+            rgb, background = square_pad_and_auto_composite(rgba)
+            rgb = rgb.resize((224, 224), Image.Resampling.BILINEAR)
         else:
             resized_rgba = rgba.resize((224, 224), Image.Resampling.BILINEAR)
             rgb = composite_over_white(resized_rgba)
+            background = "white"
 
     rgb_array = np.asarray(rgb, dtype=np.float32)
     tensor = (rgb_array / np.float32(127.5) - np.float32(1.0))[np.newaxis, ...].astype(np.float32)
@@ -125,7 +127,7 @@ def preprocess_image(path: Path, mode: str) -> tuple[np.ndarray, dict[str, Any]]
         "sourceSize": list(source_size),
         "targetSize": [224, 224],
         "hasAlpha": has_alpha,
-        "colorMode": "RGBA->RGB over white",
+        "colorMode": f"RGBA->square RGB over {background}",
         "normalization": "rgb / 127.5 - 1.0",
         "shape": list(tensor.shape),
         "dtype": str(tensor.dtype),
@@ -136,6 +138,38 @@ def composite_over_white(rgba: Image.Image) -> Image.Image:
     white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
     white.alpha_composite(rgba)
     return white.convert("RGB")
+
+
+def square_pad_and_auto_composite(rgba: Image.Image) -> tuple[Image.Image, str]:
+    background_name, background_rgb = choose_background(rgba)
+    size = max(rgba.size)
+    background = Image.new("RGBA", (size, size), (*background_rgb, 255))
+    background.alpha_composite(rgba, ((size - rgba.width) // 2, (size - rgba.height) // 2))
+    return background.convert("RGB"), background_name
+
+
+def choose_background(rgba: Image.Image) -> tuple[str, tuple[int, int, int]]:
+    array = np.asarray(rgba, dtype=np.float32)
+    alpha = array[..., 3]
+    mask = alpha >= 64
+    if not np.any(mask) or float(alpha[mask].sum() / 255.0) < 8.0:
+        return "white", (255, 255, 255)
+
+    rgb = array[..., :3][mask]
+    weights = alpha[mask] / 255.0
+    luminance = (rgb[:, 0] * 0.2126 + rgb[:, 1] * 0.7152 + rgb[:, 2] * 0.0722) / 255.0
+    foreground = float(np.average(luminance, weights=weights))
+    contrast_white = contrast_ratio(foreground, 1.0)
+    contrast_black = contrast_ratio(foreground, 0.0)
+    if foreground >= 0.58 and contrast_black - contrast_white >= 1.0:
+        return "black", (0, 0, 0)
+    return "white", (255, 255, 255)
+
+
+def contrast_ratio(first: float, second: float) -> float:
+    lighter = max(first, second)
+    darker = min(first, second)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 def tensor_stats(tensor: np.ndarray) -> dict[str, Any]:

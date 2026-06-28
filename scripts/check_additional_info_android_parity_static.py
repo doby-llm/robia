@@ -34,7 +34,11 @@ def main() -> int:
     normalization = manifest["input"]["normalization"]
     assert_equal(normalization["type"], "mobilenet_v3_preprocess_input", "manifest normalization type")
     assert_equal(normalization["formula"], "rgb / 127.5 - 1.0", "manifest normalization formula")
-    assert_equal(normalization.get("transparentPixels"), "composite_over_white", "transparent pixel policy")
+    assert_equal(
+        normalization.get("transparentPixels"),
+        "auto_composite_black_or_white_after_square_pad",
+        "transparent pixel policy",
+    )
 
     shared_config = SHARED_CONFIG.read_text(encoding="utf-8")
     assert_contains(shared_config, "object AdditionalInfoModelManifest", "shared manifest parser exists")
@@ -53,7 +57,8 @@ def main() -> int:
     assert_contains(shared_mapper, "selectMultiHead", "season/occasion policy shared")
 
     preprocessor_source = PREPROCESSOR.read_text(encoding="utf-8")
-    assert_contains(preprocessor_source, "compositeAlphaOverWhite(source)", "composite alpha before resize")
+    assert_contains(preprocessor_source, "chooseCompositeBackground(source)", "auto black/white composite background heuristic")
+    assert_contains(preprocessor_source, "squarePadAndComposite(source, background.color)", "square pad before resize")
     assert_contains(preprocessor_source, "Bitmap.createScaledBitmap", "Android wrapper still owns Bitmap resize")
     assert_contains(preprocessor_source, "AdditionalInfoTensorBuilder.fromRgbPixels", "Android uses shared tensor builder")
     assert_contains(preprocessor_source, "AdditionalInfoPreprocessingPolicy.normalizationType", "Android guards normalization via shared policy")
@@ -80,15 +85,15 @@ def main() -> int:
     assert_contains(cli_source, "AdditionalInfoTagMapper.map", "CLI uses shared tag mapper")
 
     add_edit_source = ADD_EDIT.read_text(encoding="utf-8")
-    assert_contains(add_edit_source, "val classifierUri = Uri.parse(originalPhotoUri ?: uriString)", "additional-info classifier defaults to original photo")
-    assert_contains(add_edit_source, "falling back to cropped foreground", "cropped foreground fallback is diagnostic-visible")
+    assert_contains(add_edit_source, "val classifierUri = croppedUri", "additional-info classifier defaults to cropped foreground photo")
+    assert_contains(add_edit_source, "falling back to original", "original fallback is diagnostic-visible")
     assert_contains(add_edit_source, "exportAdditionalInfoInputImage", "developer mode can export exact NN input image")
     assert_contains(add_edit_source, "developerModeEnabled", "developer input-image export remains gated by developer mode")
     assert_contains(add_edit_source, "Additional info tensor:", "developer diagnostics show tensor stats")
     assert_contains(add_edit_source, "Additional info sourceUri:", "developer diagnostics show classifier source")
 
     debug_script_source = DEBUG_SCRIPT.read_text(encoding="utf-8")
-    assert_contains(debug_script_source, "alpha-over-white before resize", "offline harness documents fixed preprocessing order")
+    assert_contains(debug_script_source, "square-pad then auto-composite", "offline harness documents fixed preprocessing order")
     assert_contains(debug_script_source, "select_tags(outputs, manifest)", "Python harness remains available as comparison fallback")
 
     doc_source = DOC.read_text(encoding="utf-8")

@@ -10,7 +10,7 @@ object AdditionalInfoPreprocessingPolicy {
     const val rgbChannels = 3
     const val floatBytes = 4
     const val normalizationType = "mobilenet_v3_preprocess_input"
-    const val description = "decode_argb8888__alpha_over_white_before_resize__rgb_float32_nhwc__mobilenet_v3"
+    const val description = "decode_argb8888__square_pad_preserve_aspect__auto_background_composite__resize__rgb_float32_nhwc__mobilenet_v3"
     val expectedShape = listOf(1, inputSize, inputSize, rgbChannels)
 }
 

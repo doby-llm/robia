@@ -9,7 +9,7 @@ Shared Kotlin/JVM module: `:additional-info-core`
 Reused by both Android and the local CLI:
 
 - Manifest parsing and validation (`AdditionalInfoModelManifest`)
-- Input contract policy: shape `1x224x224x3`, alpha-over-white before resize, MobileNetV3 normalization (`AdditionalInfoPreprocessingPolicy`)
+- Input contract policy: shape `1x224x224x3`, square-pad aspect preservation, auto black/white background compositing, MobileNetV3 normalization (`AdditionalInfoPreprocessingPolicy`)
 - RGB float32 NHWC tensor creation and tensor stats/checksum (`AdditionalInfoTensorBuilder`)
 - Output-head mapping and tag selection (`AdditionalInfoTagMapper`)
 - Debug/result models (`AdditionalInfoPrediction`, `AdditionalInfoTensorStats`, `AdditionalInfoDetectionDebug`)
@@ -17,7 +17,7 @@ Reused by both Android and the local CLI:
 Thin platform wrappers that remain intentionally separate:
 
 - Android: `ContentResolver`/`BitmapFactory` image decode and Android `Bitmap` resize.
-- Android Developer Mode export: Add/Edit diagnostics can save the exact 224x224 alpha-over-white, resized RGB bitmap handed to `AdditionalInfoTensorBuilder` into the phone gallery as PNG for PC/Pi-side comparison. This is the pre-normalization visualization of the tensor input; it shares `AdditionalInfoImagePreprocessor.createExactInputBitmap` with inference and is not the Compose preview or cropped display thumbnail.
+- Android Developer Mode export: Add/Edit diagnostics can save the exact 224x224 square-padded, auto-composited, resized RGB bitmap handed to `AdditionalInfoTensorBuilder` into the phone gallery as PNG for PC/Pi-side comparison. This is the pre-normalization visualization of the tensor input; it shares `AdditionalInfoImagePreprocessor.createExactInputBitmap` with inference and is not the Compose preview or cropped display thumbnail.
 - Local CLI: JVM `ImageIO`/Java2D image decode and resize.
 - Android model loading still uses assets. CLI model loading uses a filesystem path.
 

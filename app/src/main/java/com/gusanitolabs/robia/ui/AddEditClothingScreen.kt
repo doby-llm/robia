@@ -295,26 +295,27 @@ fun AddEditClothingScreen(
                 photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
                 val detectionStart = SystemClock.elapsedRealtime()
                 val tagsForDetection = latestAvailableTags
-                val classifierUri = Uri.parse(originalPhotoUri ?: uriString)
+                val classifierUri = croppedUri
                 additionalInfoSourceUri = classifierUri.toString()
-                addLine("Additional-info classifier source: original uri=$classifierUri")
+                addLine("Additional-info classifier source: cropped foreground uri=$classifierUri")
                 var detectionResult = runCatching {
                     withContext(Dispatchers.IO) {
                         additionalInfoDetector.detect(context, classifierUri, tagsForDetection)
                     }
                 }.getOrElse { throwable ->
-                    addLine("Additional-info detector exception on original: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                    addLine("Additional-info detector exception on cropped foreground: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
                     null
                 }
-                if (detectionResult?.prediction == null && classifierUri != croppedUri) {
-                    addLine("Additional-info original-source detection failed; falling back to cropped foreground uri=$croppedUri")
-                    additionalInfoSourceUri = croppedUri.toString()
+                val originalFallbackUri = Uri.parse(originalPhotoUri ?: uriString)
+                if (detectionResult?.prediction == null && originalFallbackUri != classifierUri) {
+                    addLine("Additional-info cropped-source detection failed; falling back to original uri=$originalFallbackUri")
+                    additionalInfoSourceUri = originalFallbackUri.toString()
                     detectionResult = runCatching {
                         withContext(Dispatchers.IO) {
-                            additionalInfoDetector.detect(context, croppedUri, tagsForDetection)
+                            additionalInfoDetector.detect(context, originalFallbackUri, tagsForDetection)
                         }
                     }.getOrElse { throwable ->
-                        addLine("Additional-info detector exception on cropped fallback: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                        addLine("Additional-info detector exception on original fallback: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
                         detectionResult
                     }
                 }
@@ -421,7 +422,12 @@ fun AddEditClothingScreen(
             developerDiagnostics = developerDiagnostics + listOf(
                 "Developer export additional-info sourceUri=$source",
                 "Developer export status=${developerExportStatus.orEmpty()}",
-            )
+            ) + result.getOrNull()?.let { export ->
+                listOf(
+                    "Developer export inputSize=${export.inputWidth}x${export.inputHeight}, sourceSize=${export.sourceWidth}x${export.sourceHeight}",
+                    "Developer export preprocessing=${export.preprocessing}",
+                )
+            }.orEmpty()
         }
     }
 
