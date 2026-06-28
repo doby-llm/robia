@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -33,7 +34,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -96,7 +97,6 @@ internal data class BatchDraftItem(
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
     Queued(R.string.batch_status_queued),
     Processing(R.string.batch_status_processing),
-    NeedsName(R.string.batch_status_needs_name),
     Ready(R.string.batch_status_ready),
     Failed(R.string.batch_status_failed),
 }
@@ -166,14 +166,12 @@ internal fun BatchAddClothingScreen(
 
     val processedCount = drafts.count { it.status != BatchDraftStatus.Queued && it.status != BatchDraftStatus.Processing }
     val processingCount = drafts.count { it.status == BatchDraftStatus.Queued || it.status == BatchDraftStatus.Processing }
-    val needsNameCount = drafts.count { it.status == BatchDraftStatus.NeedsName }
     val failedCount = drafts.count { it.status == BatchDraftStatus.Failed }
     val progress = if (drafts.isEmpty()) 0f else processedCount.toFloat() / drafts.size.toFloat()
     val canSave = drafts.isNotEmpty() && drafts.all { it.status == BatchDraftStatus.Ready }
     val saveHelper = when {
         processingCount > 0 -> stringResource(R.string.batch_helper_processing, processingCount)
         failedCount > 0 -> stringResource(R.string.batch_helper_failed, failedCount)
-        needsNameCount > 0 -> stringResource(R.string.batch_helper_needs_name, needsNameCount)
         drafts.isEmpty() -> stringResource(R.string.batch_helper_empty)
         else -> stringResource(R.string.batch_helper_ready, drafts.size)
     }
@@ -201,10 +199,11 @@ internal fun BatchAddClothingScreen(
             items(drafts, key = BatchDraftItem::id) { draft ->
                 BatchDraftTile(
                     draft = draft,
+                    availableTags = availableTags,
                     position = draft.orderIndex + 1,
                     totalCount = drafts.size,
                     onClick = {
-                        if (draft.status == BatchDraftStatus.NeedsName || draft.status == BatchDraftStatus.Ready || draft.status == BatchDraftStatus.Failed) {
+                        if (draft.status == BatchDraftStatus.Ready || draft.status == BatchDraftStatus.Failed) {
                             onDraftSelected(draft)
                         }
                     },
@@ -267,10 +266,7 @@ private fun BatchProgressHeader(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            BatchProgressBar(progress = progress)
             Text(
                 text = helper,
                 style = MaterialTheme.typography.bodyMedium,
@@ -281,8 +277,39 @@ private fun BatchProgressHeader(
 }
 
 @Composable
+private fun BatchProgressBar(progress: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(8.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+@Composable
+private fun BatchDraftItem.displayTitle(
+    availableTags: List<GarmentTag>,
+    position: Int,
+): String =
+    name.ifBlank {
+        availableTags.firstOrNull { tag -> tag.id in selectedTagIds && tag.categoryId == "category" }
+            ?.localizedTagLabel()
+            ?: stringResource(R.string.batch_draft_unnamed, position)
+    }
+
+@Composable
 private fun BatchDraftTile(
     draft: BatchDraftItem,
+    availableTags: List<GarmentTag>,
     position: Int,
     totalCount: Int,
     onClick: () -> Unit,
@@ -298,15 +325,16 @@ private fun BatchDraftTile(
                 contentDescription = tileDescription
                 stateDescription = status
             }
+            .alpha(if (draft.status == BatchDraftStatus.Queued) 0.62f else 1f)
             .clickable(
-                enabled = draft.status == BatchDraftStatus.NeedsName || draft.status == BatchDraftStatus.Ready || draft.status == BatchDraftStatus.Failed,
+                enabled = draft.status == BatchDraftStatus.Ready || draft.status == BatchDraftStatus.Failed,
                 onClick = onClick,
             ),
     ) {
         Box {
             BatchPhotoPreview(
                 photoUri = draft.photoUri,
-                isProcessing = draft.status == BatchDraftStatus.Queued || draft.status == BatchDraftStatus.Processing,
+                isProcessing = draft.status == BatchDraftStatus.Processing,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(3f / 4f),
@@ -323,7 +351,7 @@ private fun BatchDraftTile(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = draft.name.ifBlank { stringResource(R.string.batch_draft_unnamed, position) },
+                text = draft.displayTitle(availableTags, position),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -404,13 +432,11 @@ private fun BatchStatusBadge(
     val containerColor = when (status) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.primaryContainer
         BatchDraftStatus.Failed -> MaterialTheme.colorScheme.errorContainer
-        BatchDraftStatus.NeedsName -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     }
     val contentColor = when (status) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.onPrimaryContainer
         BatchDraftStatus.Failed -> MaterialTheme.colorScheme.onErrorContainer
-        BatchDraftStatus.NeedsName -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
     Surface(
@@ -427,7 +453,6 @@ private fun BatchStatusBadge(
             when (status) {
                 BatchDraftStatus.Ready -> Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                 BatchDraftStatus.Failed -> Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(14.dp))
-                BatchDraftStatus.NeedsName -> Icon(Icons.Rounded.Style, contentDescription = null, modifier = Modifier.size(14.dp))
                 else -> Unit
             }
             Text(
@@ -478,7 +503,7 @@ private suspend fun processBatchDraft(
             draft.copy(
                 photoUri = croppedUri.toString(),
                 photoAspectRatio = displayAspectRatio,
-                status = if (draft.name.isBlank()) BatchDraftStatus.NeedsName else BatchDraftStatus.Ready,
+                status = BatchDraftStatus.Ready,
                 selectedPrimaryColorId = primaryColorId,
                 selectedSecondaryColorId = secondaryColorId,
                 selectedTagIds = mergedTags,
@@ -536,7 +561,6 @@ private fun BatchDraftItem.toEditingClothingItem(
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
 ): ClothingItem = toClothingItem(availableTags, mainColors).copy(
-    name = name,
     updatedAtEpochMillis = createdAtEpochMillis,
 )
 
@@ -555,7 +579,7 @@ internal fun ClothingItem.toBatchDraftItem(
     fitValue = fitValue,
     selectedPrimaryColorId = colorMetrics.primaryPaletteColorId,
     selectedSecondaryColorId = colorMetrics.secondaryPaletteColorId,
-    status = if (name.isBlank()) BatchDraftStatus.NeedsName else BatchDraftStatus.Ready,
+    status = BatchDraftStatus.Ready,
     errorMessage = null,
 )
 
@@ -592,7 +616,7 @@ internal fun ClothingItem.toBatchDraftFromExisting(
     fitValue = fitValue,
     selectedPrimaryColorId = colorMetrics.primaryPaletteColorId ?: mainColors.nearestColor(colorMetrics.primaryPaletteColorHex ?: colorMetrics.primaryRawValue)?.id,
     selectedSecondaryColorId = colorMetrics.secondaryPaletteColorId ?: mainColors.nearestColor(colorMetrics.secondaryPaletteColorHex ?: colorMetrics.secondaryRawValue)?.id,
-    status = if (name.isBlank()) BatchDraftStatus.NeedsName else BatchDraftStatus.Ready,
+    status = BatchDraftStatus.Ready,
     errorMessage = null,
 )
 

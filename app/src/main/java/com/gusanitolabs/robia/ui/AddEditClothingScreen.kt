@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -374,7 +375,7 @@ fun AddEditClothingScreen(
 
     val isEditing = existingItem != null
     val initialFitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
-    val untitledItem = stringResource(R.string.untitled_item)
+    val deleteItemName = existingItem?.displayFallbackName() ?: stringResource(R.string.untitled_item)
     val developerExportNoPhotoStatus = stringResource(R.string.developer_export_input_image_no_photo)
     val developerExportSavedStatus = stringResource(R.string.developer_export_input_image_saved)
     val developerExportErrorStatus = stringResource(R.string.developer_export_input_image_error)
@@ -442,7 +443,7 @@ fun AddEditClothingScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.delete_item_title)) },
-            text = { Text(stringResource(R.string.delete_item_body, existingItem.name)) },
+            text = { Text(stringResource(R.string.delete_item_body, deleteItemName)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -516,7 +517,6 @@ fun AddEditClothingScreen(
                     isPhotoProcessing = false,
                     processingStage = null,
                     onGalleryClick = null,
-                    onBatchGalleryClick = null,
                     onCameraClick = null,
                 )
             }
@@ -524,17 +524,6 @@ fun AddEditClothingScreen(
 
         item {
             CardSection(title = stringResource(R.string.item_details_section)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.item_name_label)) },
-                    placeholder = { Text(stringResource(R.string.item_name_placeholder)) },
-                    supportingText = {
-                        if (name.isBlank()) Text(stringResource(R.string.item_name_required_to_save))
-                    },
-                    singleLine = true,
-                )
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
@@ -582,20 +571,35 @@ fun AddEditClothingScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (existingItem != null && onDelete != null) {
+                    val deleteLabel = stringResource(R.string.delete)
                     OutlinedButton(
                         onClick = { showDeleteDialog = true },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = deleteLabel },
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.delete),
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                        BoxWithConstraints(contentAlignment = Alignment.Center) {
+                            val showText = maxWidth >= 96.dp
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                                if (showText) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = deleteLabel,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else {
                     TextButton(
@@ -614,7 +618,7 @@ fun AddEditClothingScreen(
                         onSave(
                             ClothingItem(
                                 id = existingItem?.id ?: UUID.randomUUID().toString(),
-                                name = name.ifBlank { untitledItem },
+                                name = existingItem?.name.orEmpty(),
                                 notes = notes,
                                 photoUri = photoUri,
                                 tags = selectedTags,
@@ -638,7 +642,6 @@ fun AddEditClothingScreen(
                             ),
                         )
                     },
-                    enabled = name.isNotBlank(),
                     modifier = Modifier.weight(2f),
                 ) {
                     Icon(Icons.Rounded.Save, contentDescription = null)
@@ -689,6 +692,14 @@ private fun DeveloperDiagnosticsSection(
         )
     }
 }
+
+@Composable
+private fun ClothingItem.displayFallbackName(): String =
+    name.ifBlank {
+        tags.firstOrNull { tag -> tag.categoryId == "category" }?.localizedTagLabel()
+            ?: colorMetrics.primaryDisplayLabel?.localizedLabel()
+            ?: stringResource(R.string.untitled_item)
+    }
 
 private fun addDetectionDebugLines(
     lines: MutableList<String>,
@@ -1190,25 +1201,7 @@ private fun PhotoCaptureCardWithLaunchers(
     val scope = rememberCoroutineScope()
     var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri == null) {
-            onCaptureStatusChange("")
-            return@rememberLauncherForActivityResult
-        }
-        scope.launch {
-            val storedUri = runCatching {
-                withContext(Dispatchers.IO) {
-                    ClothingImageStore.copyContentUriToPrivateStorage(context, uri)
-                }
-            }.getOrElse {
-                onCaptureStatusChange(PhotoStatus.MediaUnavailable)
-                return@launch
-            }
-            onPhotoSelected(storedUri.toString(), PhotoStatus.Gallery)
-        }
-    }
-
-    val batchGalleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isEmpty()) {
             onCaptureStatusChange("")
             return@rememberLauncherForActivityResult
@@ -1220,8 +1213,8 @@ private fun PhotoCaptureCardWithLaunchers(
                 }
             }
             when {
-                storedUris.size > 1 -> onBatchPhotosSelected?.invoke(storedUris)
-                storedUris.size == 1 -> onPhotoSelected(storedUris.single(), PhotoStatus.Gallery)
+                storedUris.size > 1 && onBatchPhotosSelected != null -> onBatchPhotosSelected(storedUris)
+                storedUris.isNotEmpty() -> onPhotoSelected(storedUris.first(), PhotoStatus.Gallery)
                 else -> onCaptureStatusChange(PhotoStatus.MediaUnavailable)
             }
         }
@@ -1247,12 +1240,6 @@ private fun PhotoCaptureCardWithLaunchers(
             runCatching { galleryLauncher.launch(arrayOf("image/*")) }
                 .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
         },
-        onBatchGalleryClick = onBatchPhotosSelected?.let {
-            {
-                runCatching { batchGalleryLauncher.launch(arrayOf("image/*")) }
-                    .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
-            }
-        },
         onCameraClick = {
             runCatching {
                 val cameraUri = ClothingImageStore.createCaptureUri(context)
@@ -1274,7 +1261,6 @@ private fun PhotoCaptureCard(
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
     onGalleryClick: (() -> Unit)?,
-    onBatchGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
     Card(
@@ -1312,16 +1298,6 @@ private fun PhotoCaptureCard(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.gallery))
-                    }
-                    if (onBatchGalleryClick != null) {
-                        TextButton(onClick = onBatchGalleryClick) {
-                            Icon(
-                                Icons.Rounded.PhotoLibrary,
-                                contentDescription = stringResource(R.string.content_open_batch_gallery),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.batch_gallery))
-                        }
                     }
                 }
                 Button(
@@ -1712,6 +1688,9 @@ private fun List<MainColor>.nearestColor(rawHex: String?): MainColor? {
     val rgb = RgbColor.fromHexOrNull(rawHex) ?: return null
     return PaletteColorClassifier.Default.nearestColor(this, rgb)?.color
 }
+
+@Composable
+private fun DisplayColorLabel.localizedLabel(): String = stringResource(stringRes)
 
 private val DisplayColorLabel.stringRes: Int
     get() = when (this) {

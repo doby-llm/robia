@@ -1,10 +1,7 @@
 package com.gusanitolabs.robia.ui
 
-import android.app.Activity
-import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.Intent
 import android.net.Uri
 import android.content.res.Configuration
 import android.os.LocaleList
@@ -2204,12 +2201,20 @@ private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
 }
 
 @Composable
+private fun ClothingItem.displayTitle(): String =
+    name.ifBlank {
+        tags.firstOrNull { tag -> tag.categoryId == "category" }?.localizedLabel()
+            ?: colorMetrics.primaryDisplayLabel?.localizedLabel()
+            ?: stringResource(R.string.untitled_item)
+    }
+
+@Composable
 private fun List<ClothingItem>.toUiWardrobeItems(
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
 ): List<UiWardrobeItem> = map { item ->
     UiWardrobeItem(
         id = item.id,
-        name = item.name,
+        name = item.displayTitle(),
         subtitle = item.notes.ifBlank { stringResource(driveSyncConnectionStatus.itemStatusLabelRes) },
         notes = item.notes,
         photoUri = item.photoUri,
