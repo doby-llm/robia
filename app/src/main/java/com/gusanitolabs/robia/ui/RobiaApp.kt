@@ -399,6 +399,7 @@ private fun RobiaShell(
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
     var showBrowseDeleteDialog by remember { mutableStateOf(false) }
+    var showColorReviewDiscardDialog by remember { mutableStateOf(false) }
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     val items = clothingItems.toUiWardrobeItems(settings.driveSyncConnectionStatus)
@@ -516,6 +517,23 @@ private fun RobiaShell(
         )
     }
 
+    fun requestColorReviewDiscard() {
+        showColorReviewDiscardDialog = true
+    }
+
+    fun discardColorReviewAndRollbackPalette() {
+        val changeSet = activeColorReviewChangeSet ?: return
+        val beforeColorIds = changeSet.beforePalette.map(MainColor::id).toSet()
+        changeSet.afterPalette
+            .filterNot { color -> color.id in beforeColorIds }
+            .forEach(onDeleteMainColor)
+        changeSet.beforePalette.forEach(onSaveMainColor)
+        pendingColorReviewChangeSet = null
+        activeColorReviewChangeSet = null
+        showColorReviewDiscardDialog = false
+        replaceRoute(RobiaRoute.Browse)
+    }
+
     fun handleSettingsClick() {
         settingsExpanded = true
         if (settings.developerModeUnlocked) return
@@ -530,7 +548,13 @@ private fun RobiaShell(
         }
     }
 
-    BackHandler(enabled = routeStack.size > 1) { popRoute() }
+    BackHandler(enabled = routeStack.size > 1) {
+        if (currentRoute == RobiaRoute.ColorReview) {
+            requestColorReviewDiscard()
+        } else {
+            popRoute()
+        }
+    }
 
     if (showBatchDiscardDialog) {
         AlertDialog(
@@ -563,6 +587,24 @@ private fun RobiaShell(
         )
     }
 
+    if (showColorReviewDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showColorReviewDiscardDialog = false },
+            title = { Text(stringResource(R.string.color_review_discard_title)) },
+            text = { Text(stringResource(R.string.color_review_discard_body)) },
+            confirmButton = {
+                TextButton(onClick = ::discardColorReviewAndRollbackPalette) {
+                    Text(stringResource(R.string.discard_changes))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showColorReviewDiscardDialog = false }) {
+                    Text(stringResource(R.string.keep_editing))
+                }
+            },
+        )
+    }
+
     pendingColorReviewChangeSet?.let { changeSet ->
         ColorReviewPromptDialog(
             onDismiss = { pendingColorReviewChangeSet = null },
@@ -590,6 +632,8 @@ private fun RobiaShell(
                             onClick = {
                                 if (currentRoute == RobiaRoute.BatchAddClothing && batchDrafts.isNotEmpty()) {
                                     showBatchDiscardDialog = true
+                                } else if (currentRoute == RobiaRoute.ColorReview) {
+                                    requestColorReviewDiscard()
                                 } else {
                                     popRoute()
                                 }
@@ -768,6 +812,7 @@ private fun RobiaShell(
                 activeColorReviewChangeSet = null
                 replaceRoute(RobiaRoute.Browse)
             },
+            onRequestColorReviewDiscard = ::requestColorReviewDiscard,
         )
     }
 }
@@ -927,6 +972,7 @@ private fun RobiaNavHost(
     onDeleteMainColor: (MainColor) -> Unit,
     onApplyColorReviewChanges: (List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
+    onRequestColorReviewDiscard: () -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -960,6 +1006,7 @@ private fun RobiaNavHost(
                 changeSet = changeSet,
                 onApplyChanges = onApplyColorReviewChanges,
                 onDone = onCloseColorReview,
+                onRequestDiscard = onRequestColorReviewDiscard,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(

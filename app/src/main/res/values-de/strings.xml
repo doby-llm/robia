@@ -328,6 +328,8 @@
     <string name="color_review_empty_body">Deine gespeicherten Kleidungsstücke passen weiterhin zur aktualisierten Farbpalette.</string>
     <string name="color_review_suggested_colors">Vorgeschlagene Farben</string>
     <string name="color_review_chip_description">%1$s-Farbe, vorgeschlagen %2$s</string>
+    <string name="color_review_discard_title">Farbaktualisierungen verwerfen?</string>
+    <string name="color_review_discard_body">Beim Verlassen werden alle ausstehenden Farbaktualisierungen und Änderungen an der Farbpalette verworfen.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

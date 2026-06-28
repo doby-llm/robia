@@ -328,6 +328,8 @@
     <string name="color_review_empty_body">Tus prendas guardadas siguen coincidiendo con la paleta actualizada.</string>
     <string name="color_review_suggested_colors">Colores sugeridos</string>
     <string name="color_review_chip_description">Color %1$s, propuesta %2$s</string>
+    <string name="color_review_discard_title">¿Descartar actualizaciones de color?</string>
+    <string name="color_review_discard_body">Al salir se descartarán todas las actualizaciones de color pendientes y los cambios en la paleta de colores.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>

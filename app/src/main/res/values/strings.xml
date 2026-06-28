@@ -328,6 +328,8 @@
     <string name="color_review_empty_body">Your saved garments still match the updated color palette.</string>
     <string name="color_review_suggested_colors">Suggested colors</string>
     <string name="color_review_chip_description">%1$s color, proposed %2$s</string>
+    <string name="color_review_discard_title">Discard color updates?</string>
+    <string name="color_review_discard_body">Exiting will discard all pending color updates and palette color changes.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>
