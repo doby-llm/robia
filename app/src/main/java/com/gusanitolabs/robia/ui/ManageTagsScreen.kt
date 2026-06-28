@@ -819,6 +819,7 @@ private fun NeutralColorPresetSwatch(
     onSelect: () -> Unit,
 ) {
     val presetName = stringResource(preset.nameRes)
+    val presetContentDescription = stringResource(R.string.content_select_neutral_color_swatch, presetName)
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
 
     // Low-saturation HSV choices are ambiguous by gesture alone; exact neutral presets make
@@ -831,7 +832,7 @@ private fun NeutralColorPresetSwatch(
             .border(if (selected) 2.dp else 1.dp, borderColor, CircleShape)
             .clickable(onClick = onSelect)
             .semantics {
-                contentDescription = stringResource(R.string.content_select_neutral_color_swatch, presetName)
+                contentDescription = presetContentDescription
             },
     )
 }
