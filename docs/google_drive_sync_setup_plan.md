@@ -29,8 +29,9 @@ Do these steps once before a worker can connect Robia to Drive for real users.
    - User support email: Manu's support email
    - Developer contact email: Manu's email
 4. Add the Drive scope Robia needs:
-   - Recommended MVP scope: `https://www.googleapis.com/auth/drive.file`
-   - Why: Robia can create and manage the Robia folder/files it owns, with less user trust and less Google verification burden than full Drive access.
+   - Recommended MVP scope: `https://www.googleapis.com/auth/drive.appdata`
+   - Why: Robia should keep the default wardrobe sync store in Drive `appDataFolder`, scoped to app-private data in the user-authorized Google account.
+   - Use only if product requirements later need user-visible Robia files: `https://www.googleapis.com/auth/drive.file`, because it grants access to files the app creates or the user opens with the app.
    - Avoid unless absolutely required: `https://www.googleapis.com/auth/drive`, because it grants broad access to all Drive files and likely raises the review/verification bar.
 5. Add test users while the app is in testing mode. Add Manu's Google account and any devices/accounts used for manual APK testing.
 6. Save the consent screen.
@@ -65,22 +66,20 @@ Send these values only through the agreed secret/config channel, not in chat com
 
 ## 2. Recommended Drive data model
 
-Use a single app-owned top-level folder in the user's Drive:
+Prefer the Drive `appDataFolder` for the default Robia sync store so wardrobe data is scoped to Robia's files in the user-authorized Google account. If product requirements later need user-visible files, keep the same schema under a user-selected `Robia/` folder and document the broader scope explicitly.
 
 ```text
-Robia/
+appDataFolder:/robia/
   manifest.json
-  items/
+  wardrobe_snapshot.json
+  photos/
     <item_uid>/
-      original.jpg
-      processed.png
-      item.json
-      tombstone.json      # optional, short-lived conflict/deletion marker
-  palettes/
-    colors.json
-  sync/
-    device-state.json     # optional debug/export state, not the source of truth
+      original
+  tombstones/
+    <entity_type>_<entity_id>.json
 ```
+
+The snapshot is the source of truth for the full local wardrobe graph: garments, photos/blob metadata, Manage-created categories/tags, occasion/season/location/category labels, main colors/palette, garment-tag mappings, garment-color mappings, default/system flags, archived state, revisions/timestamps, and deletion tombstones.
 
 Recommended item folder id/name:
 
@@ -205,24 +204,30 @@ These tasks are safe before Manu provides OAuth/client setup:
 This repository now includes credential-free Drive sync seams that intentionally do not
 perform real OAuth or Drive API calls:
 
-- `WardrobeSyncGateway` exposes a queue-oriented domain boundary for item upserts,
-  app-initiated item-folder deletes, tag changes, and palette changes.
-- `NoOpWardrobeSyncGateway` keeps production runtime safely local-only and reports
-  `NotConfigured` until the Google Cloud checklist above is complete.
-- `RecordingWardrobeSyncGateway` gives future JVM tests a deterministic way to assert
-  which sync operations would have been queued without contacting Google services.
-- `DriveWardrobeRepository` defines the future Drive adapter contract for manifest,
-  item, delete, and palette writes. `NotConfiguredDriveWardrobeRepository` blocks all
-  calls with an explicit setup-required result, and `InMemoryDriveWardrobeRepository`
-  supports fake merge/delete tests.
-- Settings and wardrobe item status copy now derive from sync state and are localized
-  in English, Spanish, and German. The Google Drive menu item remains disabled while
-  the app is not configured.
+- `WardrobeSyncSnapshot` models the full graph: taxonomy categories/tags, main
+  colors, garments, tag/color relationships, photo blob metadata, archived flags,
+  revisions/timestamps, and tombstones.
+- `LocalWardrobeSyncSnapshotRepository` exports Room state deterministically from
+  `WardrobeDao`, `TagDao`, and `SyncTombstoneDao` without requiring Drive
+  credentials or Android runtime validation on this ARM host.
+- `sync_tombstones` records app-side deletion markers for Manage-created tags and
+  main colors so future restore/merge logic can distinguish deletes from missing
+  rows.
+- `WardrobeSyncGateway` remains queue-oriented and now includes full snapshot and
+  taxonomy/tombstone operations while preserving existing item/tag/palette queue
+  events used by the UI.
+- `DriveWardrobeRepository` is narrowed to manifest/snapshot exchange for the
+  user-authorized Google account and defaults to Drive `appDataFolder` semantics.
+  `NotConfiguredDriveWardrobeRepository` blocks all calls with setup-required
+  state, and `InMemoryDriveWardrobeRepository` supports fake merge/import tests.
+- Settings and wardrobe item status copy derive from sync state and are localized
+  in English, Spanish, and German. The Google Drive menu item remains disabled
+  while the app is not configured.
 
-No OAuth client IDs, Drive folder IDs, access tokens, client secrets, service accounts,
-or release-signing assumptions were added. Real Google account connection remains
-blocked until Manu completes the Google Cloud/OAuth steps and a follow-up worker wires
-the chosen credential/config channel.
+No OAuth client IDs, Drive folder IDs, access tokens, client secrets, service
+accounts, or release-signing assumptions were added. Real Google account
+connection remains blocked until Manu completes the Google Cloud/OAuth steps and
+a follow-up worker wires the chosen credential/config channel.
 
 ## 5. What remains blocked until credentials/human action
 

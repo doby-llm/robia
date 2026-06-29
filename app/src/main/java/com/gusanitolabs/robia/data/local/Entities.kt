@@ -75,6 +75,18 @@ data class MainColorEntity(
 )
 
 @Entity(
+    tableName = "sync_tombstones",
+    indices = [Index(value = ["entity_type", "entity_id"], unique = true)],
+)
+data class SyncTombstoneEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "entity_type") val entityType: String,
+    @ColumnInfo(name = "entity_id") val entityId: String,
+    @ColumnInfo(name = "deleted_at_epoch_millis") val deletedAtEpochMillis: Long,
+    val revision: Long = 0L,
+)
+
+@Entity(
     tableName = "clothing_item_tags",
     primaryKeys = ["clothing_item_id", "tag_id"],
     foreignKeys = [

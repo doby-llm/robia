@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         val database = RobiaDatabase.getInstance(applicationContext)
         val settingsRepository = DataStoreSettingsRepository(settingsDataStore)
         val wardrobeRepository = LocalWardrobeRepository(database.wardrobeDao())
-        val tagRepository = LocalTagRepository(database.tagDao())
+        val tagRepository = LocalTagRepository(database.tagDao(), database.syncTombstoneDao())
 
         setContent {
             RobiaApp(

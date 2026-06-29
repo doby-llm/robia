@@ -18,6 +18,13 @@ interface WardrobeDao {
     @Query("SELECT * FROM clothing_items WHERE id = :id")
     fun observeItem(id: String): Flow<ClothingItemWithTags?>
 
+    @Transaction
+    @Query("SELECT * FROM clothing_items ORDER BY id")
+    suspend fun getAllItemsForSync(): List<ClothingItemWithTags>
+
+    @Query("SELECT * FROM clothing_item_tags ORDER BY clothing_item_id, tag_id")
+    suspend fun getItemTagRefsForSync(): List<ClothingItemTagCrossRef>
+
     @Upsert
     suspend fun upsertItem(item: ClothingItemEntity)
 
@@ -53,6 +60,15 @@ interface TagDao {
     @Query("SELECT * FROM tag_categories ORDER BY sort_order, name")
     fun observeCategories(): Flow<List<TagCategoryEntity>>
 
+    @Query("SELECT * FROM tag_categories ORDER BY sort_order, id")
+    suspend fun getCategoriesForSync(): List<TagCategoryEntity>
+
+    @Query("SELECT * FROM garment_tags ORDER BY category_id, sort_order, id")
+    suspend fun getTagsForSync(): List<GarmentTagEntity>
+
+    @Query("SELECT * FROM main_colors ORDER BY sort_order, id")
+    suspend fun getMainColorsForSync(): List<MainColorEntity>
+
     @Query("SELECT * FROM garment_tags ORDER BY sort_order, name")
     fun observeTags(): Flow<List<GarmentTagEntity>>
 
@@ -72,10 +88,10 @@ interface TagDao {
     suspend fun upsertMainColor(color: MainColorEntity)
 
     @Query("DELETE FROM garment_tags WHERE id = :id AND is_system = 0")
-    suspend fun deleteCustomTag(id: String)
+    suspend fun deleteCustomTag(id: String): Int
 
     @Query("DELETE FROM main_colors WHERE id = :id AND (SELECT COUNT(*) FROM main_colors) > 1")
-    suspend fun deleteMainColor(id: String)
+    suspend fun deleteMainColor(id: String): Int
 
     @Query("SELECT COUNT(*) FROM main_colors")
     suspend fun mainColorCount(): Int
@@ -97,4 +113,13 @@ interface TagDao {
         deleteAllMainColors()
         seedMainColors(colors)
     }
+}
+
+@Dao
+interface SyncTombstoneDao {
+    @Query("SELECT * FROM sync_tombstones ORDER BY entity_type, entity_id")
+    suspend fun getAllForSync(): List<SyncTombstoneEntity>
+
+    @Upsert
+    suspend fun upsert(tombstone: SyncTombstoneEntity)
 }

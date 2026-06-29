@@ -11,6 +11,8 @@ import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
 import com.gusanitolabs.robia.data.local.MainColorEntity
+import com.gusanitolabs.robia.data.local.SyncTombstoneDao
+import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
@@ -48,6 +50,7 @@ class LocalWardrobeRepository(
 
 class LocalTagRepository(
     private val tagDao: TagDao,
+    private val syncTombstoneDao: SyncTombstoneDao? = null,
 ) : TagRepository {
     override fun observeCategories(): Flow<List<TagCategory>> =
         tagDao.observeCategories().map { categories ->
@@ -73,11 +76,15 @@ class LocalTagRepository(
     }
 
     override suspend fun deleteCustomTag(id: String) {
-        tagDao.deleteCustomTag(id)
+        if (tagDao.deleteCustomTag(id) > 0) {
+            syncTombstoneDao?.upsert(syncTombstone(entityType = "garment_tag", entityId = id))
+        }
     }
 
     override suspend fun deleteMainColor(id: String) {
-        tagDao.deleteMainColor(id)
+        if (tagDao.deleteMainColor(id) > 0) {
+            syncTombstoneDao?.upsert(syncTombstone(entityType = "main_color", entityId = id))
+        }
     }
 
     override suspend fun restoreDefaultTags(categoryId: String) {
@@ -159,5 +166,16 @@ private fun GarmentTagEntity.toDomain(): GarmentTag = GarmentTag(id, categoryId,
 private fun GarmentTag.toEntity(): GarmentTagEntity = GarmentTagEntity(id, categoryId, name, sortOrder, isSystem)
 private fun MainColorEntity.toDomain(): MainColor = MainColor(id, name, hex, sortOrder, isDefault)
 private fun MainColor.toEntity(): MainColorEntity = MainColorEntity(id, name, hex, sortOrder, isDefault)
+
+private fun syncTombstone(entityType: String, entityId: String): SyncTombstoneEntity {
+    val deletedAtEpochMillis = System.currentTimeMillis()
+    return SyncTombstoneEntity(
+        id = "$entityType:$entityId",
+        entityType = entityType,
+        entityId = entityId,
+        deletedAtEpochMillis = deletedAtEpochMillis,
+        revision = deletedAtEpochMillis,
+    )
+}
 
 private fun List<GarmentTag>.filterNotCare(): List<GarmentTag> = filterNot { tag -> tag.categoryId == "care" }

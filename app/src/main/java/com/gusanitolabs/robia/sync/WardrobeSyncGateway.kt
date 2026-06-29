@@ -81,6 +81,35 @@ sealed interface WardrobeSyncOperation {
         override val localOperationId: String = operationId("palette_upsert", colors.map(MainColor::id).sorted().joinToString("_")),
         override val createdAtEpochMillis: Long = System.currentTimeMillis(),
     ) : WardrobeSyncOperation
+
+    data class ExportFullSnapshot(
+        override val localOperationId: String = operationId("snapshot_export", "full"),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class ImportFullSnapshot(
+        val sourceRevision: Long,
+        override val localOperationId: String = operationId("snapshot_import", sourceRevision.toString()),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class UpsertGarments(
+        val touchedGarmentIds: Set<String>,
+        override val localOperationId: String = operationId("garments_upsert", touchedGarmentIds.sorted().joinToString("_")),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class UpsertTaxonomy(
+        val touchedEntityIds: Set<String>,
+        override val localOperationId: String = operationId("taxonomy_upsert", touchedEntityIds.sorted().joinToString("_")),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    data class RecordTombstones(
+        val tombstoneIds: Set<String>,
+        override val localOperationId: String = operationId("tombstone_record", tombstoneIds.sorted().joinToString("_")),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
 }
 
 private fun operationId(prefix: String, key: String): String =

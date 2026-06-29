@@ -14,15 +14,17 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TagCategoryEntity::class,
         GarmentTagEntity::class,
         MainColorEntity::class,
+        SyncTombstoneEntity::class,
         ClothingItemTagCrossRef::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
 abstract class RobiaDatabase : RoomDatabase() {
     abstract fun wardrobeDao(): WardrobeDao
     abstract fun tagDao(): TagDao
+    abstract fun syncTombstoneDao(): SyncTombstoneDao
 
     companion object {
         @Volatile private var instance: RobiaDatabase? = null
@@ -41,6 +43,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
+                        MIGRATION_7_8,
                     )
                     .build()
                     .also { instance = it }
@@ -146,6 +149,25 @@ abstract class RobiaDatabase : RoomDatabase() {
                 )
                 database.execSQL("DELETE FROM clothing_item_tags WHERE tag_id = 'season-autumn'")
                 database.execSQL("DELETE FROM garment_tags WHERE id = 'season-autumn'")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_tombstones (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        deleted_at_epoch_millis INTEGER NOT NULL,
+                        revision INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_sync_tombstones_entity_type_entity_id ON sync_tombstones(entity_type, entity_id)",
+                )
             }
         }
     }

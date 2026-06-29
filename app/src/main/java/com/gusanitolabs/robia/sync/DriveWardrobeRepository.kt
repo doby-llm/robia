@@ -1,31 +1,33 @@
 package com.gusanitolabs.robia.sync
 
-import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
-import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.core.model.DriveSyncTarget
+import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
+import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 
 /**
  * Credential-free contract for a future Google Drive adapter.
  *
  * Implementations must not assume OAuth is available. Until Google Cloud and OAuth setup
  * are complete, production code should provide [NotConfiguredDriveWardrobeRepository].
+ * The adapter must bind to the user-authorized Google account and default to Drive
+ * appDataFolder storage; no service-account or generic app-account data stores.
  */
 interface DriveWardrobeRepository {
+    val target: DriveSyncTarget
+
     suspend fun fetchManifest(): DriveSyncResult<DriveManifest>
-    suspend fun listItems(): DriveSyncResult<List<DriveItemSnapshot>>
-    suspend fun upsertItem(item: ClothingItem): DriveSyncResult<DriveItemSnapshot>
-    suspend fun deleteItemFolder(itemId: String): DriveSyncResult<Unit>
-    suspend fun upsertPalette(colors: List<MainColor>): DriveSyncResult<Unit>
+    suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot>
+    suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest>
 }
 
 class NotConfiguredDriveWardrobeRepository(
     private val reason: DriveSyncDisabledReason = DriveSyncDisabledReason.GoogleCloudSetupRequired,
+    override val target: DriveSyncTarget = DriveSyncTarget(),
 ) : DriveWardrobeRepository {
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = notConfigured()
-    override suspend fun listItems(): DriveSyncResult<List<DriveItemSnapshot>> = notConfigured()
-    override suspend fun upsertItem(item: ClothingItem): DriveSyncResult<DriveItemSnapshot> = notConfigured()
-    override suspend fun deleteItemFolder(itemId: String): DriveSyncResult<Unit> = notConfigured()
-    override suspend fun upsertPalette(colors: List<MainColor>): DriveSyncResult<Unit> = notConfigured()
+    override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
+    override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> = notConfigured()
 
     private fun <T> notConfigured(): DriveSyncResult<T> =
         DriveSyncResult.Blocked(reason, "Google Drive sync is not configured yet.")
@@ -33,39 +35,22 @@ class NotConfiguredDriveWardrobeRepository(
 
 /** Small deterministic fake for JVM tests and future merge-policy tests. */
 class InMemoryDriveWardrobeRepository(
-    private var manifest: DriveManifest = DriveManifest(),
+    private var snapshot: WardrobeSyncSnapshot = WardrobeSyncSnapshot(),
+    override val target: DriveSyncTarget = DriveSyncTarget(),
 ) : DriveWardrobeRepository {
-    private val itemsById = linkedMapOf<String, ClothingItem>()
+    private var manifest: DriveManifest = DriveManifest.fromSnapshot(snapshot)
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = DriveSyncResult.Success(manifest)
 
-    override suspend fun listItems(): DriveSyncResult<List<DriveItemSnapshot>> = DriveSyncResult.Success(
-        itemsById.values.map { item -> item.toDriveSnapshot() },
-    )
+    override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> =
+        DriveSyncResult.Success(snapshot.sortedDeterministically())
 
-    override suspend fun upsertItem(item: ClothingItem): DriveSyncResult<DriveItemSnapshot> {
-        itemsById[item.id] = item
-        manifest = manifest.copy(updatedAtEpochMillis = maxOf(manifest.updatedAtEpochMillis, item.updatedAtEpochMillis))
-        return DriveSyncResult.Success(item.toDriveSnapshot())
+    override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> {
+        val deterministicSnapshot = snapshot.sortedDeterministically()
+        this.snapshot = deterministicSnapshot
+        manifest = DriveManifest.fromSnapshot(deterministicSnapshot)
+        return DriveSyncResult.Success(manifest)
     }
-
-    override suspend fun deleteItemFolder(itemId: String): DriveSyncResult<Unit> {
-        itemsById.remove(itemId)
-        return DriveSyncResult.Success(Unit)
-    }
-
-    override suspend fun upsertPalette(colors: List<MainColor>): DriveSyncResult<Unit> {
-        manifest = manifest.copy(updatedAtEpochMillis = System.currentTimeMillis())
-        return DriveSyncResult.Success(Unit)
-    }
-
-    private fun ClothingItem.toDriveSnapshot(): DriveItemSnapshot = DriveItemSnapshot(
-        itemUid = id,
-        item = this,
-        folderName = DriveFolderNaming.itemFolderName(id),
-        updatedAtEpochMillis = updatedAtEpochMillis,
-        isTrashed = isArchived,
-    )
 }
 
 sealed interface DriveSyncResult<out T> {
@@ -78,25 +63,40 @@ sealed interface DriveSyncResult<out T> {
 }
 
 data class DriveManifest(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = WARDROBE_SYNC_SCHEMA_VERSION,
     val wardrobeId: String? = null,
     val appPackage: String = "com.gusanitolabs.robia",
-    val itemsPath: String = "items/",
-    val palettePath: String = "palettes/colors.json",
+    val rootPath: String = "appDataFolder:/robia/",
+    val snapshotPath: String = "wardrobe_snapshot.json",
+    val photosPath: String = "photos/",
     val updatedAtEpochMillis: Long = 0L,
-)
-
-data class DriveItemSnapshot(
-    val itemUid: String,
-    val item: ClothingItem,
-    val folderName: String,
-    val updatedAtEpochMillis: Long,
-    val isTrashed: Boolean = false,
-)
+    val revision: Long = 0L,
+    val target: DriveSyncTarget = DriveSyncTarget(),
+) {
+    companion object {
+        fun fromSnapshot(snapshot: WardrobeSyncSnapshot): DriveManifest = DriveManifest(
+            schemaVersion = snapshot.metadata.schemaVersion,
+            wardrobeId = snapshot.metadata.wardrobeId,
+            appPackage = snapshot.metadata.appPackage,
+            updatedAtEpochMillis = snapshot.metadata.generatedAtEpochMillis,
+            revision = snapshot.metadata.revision,
+            target = snapshot.metadata.target,
+        )
+    }
+}
 
 object DriveFolderNaming {
     private val unsafePathCharacters = Regex("[^A-Za-z0-9._-]")
 
-    fun itemFolderName(itemUid: String): String =
-        "garment_${itemUid.trim().replace(unsafePathCharacters, "_")}"
+    fun photoBlobPath(itemUid: String, localUri: String? = null): String {
+        val safeItemUid = safeSegment(itemUid.ifBlank { "unknown" })
+        val photoKey = localUri
+            ?.substringAfterLast('/')
+            ?.takeIf { segment -> segment.isNotBlank() }
+            ?: "original"
+        val safePhotoKey = safeSegment(photoKey)
+        return "photos/$safeItemUid/$safePhotoKey"
+    }
+
+    private fun safeSegment(value: String): String = value.trim().replace(unsafePathCharacters, "_")
 }
