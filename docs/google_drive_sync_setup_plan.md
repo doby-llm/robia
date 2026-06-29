@@ -43,8 +43,10 @@ Do these steps once before a worker can connect Robia to Drive for real users.
 4. Name: `Robia Android debug` for local/debug builds.
 5. Package name: `com.gusanitolabs.robia`.
 6. SHA-1 certificate fingerprint:
-   - For debug/dev builds, use the SHA-1 of the debug keystore used to sign the APK being installed.
-   - For GitHub Actions debug APKs, decide whether CI uses the default generated debug keystore or a stable checked-in/non-secret debug keystore. A stable debug keystore makes the SHA-1 predictable for manual installs.
+   - For debug/dev builds, use the SHA-1 of the certificate that signed the APK being installed.
+   - GitHub Actions prints the actual debug APK signing certificate after `assembleDebug` in the `Print APK signing certificate fingerprints` step. Copy the `Signer #1 certificate SHA-1 digest` from the run logs only for that exact debug APK/build.
+   - Do not rely on `~/.android/debug.keystore` on GitHub-hosted runners as a stable long-term OAuth fingerprint: the default debug signing key can rotate between fresh runners/runs unless CI is configured with a stable signing key.
+   - For repeatable CI debug testing, introduce a dedicated stable CI debug keystore via GitHub Secrets/Variables or another agreed non-source channel, then register that stable SHA-1.
    - For future Play releases, add a separate Android OAuth client using the Google Play App Signing SHA-1 from Play Console, not the upload-key SHA-1.
 7. Save and copy the Android OAuth client ID.
 8. Repeat with another OAuth client if you need separate debug, staging, and release signing fingerprints.

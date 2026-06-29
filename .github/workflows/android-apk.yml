@@ -48,6 +48,20 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
+      - name: Print APK signing certificate fingerprints
+        run: |
+          set -euo pipefail
+          apk_path="$(find app/build/outputs/apk/debug -name '*.apk' -type f | sort | head -n 1)"
+          if [ -z "${apk_path}" ]; then
+            echo "No debug APK found for signing certificate inspection" >&2
+            exit 1
+          fi
+          build_tools_dir="$(find "${ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
+          echo "Inspecting signing certificate for ${apk_path}"
+          echo "This fingerprint is safe to publish, but the default GitHub Actions debug signing key can change between runs."
+          echo "For Google OAuth, use this only for the exact debug APK/build you are testing; use Play/release signing fingerprints for production."
+          "${build_tools_dir}/apksigner" verify --print-certs "${apk_path}"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
