@@ -87,11 +87,29 @@ interface TagDao {
     @Upsert
     suspend fun upsertMainColor(color: MainColorEntity)
 
+    @Upsert
+    suspend fun upsertMainColors(colors: List<MainColorEntity>)
+
+    @Upsert
+    suspend fun upsertClothingItems(items: List<ClothingItemEntity>)
+
+    @Query("DELETE FROM clothing_item_tags WHERE clothing_item_id IN (:itemIds)")
+    suspend fun clearTagsForItems(itemIds: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertItemTagRefs(refs: List<ClothingItemTagCrossRef>)
+
+    @Upsert
+    suspend fun upsertSyncTombstones(tombstones: List<SyncTombstoneEntity>)
+
     @Query("DELETE FROM garment_tags WHERE id = :id AND is_system = 0")
     suspend fun deleteCustomTag(id: String): Int
 
     @Query("DELETE FROM main_colors WHERE id = :id AND (SELECT COUNT(*) FROM main_colors) > 1")
     suspend fun deleteMainColor(id: String): Int
+
+    @Query("DELETE FROM main_colors WHERE id IN (:ids) AND (SELECT COUNT(*) FROM main_colors) > :deleteCount")
+    suspend fun deleteMainColors(ids: List<String>, deleteCount: Int): Int
 
     @Query("SELECT COUNT(*) FROM main_colors")
     suspend fun mainColorCount(): Int
@@ -112,6 +130,29 @@ interface TagDao {
     suspend fun replaceMainColors(colors: List<MainColorEntity>) {
         deleteAllMainColors()
         seedMainColors(colors)
+    }
+
+    @Transaction
+    suspend fun applyMainColorChange(
+        upsertColors: List<MainColorEntity>,
+        deleteColorIds: List<String>,
+        updatedItems: List<ClothingItemEntity>,
+        tagIdsByItemId: Map<String, List<String>>,
+        tombstones: List<SyncTombstoneEntity>,
+    ) {
+        if (upsertColors.isNotEmpty()) upsertMainColors(upsertColors)
+        if (deleteColorIds.isNotEmpty()) deleteMainColors(deleteColorIds, deleteColorIds.size)
+        if (tombstones.isNotEmpty()) upsertSyncTombstones(tombstones)
+        if (updatedItems.isNotEmpty()) {
+            val itemIds = updatedItems.map(ClothingItemEntity::id)
+            upsertClothingItems(updatedItems)
+            clearTagsForItems(itemIds)
+            insertItemTagRefs(
+                tagIdsByItemId.flatMap { (itemId, tagIds) ->
+                    tagIds.map { tagId -> ClothingItemTagCrossRef(itemId, tagId) }
+                },
+            )
+        }
     }
 }
 

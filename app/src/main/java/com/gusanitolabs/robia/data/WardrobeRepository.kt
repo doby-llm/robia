@@ -22,6 +22,11 @@ interface TagRepository {
     suspend fun upsertCategory(category: TagCategory)
     suspend fun upsertTag(tag: GarmentTag)
     suspend fun upsertMainColor(color: MainColor)
+    suspend fun applyMainColorChange(
+        upsertColors: List<MainColor>,
+        deleteColorIds: List<String>,
+        updatedItems: List<ClothingItem>,
+    )
     suspend fun deleteCustomTag(id: String)
     suspend fun deleteMainColor(id: String)
     suspend fun restoreDefaultTags(categoryId: String)

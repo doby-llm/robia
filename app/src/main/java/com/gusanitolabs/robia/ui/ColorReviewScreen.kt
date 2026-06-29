@@ -79,6 +79,7 @@ internal data class ColorPaletteChangeSet(
     val afterPalette: List<MainColor>,
     val touchedColorId: String?,
     val operation: ColorPaletteOperation,
+    val requiresCommitOnSave: Boolean = false,
     val id: String = UUID.randomUUID().toString(),
 )
 
@@ -111,40 +112,54 @@ internal fun ColorReviewScreen(
     innerPadding: PaddingValues,
     items: List<ClothingItem>,
     changeSet: ColorPaletteChangeSet,
-    onApplyChanges: (List<ClothingItem>) -> Unit,
-    onDone: () -> Unit,
+    onCommit: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
-    val eligibleItems = remember(items) { items.filter(ClothingItem::isEligibleForColorReview) }
+    val reviewItems = remember(items, changeSet.id) {
+        if (changeSet.requiresCommitOnSave) items.filterNot(ClothingItem::isArchived) else items.filter(ClothingItem::isEligibleForColorReview)
+    }
     val candidates = remember(changeSet.id) { mutableStateListOf<ColorReviewCandidate>() }
     val acceptedItems = remember(changeSet.id) { mutableStateListOf<ClothingItem>() }
     var processedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var pickerTarget by remember(changeSet.id) { mutableStateOf<ColorReviewPickerTarget?>(null) }
 
-    LaunchedEffect(changeSet.id, eligibleItems) {
+    LaunchedEffect(changeSet.id, reviewItems) {
         candidates.clear()
         acceptedItems.clear()
         processedCount = 0
         isScanning = true
-        eligibleItems.forEach { item ->
-            val imageUri = item.photoUri?.let(Uri::parse)
-            if (imageUri != null && changeSet.afterPalette.isNotEmpty()) {
+        reviewItems.forEach { item ->
+            val needsManualRemap = item.needsManualPaletteRemap(changeSet)
+            val imageUri = item.photoUri?.takeIf(String::isNotBlank)?.let(Uri::parse)
+            val proposedMetrics = if (imageUri != null && changeSet.afterPalette.isNotEmpty()) {
                 val matches = runCatching {
                     withContext(Dispatchers.IO) {
                         ClothingImageStore.extractPaletteColorDiagnostics(context, imageUri, changeSet.afterPalette).matches
                     }
                 }.getOrDefault(emptyList())
-                val proposedMetrics = matches.toColorMetrics()
-                if (item.isAffectedBy(changeSet, proposedMetrics)) {
-                    candidates += ColorReviewCandidate(
-                        item = item,
-                        proposedMetrics = proposedMetrics,
-                        editablePrimaryColorId = proposedMetrics.primaryPaletteColorId,
-                        editableSecondaryColorId = proposedMetrics.secondaryPaletteColorId,
-                    )
-                }
+                matches.toColorMetrics()
+            } else {
+                item.colorMetrics
+            }
+            if (needsManualRemap || item.isAffectedBy(changeSet, proposedMetrics)) {
+                candidates += ColorReviewCandidate(
+                    item = item,
+                    proposedMetrics = proposedMetrics,
+                    editablePrimaryColorId = item.initialReviewColorId(
+                        changeSet = changeSet,
+                        proposedColorId = proposedMetrics.primaryPaletteColorId,
+                        currentColorId = item.colorMetrics.primaryPaletteColorId,
+                        allowNoColor = false,
+                    ),
+                    editableSecondaryColorId = item.initialReviewColorId(
+                        changeSet = changeSet,
+                        proposedColorId = proposedMetrics.secondaryPaletteColorId,
+                        currentColorId = item.colorMetrics.secondaryPaletteColorId,
+                        allowNoColor = true,
+                    ),
+                )
             }
             processedCount += 1
         }
@@ -175,7 +190,7 @@ internal fun ColorReviewScreen(
 
     val unresolvedCount = candidates.size
     val canFinish = !isScanning && unresolvedCount == 0
-    val totalCount = eligibleItems.size.coerceAtLeast(1)
+    val totalCount = reviewItems.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
     val animatedProgress by animateFloatAsState(
         targetValue = if (isScanning) progress else 1f,
@@ -200,14 +215,14 @@ internal fun ColorReviewScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 ColorReviewProgressHeader(
                     processedCount = processedCount,
-                    totalCount = eligibleItems.size,
+                    totalCount = reviewItems.size,
                     progress = animatedProgress,
                 )
             }
 
             if (!isScanning && candidates.isEmpty() && acceptedItems.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    ColorReviewEmptyCard(hasEligibleItems = eligibleItems.isNotEmpty())
+                    ColorReviewEmptyCard(hasEligibleItems = reviewItems.isNotEmpty())
                 }
             }
 
@@ -253,10 +268,7 @@ internal fun ColorReviewScreen(
                 .fillMaxWidth(),
         ) {
             Button(
-                onClick = {
-                    if (acceptedItems.isNotEmpty()) onApplyChanges(acceptedItems)
-                    onDone()
-                },
+                onClick = { onCommit(changeSet, acceptedItems) },
                 enabled = canFinish,
                 modifier = Modifier
                     .padding(24.dp)
@@ -667,6 +679,46 @@ private fun ClothingItem.isAffectedBy(
     val referencesTouchedColor = touched != null &&
         (current.primaryPaletteColorId == touched || current.secondaryPaletteColorId == touched)
     return referencesTouchedColor || current.colorReviewSignature() != proposedMetrics.colorReviewSignature()
+}
+
+private fun ClothingItem.needsManualPaletteRemap(changeSet: ColorPaletteChangeSet): Boolean {
+    if (!changeSet.requiresCommitOnSave) return false
+    val afterPaletteById = changeSet.afterPalette.associateBy(MainColor::id)
+    val current = colorMetrics
+    return current.primaryPaletteColorId.requiresPaletteUpdate(
+        paletteById = afterPaletteById,
+        snapshotName = current.primaryPaletteColorName,
+        snapshotHex = current.primaryPaletteColorHex,
+        touchedColorId = changeSet.touchedColorId,
+    ) || current.secondaryPaletteColorId.requiresPaletteUpdate(
+        paletteById = afterPaletteById,
+        snapshotName = current.secondaryPaletteColorName,
+        snapshotHex = current.secondaryPaletteColorHex,
+        touchedColorId = changeSet.touchedColorId,
+    )
+}
+
+private fun String?.requiresPaletteUpdate(
+    paletteById: Map<String, MainColor>,
+    snapshotName: String?,
+    snapshotHex: String?,
+    touchedColorId: String?,
+): Boolean {
+    val id = this ?: return false
+    val paletteColor = paletteById[id] ?: return true
+    return id == touchedColorId || paletteColor.name != snapshotName || paletteColor.hex != snapshotHex
+}
+
+private fun ClothingItem.initialReviewColorId(
+    changeSet: ColorPaletteChangeSet,
+    proposedColorId: String?,
+    currentColorId: String?,
+    allowNoColor: Boolean,
+): String? {
+    val afterPaletteIds = changeSet.afterPalette.map(MainColor::id).toSet()
+    proposedColorId?.takeIf { id -> id in afterPaletteIds }?.let { return it }
+    currentColorId?.takeIf { id -> id in afterPaletteIds }?.let { return it }
+    return if (allowNoColor) null else changeSet.afterPalette.firstOrNull()?.id
 }
 
 private fun ClothingColorMetrics.colorReviewSignature(): List<String?> = listOf(

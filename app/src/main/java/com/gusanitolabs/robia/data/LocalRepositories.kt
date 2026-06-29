@@ -75,6 +75,20 @@ class LocalTagRepository(
         tagDao.upsertMainColor(color.toEntity())
     }
 
+    override suspend fun applyMainColorChange(
+        upsertColors: List<MainColor>,
+        deleteColorIds: List<String>,
+        updatedItems: List<ClothingItem>,
+    ) {
+        tagDao.applyMainColorChange(
+            upsertColors = upsertColors.map(MainColor::toEntity),
+            deleteColorIds = deleteColorIds,
+            updatedItems = updatedItems.map(ClothingItem::toEntity),
+            tagIdsByItemId = updatedItems.associate { item -> item.id to item.tags.map(GarmentTag::id) },
+            tombstones = deleteColorIds.map { id -> syncTombstone(entityType = "main_color", entityId = id) },
+        )
+    }
+
     override suspend fun deleteCustomTag(id: String) {
         if (tagDao.deleteCustomTag(id) > 0) {
             syncTombstoneDao?.upsert(syncTombstone(entityType = "garment_tag", entityId = id))

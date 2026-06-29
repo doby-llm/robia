@@ -371,6 +371,17 @@ fun RobiaApp(
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
                 }
             },
+            onCommitMainColorChange = { changeSet, updatedItems ->
+                scope.launch {
+                    tagRepository.applyMainColorChange(
+                        upsertColors = changeSet.colorsToUpsertForCommit(),
+                        deleteColorIds = changeSet.colorIdsToDeleteForCommit(),
+                        updatedItems = updatedItems,
+                    )
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(changeSet.afterPalette))
+                    updatedItems.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
+                }
+            },
         )
         }
     }
@@ -416,6 +427,28 @@ private fun LocalizedRobiaContent(
     }
 }
 
+private fun ColorPaletteChangeSet.colorsToUpsertForCommit(): List<MainColor> = when (operation) {
+    ColorPaletteOperation.Added,
+    ColorPaletteOperation.Edited -> afterPalette.filter { color -> color.id == touchedColorId }
+    ColorPaletteOperation.Deleted -> emptyList()
+    ColorPaletteOperation.RestoredDefault -> afterPalette
+}
+
+private fun ColorPaletteChangeSet.colorIdsToDeleteForCommit(): List<String> = when (operation) {
+    ColorPaletteOperation.Deleted -> listOfNotNull(touchedColorId)
+    ColorPaletteOperation.RestoredDefault -> {
+        val restoredIds = afterPalette.map(MainColor::id).toSet()
+        beforePalette.map(MainColor::id).filterNot(restoredIds::contains)
+    }
+    ColorPaletteOperation.Added,
+    ColorPaletteOperation.Edited -> emptyList()
+}
+
+private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean = any { item ->
+    val metrics = item.colorMetrics
+    !item.isArchived && (metrics.primaryPaletteColorId == colorId || metrics.secondaryPaletteColorId == colorId)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RobiaShell(
@@ -437,6 +470,7 @@ private fun RobiaShell(
     onDeleteMainColor: (MainColor) -> Unit,
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
+    onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
 ) {
     val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
     val currentRoute = routeStack.last()
@@ -564,45 +598,72 @@ private fun RobiaShell(
 
     fun saveMainColorAndOfferReview(color: MainColor) {
         val beforePalette = mainColors
-        val operation = if (beforePalette.any { existing -> existing.id == color.id }) {
-            ColorPaletteOperation.Edited
-        } else {
-            ColorPaletteOperation.Added
-        }
+        val existingColor = beforePalette.firstOrNull { existing -> existing.id == color.id }
+        val operation = if (existingColor != null) ColorPaletteOperation.Edited else ColorPaletteOperation.Added
         val afterPalette = (beforePalette.filterNot { existing -> existing.id == color.id } + color)
             .sortedWith(compareBy<MainColor> { it.sortOrder }.thenBy { it.name }.thenBy { it.id })
-        onSaveMainColor(color)
-        pendingColorReviewChangeSet = ColorPaletteChangeSet(
+        val changeSet = ColorPaletteChangeSet(
             beforePalette = beforePalette,
             afterPalette = afterPalette,
             touchedColorId = color.id,
             operation = operation,
+            requiresCommitOnSave = existingColor?.let { previous ->
+                (previous.name != color.name || previous.hex != color.hex) && clothingItems.referencesPaletteColor(color.id)
+            } ?: false,
         )
+        if (changeSet.requiresCommitOnSave) {
+            pendingColorReviewChangeSet = null
+            activeColorReviewChangeSet = changeSet
+            replaceRoute(RobiaRoute.ColorReview)
+        } else {
+            onSaveMainColor(color)
+            pendingColorReviewChangeSet = changeSet
+        }
     }
 
     fun deleteMainColorAndOfferReview(color: MainColor) {
         val beforePalette = mainColors
         val afterPalette = beforePalette.filterNot { existing -> existing.id == color.id }
-        onDeleteMainColor(color)
-        pendingColorReviewChangeSet = ColorPaletteChangeSet(
+        val changeSet = ColorPaletteChangeSet(
             beforePalette = beforePalette,
             afterPalette = afterPalette,
             touchedColorId = color.id,
             operation = ColorPaletteOperation.Deleted,
+            requiresCommitOnSave = clothingItems.referencesPaletteColor(color.id),
         )
+        if (changeSet.requiresCommitOnSave) {
+            pendingColorReviewChangeSet = null
+            activeColorReviewChangeSet = changeSet
+            replaceRoute(RobiaRoute.ColorReview)
+        } else {
+            onDeleteMainColor(color)
+            pendingColorReviewChangeSet = changeSet
+        }
     }
 
     fun restoreDefaultMainColorsAndStartReview() {
         val beforePalette = mainColors
-        onRestoreDefaultMainColors()
         pendingColorReviewChangeSet = null
         activeColorReviewChangeSet = ColorPaletteChangeSet(
             beforePalette = beforePalette,
             afterPalette = DefaultTags.mainColors,
             touchedColorId = null,
             operation = ColorPaletteOperation.RestoredDefault,
+            requiresCommitOnSave = true,
         )
         replaceRoute(RobiaRoute.ColorReview)
+    }
+
+    fun commitColorReview(changeSet: ColorPaletteChangeSet, updatedItems: List<ClothingItem>) {
+        if (changeSet.requiresCommitOnSave) {
+            onCommitMainColorChange(changeSet, updatedItems)
+        } else if (updatedItems.isNotEmpty()) {
+            onSaveItems(updatedItems)
+        }
+        activeColorReviewChangeSet = null
+        pendingColorReviewChangeSet = null
+        showColorReviewDiscardDialog = false
+        replaceRoute(RobiaRoute.Browse)
     }
 
     fun requestColorReviewDiscard() {
@@ -611,11 +672,13 @@ private fun RobiaShell(
 
     fun discardColorReviewAndRollbackPalette() {
         val changeSet = activeColorReviewChangeSet ?: return
-        val beforeColorIds = changeSet.beforePalette.map(MainColor::id).toSet()
-        changeSet.afterPalette
-            .filterNot { color -> color.id in beforeColorIds }
-            .forEach(onDeleteMainColor)
-        changeSet.beforePalette.forEach(onSaveMainColor)
+        if (!changeSet.requiresCommitOnSave) {
+            val beforeColorIds = changeSet.beforePalette.map(MainColor::id).toSet()
+            changeSet.afterPalette
+                .filterNot { color -> color.id in beforeColorIds }
+                .forEach(onDeleteMainColor)
+            changeSet.beforePalette.forEach(onSaveMainColor)
+        }
         pendingColorReviewChangeSet = null
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
@@ -922,7 +985,7 @@ private fun RobiaShell(
             onDeleteMainColor = ::deleteMainColorAndOfferReview,
             onRestoreDefaultTags = onRestoreDefaultTags,
             onRestoreDefaultMainColors = ::restoreDefaultMainColorsAndStartReview,
-            onApplyColorReviewChanges = onSaveItems,
+            onCommitColorReview = ::commitColorReview,
             onCloseColorReview = {
                 activeColorReviewChangeSet = null
                 replaceRoute(RobiaRoute.Browse)
@@ -1245,7 +1308,7 @@ private fun RobiaNavHost(
     onDeleteMainColor: (MainColor) -> Unit,
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
-    onApplyColorReviewChanges: (List<ClothingItem>) -> Unit,
+    onCommitColorReview: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
 ) {
@@ -1281,8 +1344,7 @@ private fun RobiaNavHost(
                 innerPadding = innerPadding,
                 items = domainItems,
                 changeSet = changeSet,
-                onApplyChanges = onApplyColorReviewChanges,
-                onDone = onCloseColorReview,
+                onCommit = onCommitColorReview,
                 onRequestDiscard = onRequestColorReviewDiscard,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
@@ -2620,6 +2682,7 @@ private fun RobiaAppPreview() {
             onDeleteMainColor = {},
             onRestoreDefaultTags = {},
             onRestoreDefaultMainColors = {},
+            onCommitMainColorChange = { _, _ -> },
         )
     }
 }
