@@ -5,6 +5,17 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val robiaDebugKeystorePath = System.getenv("ROBIA_DEBUG_KEYSTORE_PATH")
+val robiaDebugKeystorePassword = System.getenv("ROBIA_DEBUG_KEYSTORE_PASSWORD")
+val robiaDebugKeyAlias = System.getenv("ROBIA_DEBUG_KEY_ALIAS")
+val robiaDebugKeyPassword = System.getenv("ROBIA_DEBUG_KEY_PASSWORD")
+val hasRobiaCiDebugSigning = listOf(
+    robiaDebugKeystorePath,
+    robiaDebugKeystorePassword,
+    robiaDebugKeyAlias,
+    robiaDebugKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.gusanitolabs.robia"
     compileSdk = 35
@@ -21,7 +32,24 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasRobiaCiDebugSigning) {
+            create("robiaCiDebug") {
+                storeFile = file(robiaDebugKeystorePath!!)
+                storePassword = robiaDebugKeystorePassword!!
+                keyAlias = robiaDebugKeyAlias!!
+                keyPassword = robiaDebugKeyPassword!!
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (hasRobiaCiDebugSigning) {
+                signingConfig = signingConfigs.getByName("robiaCiDebug")
+            }
+        }
+
         release {
             isMinifyEnabled = false
             proguardFiles(

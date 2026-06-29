@@ -45,6 +45,39 @@ jobs:
       - name: Check bundled TFLite model drift
         run: python scripts/check_additional_info_tflite_drift.py
 
+      - name: Configure stable CI debug signing key
+        run: |
+          set -euo pipefail
+          if [ -z "${ROBIA_DEBUG_KEYSTORE_BASE64:-}" ]; then
+            echo "No stable CI debug keystore secret configured; Gradle will use the default debug signing key."
+            exit 0
+          fi
+          for required in ROBIA_DEBUG_KEYSTORE_PASSWORD ROBIA_DEBUG_KEY_ALIAS ROBIA_DEBUG_KEY_PASSWORD; do
+            if [ -z "${!required:-}" ]; then
+              echo "${required} is required when ROBIA_DEBUG_KEYSTORE_BASE64 is set" >&2
+              exit 1
+            fi
+          done
+          signing_dir="${RUNNER_TEMP}/robia-debug-signing"
+          mkdir -p "${signing_dir}"
+          keystore_path="${signing_dir}/robia-ci-debug.jks"
+          printf '%s' "${ROBIA_DEBUG_KEYSTORE_BASE64}" | base64 --decode > "${keystore_path}"
+          chmod 600 "${keystore_path}"
+          echo "ROBIA_DEBUG_KEYSTORE_PATH=${keystore_path}" >> "${GITHUB_ENV}"
+          echo "ROBIA_DEBUG_KEYSTORE_PASSWORD=${ROBIA_DEBUG_KEYSTORE_PASSWORD}" >> "${GITHUB_ENV}"
+          echo "ROBIA_DEBUG_KEY_ALIAS=${ROBIA_DEBUG_KEY_ALIAS}" >> "${GITHUB_ENV}"
+          echo "ROBIA_DEBUG_KEY_PASSWORD=${ROBIA_DEBUG_KEY_PASSWORD}" >> "${GITHUB_ENV}"
+          echo "Stable CI debug signing key configured. Register this SHA-1 for GitHub Actions debug APK OAuth testing:"
+          keytool -list -v \
+            -keystore "${keystore_path}" \
+            -storepass "${ROBIA_DEBUG_KEYSTORE_PASSWORD}" \
+            -alias "${ROBIA_DEBUG_KEY_ALIAS}" | grep -E 'SHA1:|SHA256:'
+        env:
+          ROBIA_DEBUG_KEYSTORE_BASE64: ${{ secrets.ROBIA_DEBUG_KEYSTORE_BASE64 }}
+          ROBIA_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ROBIA_DEBUG_KEYSTORE_PASSWORD }}
+          ROBIA_DEBUG_KEY_ALIAS: ${{ secrets.ROBIA_DEBUG_KEY_ALIAS }}
+          ROBIA_DEBUG_KEY_PASSWORD: ${{ secrets.ROBIA_DEBUG_KEY_PASSWORD }}
+
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
