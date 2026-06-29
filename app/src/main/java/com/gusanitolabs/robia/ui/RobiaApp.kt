@@ -265,6 +265,29 @@ private data class CloudSetupGuard(
         get() = !hasUnsafeLocalState
 }
 
+private fun TagCategory.isCustomOrModifiedDefault(): Boolean {
+    val defaultCategory = DefaultTags.categories.firstOrNull { category -> category.id == id }
+    return !isSystem || defaultCategory == null ||
+        name != defaultCategory.name ||
+        sortOrder != defaultCategory.sortOrder
+}
+
+private fun GarmentTag.isCustomOrModifiedDefault(): Boolean {
+    val defaultTag = DefaultTags.tags.firstOrNull { tag -> tag.id == id }
+    return !isSystem || defaultTag == null ||
+        categoryId != defaultTag.categoryId ||
+        name != defaultTag.name ||
+        sortOrder != defaultTag.sortOrder
+}
+
+private fun MainColor.isCustomOrModifiedDefault(): Boolean {
+    val defaultColor = DefaultTags.mainColors.firstOrNull { color -> color.id == id }
+    return !isDefault || defaultColor == null ||
+        name != defaultColor.name ||
+        hex != defaultColor.hex ||
+        sortOrder != defaultColor.sortOrder
+}
+
 private enum class CloudSetupDialogMode {
     RecommendedFirstRun,
     LateEnableBlocked,
@@ -282,6 +305,7 @@ fun RobiaApp(
     wardrobeRepository: WardrobeRepository,
     tagRepository: TagRepository,
     syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
+    onRequestCloudSetup: () -> Unit = {},
 ) {
     val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
@@ -313,6 +337,10 @@ fun RobiaApp(
             onDeveloperModeEnabledChange = { enabled ->
                 scope.launch { settingsRepository.setDeveloperModeEnabled(enabled) }
             },
+            onCloudSetupPromptInteracted = {
+                scope.launch { settingsRepository.markCloudSetupPromptInteracted() }
+            },
+            onRequestCloudSetup = onRequestCloudSetup,
             onSaveItem = { item ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -461,6 +489,8 @@ private fun RobiaShell(
     onLanguageSelected: (LanguagePreference) -> Unit,
     onDeveloperModeUnlocked: () -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
+    onCloudSetupPromptInteracted: () -> Unit,
+    onRequestCloudSetup: () -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
@@ -489,7 +519,6 @@ private fun RobiaShell(
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
-    var hasShownFirstRunCloudPrompt by remember { mutableStateOf(false) }
     val items = clothingItems.toUiWardrobeItems(settings.driveSyncConnectionStatus)
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
@@ -499,21 +528,24 @@ private fun RobiaShell(
     val cloudSetupGuard = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
         CloudSetupGuard(
             garmentCount = clothingItems.size,
-            customTagCount = availableTags.count { tag -> !tag.isSystem },
-            customCategoryCount = tagCategories.count { category -> !category.isSystem },
-            customColorCount = mainColors.count { color -> !color.isDefault },
+            customTagCount = availableTags.count(GarmentTag::isCustomOrModifiedDefault),
+            customCategoryCount = tagCategories.count(TagCategory::isCustomOrModifiedDefault),
+            customColorCount = mainColors.count(MainColor::isCustomOrModifiedDefault),
             taggedGarmentCount = clothingItems.count { item -> item.tags.isNotEmpty() },
             pendingOperationCount = syncState.pendingOperationCount,
             hasConflictingAccountBinding = syncState.hasConflictingAccountBinding,
         )
     }
 
-    LaunchedEffect(settings.driveSyncConnectionStatus, cloudSetupGuard.isFirstRunRecommendation) {
-        if (!hasShownFirstRunCloudPrompt &&
+    LaunchedEffect(
+        settings.driveSyncConnectionStatus,
+        settings.cloudSetupPromptInteracted,
+        cloudSetupGuard.isFirstRunRecommendation,
+    ) {
+        if (!settings.cloudSetupPromptInteracted &&
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
-            hasShownFirstRunCloudPrompt = true
             cloudSetupDialogMode = CloudSetupDialogMode.RecommendedFirstRun
         }
     }
@@ -700,10 +732,23 @@ private fun RobiaShell(
     }
 
     fun requestCloudSetup() {
-        cloudSetupDialogMode = if (cloudSetupGuard.hasUnsafeLocalState) {
-            CloudSetupDialogMode.LateEnableBlocked
+        if (cloudSetupGuard.hasUnsafeLocalState) {
+            cloudSetupDialogMode = CloudSetupDialogMode.LateEnableBlocked
         } else {
-            CloudSetupDialogMode.RecommendedFirstRun
+            onRequestCloudSetup()
+        }
+    }
+
+    fun dismissCloudSetupPrompt() {
+        onCloudSetupPromptInteracted()
+        cloudSetupDialogMode = null
+    }
+
+    fun confirmCloudSetupPrompt() {
+        onCloudSetupPromptInteracted()
+        cloudSetupDialogMode = null
+        if (!cloudSetupGuard.hasUnsafeLocalState) {
+            onRequestCloudSetup()
         }
     }
 
@@ -782,7 +827,12 @@ private fun RobiaShell(
         CloudSetupDialog(
             mode = mode,
             guard = cloudSetupGuard,
-            onDismiss = { cloudSetupDialogMode = null },
+            onDismiss = if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
+                ::dismissCloudSetupPrompt
+            } else {
+                { cloudSetupDialogMode = null }
+            },
+            onConfirmSetup = ::confirmCloudSetupPrompt,
         )
     }
 
@@ -1089,6 +1139,7 @@ private fun CloudSetupDialog(
     mode: CloudSetupDialogMode,
     guard: CloudSetupGuard,
     onDismiss: () -> Unit,
+    onConfirmSetup: () -> Unit,
 ) {
     val titleRes = when (mode) {
         CloudSetupDialogMode.RecommendedFirstRun -> R.string.cloud_setup_prompt_title
@@ -1128,11 +1179,13 @@ private fun CloudSetupDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = if (mode == CloudSetupDialogMode.RecommendedFirstRun) onConfirmSetup else onDismiss,
+            ) {
                 Text(
                     stringResource(
                         if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
-                            R.string.cloud_setup_configure_when_available
+                            R.string.cloud_setup_set_up
                         } else {
                             R.string.done
                         },
@@ -2673,6 +2726,8 @@ private fun RobiaAppPreview() {
             onLanguageSelected = {},
             onDeveloperModeUnlocked = {},
             onDeveloperModeEnabledChange = {},
+            onCloudSetupPromptInteracted = {},
+            onRequestCloudSetup = {},
             onSaveItem = {},
             onSaveItems = {},
             onDeleteItems = {},

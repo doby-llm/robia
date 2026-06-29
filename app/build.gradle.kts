@@ -87,6 +87,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.mlkit.subject.segmentation)
+    implementation(libs.play.services.auth)
     implementation(libs.tensorflow.lite)
     implementation(libs.skydoves.colorpicker.compose)
 

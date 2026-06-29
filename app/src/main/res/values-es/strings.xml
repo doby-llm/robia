@@ -18,7 +18,9 @@
     <string name="cloud_setup_late_blocked_summary">Bloqueada tras cambios locales en el armario</string>
     <string name="cloud_setup_prompt_title">¿Configurar la copia en la nube ahora?</string>
     <string name="cloud_setup_prompt_body">Robia recomienda activar Google Drive antes de añadir prendas. Así la primera copia en la nube queda limpia y se evitan decisiones de fusión inseguras más adelante.</string>
-    <string name="cloud_setup_configure_when_available">Configurar cuando esté disponible</string>
+    <string name="cloud_setup_configure_when_available">Configurar</string>
+    <string name="cloud_setup_set_up">Configurar</string>
+    <string name="cloud_setup_launch_failed">No se pudo abrir la configuración de Google Drive. Comprueba Google Play Services e inténtalo de nuevo.</string>
     <string name="cloud_setup_late_blocked_title">La configuración en la nube está bloqueada</string>
     <string name="cloud_setup_late_blocked_body">Este armario ya tiene datos locales. Robia aún no tiene una ruta de fusión segura, por lo que la configuración tardía de la nube está desactivada para evitar sobrescribir prendas, etiquetas, colores o cambios pendientes.</string>
     <string name="cloud_setup_blocked_detail">Estado local: %1$d prendas, %2$d entradas de taxonomía personalizadas, %3$d colores personalizados, %4$d operaciones de sincronización pendientes.</string>

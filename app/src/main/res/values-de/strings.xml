@@ -18,7 +18,9 @@
     <string name="cloud_setup_late_blocked_summary">Nach lokalen Änderungen an der Garderobe gesperrt</string>
     <string name="cloud_setup_prompt_title">Cloud-Sicherung jetzt einrichten?</string>
     <string name="cloud_setup_prompt_body">Robia empfiehlt, Google Drive zu aktivieren, bevor du Kleidungsstücke hinzufügst. So bleibt die erste Cloud-Kopie sauber und unsichere Zusammenführungen werden später vermieden.</string>
-    <string name="cloud_setup_configure_when_available">Einrichten, sobald verfügbar</string>
+    <string name="cloud_setup_configure_when_available">Einrichten</string>
+    <string name="cloud_setup_set_up">Einrichten</string>
+    <string name="cloud_setup_launch_failed">Die Google-Drive-Einrichtung konnte nicht geöffnet werden. Prüfe Google Play Dienste und versuche es erneut.</string>
     <string name="cloud_setup_late_blocked_title">Cloud-Einrichtung ist gesperrt</string>
     <string name="cloud_setup_late_blocked_body">Diese Garderobe enthält bereits lokale Daten. Robia hat noch keinen sicheren Zusammenführungsweg, daher ist die späte Cloud-Einrichtung deaktiviert, um Kleidungsstücke, Tags, Farben oder ausstehende Änderungen nicht zu überschreiben.</string>
     <string name="cloud_setup_blocked_detail">Lokaler Stand: %1$d Kleidungsstücke, %2$d benutzerdefinierte Taxonomieeinträge, %3$d benutzerdefinierte Farben, %4$d ausstehende Synchronisierungsvorgänge.</string>

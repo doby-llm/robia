@@ -18,7 +18,9 @@
     <string name="cloud_setup_late_blocked_summary">Locked after local wardrobe changes</string>
     <string name="cloud_setup_prompt_title">Set up cloud backup now?</string>
     <string name="cloud_setup_prompt_body">Robia recommends enabling Google Drive before you add garments. This keeps the first cloud copy clean and avoids unsafe merge decisions later.</string>
-    <string name="cloud_setup_configure_when_available">Set up when available</string>
+    <string name="cloud_setup_configure_when_available">Set up</string>
+    <string name="cloud_setup_set_up">Set up</string>
+    <string name="cloud_setup_launch_failed">Google Drive setup could not be opened. Check Google Play services and try again.</string>
     <string name="cloud_setup_late_blocked_title">Cloud setup is locked</string>
     <string name="cloud_setup_late_blocked_body">This wardrobe already has local data. Robia does not have a safe merge path yet, so late cloud setup is disabled to avoid overwriting garments, tags, colors, or pending changes.</string>
     <string name="cloud_setup_blocked_detail">Local state: %1$d garments, %2$d custom taxonomy entries, %3$d custom colors, %4$d pending sync operations.</string>

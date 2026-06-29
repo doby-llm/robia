@@ -15,6 +15,7 @@ interface SettingsRepository {
     suspend fun setLanguagePreference(languagePreference: LanguagePreference)
     suspend fun setDeveloperModeUnlocked(unlocked: Boolean)
     suspend fun setDeveloperModeEnabled(enabled: Boolean)
+    suspend fun markCloudSetupPromptInteracted()
 }
 
 class DataStoreSettingsRepository(
@@ -26,6 +27,7 @@ class DataStoreSettingsRepository(
             languagePreference = preferences[languageKey].toLanguagePreference(),
             developerModeUnlocked = developerModeUnlocked,
             developerModeEnabled = developerModeUnlocked && (preferences[developerModeEnabledKey] ?: false),
+            cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false,
         )
     }
 
@@ -54,6 +56,12 @@ class DataStoreSettingsRepository(
         }
     }
 
+    override suspend fun markCloudSetupPromptInteracted() {
+        dataStore.edit { preferences ->
+            preferences[cloudSetupPromptInteractedKey] = true
+        }
+    }
+
     private fun String?.toLanguagePreference(): LanguagePreference =
         LanguagePreference.entries.firstOrNull { it.storageValue == this } ?: LanguagePreference.System
 
@@ -61,5 +69,6 @@ class DataStoreSettingsRepository(
         val languageKey = stringPreferencesKey("language")
         val developerModeUnlockedKey = booleanPreferencesKey("developer_mode_unlocked")
         val developerModeEnabledKey = booleanPreferencesKey("developer_mode_enabled")
+        val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
     }
 }
