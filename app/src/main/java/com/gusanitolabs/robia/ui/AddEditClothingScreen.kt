@@ -399,7 +399,6 @@ fun AddEditClothingScreen(
 
     val isEditing = existingItem != null
     val initialFitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
-    val deleteItemName = existingItem?.displayFallbackName() ?: stringResource(R.string.untitled_item)
     val developerExportNoPhotoStatus = stringResource(R.string.developer_export_input_image_no_photo)
     val developerExportSavedStatus = stringResource(R.string.developer_export_input_image_saved)
     val developerExportErrorStatus = stringResource(R.string.developer_export_input_image_error)
@@ -479,7 +478,7 @@ fun AddEditClothingScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.delete_item_title)) },
-            text = { Text(stringResource(R.string.delete_item_body, deleteItemName)) },
+            text = { Text(stringResource(R.string.delete_item_body)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -724,14 +723,6 @@ private fun DeveloperDiagnosticsSection(
         )
     }
 }
-
-@Composable
-private fun ClothingItem.displayFallbackName(): String =
-    name.ifBlank {
-        tags.firstOrNull { tag -> tag.categoryId == "category" }?.localizedTagLabel()
-            ?: colorMetrics.primaryDisplayLabel?.localizedLabel()
-            ?: stringResource(R.string.untitled_item)
-    }
 
 private fun addDetectionDebugLines(
     lines: MutableList<String>,
@@ -1185,11 +1176,6 @@ fun ClothingDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = item.name,
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
                             if (item.notes.isNotBlank()) {
                                 Text(
                                     text = item.notes,

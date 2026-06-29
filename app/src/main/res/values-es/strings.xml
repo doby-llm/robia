@@ -119,8 +119,6 @@
     <string name="edit_clothing_title">Editar prenda</string>
     <string name="add_edit_body">Captura una foto de la prenda, conserva colores manuales y añade etiquetas al armario local.</string>
     <string name="item_details_section">Detalles de la prenda</string>
-    <string name="item_name_label">Nombre de la prenda</string>
-    <string name="item_name_placeholder">p. ej., Jersey de lana mostaza</string>
     <string name="item_notes_label">Descripción</string>
     <string name="item_notes_placeholder">Añade notas, tejido, marca o cualquier detalle útil (opcional)</string>
     <string name="item_name_required_to_save">Revisión necesaria antes de guardar.</string>
@@ -191,22 +189,18 @@
     <string name="batch_save_items">Guardar %1$d prendas</string>
     <string name="batch_status_queued">En cola</string>
     <string name="batch_status_processing">Procesando</string>
-    <string name="batch_status_needs_name">Requiere revisión</string>
     <string name="batch_status_needs_review">Requiere revisión</string>
     <string name="batch_status_ready">Lista</string>
     <string name="batch_status_failed">Falló</string>
     <string name="batch_helper_processing">Procesando %1$d prendas…</string>
     <string name="batch_helper_failed">Resuelve %1$d prendas fallidas.</string>
-    <string name="batch_helper_needs_name">Revisa %1$d prendas más para guardar.</string>
     <string name="batch_helper_needs_review">Revisa %1$d prendas con foto original antes de guardar.</string>
     <string name="batch_original_fallback_message">Falló el retoque de foto. Se conservó la foto original: abre la prenda para reintentar o conservarla.</string>
     <string name="batch_helper_empty">Elige varias fotos de galería para iniciar un lote.</string>
     <string name="batch_helper_ready">Listo para guardar %1$d prendas.</string>
     <string name="batch_discard_title">¿Descartar este lote?</string>
     <string name="batch_discard_body">Las fotos procesadas y los detalles no se guardarán.</string>
-    <string name="batch_draft_unnamed">Prenda %1$d</string>
-    <string name="batch_tile_content_description">Prenda %1$d de %2$d, %3$s.</string>
-    <string name="untitled_item">Prenda sin título</string>
+    <string name="batch_tile_content_description">Foto %1$d de %2$d, %3$s.</string>
     <string name="language_settings_title">Idioma</string>
     <string name="language_settings_body">Robia sigue el idioma del sistema por defecto y está preparada para inglés, español y alemán.</string>
     <string name="advanced_filters_title">Filtros avanzados</string>
@@ -254,7 +248,7 @@
     <string name="save">Guardar</string>
     <string name="delete">Eliminar</string>
     <string name="delete_item_title">¿Eliminar prenda?</string>
-    <string name="delete_item_body">¿Eliminar «%1$s» de tu armario?</string>
+    <string name="delete_item_body">¿Eliminar esta prenda de tu armario?</string>
     <string name="delete_selected_items_title">¿Eliminar prendas seleccionadas?</string>
     <string name="delete_selected_items_body">¿Eliminar %1$d prendas seleccionadas de tu armario?</string>
     <string name="browse_selection_count">%1$d seleccionadas</string>
@@ -330,7 +324,6 @@
     <string name="not_now">Ahora no</string>
     <string name="done">Listo</string>
     <string name="accept">Aceptar</string>
-    <string name="reject">Rechazar</string>
     <string name="color_review_title">Mapeo de colores</string>
     <string name="color_review_prompt_title">¿Revisar los colores del armario?</string>
     <string name="color_review_prompt_body">Robia puede volver a comprobar las prendas activas con fotos válidas frente a tu paleta actualizada. Tú eliges qué cambios conservar.</string>
@@ -349,7 +342,6 @@
     <string name="color_review_no_eligible_body">Añade una prenda activa con una foto válida antes de revisar mapeos de color.</string>
     <string name="color_review_suggested_colors">Colores sugeridos</string>
     <string name="color_review_chip_description">Color %1$s, propuesta %2$s</string>
-    <string name="color_review_rejected_undo">Rechazado · Deshacer</string>
     <string name="undo">Deshacer</string>
     <string name="color_review_discard_title">¿Descartar actualizaciones de color?</string>
     <string name="color_review_discard_body">Al salir se descartarán todas las actualizaciones de color pendientes y los cambios en la paleta de colores.</string>

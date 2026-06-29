@@ -1447,20 +1447,13 @@ private fun ItemDetailScreen(
                 },
             )
         }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item.notes.takeIf { it.isNotBlank() }?.let { description ->
+            item {
                 Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                item.notes.takeIf { it.isNotBlank() }?.let { description ->
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
         item { ColorMetricsCard(item) }
@@ -2282,20 +2275,12 @@ private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
 }
 
 @Composable
-private fun ClothingItem.displayTitle(): String =
-    name.ifBlank {
-        tags.firstOrNull { tag -> tag.categoryId == "category" }?.localizedLabel()
-            ?: colorMetrics.primaryDisplayLabel?.localizedLabel()
-            ?: stringResource(R.string.untitled_item)
-    }
-
-@Composable
 private fun List<ClothingItem>.toUiWardrobeItems(
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
 ): List<UiWardrobeItem> = map { item ->
     UiWardrobeItem(
         id = item.id,
-        name = item.displayTitle(),
+        name = "",
         subtitle = item.notes.ifBlank { stringResource(driveSyncConnectionStatus.itemStatusLabelRes) },
         notes = item.notes,
         photoUri = item.photoUri,

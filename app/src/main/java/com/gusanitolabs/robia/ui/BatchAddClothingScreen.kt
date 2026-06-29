@@ -205,7 +205,6 @@ internal fun BatchAddClothingScreen(
             items(drafts, key = BatchDraftItem::id) { draft ->
                 BatchDraftTile(
                     draft = draft,
-                    availableTags = availableTags,
                     position = draft.orderIndex + 1,
                     totalCount = drafts.size,
                     onClick = {
@@ -307,20 +306,8 @@ private fun BatchProgressBar(progress: Float) {
 }
 
 @Composable
-private fun BatchDraftItem.displayTitle(
-    availableTags: List<GarmentTag>,
-    position: Int,
-): String =
-    name.ifBlank {
-        availableTags.firstOrNull { tag -> tag.id in selectedTagIds && tag.categoryId == "category" }
-            ?.localizedTagLabel()
-            ?: stringResource(R.string.batch_draft_unnamed, position)
-    }
-
-@Composable
 private fun BatchDraftTile(
     draft: BatchDraftItem,
-    availableTags: List<GarmentTag>,
     position: Int,
     totalCount: Int,
     onClick: () -> Unit,
@@ -361,13 +348,6 @@ private fun BatchDraftTile(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = draft.displayTitle(availableTags, position),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
             Text(
                 text = draft.errorMessage ?: status,
                 style = MaterialTheme.typography.bodyMedium,

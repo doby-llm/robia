@@ -119,8 +119,6 @@
     <string name="edit_clothing_title">Kleidungsstück bearbeiten</string>
     <string name="add_edit_body">Erfasse ein Foto, bewahre manuelle Farbwerte und füge Tags zur lokalen Garderobe hinzu.</string>
     <string name="item_details_section">Kleidungsdetails</string>
-    <string name="item_name_label">Name des Kleidungsstücks</string>
-    <string name="item_name_placeholder">z. B. Senfgelber Wollpullover</string>
     <string name="item_notes_label">Beschreibung</string>
     <string name="item_notes_placeholder">Notizen, Stoff, Marke oder nützliche Details hinzufügen (optional)</string>
     <string name="item_name_required_to_save">Vor dem Speichern ist eine Prüfung nötig.</string>
@@ -191,22 +189,18 @@
     <string name="batch_save_items">%1$d Teile speichern</string>
     <string name="batch_status_queued">Wartet</string>
     <string name="batch_status_processing">Verarbeitung</string>
-    <string name="batch_status_needs_name">Prüfung nötig</string>
     <string name="batch_status_needs_review">Prüfung nötig</string>
     <string name="batch_status_ready">Bereit</string>
     <string name="batch_status_failed">Fehler</string>
     <string name="batch_helper_processing">%1$d Teile werden verarbeitet…</string>
     <string name="batch_helper_failed">Behebe %1$d fehlgeschlagene Teile.</string>
-    <string name="batch_helper_needs_name">Prüfe noch %1$d Teile zum Speichern.</string>
     <string name="batch_helper_needs_review">Prüfe %1$d Teile mit Originalfoto vor dem Speichern.</string>
     <string name="batch_original_fallback_message">Fotooptimierung fehlgeschlagen. Originalfoto beibehalten – öffne das Teil, um es erneut zu versuchen oder zu behalten.</string>
     <string name="batch_helper_empty">Wähle mehrere Galeriefotos, um einen Batch zu starten.</string>
     <string name="batch_helper_ready">Bereit, %1$d Teile zu speichern.</string>
     <string name="batch_discard_title">Diesen Batch verwerfen?</string>
     <string name="batch_discard_body">Verarbeitete Fotos und Details werden nicht gespeichert.</string>
-    <string name="batch_draft_unnamed">Teil %1$d</string>
-    <string name="batch_tile_content_description">Teil %1$d von %2$d, %3$s.</string>
-    <string name="untitled_item">Unbenanntes Kleidungsstück</string>
+    <string name="batch_tile_content_description">Foto %1$d von %2$d, %3$s.</string>
     <string name="language_settings_title">Sprache</string>
     <string name="language_settings_body">Robia folgt standardmäßig deiner Systemsprache und ist für Englisch, Spanisch und Deutsch vorbereitet.</string>
     <string name="advanced_filters_title">Erweiterte Filter</string>
@@ -254,7 +248,7 @@
     <string name="save">Speichern</string>
     <string name="delete">Löschen</string>
     <string name="delete_item_title">Kleidungsstück löschen?</string>
-    <string name="delete_item_body">„%1$s“ aus deinem Kleiderschrank löschen?</string>
+    <string name="delete_item_body">Dieses Kleidungsstück aus deinem Kleiderschrank löschen?</string>
     <string name="delete_selected_items_title">Ausgewählte Kleidungsstücke löschen?</string>
     <string name="delete_selected_items_body">%1$d ausgewählte Kleidungsstücke aus deinem Kleiderschrank löschen?</string>
     <string name="browse_selection_count">%1$d ausgewählt</string>
@@ -330,7 +324,6 @@
     <string name="not_now">Jetzt nicht</string>
     <string name="done">Fertig</string>
     <string name="accept">Akzeptieren</string>
-    <string name="reject">Ablehnen</string>
     <string name="color_review_title">Farbzuordnung</string>
     <string name="color_review_prompt_title">Garderobenfarben prüfen?</string>
     <string name="color_review_prompt_body">Robia kann aktive Kleidungsstücke mit nutzbaren Fotos mit deiner aktualisierten Palette abgleichen. Du entscheidest, welche Änderungen übernommen werden.</string>
@@ -349,7 +342,6 @@
     <string name="color_review_no_eligible_body">Füge ein aktives Kleidungsstück mit nutzbarem Foto hinzu, bevor du Farbzuordnungen prüfst.</string>
     <string name="color_review_suggested_colors">Vorgeschlagene Farben</string>
     <string name="color_review_chip_description">%1$s-Farbe, vorgeschlagen %2$s</string>
-    <string name="color_review_rejected_undo">Abgelehnt · Rückgängig</string>
     <string name="undo">Rückgängig</string>
     <string name="color_review_discard_title">Farbaktualisierungen verwerfen?</string>
     <string name="color_review_discard_body">Beim Verlassen werden alle ausstehenden Farbaktualisierungen und Änderungen an der Farbpalette verworfen.</string>

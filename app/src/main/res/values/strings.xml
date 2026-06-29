@@ -119,8 +119,6 @@
     <string name="edit_clothing_title">Edit clothing</string>
     <string name="add_edit_body">Capture a garment photo, preserve manual colors, and add tags for the local wardrobe.</string>
     <string name="item_details_section">Item details</string>
-    <string name="item_name_label">Item name</string>
-    <string name="item_name_placeholder">e.g., Mustard wool sweater</string>
     <string name="item_notes_label">Description</string>
     <string name="item_notes_placeholder">Add notes, fabric, brand, or anything useful (optional)</string>
     <string name="item_name_required_to_save">Review required before saving.</string>
@@ -191,22 +189,18 @@
     <string name="batch_save_items">Save %1$d items</string>
     <string name="batch_status_queued">Queued</string>
     <string name="batch_status_processing">Processing</string>
-    <string name="batch_status_needs_name">Needs review</string>
     <string name="batch_status_needs_review">Needs review</string>
     <string name="batch_status_ready">Ready</string>
     <string name="batch_status_failed">Failed</string>
     <string name="batch_helper_processing">Processing %1$d items…</string>
     <string name="batch_helper_failed">Resolve %1$d failed items.</string>
-    <string name="batch_helper_needs_name">Review %1$d more items to save.</string>
     <string name="batch_helper_needs_review">Review %1$d original-photo items before saving.</string>
     <string name="batch_original_fallback_message">Photo cleanup failed. Original photo kept — open to retry or keep it.</string>
     <string name="batch_helper_empty">Choose multiple gallery photos to start a batch.</string>
     <string name="batch_helper_ready">Ready to save %1$d items.</string>
     <string name="batch_discard_title">Discard this batch?</string>
     <string name="batch_discard_body">Processed photos and item details won’t be saved.</string>
-    <string name="batch_draft_unnamed">Item %1$d</string>
-    <string name="batch_tile_content_description">Item %1$d of %2$d, %3$s.</string>
-    <string name="untitled_item">Untitled item</string>
+    <string name="batch_tile_content_description">Photo %1$d of %2$d, %3$s.</string>
     <string name="language_settings_title">Language</string>
     <string name="language_settings_body">Robia follows your system language by default and is prepared for English, Spanish, and German.</string>
     <string name="advanced_filters_title">Advanced Filters</string>
@@ -254,7 +248,7 @@
     <string name="save">Save</string>
     <string name="delete">Delete</string>
     <string name="delete_item_title">Delete garment?</string>
-    <string name="delete_item_body">Delete “%1$s” from your wardrobe?</string>
+    <string name="delete_item_body">Delete this garment from your wardrobe?</string>
     <string name="delete_selected_items_title">Delete selected garments?</string>
     <string name="delete_selected_items_body">Delete %1$d selected garments from your wardrobe?</string>
     <string name="browse_selection_count">%1$d selected</string>
@@ -330,7 +324,6 @@
     <string name="not_now">Not now</string>
     <string name="done">Done</string>
     <string name="accept">Accept</string>
-    <string name="reject">Reject</string>
     <string name="color_review_title">Color Mapping</string>
     <string name="color_review_prompt_title">Review wardrobe colors?</string>
     <string name="color_review_prompt_body">Robia can re-check active garments with usable photos against your updated palette. You choose which changes to keep.</string>
@@ -349,7 +342,6 @@
     <string name="color_review_no_eligible_body">Add an active garment with a usable photo before reviewing color mappings.</string>
     <string name="color_review_suggested_colors">Suggested colors</string>
     <string name="color_review_chip_description">%1$s color, proposed %2$s</string>
-    <string name="color_review_rejected_undo">Rejected · Undo</string>
     <string name="undo">Undo</string>
     <string name="color_review_discard_title">Discard color updates?</string>
     <string name="color_review_discard_body">Exiting will discard all pending color updates and palette color changes.</string>

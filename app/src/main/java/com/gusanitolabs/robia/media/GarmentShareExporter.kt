@@ -87,7 +87,9 @@ object GarmentShareExporter {
         drawBitmapFitContain(canvas, image, imageRect, 30f)
 
         var y = imageRect.bottom + 48f
-        y = drawWrappedText(canvas, item.name, PAGE_MARGIN, y, PAGE_WIDTH - PAGE_MARGIN, titlePaint, maxLines = 3) + 14f
+        if (item.name.isNotBlank()) {
+            y = drawWrappedText(canvas, item.name, PAGE_MARGIN, y, PAGE_WIDTH - PAGE_MARGIN, titlePaint, maxLines = 3) + 14f
+        }
         if (item.notes.isNotBlank()) {
             y = drawWrappedText(canvas, item.notes, PAGE_MARGIN, y, PAGE_WIDTH - PAGE_MARGIN, bodyPaint, maxLines = 5) + SECTION_GAP
         }
@@ -205,7 +207,9 @@ object GarmentShareExporter {
         val contentWidth = PAGE_WIDTH - (PAGE_MARGIN * 2)
 
         var contentHeight = PAGE_MARGIN + imageFrameHeight(image) + 48f
-        contentHeight += measureWrappedTextHeight(item.name, titlePaint, contentWidth, maxLines = 3) + 14f
+        if (item.name.isNotBlank()) {
+            contentHeight += measureWrappedTextHeight(item.name, titlePaint, contentWidth, maxLines = 3) + 14f
+        }
         if (item.notes.isNotBlank()) {
             contentHeight += measureWrappedTextHeight(item.notes, bodyPaint, contentWidth, maxLines = 5) + SECTION_GAP
         }

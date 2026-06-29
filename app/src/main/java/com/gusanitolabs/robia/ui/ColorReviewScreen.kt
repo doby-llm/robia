@@ -38,7 +38,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,7 +59,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
@@ -120,12 +118,14 @@ internal fun ColorReviewScreen(
     val context = LocalContext.current
     val eligibleItems = remember(items) { items.filter(ClothingItem::isEligibleForColorReview) }
     val candidates = remember(changeSet.id) { mutableStateListOf<ColorReviewCandidate>() }
+    val acceptedItems = remember(changeSet.id) { mutableStateListOf<ClothingItem>() }
     var processedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var pickerTarget by remember(changeSet.id) { mutableStateOf<ColorReviewPickerTarget?>(null) }
 
     LaunchedEffect(changeSet.id, eligibleItems) {
         candidates.clear()
+        acceptedItems.clear()
         processedCount = 0
         isScanning = true
         eligibleItems.forEach { item ->
@@ -173,9 +173,7 @@ internal fun ColorReviewScreen(
         )
     }
 
-    val unresolvedCount = candidates.count { candidate -> candidate.decision == null }
-    val acceptedItems = candidates.filter { candidate -> candidate.decision == ColorReviewDecision.Accepted }
-        .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
+    val unresolvedCount = candidates.size
     val canFinish = !isScanning && unresolvedCount == 0
     val totalCount = eligibleItems.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
@@ -207,7 +205,7 @@ internal fun ColorReviewScreen(
                 )
             }
 
-            if (!isScanning && candidates.isEmpty()) {
+            if (!isScanning && candidates.isEmpty() && acceptedItems.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     ColorReviewEmptyCard(hasEligibleItems = eligibleItems.isNotEmpty())
                 }
@@ -228,15 +226,10 @@ internal fun ColorReviewScreen(
                     },
                     onAccept = {
                         val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
-                        if (index >= 0) candidates[index] = candidates[index].copy(decision = ColorReviewDecision.Accepted)
-                    },
-                    onReject = {
-                        val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
-                        if (index >= 0) candidates[index] = candidates[index].copy(decision = ColorReviewDecision.Rejected)
-                    },
-                    onUndo = {
-                        val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
-                        if (index >= 0) candidates[index] = candidates[index].copy(decision = null)
+                        if (index >= 0) {
+                            acceptedItems += candidates[index].toUpdatedItem(changeSet.afterPalette)
+                            candidates.removeAt(index)
+                        }
                     },
                 )
             }
@@ -261,7 +254,7 @@ internal fun ColorReviewScreen(
         ) {
             Button(
                 onClick = {
-                    if (candidates.isNotEmpty()) onApplyChanges(acceptedItems)
+                    if (acceptedItems.isNotEmpty()) onApplyChanges(acceptedItems)
                     onDone()
                 },
                 enabled = canFinish,
@@ -272,10 +265,10 @@ internal fun ColorReviewScreen(
             ) {
                 Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(20.dp))
                 Text(
-                    text = if (!isScanning && candidates.isEmpty()) {
-                        stringResource(R.string.done)
-                    } else {
+                    text = if (acceptedItems.isNotEmpty()) {
                         stringResource(R.string.color_review_save_accepted_mappings, acceptedItems.size)
+                    } else {
+                        stringResource(R.string.done)
                     },
                     modifier = Modifier.padding(start = 10.dp),
                     fontWeight = FontWeight.SemiBold,
@@ -384,8 +377,6 @@ private fun ColorReviewCandidateCard(
     onPrimaryClick: () -> Unit,
     onSecondaryClick: () -> Unit,
     onAccept: () -> Unit,
-    onReject: () -> Unit,
-    onUndo: () -> Unit,
 ) {
     val primaryColor = palette.colorForId(candidate.editablePrimaryColorId)
     val secondaryColor = palette.colorForId(candidate.editableSecondaryColorId)
@@ -401,13 +392,6 @@ private fun ColorReviewCandidateCard(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = candidate.item.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
                 ColorMappingStrip(
                     currentMetrics = candidate.item.colorMetrics,
                     primaryColor = primaryColor,
@@ -415,36 +399,13 @@ private fun ColorReviewCandidateCard(
                     onPrimaryClick = onPrimaryClick,
                     onSecondaryClick = onSecondaryClick,
                 )
-                when (candidate.decision) {
-                    ColorReviewDecision.Accepted -> OutlinedButton(
-                        onClick = onUndo,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                    ) {
-                        Text(stringResource(R.string.undo), fontWeight = FontWeight.SemiBold)
-                    }
-                    ColorReviewDecision.Rejected -> OutlinedButton(
-                        onClick = onUndo,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                    ) {
-                        Text(stringResource(R.string.color_review_rejected_undo), fontWeight = FontWeight.SemiBold)
-                    }
-                    null -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Button(
-                            onClick = onAccept,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                        ) {
-                            Text(stringResource(R.string.accept), fontWeight = FontWeight.SemiBold)
-                        }
-                        TextButton(onClick = onReject, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.reject))
-                        }
-                    }
+                Button(
+                    onClick = onAccept,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                ) {
+                    Text(stringResource(R.string.accept), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -465,7 +426,7 @@ private fun ColorReviewPhoto(item: ClothingItem) {
             AndroidView(
                 factory = { context ->
                     ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        scaleType = ImageView.ScaleType.FIT_CENTER
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
                 },
@@ -649,10 +610,8 @@ private data class ColorReviewCandidate(
     val proposedMetrics: ClothingColorMetrics,
     val editablePrimaryColorId: String?,
     val editableSecondaryColorId: String?,
-    val decision: ColorReviewDecision? = null,
 )
 
-private enum class ColorReviewDecision { Accepted, Rejected }
 private enum class ColorReviewColorRole { Primary, Secondary }
 
 private data class ColorReviewPickerTarget(
