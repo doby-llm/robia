@@ -27,6 +27,30 @@ class DefaultTagsTest {
     }
 
     @Test
+    fun seededDefaultTaxonomyIsNotCustomOrModified() {
+        assertEquals(0, DefaultTags.categories.count(DefaultTags::isCustomOrModifiedDefault))
+        assertEquals(0, DefaultTags.tags.count(DefaultTags::isCustomOrModifiedDefault))
+        assertEquals(0, DefaultTags.mainColors.count(DefaultTags::isCustomOrModifiedDefault))
+    }
+
+    @Test
+    fun customOrModifiedTaxonomyIsDetected() {
+        val customCategory = TagCategory(id = "style", name = "Style", sortOrder = 60)
+        val modifiedCategory = DefaultTags.categories.first().copy(name = "Changed")
+        val customTag = GarmentTag(id = "style-classic", categoryId = "style", name = "Classic", sortOrder = 10)
+        val modifiedTag = DefaultTags.tags.first().copy(name = "Changed")
+        val customColor = MainColor(id = "teal", name = "Teal", hex = "#008080", sortOrder = 130)
+        val modifiedColor = DefaultTags.mainColors.first().copy(hex = "#000000")
+
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(customCategory))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(modifiedCategory))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(customTag))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(modifiedTag))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(customColor))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(modifiedColor))
+    }
+
+    @Test
     fun modelAlignedDefaultTagsAreAvailable() {
         val tagIds = DefaultTags.tags.map(GarmentTag::id).toSet()
 

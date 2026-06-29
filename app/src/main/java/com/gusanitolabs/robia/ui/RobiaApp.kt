@@ -265,29 +265,6 @@ private data class CloudSetupGuard(
         get() = !hasUnsafeLocalState
 }
 
-private fun TagCategory.isCustomOrModifiedDefault(): Boolean {
-    val defaultCategory = DefaultTags.categories.firstOrNull { category -> category.id == id }
-    return !isSystem || defaultCategory == null ||
-        name != defaultCategory.name ||
-        sortOrder != defaultCategory.sortOrder
-}
-
-private fun GarmentTag.isCustomOrModifiedDefault(): Boolean {
-    val defaultTag = DefaultTags.tags.firstOrNull { tag -> tag.id == id }
-    return !isSystem || defaultTag == null ||
-        categoryId != defaultTag.categoryId ||
-        name != defaultTag.name ||
-        sortOrder != defaultTag.sortOrder
-}
-
-private fun MainColor.isCustomOrModifiedDefault(): Boolean {
-    val defaultColor = DefaultTags.mainColors.firstOrNull { color -> color.id == id }
-    return !isDefault || defaultColor == null ||
-        name != defaultColor.name ||
-        hex != defaultColor.hex ||
-        sortOrder != defaultColor.sortOrder
-}
-
 private enum class CloudSetupDialogMode {
     RecommendedFirstRun,
     LateEnableBlocked,
@@ -528,9 +505,9 @@ private fun RobiaShell(
     val cloudSetupGuard = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
         CloudSetupGuard(
             garmentCount = clothingItems.size,
-            customTagCount = availableTags.count(GarmentTag::isCustomOrModifiedDefault),
-            customCategoryCount = tagCategories.count(TagCategory::isCustomOrModifiedDefault),
-            customColorCount = mainColors.count(MainColor::isCustomOrModifiedDefault),
+            customTagCount = availableTags.count(DefaultTags::isCustomOrModifiedDefault),
+            customCategoryCount = tagCategories.count(DefaultTags::isCustomOrModifiedDefault),
+            customColorCount = mainColors.count(DefaultTags::isCustomOrModifiedDefault),
             taggedGarmentCount = clothingItems.count { item -> item.tags.isNotEmpty() },
             pendingOperationCount = syncState.pendingOperationCount,
             hasConflictingAccountBinding = syncState.hasConflictingAccountBinding,

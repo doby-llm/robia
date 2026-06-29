@@ -54,4 +54,31 @@ object DefaultTags {
         MainColor(id = "yellow-mustard", name = "Yellow / Mustard", hex = "#D6B84C", sortOrder = 110, isDefault = true),
         MainColor(id = "orange", name = "Orange", hex = "#C56F33", sortOrder = 120, isDefault = true),
     )
+
+    private val categoriesById = categories.associateBy(TagCategory::id)
+    private val tagsById = tags.associateBy(GarmentTag::id)
+    private val mainColorsById = mainColors.associateBy(MainColor::id)
+
+    fun isCustomOrModifiedDefault(category: TagCategory): Boolean {
+        val defaultCategory = categoriesById[category.id] ?: return true
+        return category.name != defaultCategory.name ||
+            category.sortOrder != defaultCategory.sortOrder ||
+            category.isSystem != defaultCategory.isSystem
+    }
+
+    fun isCustomOrModifiedDefault(tag: GarmentTag): Boolean {
+        val defaultTag = tagsById[tag.id] ?: return true
+        return tag.categoryId != defaultTag.categoryId ||
+            tag.name != defaultTag.name ||
+            tag.sortOrder != defaultTag.sortOrder ||
+            tag.isSystem != defaultTag.isSystem
+    }
+
+    fun isCustomOrModifiedDefault(color: MainColor): Boolean {
+        val defaultColor = mainColorsById[color.id] ?: return true
+        return color.name != defaultColor.name ||
+            color.hex != defaultColor.hex ||
+            color.sortOrder != defaultColor.sortOrder ||
+            color.isDefault != defaultColor.isDefault
+    }
 }
