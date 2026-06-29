@@ -1074,6 +1074,7 @@ private fun RobiaNavHost(
                 mainColors = mainColors,
                 existingItem = draft.toBatchEditItem(availableTags, mainColors),
                 developerModeEnabled = developerModeEnabled,
+                initialPhotoReviewState = draft.toBatchEditPhotoReviewState(),
                 titleRes = R.string.batch_edit_title,
                 bodyRes = R.string.batch_edit_body,
                 saveButtonTextRes = R.string.batch_return_to_batch,

@@ -593,6 +593,17 @@ internal fun BatchDraftItem.toBatchEditItem(
     mainColors: List<MainColor>,
 ): ClothingItem = toEditingClothingItem(availableTags, mainColors)
 
+internal fun BatchDraftItem.toBatchEditPhotoReviewState(): AddEditPhotoReviewState? {
+    if (originalPhotoUri.isBlank()) return null
+    val needsRetryReview = status == BatchDraftStatus.NeedsReview || status == BatchDraftStatus.Failed
+    if (!needsRetryReview) return null
+    return AddEditPhotoReviewState(
+        captureStatus = PhotoStatus.BackgroundFallback,
+        retrySourceUri = originalPhotoUri,
+        retrySourceStatus = PhotoStatus.Gallery,
+    )
+}
+
 internal fun ClothingItem.toBatchDraftItem(
     previous: BatchDraftItem,
 ): BatchDraftItem = previous.copy(

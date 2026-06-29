@@ -111,6 +111,7 @@ fun AddEditClothingScreen(
     mainColors: List<MainColor>,
     existingItem: ClothingItem?,
     developerModeEnabled: Boolean,
+    initialPhotoReviewState: AddEditPhotoReviewState? = null,
     titleRes: Int? = null,
     bodyRes: Int = R.string.add_edit_body,
     saveButtonTextRes: Int = R.string.save_item,
@@ -371,7 +372,7 @@ fun AddEditClothingScreen(
         processSelectedPhoto(input.id, input.uriString, input.sourceStatus)
     }
 
-    LaunchedEffect(existingItem?.id) {
+    LaunchedEffect(existingItem?.id, initialPhotoReviewState) {
         name = existingItem?.name.orEmpty()
         notes = existingItem?.notes.orEmpty()
         originalPhotoUri = existingItem?.photoUri
@@ -383,7 +384,14 @@ fun AddEditClothingScreen(
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
-        captureStatus = ""
+        captureStatus = initialPhotoReviewState?.captureStatus.orEmpty()
+        photoRetrySource = initialPhotoReviewState?.let { reviewState ->
+            PendingPhotoInput(
+                id = ++nextPhotoInputId,
+                uriString = reviewState.retrySourceUri,
+                sourceStatus = reviewState.retrySourceStatus,
+            )
+        }
         developerDiagnostics = emptyList()
         developerExportStatus = null
         additionalInfoSourceUri = existingItem?.photoUri
@@ -1731,7 +1739,13 @@ private const val SECONDARY_COLOR_MIN_RATIO = 0.20f
 private const val PHOTO_PREVIEW_MIN_ASPECT_RATIO = 0.66f
 private const val PHOTO_PREVIEW_MAX_ASPECT_RATIO = 1.6f
 
-private object PhotoStatus {
+data class AddEditPhotoReviewState(
+    val captureStatus: String,
+    val retrySourceUri: String,
+    val retrySourceStatus: String,
+)
+
+internal object PhotoStatus {
     const val Gallery = "gallery"
     const val Camera = "camera"
     const val Processed = "processed"
