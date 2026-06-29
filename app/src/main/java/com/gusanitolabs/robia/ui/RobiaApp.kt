@@ -66,6 +66,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -74,6 +75,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -130,6 +132,9 @@ import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
+import com.gusanitolabs.robia.sync.CloudRestorePhase
+import com.gusanitolabs.robia.sync.CloudRestoreProgress
+import com.gusanitolabs.robia.sync.CloudRestoreStatus
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -238,6 +243,33 @@ private data class BrowseFilterState(
         paletteColors.filter { color -> color.id in selectedPaletteColorIds }
 }
 
+private data class CloudSetupGuard(
+    val garmentCount: Int,
+    val customTagCount: Int,
+    val customCategoryCount: Int,
+    val customColorCount: Int,
+    val taggedGarmentCount: Int,
+    val pendingOperationCount: Int,
+    val hasConflictingAccountBinding: Boolean,
+) {
+    val hasUnsafeLocalState: Boolean
+        get() = garmentCount > 0 ||
+            customTagCount > 0 ||
+            customCategoryCount > 0 ||
+            customColorCount > 0 ||
+            taggedGarmentCount > 0 ||
+            pendingOperationCount > 0 ||
+            hasConflictingAccountBinding
+
+    val isFirstRunRecommendation: Boolean
+        get() = !hasUnsafeLocalState
+}
+
+private enum class CloudSetupDialogMode {
+    RecommendedFirstRun,
+    LateEnableBlocked,
+}
+
 private val bottomDestinations = listOf(
     BottomNavDestination(RobiaRoute.Browse, R.string.browse, Icons.Rounded.GridView),
     BottomNavDestination(RobiaRoute.AddEditClothing, R.string.add_clothing, Icons.Rounded.Add),
@@ -267,6 +299,7 @@ fun RobiaApp(
         val displaySettings = settings.copy(driveSyncConnectionStatus = syncState.connectionStatus)
         RobiaShell(
             settings = displaySettings,
+            syncState = syncState,
             clothingItems = clothingItems,
             tagCategories = tagCategories,
             availableTags = availableTags,
@@ -387,6 +420,7 @@ private fun LocalizedRobiaContent(
 @Composable
 private fun RobiaShell(
     settings: RobiaSettings,
+    syncState: WardrobeSyncState,
     clothingItems: List<ClothingItem>,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
@@ -420,12 +454,35 @@ private fun RobiaShell(
     var showColorReviewDiscardDialog by remember { mutableStateOf(false) }
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
+    var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
+    var hasShownFirstRunCloudPrompt by remember { mutableStateOf(false) }
     val items = clothingItems.toUiWardrobeItems(settings.driveSyncConnectionStatus)
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
     }
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
+    val cloudSetupGuard = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
+        CloudSetupGuard(
+            garmentCount = clothingItems.size,
+            customTagCount = availableTags.count { tag -> !tag.isSystem },
+            customCategoryCount = tagCategories.count { category -> !category.isSystem },
+            customColorCount = mainColors.count { color -> !color.isDefault },
+            taggedGarmentCount = clothingItems.count { item -> item.tags.isNotEmpty() },
+            pendingOperationCount = syncState.pendingOperationCount,
+            hasConflictingAccountBinding = syncState.hasConflictingAccountBinding,
+        )
+    }
+
+    LaunchedEffect(settings.driveSyncConnectionStatus, cloudSetupGuard.isFirstRunRecommendation) {
+        if (!hasShownFirstRunCloudPrompt &&
+            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
+            cloudSetupGuard.isFirstRunRecommendation
+        ) {
+            hasShownFirstRunCloudPrompt = true
+            cloudSetupDialogMode = CloudSetupDialogMode.RecommendedFirstRun
+        }
+    }
 
     LaunchedEffect(items) {
         val activeIds = items.map(UiWardrobeItem::id).toSet()
@@ -579,8 +636,19 @@ private fun RobiaShell(
         }
     }
 
-    BackHandler(enabled = routeStack.size > 1) {
-        if (currentRoute == RobiaRoute.ColorReview) {
+    fun requestCloudSetup() {
+        cloudSetupDialogMode = if (cloudSetupGuard.hasUnsafeLocalState) {
+            CloudSetupDialogMode.LateEnableBlocked
+        } else {
+            CloudSetupDialogMode.RecommendedFirstRun
+        }
+    }
+
+    val restoreProgress = syncState.restoreProgress
+    BackHandler(enabled = restoreProgress != null || routeStack.size > 1) {
+        if (restoreProgress != null) {
+            // Restore is transactional: navigation is locked until the gateway reports a terminal state.
+        } else if (currentRoute == RobiaRoute.ColorReview) {
             requestColorReviewDiscard()
         } else {
             popRoute()
@@ -647,6 +715,15 @@ private fun RobiaShell(
         )
     }
 
+    cloudSetupDialogMode?.let { mode ->
+        CloudSetupDialog(
+            mode = mode,
+            guard = cloudSetupGuard,
+            onDismiss = { cloudSetupDialogMode = null },
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -732,6 +809,7 @@ private fun RobiaShell(
                                 expanded = settingsExpanded,
                                 currentLanguage = settings.languagePreference,
                                 driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
+                                canAttemptCloudSetup = !cloudSetupGuard.hasUnsafeLocalState,
                                 developerModeUnlocked = settings.developerModeUnlocked,
                                 developerModeEnabled = settings.developerModeEnabled,
                                 onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
@@ -742,6 +820,10 @@ private fun RobiaShell(
                                 onDismiss = { settingsExpanded = false },
                                 onLanguageClick = {
                                     pushRoute(RobiaRoute.LanguageSettings)
+                                    settingsExpanded = false
+                                },
+                                onCloudSetupClick = {
+                                    requestCloudSetup()
                                     settingsExpanded = false
                                 },
                             )
@@ -848,6 +930,10 @@ private fun RobiaShell(
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
         )
     }
+    restoreProgress?.let { progress ->
+        CloudRestoreProgressOverlay(progress = progress)
+    }
+    }
 }
 
 @Composable
@@ -855,12 +941,14 @@ private fun SettingsMenu(
     expanded: Boolean,
     currentLanguage: LanguagePreference,
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
+    canAttemptCloudSetup: Boolean,
     developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
+    onCloudSetupClick: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -914,18 +1002,170 @@ private fun SettingsMenu(
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Text(
-                        text = stringResource(R.string.data_sync_google_drive_setup_required),
+                        text = stringResource(
+                            if (canAttemptCloudSetup) {
+                                R.string.cloud_setup_recommended_summary
+                            } else {
+                                R.string.cloud_setup_late_blocked_summary
+                            },
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
             leadingIcon = { Icon(Icons.Rounded.CloudOff, contentDescription = null) },
-            onClick = { },
-            enabled = false,
+            onClick = onCloudSetupClick,
+            enabled = true,
         )
     }
 }
+
+@Composable
+private fun CloudSetupDialog(
+    mode: CloudSetupDialogMode,
+    guard: CloudSetupGuard,
+    onDismiss: () -> Unit,
+) {
+    val titleRes = when (mode) {
+        CloudSetupDialogMode.RecommendedFirstRun -> R.string.cloud_setup_prompt_title
+        CloudSetupDialogMode.LateEnableBlocked -> R.string.cloud_setup_late_blocked_title
+    }
+    val bodyRes = when (mode) {
+        CloudSetupDialogMode.RecommendedFirstRun -> R.string.cloud_setup_prompt_body
+        CloudSetupDialogMode.LateEnableBlocked -> R.string.cloud_setup_late_blocked_body
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(titleRes)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(bodyRes))
+                if (mode == CloudSetupDialogMode.LateEnableBlocked) {
+                    Text(
+                        text = stringResource(
+                            R.string.cloud_setup_blocked_detail,
+                            guard.garmentCount,
+                            guard.customTagCount + guard.customCategoryCount,
+                            guard.customColorCount,
+                            guard.pendingOperationCount,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (guard.hasConflictingAccountBinding) {
+                        Text(
+                            text = stringResource(R.string.cloud_setup_account_conflict),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    stringResource(
+                        if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
+                            R.string.cloud_setup_configure_when_available
+                        } else {
+                            R.string.done
+                        },
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.not_now)) }
+            }
+        },
+    )
+}
+
+@Composable
+private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
+    val statusText = cloudRestoreStatusText(progress)
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics { contentDescription = statusText }
+            .clickable(onClick = {}),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.cloud_restore_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            progress.progressFraction?.let { fraction ->
+                LinearProgressIndicator(
+                    progress = { fraction.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } ?: CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(progress.phase.labelRes),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.cloud_restore_remaining, progress.remainingWork, progress.totalWork),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (progress.status == CloudRestoreStatus.Running) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            progress.message?.takeIf(String::isNotBlank)?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun cloudRestoreStatusText(progress: CloudRestoreProgress): String = stringResource(
+    when (progress.status) {
+        CloudRestoreStatus.Running -> R.string.cloud_restore_status_running
+        CloudRestoreStatus.Offline -> R.string.cloud_restore_status_offline
+        CloudRestoreStatus.Failed -> R.string.cloud_restore_status_failed
+        CloudRestoreStatus.RolledBack -> R.string.cloud_restore_status_rolled_back
+    },
+)
+
+private val CloudRestorePhase.labelRes: Int
+    get() = when (this) {
+        CloudRestorePhase.Preparing -> R.string.cloud_restore_phase_preparing
+        CloudRestorePhase.Downloading -> R.string.cloud_restore_phase_downloading
+        CloudRestorePhase.Validating -> R.string.cloud_restore_phase_validating
+        CloudRestorePhase.Applying -> R.string.cloud_restore_phase_applying
+        CloudRestorePhase.RollingBack -> R.string.cloud_restore_phase_rolling_back
+        CloudRestorePhase.Complete -> R.string.cloud_restore_phase_complete
+    }
 
 private val DriveSyncConnectionStatus.statusLabelRes: Int
     get() = when (this) {
@@ -2363,6 +2603,7 @@ private fun RobiaAppPreview() {
     RobiaTheme {
         RobiaShell(
             settings = RobiaSettings(),
+            syncState = WardrobeSyncState.notConfigured(),
             clothingItems = emptyList(),
             tagCategories = emptyList(),
             availableTags = emptyList(),

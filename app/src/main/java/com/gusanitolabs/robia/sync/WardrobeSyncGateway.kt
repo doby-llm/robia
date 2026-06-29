@@ -42,9 +42,17 @@ data class WardrobeSyncState(
     val disabledReason: DriveSyncDisabledReason? = null,
     val pendingOperationCount: Int = 0,
     val lastSyncedAtEpochMillis: Long? = null,
+    val authorizedAccountEmail: String? = null,
+    val expectedAccountEmail: String? = null,
+    val restoreProgress: CloudRestoreProgress? = null,
 ) {
     val canAttemptGoogleDriveSync: Boolean
         get() = connectionStatus == DriveSyncConnectionStatus.Connected
+
+    val hasConflictingAccountBinding: Boolean
+        get() = authorizedAccountEmail != null &&
+            expectedAccountEmail != null &&
+            !authorizedAccountEmail.equals(expectedAccountEmail, ignoreCase = true)
 
     companion object {
         fun notConfigured(): WardrobeSyncState = WardrobeSyncState(
@@ -52,6 +60,36 @@ data class WardrobeSyncState(
             disabledReason = DriveSyncDisabledReason.GoogleCloudSetupRequired,
         )
     }
+}
+
+data class CloudRestoreProgress(
+    val phase: CloudRestorePhase,
+    val completedWork: Int,
+    val totalWork: Int,
+    val status: CloudRestoreStatus = CloudRestoreStatus.Running,
+    val message: String? = null,
+) {
+    val remainingWork: Int
+        get() = (totalWork - completedWork).coerceAtLeast(0)
+
+    val progressFraction: Float?
+        get() = totalWork.takeIf { it > 0 }?.let { completedWork.coerceIn(0, it).toFloat() / it }
+}
+
+enum class CloudRestorePhase {
+    Preparing,
+    Downloading,
+    Validating,
+    Applying,
+    RollingBack,
+    Complete,
+}
+
+enum class CloudRestoreStatus {
+    Running,
+    Offline,
+    Failed,
+    RolledBack,
 }
 
 sealed interface WardrobeSyncOperation {

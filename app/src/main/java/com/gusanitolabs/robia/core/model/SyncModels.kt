@@ -14,6 +14,8 @@ enum class DriveSyncDisabledReason {
     GoogleCloudSetupRequired,
     OAuthClientMissing,
     UserNotConnected,
+    UnsafeLocalState,
+    AccountBindingConflict,
 }
 
 /**
