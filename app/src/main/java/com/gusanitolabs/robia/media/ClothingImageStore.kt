@@ -82,6 +82,28 @@ object ClothingImageStore {
         return if (width > 0 && height > 0) width.toFloat() / height.toFloat() else null
     }
 
+    fun estimateCentralLuminance(context: Context, imageUri: Uri): Float? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(imageUri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        } ?: return null
+        val width = bounds.outWidth
+        val height = bounds.outHeight
+        if (width <= 0 || height <= 0) return null
+
+        val options = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = luminanceDecodeSampleSize(width, height)
+        }
+        val bitmap = context.contentResolver.openInputStream(imageUri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        } ?: return null
+
+        return bitmap.useForColors { source ->
+            estimateCentralLuminance(source) ?: estimateLuminance(source)
+        }
+    }
+
     fun exportImageAsPng(
         context: Context,
         sourceUri: Uri,
@@ -150,6 +172,63 @@ object ClothingImageStore {
         val xCount = ((bitmap.width - 1 - sampleStep / 2) / sampleStep + 1).coerceAtLeast(0)
         val yCount = ((bitmap.height - 1 - sampleStep / 2) / sampleStep + 1).coerceAtLeast(0)
         return xCount * yCount
+    }
+
+    private fun luminanceDecodeSampleSize(width: Int, height: Int): Int {
+        val maxDimension = maxOf(width, height).coerceAtLeast(1)
+        var sampleSize = 1
+        while (maxDimension / sampleSize > LUMINANCE_MAX_DECODE_SIZE) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
+    private fun estimateCentralLuminance(bitmap: Bitmap): Float? {
+        val left = bitmap.width / 4
+        val top = bitmap.height / 4
+        val rightExclusive = (bitmap.width - left).coerceAtLeast(left + 1)
+        val bottomExclusive = (bitmap.height - top).coerceAtLeast(top + 1)
+        return estimateLuminance(
+            bitmap = bitmap,
+            left = left,
+            top = top,
+            rightExclusive = rightExclusive,
+            bottomExclusive = bottomExclusive,
+        )
+    }
+
+    private fun estimateLuminance(
+        bitmap: Bitmap,
+        left: Int = 0,
+        top: Int = 0,
+        rightExclusive: Int = bitmap.width,
+        bottomExclusive: Int = bitmap.height,
+    ): Float? {
+        val sampleWidth = rightExclusive - left
+        val sampleHeight = bottomExclusive - top
+        if (sampleWidth <= 0 || sampleHeight <= 0) return null
+
+        val sampleStep = (maxOf(sampleWidth, sampleHeight) / LUMINANCE_TARGET_SAMPLE_GRID).coerceAtLeast(1)
+        var luminanceSum = 0.0
+        var samples = 0
+        var y = top + sampleStep / 2
+        while (y < bottomExclusive) {
+            var x = left + sampleStep / 2
+            while (x < rightExclusive) {
+                val color = bitmap.getPixel(x, y)
+                val alpha = (color ushr 24) and 0xFF
+                if (alpha > TRANSPARENT_CROP_ALPHA_THRESHOLD) {
+                    val red = (color ushr 16) and 0xFF
+                    val green = (color ushr 8) and 0xFF
+                    val blue = color and 0xFF
+                    luminanceSum += 0.2126 * red + 0.7152 * green + 0.0722 * blue
+                    samples += 1
+                }
+                x += sampleStep
+            }
+            y += sampleStep
+        }
+        return if (samples > 0) (luminanceSum / samples / 255.0).toFloat() else null
     }
 
     private fun paletteMatches(bitmap: Bitmap, palette: List<MainColor>, sampleStep: Int): List<PaletteColorMatch> {
@@ -221,6 +300,8 @@ object ClothingImageStore {
     }
 
     private const val TRANSPARENT_CROP_ALPHA_THRESHOLD = 24
+    private const val LUMINANCE_MAX_DECODE_SIZE = 192
+    private const val LUMINANCE_TARGET_SAMPLE_GRID = 48
     private const val MIN_CROP_CONTENT_SIZE = 16
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f

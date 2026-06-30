@@ -54,7 +54,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -365,6 +364,7 @@ private fun BatchPhotoPreview(
     isProcessing: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val processingOverlayColors = rememberProcessingOverlayColors(photoUri, isProcessing)
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.large)
@@ -406,10 +406,10 @@ private fun BatchPhotoPreview(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.28f)),
+                    .background(processingOverlayColors.scrimColor),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                CircularProgressIndicator(color = processingOverlayColors.contentColor)
             }
         }
     }

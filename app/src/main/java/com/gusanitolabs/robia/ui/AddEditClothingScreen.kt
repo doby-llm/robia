@@ -1417,6 +1417,7 @@ private fun PhotoPreview(
         contentAlignment = Alignment.Center,
     ) {
         if (uri != null) {
+            val processingOverlayColors = rememberProcessingOverlayColors(uri, isProcessing)
             AndroidView(
                 factory = { context ->
                     ImageView(context).apply {
@@ -1432,7 +1433,7 @@ private fun PhotoPreview(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.32f)),
+                        .background(processingOverlayColors.scrimColor),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
@@ -1440,12 +1441,12 @@ private fun PhotoPreview(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.padding(24.dp),
                     ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        CircularProgressIndicator(color = processingOverlayColors.contentColor)
                         processingLabel?.let { label ->
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White,
+                                color = processingOverlayColors.contentColor,
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
