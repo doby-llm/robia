@@ -188,6 +188,13 @@
     <string name="quick_edit_brightness">Brillo</string>
     <string name="quick_edit_temperature">Temperatura</string>
     <string name="quick_edit_eraser">Borrador</string>
+    <string name="quick_edit_brightness_content_description">Herramienta de brillo</string>
+    <string name="quick_edit_temperature_content_description">Herramienta de temperatura</string>
+    <string name="quick_edit_erase_segment_content_description">Herramienta para borrar segmento</string>
+    <string name="quick_edit_selected_tool_label">Herramienta seleccionada: %1$s</string>
+    <string name="quick_edit_apply_on_save_hint">Los cambios de brillo y temperatura se aplican al guardar.</string>
+    <string name="quick_edit_brightness_reset">Restablecer a neutro</string>
+    <string name="quick_edit_temperature_preset_content_description">Preajuste de temperatura: %1$s</string>
     <string name="quick_edit_brightness_hint">Ajusta el brillo de más oscuro a más claro.</string>
     <string name="quick_edit_temperature_hint">Elige una temperatura más fría, neutra o más cálida.</string>
     <string name="quick_edit_eraser_hint">Toca la zona de la prenda para resaltar un segmento y guarda para borrarlo.</string>

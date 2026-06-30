@@ -188,6 +188,13 @@
     <string name="quick_edit_brightness">Helligkeit</string>
     <string name="quick_edit_temperature">Temperatur</string>
     <string name="quick_edit_eraser">Radierer</string>
+    <string name="quick_edit_brightness_content_description">Helligkeitswerkzeug</string>
+    <string name="quick_edit_temperature_content_description">Temperaturwerkzeug</string>
+    <string name="quick_edit_erase_segment_content_description">Segment-radieren-Werkzeug</string>
+    <string name="quick_edit_selected_tool_label">Ausgewähltes Werkzeug: %1$s</string>
+    <string name="quick_edit_apply_on_save_hint">Helligkeits- und Temperaturänderungen werden beim Speichern angewendet.</string>
+    <string name="quick_edit_brightness_reset">Auf neutral zurücksetzen</string>
+    <string name="quick_edit_temperature_preset_content_description">Temperaturvoreinstellung: %1$s</string>
     <string name="quick_edit_brightness_hint">Passe die Helligkeit von dunkler bis heller an.</string>
     <string name="quick_edit_temperature_hint">Wähle eine kühlere, neutrale oder wärmere Temperatur.</string>
     <string name="quick_edit_eraser_hint">Tippe auf den Kleidungsbereich, um ein Segment hervorzuheben, und speichere, um es zu löschen.</string>

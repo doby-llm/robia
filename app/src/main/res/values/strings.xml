@@ -188,6 +188,13 @@
     <string name="quick_edit_brightness">Brightness</string>
     <string name="quick_edit_temperature">Temperature</string>
     <string name="quick_edit_eraser">Eraser</string>
+    <string name="quick_edit_brightness_content_description">Brightness tool</string>
+    <string name="quick_edit_temperature_content_description">Temperature tool</string>
+    <string name="quick_edit_erase_segment_content_description">Erase segment tool</string>
+    <string name="quick_edit_selected_tool_label">Selected tool: %1$s</string>
+    <string name="quick_edit_apply_on_save_hint">Brightness and temperature changes apply when you save.</string>
+    <string name="quick_edit_brightness_reset">Reset to neutral</string>
+    <string name="quick_edit_temperature_preset_content_description">Temperature preset: %1$s</string>
     <string name="quick_edit_brightness_hint">Adjust brightness from darker to brighter.</string>
     <string name="quick_edit_temperature_hint">Choose a cooler, neutral, or warmer temperature.</string>
     <string name="quick_edit_eraser_hint">Tap the garment area to highlight a segment, then save to erase it.</string>

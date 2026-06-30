@@ -34,9 +34,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoFixOff
+import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeviceThermostat
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -1823,38 +1826,43 @@ private fun QuickEditDialog(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     QuickEditToolIconButton(
-                        icon = Icons.Rounded.Edit,
-                        label = stringResource(R.string.quick_edit_brightness),
+                        icon = Icons.Rounded.Brightness6,
+                        label = stringResource(R.string.quick_edit_brightness_content_description),
                         selected = selectedTool == QuickEditTool.Brightness,
                         onClick = { selectedTool = QuickEditTool.Brightness },
                     )
-                    Spacer(Modifier.width(8.dp))
                     QuickEditToolIconButton(
-                        icon = Icons.Rounded.Straighten,
-                        label = stringResource(R.string.quick_edit_temperature),
+                        icon = Icons.Rounded.DeviceThermostat,
+                        label = stringResource(R.string.quick_edit_temperature_content_description),
                         selected = selectedTool == QuickEditTool.Temperature,
                         onClick = { selectedTool = QuickEditTool.Temperature },
                     )
-                    Spacer(Modifier.width(8.dp))
                     QuickEditToolIconButton(
-                        icon = Icons.Rounded.Delete,
-                        label = stringResource(R.string.quick_edit_eraser),
+                        icon = Icons.Rounded.AutoFixOff,
+                        label = stringResource(R.string.quick_edit_erase_segment_content_description),
                         selected = selectedTool == QuickEditTool.Eraser,
                         onClick = { selectedTool = QuickEditTool.Eraser },
                     )
                 }
 
+                val selectedToolLabel = when (selectedTool) {
+                    QuickEditTool.Brightness -> stringResource(R.string.quick_edit_brightness)
+                    QuickEditTool.Temperature -> stringResource(R.string.quick_edit_temperature)
+                    QuickEditTool.Eraser -> stringResource(R.string.quick_edit_eraser)
+                }
                 Text(
-                    text = when (selectedTool) {
-                        QuickEditTool.Brightness -> stringResource(R.string.quick_edit_brightness)
-                        QuickEditTool.Temperature -> stringResource(R.string.quick_edit_temperature)
-                        QuickEditTool.Eraser -> stringResource(R.string.quick_edit_eraser)
-                    },
+                    text = stringResource(R.string.quick_edit_selected_tool_label, selectedToolLabel),
                     style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Text(
+                    text = stringResource(R.string.quick_edit_apply_on_save_hint),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
@@ -1863,12 +1871,20 @@ private fun QuickEditDialog(
                     QuickEditTool.Brightness -> {
                         Text(stringResource(R.string.quick_edit_brightness_hint), style = MaterialTheme.typography.bodySmall)
                         Slider(value = brightness, onValueChange = { brightness = it }, valueRange = -1f..1f)
+                        OutlinedButton(
+                            onClick = { brightness = 0f },
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.quick_edit_brightness_reset))
+                        }
                     }
                     QuickEditTool.Temperature -> {
                         Text(stringResource(R.string.quick_edit_temperature_hint), style = MaterialTheme.typography.bodySmall)
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             QuickEditTemperaturePreset(R.string.quick_edit_temperature_cooler, -1f, temperature) { temperature = it }
@@ -1937,16 +1953,27 @@ private fun QuickEditTemperaturePreset(
     onSelected: (Float) -> Unit,
 ) {
     val selected = selectedValue == value
+    val label = stringResource(labelRes)
+    val contentDescription = stringResource(R.string.quick_edit_temperature_preset_content_description, label)
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(if (value < 0f) Color(0xFFB9D8FF) else if (value > 0f) Color(0xFFFFC58C) else MaterialTheme.colorScheme.surfaceContainerHigh)
                 .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                .clickable { onSelected(value) },
-        )
-        Text(stringResource(labelRes), style = MaterialTheme.typography.labelSmall)
+                .clickable { onSelected(value) }
+                .semantics {
+                    this.contentDescription = contentDescription
+                    this.selected = selected
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
 
