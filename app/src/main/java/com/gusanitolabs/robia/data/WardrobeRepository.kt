@@ -9,10 +9,15 @@ import kotlinx.coroutines.flow.Flow
 interface WardrobeRepository {
     fun observeActiveItems(): Flow<List<ClothingItem>>
     fun observeItem(id: String): Flow<ClothingItem?>
+    fun observePendingGarmentSyncCount(): Flow<Int>
     suspend fun upsertItem(item: ClothingItem)
     suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)
     suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long)
+    suspend fun markGarmentSyncing(id: String, revision: Long): Boolean
+    suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean
+    suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String? = null): Boolean
+    suspend fun markGarmentSyncAuthBlocked(id: String, message: String? = null): Boolean
 }
 
 interface TagRepository {

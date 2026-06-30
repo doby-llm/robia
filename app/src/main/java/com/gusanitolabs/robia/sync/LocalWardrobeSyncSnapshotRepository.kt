@@ -35,7 +35,7 @@ class LocalWardrobeSyncSnapshotRepository(
         val tags = tagDao.getTagsForSync()
         val colors = tagDao.getMainColorsForSync()
         val tombstones = syncTombstoneDao.getAllForSync()
-        val itemUpdatedAtById = items.associate { item -> item.id to item.updatedAtEpochMillis }
+        val itemUpdatedAtById = items.associate { item -> item.id to item.syncRevision }
         val snapshotRevision = maxOf(
             itemUpdatedAtById.values.maxOrNull() ?: 0L,
             tombstones.maxOfOrNull(SyncTombstoneEntity::revision) ?: 0L,
@@ -54,7 +54,7 @@ class LocalWardrobeSyncSnapshotRepository(
             ),
             garments = items.map(ClothingItemEntity::toGarmentRecord),
             garmentTags = itemTagRefs.map { ref ->
-                ref.toSyncRecord(updatedAtEpochMillis = items.firstOrNull { item -> item.id == ref.clothingItemId }?.updatedAtEpochMillis ?: 0L)
+                ref.toSyncRecord(revision = itemUpdatedAtById[ref.clothingItemId] ?: 0L)
             },
             garmentColors = items.flatMap(ClothingItemEntity::toColorRecords),
             photos = items.mapNotNull(ClothingItemEntity::toPhotoRecord),
@@ -95,14 +95,14 @@ private fun ClothingItemEntity.toGarmentRecord(): GarmentSyncRecord = GarmentSyn
     isArchived = isArchived,
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
-    revision = updatedAtEpochMillis,
+    revision = syncRevision,
 )
 
-private fun ClothingItemTagCrossRef.toSyncRecord(updatedAtEpochMillis: Long): GarmentTagMappingRecord = GarmentTagMappingRecord(
+private fun ClothingItemTagCrossRef.toSyncRecord(revision: Long): GarmentTagMappingRecord = GarmentTagMappingRecord(
     garmentId = clothingItemId,
     tagId = tagId,
-    revision = updatedAtEpochMillis,
-    updatedAtEpochMillis = updatedAtEpochMillis,
+    revision = revision,
+    updatedAtEpochMillis = revision,
 )
 
 private fun ClothingItemEntity.toColorRecords(): List<GarmentColorMappingRecord> = listOf(
@@ -114,7 +114,7 @@ private fun ClothingItemEntity.toColorRecords(): List<GarmentColorMappingRecord>
         paletteColorId = colorMetrics.primaryPaletteColorId,
         paletteColorName = colorMetrics.primaryPaletteColorName,
         paletteColorHex = colorMetrics.primaryPaletteColorHex,
-        revision = updatedAtEpochMillis,
+        revision = syncRevision,
         updatedAtEpochMillis = updatedAtEpochMillis,
     ),
     GarmentColorMappingRecord(
@@ -125,7 +125,7 @@ private fun ClothingItemEntity.toColorRecords(): List<GarmentColorMappingRecord>
         paletteColorId = colorMetrics.secondaryPaletteColorId,
         paletteColorName = colorMetrics.secondaryPaletteColorName,
         paletteColorHex = colorMetrics.secondaryPaletteColorHex,
-        revision = updatedAtEpochMillis,
+        revision = syncRevision,
         updatedAtEpochMillis = updatedAtEpochMillis,
     ),
 ).filter { record -> record.rawValue != null || record.displayLabel != null || record.paletteColorId != null }
@@ -135,7 +135,7 @@ private fun ClothingItemEntity.toPhotoRecord(): GarmentPhotoRecord? = photoUri?.
         garmentId = id,
         localUri = uri,
         blobPath = DriveFolderNaming.photoBlobPath(id, uri),
-        revision = updatedAtEpochMillis,
+        revision = syncRevision,
         updatedAtEpochMillis = updatedAtEpochMillis,
     )
 }

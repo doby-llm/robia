@@ -13,6 +13,11 @@ data class ClothingItem(
     val isArchived: Boolean = false,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
+    val syncStatus: GarmentSyncStatus = GarmentSyncStatus.LocalOnly,
+    val syncRevision: Long = updatedAtEpochMillis,
+    val syncDirtyAtEpochMillis: Long? = null,
+    val lastSyncedAtEpochMillis: Long? = null,
+    val syncFailureMessage: String? = null,
 )
 
 data class ClothingColorMetrics(

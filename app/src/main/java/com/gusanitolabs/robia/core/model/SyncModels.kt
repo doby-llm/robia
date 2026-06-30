@@ -18,6 +18,17 @@ enum class DriveSyncDisabledReason {
     AccountBindingConflict,
 }
 
+/** Durable per-garment cloud outbox state persisted with each local garment revision. */
+enum class GarmentSyncStatus {
+    LocalOnly,
+    Dirty,
+    Queued,
+    Syncing,
+    Synced,
+    FailedRetryable,
+    AuthBlocked,
+}
+
 /**
  * Where Robia stores sync payloads once OAuth credentials are supplied.
  *

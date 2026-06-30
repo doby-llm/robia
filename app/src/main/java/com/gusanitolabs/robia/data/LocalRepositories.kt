@@ -28,6 +28,8 @@ class LocalWardrobeRepository(
     override fun observeItem(id: String): Flow<ClothingItem?> =
         wardrobeDao.observeItem(id).map { it?.toDomain() }
 
+    override fun observePendingGarmentSyncCount(): Flow<Int> = wardrobeDao.observePendingGarmentSyncCount()
+
     override suspend fun upsertItem(item: ClothingItem) {
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
     }
@@ -46,6 +48,18 @@ class LocalWardrobeRepository(
     override suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long) {
         wardrobeDao.archiveItems(ids, updatedAtEpochMillis)
     }
+
+    override suspend fun markGarmentSyncing(id: String, revision: Long): Boolean =
+        wardrobeDao.markGarmentSyncing(id, revision) > 0
+
+    override suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean =
+        wardrobeDao.markGarmentSynced(id, revision, syncedAtEpochMillis) > 0
+
+    override suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String?): Boolean =
+        wardrobeDao.markGarmentSyncFailedRetryable(id, revision, message) > 0
+
+    override suspend fun markGarmentSyncAuthBlocked(id: String, message: String?): Boolean =
+        wardrobeDao.markGarmentSyncAuthBlocked(id, message) > 0
 }
 
 class LocalTagRepository(
@@ -149,6 +163,11 @@ private fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
     isArchived = item.isArchived,
     createdAtEpochMillis = item.createdAtEpochMillis,
     updatedAtEpochMillis = item.updatedAtEpochMillis,
+    syncStatus = item.syncStatus,
+    syncRevision = item.syncRevision,
+    syncDirtyAtEpochMillis = item.syncDirtyAtEpochMillis,
+    lastSyncedAtEpochMillis = item.lastSyncedAtEpochMillis,
+    syncFailureMessage = item.syncFailureMessage,
 )
 
 private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
@@ -173,6 +192,11 @@ private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     isArchived = isArchived,
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
+    syncStatus = syncStatus,
+    syncRevision = syncRevision,
+    syncDirtyAtEpochMillis = syncDirtyAtEpochMillis,
+    lastSyncedAtEpochMillis = lastSyncedAtEpochMillis,
+    syncFailureMessage = syncFailureMessage,
 )
 
 private fun TagCategoryEntity.toDomain(): TagCategory = TagCategory(id, name, sortOrder, isSystem)

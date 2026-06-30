@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -25,6 +26,21 @@ interface WardrobeDao {
     @Query("SELECT * FROM clothing_item_tags ORDER BY clothing_item_id, tag_id")
     suspend fun getItemTagRefsForSync(): List<ClothingItemTagCrossRef>
 
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')")
+    fun observePendingGarmentSyncCount(): Flow<Int>
+
+    @Query("UPDATE clothing_items SET sync_status = 'Syncing' WHERE id = :itemId AND sync_revision = :revision")
+    suspend fun markGarmentSyncing(itemId: String, revision: Long): Int
+
+    @Query("UPDATE clothing_items SET sync_status = 'Synced', last_synced_at_epoch_millis = :syncedAtEpochMillis, sync_dirty_at_epoch_millis = NULL, sync_failure_message = NULL WHERE id = :itemId AND sync_revision = :revision")
+    suspend fun markGarmentSynced(itemId: String, revision: Long, syncedAtEpochMillis: Long): Int
+
+    @Query("UPDATE clothing_items SET sync_status = 'FailedRetryable', sync_failure_message = :message WHERE id = :itemId AND sync_revision = :revision")
+    suspend fun markGarmentSyncFailedRetryable(itemId: String, revision: Long, message: String?): Int
+
+    @Query("UPDATE clothing_items SET sync_status = 'AuthBlocked', sync_failure_message = :message WHERE id = :itemId")
+    suspend fun markGarmentSyncAuthBlocked(itemId: String, message: String?): Int
+
     @Upsert
     suspend fun upsertItem(item: ClothingItemEntity)
 
@@ -37,15 +53,15 @@ interface WardrobeDao {
     @Query("SELECT id FROM garment_tags WHERE id IN (:ids)")
     suspend fun existingTagIds(ids: List<String>): List<String>
 
-    @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis WHERE id = :itemId")
+    @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis, sync_status = 'Queued', sync_revision = :updatedAtEpochMillis, sync_dirty_at_epoch_millis = :updatedAtEpochMillis, sync_failure_message = NULL WHERE id = :itemId")
     suspend fun archiveItem(itemId: String, updatedAtEpochMillis: Long)
 
-    @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis WHERE id IN (:itemIds)")
+    @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis, sync_status = 'Queued', sync_revision = :updatedAtEpochMillis, sync_dirty_at_epoch_millis = :updatedAtEpochMillis, sync_failure_message = NULL WHERE id IN (:itemIds)")
     suspend fun archiveItems(itemIds: List<String>, updatedAtEpochMillis: Long)
 
     @Transaction
     suspend fun upsertItemWithTags(item: ClothingItemEntity, tagIds: List<String>) {
-        upsertItem(item)
+        upsertItem(item.queuedForSync())
         clearTags(item.id)
         val activeTagIds: Set<String> = if (tagIds.isEmpty()) emptySet() else existingTagIds(tagIds).toSet()
         insertTagRefs(
@@ -162,7 +178,7 @@ interface TagDao {
         if (tombstones.isNotEmpty()) upsertSyncTombstones(tombstones)
         if (updatedItems.isNotEmpty()) {
             val itemIds = updatedItems.map(ClothingItemEntity::id)
-            upsertClothingItems(updatedItems)
+            upsertClothingItems(updatedItems.map(ClothingItemEntity::queuedForSync))
             clearTagsForItems(itemIds)
             insertItemTagRefs(
                 tagIdsByItemId.flatMap { (itemId, tagIds) ->
@@ -188,4 +204,14 @@ interface SyncTombstoneDao {
 
     @Upsert
     suspend fun upsert(tombstone: SyncTombstoneEntity)
+}
+
+private fun ClothingItemEntity.queuedForSync(): ClothingItemEntity {
+    val revision = updatedAtEpochMillis.coerceAtLeast(System.currentTimeMillis())
+    return copy(
+        syncStatus = GarmentSyncStatus.Queued,
+        syncRevision = revision,
+        syncDirtyAtEpochMillis = revision,
+        syncFailureMessage = null,
+    )
 }

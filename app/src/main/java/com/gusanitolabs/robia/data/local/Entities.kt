@@ -9,6 +9,7 @@ import androidx.room.Junction
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 
 @Entity(tableName = "clothing_items")
 data class ClothingItemEntity(
@@ -22,6 +23,11 @@ data class ClothingItemEntity(
     @ColumnInfo(name = "is_archived") val isArchived: Boolean,
     @ColumnInfo(name = "created_at_epoch_millis") val createdAtEpochMillis: Long,
     @ColumnInfo(name = "updated_at_epoch_millis") val updatedAtEpochMillis: Long,
+    @ColumnInfo(name = "sync_status") val syncStatus: GarmentSyncStatus = GarmentSyncStatus.LocalOnly,
+    @ColumnInfo(name = "sync_revision") val syncRevision: Long = updatedAtEpochMillis,
+    @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
 )
 
 data class ColorMetricsEntity(
