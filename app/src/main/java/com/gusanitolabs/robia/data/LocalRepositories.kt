@@ -90,9 +90,10 @@ class LocalTagRepository(
     }
 
     override suspend fun deleteCustomTag(id: String) {
-        if (tagDao.deleteCustomTag(id) > 0) {
-            syncTombstoneDao?.upsert(syncTombstone(entityType = "garment_tag", entityId = id))
-        }
+        tagDao.deleteEditableTagAndReferences(
+            id = id,
+            tombstone = syncTombstone(entityType = "garment_tag", entityId = id),
+        )
     }
 
     override suspend fun deleteMainColor(id: String) {

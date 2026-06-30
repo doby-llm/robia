@@ -124,6 +124,49 @@ class AdditionalInfoTagMapperTest {
         )
     }
 
+    @Test
+    fun stalePredictedLabelsAreIgnoredWhenTagsAreUnavailable() {
+        val availableTagIds = DefaultTags.tags
+            .map { tag -> tag.id }
+            .filterNot { tagId -> tagId in setOf("category-shorts", "season-spring", "occasion-active") }
+            .toSet()
+
+        val prediction = AdditionalInfoTagMapper.map(
+            scoresByHead = mapOf(
+                "category" to floatArrayOf(0.90f, 0.10f, 0.05f),
+                "season" to floatArrayOf(0.70f, 0.05f, 0.05f, 0.05f, 0.01f),
+                "occasion" to floatArrayOf(0.80f, 0.10f),
+            ),
+            availableTagIds = availableTagIds,
+            config = config,
+        ) ?: error("Expected prediction")
+
+        assertEquals(emptySet<String>(), prediction.selectedTagIds)
+    }
+
+    @Test
+    fun multiSeasonExpansionOnlyUsesAvailableSeasonTags() {
+        val availableTagIds = DefaultTags.tags
+            .map { tag -> tag.id }
+            .filterNot { tagId -> tagId in setOf("season-spring", "season-winter") }
+            .toSet()
+
+        val prediction = AdditionalInfoTagMapper.map(
+            scoresByHead = mapOf(
+                "category" to floatArrayOf(0.10f, 0.20f, 0.30f),
+                "season" to floatArrayOf(0.05f, 0.07f, 0.08f, 0.10f, 0.70f),
+                "occasion" to floatArrayOf(0.10f, 0.20f),
+            ),
+            availableTagIds = availableTagIds,
+            config = config,
+        ) ?: error("Expected prediction")
+
+        assertEquals(
+            setOf("season-summer", "season-fall"),
+            prediction.selectedTagIds.filter { id -> id.startsWith("season-") }.toSet(),
+        )
+    }
+
     private fun map(
         category: FloatArray = floatArrayOf(0.10f, 0.20f, 0.30f),
         season: FloatArray = floatArrayOf(0.43f, 0.42f, 0.05f, 0.03f, 0.02f),

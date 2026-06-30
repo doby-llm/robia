@@ -34,6 +34,9 @@ interface WardrobeDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTagRefs(refs: List<ClothingItemTagCrossRef>)
 
+    @Query("SELECT id FROM garment_tags WHERE id IN (:ids)")
+    suspend fun existingTagIds(ids: List<String>): List<String>
+
     @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis WHERE id = :itemId")
     suspend fun archiveItem(itemId: String, updatedAtEpochMillis: Long)
 
@@ -44,7 +47,12 @@ interface WardrobeDao {
     suspend fun upsertItemWithTags(item: ClothingItemEntity, tagIds: List<String>) {
         upsertItem(item)
         clearTags(item.id)
-        insertTagRefs(tagIds.map { tagId -> ClothingItemTagCrossRef(item.id, tagId) })
+        val activeTagIds: Set<String> = if (tagIds.isEmpty()) emptySet() else existingTagIds(tagIds).toSet()
+        insertTagRefs(
+            tagIds
+                .filter(activeTagIds::contains)
+                .map { tagId -> ClothingItemTagCrossRef(item.id, tagId) },
+        )
     }
 
     @Transaction
@@ -102,8 +110,17 @@ interface TagDao {
     @Upsert
     suspend fun upsertSyncTombstones(tombstones: List<SyncTombstoneEntity>)
 
-    @Query("DELETE FROM garment_tags WHERE id = :id AND is_system = 0")
-    suspend fun deleteCustomTag(id: String): Int
+    @Query("DELETE FROM clothing_item_tags WHERE tag_id = :id")
+    suspend fun deleteItemRefsForTag(id: String)
+
+    @Query(
+        """
+        DELETE FROM garment_tags
+        WHERE id = :id
+            AND (is_system = 0 OR category_id IN ('category', 'season', 'occasion'))
+        """,
+    )
+    suspend fun deleteEditableTag(id: String): Int
 
     @Query("DELETE FROM main_colors WHERE id = :id AND (SELECT COUNT(*) FROM main_colors) > 1")
     suspend fun deleteMainColor(id: String): Int
@@ -153,6 +170,14 @@ interface TagDao {
                 },
             )
         }
+    }
+
+    @Transaction
+    suspend fun deleteEditableTagAndReferences(id: String, tombstone: SyncTombstoneEntity): Int {
+        deleteItemRefsForTag(id)
+        val deletedCount = deleteEditableTag(id)
+        if (deletedCount > 0) upsertSyncTombstones(listOf(tombstone))
+        return deletedCount
     }
 }
 
