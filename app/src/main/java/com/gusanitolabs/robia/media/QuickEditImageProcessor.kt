@@ -62,6 +62,32 @@ object QuickEditImageProcessor {
         }
     }
 
+    fun eraseSegmentMask(
+        context: Context,
+        sourceUri: Uri,
+        segment: InteractiveSegmentResult,
+    ): Uri {
+        val mask = segment.mask ?: return eraseCircle(context, sourceUri, segment.point)
+        val source = decodeBitmap(context, sourceUri) ?: return sourceUri
+        return source.useForQuickEdit { bitmap ->
+            val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            try {
+                for (y in 0 until output.height) {
+                    val maskY = (y * mask.height / output.height).coerceIn(0, mask.height - 1)
+                    for (x in 0 until output.width) {
+                        val maskX = (x * mask.width / output.width).coerceIn(0, mask.width - 1)
+                        if (mask.isSelected(maskX, maskY)) {
+                            output.setPixel(x, y, output.getPixel(x, y) and 0x00FFFFFF)
+                        }
+                    }
+                }
+                ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit-erased")
+            } finally {
+                output.recycle()
+            }
+        }
+    }
+
     fun estimateCenterLuminance(context: Context, sourceUri: Uri): Float? {
         val bitmap = decodeBitmap(context, sourceUri) ?: return null
         return bitmap.useForQuickEdit { source ->
@@ -155,7 +181,32 @@ interface InteractiveGarmentSegmenter {
 
 data class InteractiveSegmentResult(
     val point: NormalizedImagePoint,
+    val mask: InteractiveSegmentMask? = null,
 )
+
+data class InteractiveSegmentMask(
+    val width: Int,
+    val height: Int,
+    val alpha: ByteArray,
+) {
+    fun isSelected(x: Int, y: Int): Boolean {
+        if (x !in 0 until width || y !in 0 until height) return false
+        return alpha[y * width + x].toInt() and 0xFF >= MASK_SELECTED_ALPHA
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is InteractiveSegmentMask &&
+            width == other.width &&
+            height == other.height &&
+            alpha.contentEquals(other.alpha)
+
+    override fun hashCode(): Int =
+        31 * (31 * width + height) + alpha.contentHashCode()
+
+    private companion object {
+        const val MASK_SELECTED_ALPHA = 96
+    }
+}
 
 /** MediaPipe Interactive Segmenter is not bundled yet; this keeps the UI non-blocking. */
 class UnavailableInteractiveGarmentSegmenter : InteractiveGarmentSegmenter {

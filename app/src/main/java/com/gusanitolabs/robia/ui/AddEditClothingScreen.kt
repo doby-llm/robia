@@ -66,6 +66,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +80,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -90,6 +93,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
@@ -106,19 +111,24 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
 import com.gusanitolabs.robia.media.EditorPhotoState
+import com.gusanitolabs.robia.media.InteractiveGarmentSegmenter
+import com.gusanitolabs.robia.media.InteractiveSegmentMask
+import com.gusanitolabs.robia.media.InteractiveSegmentResult
 import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
-import com.gusanitolabs.robia.media.UnavailableInteractiveGarmentSegmenter
+import com.gusanitolabs.robia.media.createInteractiveGarmentSegmenter
 import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.Closeable
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -139,7 +149,10 @@ fun AddEditClothingScreen(
 ) {
     val context = LocalContext.current
     val backgroundRemover = remember { PhotoBackgroundRemover() }
-    val quickEditSegmenter = remember { UnavailableInteractiveGarmentSegmenter() }
+    val quickEditSegmenter = remember(context) { createInteractiveGarmentSegmenter(context) }
+    DisposableEffect(quickEditSegmenter) {
+        onDispose { (quickEditSegmenter as? Closeable)?.close() }
+    }
     val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     val latestMainColors by rememberUpdatedState(mainColors)
     val latestAvailableTags by rememberUpdatedState(availableTags)
@@ -642,9 +655,10 @@ fun AddEditClothingScreen(
         QuickEditDialog(
             photoUri = canonicalPhotoUri.orEmpty(),
             beforePhotoUri = quickEditBaseUri,
-            segmenterAvailable = quickEditSegmenter.isAvailable,
+            segmenter = quickEditSegmenter,
+            photoAspectRatio = photoAspectRatio,
             onDismiss = { showQuickEdit = false },
-            onSave = { adjustments, erasePoint ->
+            onSave = { adjustments, eraseSegment ->
                 val currentPhotoUri = Uri.parse(canonicalPhotoUri.orEmpty())
                 coroutineScope.launch {
                     showQuickEdit = false
@@ -653,11 +667,11 @@ fun AddEditClothingScreen(
                     val editedResult = runCatching {
                         withContext(Dispatchers.IO) {
                             val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, adjustments)
-                            if (quickEditSegmenter.isAvailable && erasePoint != null) {
+                            if (eraseSegment != null) {
                                 quickEditSegmenter.eraseSegment(
                                     context,
                                     adjustedUri,
-                                    quickEditSegmenter.highlightSegment(context, adjustedUri, erasePoint),
+                                    eraseSegment,
                                 )
                             } else {
                                 adjustedUri
@@ -1750,19 +1764,33 @@ private fun PhotoPreview(
 private fun QuickEditDialog(
     photoUri: String,
     beforePhotoUri: String,
-    segmenterAvailable: Boolean,
+    segmenter: InteractiveGarmentSegmenter,
+    photoAspectRatio: Float?,
     onDismiss: () -> Unit,
-    onSave: (QuickEditAdjustments, NormalizedImagePoint?) -> Unit,
+    onSave: (QuickEditAdjustments, InteractiveSegmentResult?) -> Unit,
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var brightness by rememberSaveable { mutableStateOf(0f) }
     var temperature by rememberSaveable { mutableStateOf(0f) }
     var selectedTool by rememberSaveable { mutableStateOf(QuickEditTool.Brightness) }
-    var erasePoint by remember { mutableStateOf<NormalizedImagePoint?>(null) }
+    var pendingSegment by remember { mutableStateOf<InteractiveSegmentResult?>(null) }
+    var committedSegment by remember { mutableStateOf<InteractiveSegmentResult?>(null) }
+    var isSegmenting by remember { mutableStateOf(false) }
+    var segmentError by rememberSaveable { mutableStateOf<String?>(null) }
     var showBefore by remember { mutableStateOf(false) }
+    val segmenterAvailable = segmenter.isAvailable
     val previewUri = if (showBefore) beforePhotoUri else photoUri
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (pendingSegment != null) {
+                pendingSegment = null
+                segmentError = null
+            } else {
+                onDismiss()
+            }
+        },
         title = { Text(stringResource(R.string.quick_edit_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -1772,19 +1800,45 @@ private fun QuickEditDialog(
                         .aspectRatio(3f / 4f)
                         .clip(MaterialTheme.shapes.large)
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .pointerInput(selectedTool, segmenterAvailable) {
+                        .pointerInput(selectedTool, segmenterAvailable, photoAspectRatio, photoUri, isSegmenting) {
                             detectTapGestures(
                                 onPress = {
-                                    showBefore = true
-                                    tryAwaitRelease()
-                                    showBefore = false
+                                    if (selectedTool != QuickEditTool.Eraser) {
+                                        showBefore = true
+                                        tryAwaitRelease()
+                                        showBefore = false
+                                    }
                                 },
                                 onTap = { offset: Offset ->
-                                    if (selectedTool == QuickEditTool.Eraser && segmenterAvailable) {
-                                        erasePoint = NormalizedImagePoint(
-                                            x = offset.x / size.width.coerceAtLeast(1).toFloat(),
-                                            y = offset.y / size.height.coerceAtLeast(1).toFloat(),
+                                    if (selectedTool == QuickEditTool.Eraser && segmenterAvailable && !isSegmenting) {
+                                        val imagePoint = mapFitCenterTapToImagePoint(
+                                            offset = offset,
+                                            containerWidth = size.width,
+                                            containerHeight = size.height,
+                                            imageAspectRatio = photoAspectRatio,
                                         )
+                                        if (imagePoint == null) {
+                                            segmentError = context.getString(R.string.quick_edit_select_segment_first)
+                                            pendingSegment = null
+                                        } else {
+                                            isSegmenting = true
+                                            segmentError = null
+                                            pendingSegment = null
+                                            coroutineScope.launch {
+                                                val result = runCatching {
+                                                    withContext(Dispatchers.IO) {
+                                                        segmenter.highlightSegment(context, Uri.parse(photoUri), imagePoint)
+                                                    }
+                                                }
+                                                pendingSegment = result.getOrNull()?.takeIf { it.mask != null }
+                                                segmentError = when {
+                                                    result.isFailure -> context.getString(R.string.quick_edit_eraser_unavailable)
+                                                    pendingSegment == null -> context.getString(R.string.quick_edit_no_segment_found)
+                                                    else -> null
+                                                }
+                                                isSegmenting = false
+                                            }
+                                        }
                                     }
                                 },
                             )
@@ -1792,8 +1846,8 @@ private fun QuickEditDialog(
                     contentAlignment = Alignment.Center,
                 ) {
                     AndroidView(
-                        factory = { context ->
-                            ImageView(context).apply {
+                        factory = { viewContext ->
+                            ImageView(viewContext).apply {
                                 scaleType = ImageView.ScaleType.FIT_CENTER
                                 adjustViewBounds = true
                                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -1802,14 +1856,13 @@ private fun QuickEditDialog(
                         update = { imageView -> imageView.setImageURI(Uri.parse(previewUri)) },
                         modifier = Modifier.fillMaxSize(),
                     )
-                    erasePoint?.takeIf { selectedTool == QuickEditTool.Eraser }?.let { point ->
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            drawCircle(
-                                color = Color.Red.copy(alpha = 0.28f),
-                                radius = size.minDimension * 0.08f,
-                                center = Offset(point.x * size.width, point.y * size.height),
-                            )
-                        }
+                    val highlightSegment = pendingSegment ?: committedSegment
+                    highlightSegment?.takeIf { selectedTool == QuickEditTool.Eraser }?.let { segment ->
+                        SegmentMaskOverlay(
+                            segment = segment,
+                            imageAspectRatio = photoAspectRatio,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                     Text(
                         text = if (showBefore) stringResource(R.string.quick_edit_before_label) else stringResource(R.string.quick_edit_hold_compare_hint),
@@ -1896,20 +1949,142 @@ private fun QuickEditDialog(
                     }
                     QuickEditTool.Eraser -> {
                         Text(
-                            text = if (segmenterAvailable) stringResource(R.string.quick_edit_eraser_hint) else stringResource(R.string.quick_edit_eraser_unavailable),
+                            text = when {
+                                isSegmenting -> stringResource(R.string.quick_edit_loading_segmenter)
+                                !segmenterAvailable -> stringResource(R.string.quick_edit_eraser_unavailable)
+                                committedSegment != null -> stringResource(R.string.quick_edit_segment_committed)
+                                pendingSegment != null -> stringResource(R.string.quick_edit_segment_pending)
+                                else -> stringResource(R.string.quick_edit_eraser_hint)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (segmenterAvailable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                         )
+                        segmentError?.let { message ->
+                            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(
+                                enabled = pendingSegment != null && !isSegmenting,
+                                onClick = {
+                                    committedSegment = pendingSegment
+                                    pendingSegment = null
+                                    segmentError = null
+                                },
+                            ) { Text(stringResource(R.string.quick_edit_erase_segment)) }
+                            TextButton(
+                                enabled = pendingSegment != null || committedSegment != null,
+                                onClick = {
+                                    pendingSegment = null
+                                    committedSegment = null
+                                    segmentError = null
+                                },
+                            ) { Text(stringResource(R.string.undo)) }
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(QuickEditAdjustments(brightness, temperature), erasePoint) }) {
+            Button(onClick = { onSave(QuickEditAdjustments(brightness, temperature), committedSegment) }) {
                 Text(stringResource(R.string.save_item))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    if (pendingSegment != null) {
+                        pendingSegment = null
+                        segmentError = null
+                    } else {
+                        onDismiss()
+                    }
+                },
+            ) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun SegmentMaskOverlay(
+    segment: InteractiveSegmentResult,
+    imageAspectRatio: Float?,
+    modifier: Modifier = Modifier,
+) {
+    val mask = segment.mask
+    val overlay = remember(mask) { mask?.toOverlayImageBitmap() }
+    if (overlay != null) {
+        Canvas(modifier = modifier) {
+            val rect = fitCenterRect(size.width, size.height, imageAspectRatio)
+            drawImage(
+                image = overlay,
+                dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
+                dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
+            )
+        }
+    } else {
+        Canvas(modifier = modifier) {
+            val rect = fitCenterRect(size.width, size.height, imageAspectRatio)
+            drawCircle(
+                color = Color.Red.copy(alpha = 0.28f),
+                radius = minOf(rect.width, rect.height) * 0.08f,
+                center = Offset(rect.left + segment.point.x * rect.width, rect.top + segment.point.y * rect.height),
+            )
+        }
+    }
+}
+
+private fun InteractiveSegmentMask.toOverlayImageBitmap(): ImageBitmap {
+    val pixels = IntArray(width * height)
+    for (index in pixels.indices) {
+        val alphaValue = (alpha[index].toInt() and 0xFF).coerceIn(0, 255)
+        pixels[index] = (alphaValue shl 24) or 0x00FF1744
+    }
+    return android.graphics.Bitmap.createBitmap(pixels, width, height, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+private fun mapFitCenterTapToImagePoint(
+    offset: Offset,
+    containerWidth: Int,
+    containerHeight: Int,
+    imageAspectRatio: Float?,
+): NormalizedImagePoint? {
+    val rect = fitCenterRect(containerWidth.toFloat(), containerHeight.toFloat(), imageAspectRatio)
+    if (offset.x < rect.left || offset.x > rect.right || offset.y < rect.top || offset.y > rect.bottom) return null
+    return NormalizedImagePoint(
+        x = ((offset.x - rect.left) / rect.width).coerceIn(0f, 1f),
+        y = ((offset.y - rect.top) / rect.height).coerceIn(0f, 1f),
+    )
+}
+
+private data class FitCenterRect(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float,
+) {
+    val right: Float = left + width
+    val bottom: Float = top + height
+}
+
+private fun fitCenterRect(containerWidth: Float, containerHeight: Float, imageAspectRatio: Float?): FitCenterRect {
+    val safeWidth = containerWidth.coerceAtLeast(1f)
+    val safeHeight = containerHeight.coerceAtLeast(1f)
+    val aspectRatio = imageAspectRatio?.takeIf { it > 0f } ?: (safeWidth / safeHeight)
+    val containerAspectRatio = safeWidth / safeHeight
+    val (contentWidth, contentHeight) = if (aspectRatio > containerAspectRatio) {
+        safeWidth to safeWidth / aspectRatio
+    } else {
+        safeHeight * aspectRatio to safeHeight
+    }
+    return FitCenterRect(
+        left = (safeWidth - contentWidth) / 2f,
+        top = (safeHeight - contentHeight) / 2f,
+        width = contentWidth,
+        height = contentHeight,
     )
 }
 

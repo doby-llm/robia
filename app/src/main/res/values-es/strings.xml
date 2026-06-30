@@ -197,8 +197,15 @@
     <string name="quick_edit_temperature_preset_content_description">Preajuste de temperatura: %1$s</string>
     <string name="quick_edit_brightness_hint">Ajusta el brillo de más oscuro a más claro.</string>
     <string name="quick_edit_temperature_hint">Elige una temperatura más fría, neutra o más cálida.</string>
-    <string name="quick_edit_eraser_hint">Toca la zona de la prenda para resaltar un segmento y guarda para borrarlo.</string>
+    <string name="quick_edit_eraser_hint">Toca una zona de la prenda para seleccionar un segmento. Tocar solo previsualiza; usa Borrar para confirmarlo.</string>
     <string name="quick_edit_eraser_unavailable">El borrador por segmentos no está disponible porque el modelo de MediaPipe aún no está incluido. El brillo, la temperatura y el guardado siguen funcionando.</string>
+    <string name="quick_edit_loading_segmenter">Cargando segmentador…</string>
+    <string name="quick_edit_no_segment_found">No se encontró ningún segmento. Prueba a tocar otra zona de la prenda.</string>
+    <string name="quick_edit_select_segment_first">Toca dentro de la foto mostrada para seleccionar primero un segmento.</string>
+    <string name="quick_edit_segment_pending">Segmento resaltado. Toca Borrar para confirmarlo o Cancelar para limpiarlo.</string>
+    <string name="quick_edit_segment_committed">Segmento marcado para borrar. Deshacer lo restaura antes del guardado final.</string>
+    <string name="quick_edit_erase_segment">Borrar</string>
+    <string name="quick_edit_processing_erase">Borrando segmento seleccionado…</string>
     <string name="quick_edit_temperature_cooler">Más fría</string>
     <string name="quick_edit_temperature_cool">Fría</string>
     <string name="quick_edit_temperature_neutral">Neutra</string>
