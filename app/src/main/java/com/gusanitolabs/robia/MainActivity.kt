@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun persistDriveAuthorizationResult(result: AuthorizationResult) {
-        val grantedDriveScope = result.grantedScopes.any { scope -> scope.scopeUri == DRIVE_APPDATA_SCOPE }
+        val grantedDriveScope = result.grantedScopes.any { scope -> scope == DRIVE_APPDATA_SCOPE }
         lifecycleScope.launch {
             settingsRepository.setDriveSyncConnectionStatus(
                 if (grantedDriveScope) {

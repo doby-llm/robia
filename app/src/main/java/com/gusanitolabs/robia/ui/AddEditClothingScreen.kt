@@ -1565,6 +1565,7 @@ private fun PhotoPreview(
 ) {
     val uri = photoUri?.takeIf { it.isNotBlank() }
     val emptyPhotoContentDescription = stringResource(R.string.content_open_camera)
+    val quickEditContentDescription = stringResource(R.string.content_quick_edit_photo)
     Box(
         modifier = modifier
             .aspectRatio(aspectRatio)
@@ -1602,7 +1603,7 @@ private fun PhotoPreview(
                         .padding(12.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
-                        .semantics { contentDescription = stringResource(R.string.content_quick_edit_photo) },
+                        .semantics { contentDescription = quickEditContentDescription },
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Edit,
