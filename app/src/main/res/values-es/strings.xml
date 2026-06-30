@@ -16,6 +16,8 @@
     <string name="data_sync_google_drive_setup_required">Configuración necesaria antes de conectar</string>
     <string name="cloud_setup_recommended_summary">Recomendada antes de añadir prendas</string>
     <string name="cloud_setup_late_blocked_summary">Bloqueada tras cambios locales en el armario</string>
+    <string name="cloud_setup_configured_summary">Toca para ver el estado actual de Drive</string>
+    <string name="cloud_setup_configured_status">La configuración de Google Drive está lista. La gestión completa de sincronización llegará próximamente.</string>
     <string name="cloud_setup_prompt_title">¿Configurar la copia en la nube ahora?</string>
     <string name="cloud_setup_prompt_body">Robia recomienda activar Google Drive antes de añadir prendas. Así la primera copia en la nube queda limpia y se evitan decisiones de fusión inseguras más adelante.</string>
     <string name="cloud_setup_configure_when_available">Configurar</string>

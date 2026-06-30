@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,7 @@ interface SettingsRepository {
     suspend fun setLanguagePreference(languagePreference: LanguagePreference)
     suspend fun setDeveloperModeUnlocked(unlocked: Boolean)
     suspend fun setDeveloperModeEnabled(enabled: Boolean)
+    suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus)
     suspend fun markCloudSetupPromptInteracted()
 }
 
@@ -27,6 +29,7 @@ class DataStoreSettingsRepository(
             languagePreference = preferences[languageKey].toLanguagePreference(),
             developerModeUnlocked = developerModeUnlocked,
             developerModeEnabled = developerModeUnlocked && (preferences[developerModeEnabledKey] ?: false),
+            driveSyncConnectionStatus = preferences[driveSyncConnectionStatusKey].toDriveSyncConnectionStatus(),
             cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false,
         )
     }
@@ -56,6 +59,12 @@ class DataStoreSettingsRepository(
         }
     }
 
+    override suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus) {
+        dataStore.edit { preferences ->
+            preferences[driveSyncConnectionStatusKey] = status.name
+        }
+    }
+
     override suspend fun markCloudSetupPromptInteracted() {
         dataStore.edit { preferences ->
             preferences[cloudSetupPromptInteractedKey] = true
@@ -65,10 +74,14 @@ class DataStoreSettingsRepository(
     private fun String?.toLanguagePreference(): LanguagePreference =
         LanguagePreference.entries.firstOrNull { it.storageValue == this } ?: LanguagePreference.System
 
+    private fun String?.toDriveSyncConnectionStatus(): DriveSyncConnectionStatus =
+        DriveSyncConnectionStatus.entries.firstOrNull { it.name == this } ?: DriveSyncConnectionStatus.NotConfigured
+
     private companion object {
         val languageKey = stringPreferencesKey("language")
         val developerModeUnlockedKey = booleanPreferencesKey("developer_mode_unlocked")
         val developerModeEnabledKey = booleanPreferencesKey("developer_mode_enabled")
+        val driveSyncConnectionStatusKey = stringPreferencesKey("drive_sync_connection_status")
         val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
     }
 }

@@ -16,6 +16,8 @@
     <string name="data_sync_google_drive_setup_required">Einrichtung vor dem Verbinden erforderlich</string>
     <string name="cloud_setup_recommended_summary">Empfohlen, bevor du Kleidung hinzufügst</string>
     <string name="cloud_setup_late_blocked_summary">Nach lokalen Änderungen an der Garderobe gesperrt</string>
+    <string name="cloud_setup_configured_summary">Tippe, um den aktuellen Drive-Status zu sehen</string>
+    <string name="cloud_setup_configured_status">Google Drive ist eingerichtet. Die vollständige Synchronisierungsverwaltung kommt später.</string>
     <string name="cloud_setup_prompt_title">Cloud-Sicherung jetzt einrichten?</string>
     <string name="cloud_setup_prompt_body">Robia empfiehlt, Google Drive zu aktivieren, bevor du Kleidungsstücke hinzufügst. So bleibt die erste Cloud-Kopie sauber und unsichere Zusammenführungen werden später vermieden.</string>
     <string name="cloud_setup_configure_when_available">Einrichten</string>

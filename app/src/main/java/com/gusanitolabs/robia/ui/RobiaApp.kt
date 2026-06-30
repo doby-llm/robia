@@ -307,7 +307,11 @@ fun RobiaApp(
 
     LocalizedRobiaContent(settings.languagePreference) {
         RobiaTheme {
-        val displaySettings = settings.copy(driveSyncConnectionStatus = syncState.connectionStatus)
+        val displayDriveSyncStatus = syncState.connectionStatus.takeUnless {
+            it == DriveSyncConnectionStatus.NotConfigured &&
+                settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured
+        } ?: settings.driveSyncConnectionStatus
+        val displaySettings = settings.copy(driveSyncConnectionStatus = displayDriveSyncStatus)
         RobiaShell(
             settings = displaySettings,
             syncState = syncState,
@@ -495,6 +499,7 @@ private fun RobiaShell(
     val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
     val context = LocalContext.current
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
+    val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     val batchDrafts = remember { mutableStateListOf<BatchDraftItem>() }
@@ -533,6 +538,7 @@ private fun RobiaShell(
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
+            onCloudSetupPromptInteracted()
             cloudSetupDialogMode = CloudSetupDialogMode.RecommendedFirstRun
         }
     }
@@ -719,7 +725,9 @@ private fun RobiaShell(
     }
 
     fun requestCloudSetup() {
-        if (cloudSetupGuard.hasUnsafeLocalState) {
+        if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
+            Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
+        } else if (cloudSetupGuard.hasUnsafeLocalState) {
             cloudSetupDialogMode = CloudSetupDialogMode.LateEnableBlocked
         } else {
             onRequestCloudSetup()
@@ -909,7 +917,9 @@ private fun RobiaShell(
                                 expanded = settingsExpanded,
                                 currentLanguage = settings.languagePreference,
                                 driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
-                                canAttemptCloudSetup = !cloudSetupGuard.hasUnsafeLocalState,
+                                cloudSetupSummaryRes = settings.driveSyncConnectionStatus.cloudSetupSummaryRes(
+                                    canAttemptCloudSetup = !cloudSetupGuard.hasUnsafeLocalState,
+                                ),
                                 developerModeUnlocked = settings.developerModeUnlocked,
                                 developerModeEnabled = settings.developerModeEnabled,
                                 onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
@@ -1041,7 +1051,7 @@ private fun SettingsMenu(
     expanded: Boolean,
     currentLanguage: LanguagePreference,
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
-    canAttemptCloudSetup: Boolean,
+    @StringRes cloudSetupSummaryRes: Int,
     developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
@@ -1102,13 +1112,7 @@ private fun SettingsMenu(
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Text(
-                        text = stringResource(
-                            if (canAttemptCloudSetup) {
-                                R.string.cloud_setup_recommended_summary
-                            } else {
-                                R.string.cloud_setup_late_blocked_summary
-                            },
-                        ),
+                        text = stringResource(cloudSetupSummaryRes),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1119,6 +1123,20 @@ private fun SettingsMenu(
             enabled = true,
         )
     }
+}
+
+@StringRes
+private fun DriveSyncConnectionStatus.cloudSetupSummaryRes(canAttemptCloudSetup: Boolean): Int = when (this) {
+    DriveSyncConnectionStatus.NotConfigured -> if (canAttemptCloudSetup) {
+        R.string.cloud_setup_recommended_summary
+    } else {
+        R.string.cloud_setup_late_blocked_summary
+    }
+    DriveSyncConnectionStatus.Disabled -> R.string.cloud_setup_late_blocked_summary
+    DriveSyncConnectionStatus.Disconnected,
+    DriveSyncConnectionStatus.Connected,
+    DriveSyncConnectionStatus.Syncing,
+    DriveSyncConnectionStatus.NeedsAttention -> R.string.cloud_setup_configured_summary
 }
 
 @Composable
