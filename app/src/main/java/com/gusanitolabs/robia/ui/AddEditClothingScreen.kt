@@ -7,9 +7,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,9 +53,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,8 +72,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -93,7 +99,11 @@ import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.QuickEditAdjustments
+import com.gusanitolabs.robia.media.QuickEditImageProcessor
+import com.gusanitolabs.robia.media.UnavailableInteractiveGarmentSegmenter
 import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
@@ -122,6 +132,7 @@ fun AddEditClothingScreen(
 ) {
     val context = LocalContext.current
     val backgroundRemover = remember { PhotoBackgroundRemover() }
+    val quickEditSegmenter = remember { UnavailableInteractiveGarmentSegmenter() }
     val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     val latestMainColors by rememberUpdatedState(mainColors)
     val latestAvailableTags by rememberUpdatedState(availableTags)
@@ -144,6 +155,8 @@ fun AddEditClothingScreen(
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
     var developerExportStatus by rememberSaveable { mutableStateOf<String?>(null) }
     var additionalInfoSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var showQuickEdit by rememberSaveable { mutableStateOf(false) }
+    var quickEditStatus by rememberSaveable { mutableStateOf<String?>(null) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     var nextPhotoInputId by remember { mutableStateOf(0L) }
     var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
@@ -181,6 +194,7 @@ fun AddEditClothingScreen(
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
         developerExportStatus = null
         additionalInfoSourceUri = null
+        quickEditStatus = null
         photoRetrySource = PendingPhotoInput(
             id = inputId,
             uriString = uriString,
@@ -209,6 +223,7 @@ fun AddEditClothingScreen(
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
         developerExportStatus = null
         additionalInfoSourceUri = null
+        quickEditStatus = null
         developerDiagnostics = listOf(
             "Photo processing started",
             "source=$sourceStatus",
@@ -367,6 +382,96 @@ fun AddEditClothingScreen(
         }
     }
 
+    suspend fun reprocessEditedPhoto(editedUri: Uri) {
+        val token = ++photoProcessingToken
+        val tagIdsBeforeProcessing = selectedTagIds.toSet()
+        val startedAt = SystemClock.elapsedRealtime()
+        val diagnostics = mutableListOf(
+            "Quick Edit save started",
+            "Edited URI: $editedUri",
+            "Palette colors available at start: ${latestMainColors.size}",
+            "Tags available at start: ${latestAvailableTags.size}",
+        )
+
+        fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
+        fun addLine(line: String) {
+            diagnostics += "${elapsed()}ms  $line"
+        }
+
+        try {
+            photoUri = editedUri.toString()
+            captureStatus = PhotoStatus.QuickEdited
+            isPhotoProcessing = true
+            quickEditStatus = null
+            photoProcessingStage = PhotoProcessingStage.CroppingPicture
+            val croppedResult = runCatching {
+                withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, editedUri) }
+            }
+            val croppedUri = croppedResult.getOrDefault(editedUri)
+            photoUri = croppedUri.toString()
+            addLine("Quick Edit crop: success=${croppedResult.isSuccess}, uri=$croppedUri")
+            if (token != photoProcessingToken) return
+
+            val finalAspectRatio = withContext(Dispatchers.IO) { ClothingImageStore.readImageAspectRatio(context, croppedUri) }
+            photoAspectRatio = finalAspectRatio?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: photoAspectRatio
+
+            photoProcessingStage = PhotoProcessingStage.ExtractingColor
+            val colorResult = runCatching {
+                withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, latestMainColors) }
+            }
+            val colorDiagnostics = colorResult.getOrNull()
+            val extracted = colorDiagnostics?.matches.orEmpty()
+            addLine("Quick Edit color extraction: success=${colorResult.isSuccess}, matches=${extracted.size}")
+            colorDiagnostics?.let { stats ->
+                addLine("Color stats: bitmap=${stats.width ?: "unknown"}x${stats.height ?: "unknown"}, sampleStep=${stats.sampleStep ?: "n/a"}, estimatedSamples=${stats.sampleGridEstimate ?: "n/a"}, paletteSize=${stats.paletteSize}")
+            }
+            colorResult.exceptionOrNull()?.let { throwable ->
+                addLine("Color extraction failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+            }
+            if (token != photoProcessingToken) return
+            if (extracted.isNotEmpty()) applyExtractedColors(extracted)
+
+            photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
+            val tagsForDetection = latestAvailableTags
+            additionalInfoSourceUri = croppedUri.toString()
+            val detectionResult = runCatching {
+                withContext(Dispatchers.IO) { additionalInfoDetector.detect(context, croppedUri, tagsForDetection) }
+            }.getOrElse { throwable ->
+                addLine("Quick Edit additional-info detector exception: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+                null
+            }
+            addDetectionDebugLines(diagnostics, detectionResult)
+            if (token != photoProcessingToken) return
+            detectionResult?.prediction?.let { prediction ->
+                if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
+                    selectedTagIds = mergePredictedAdditionalInfoTags(
+                        currentTagIds = selectedTagIds,
+                        predictedTagIds = prediction.selectedTagIds,
+                        availableTags = tagsForDetection,
+                    )
+                } else {
+                    addLine("Predicted tags not merged because user changed tag selection during Quick Edit re-analysis")
+                }
+            }
+            captureStatus = PhotoStatus.QuickEdited
+            quickEditStatus = context.getString(R.string.quick_edit_saved_status)
+        } catch (throwable: CancellationException) {
+            addLine("Quick Edit re-analysis cancelled because a newer photo input superseded this one")
+            throw throwable
+        } catch (throwable: Exception) {
+            if (token != photoProcessingToken) return
+            addLine("Quick Edit re-analysis failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+            quickEditStatus = context.getString(R.string.quick_edit_save_failed)
+        } finally {
+            if (token == photoProcessingToken) {
+                addLine("Total duration: ${elapsed()}ms")
+                developerDiagnostics = diagnostics
+                isPhotoProcessing = false
+                photoProcessingStage = null
+            }
+        }
+    }
+
     LaunchedEffect(pendingPhotoInput) {
         val input = pendingPhotoInput ?: return@LaunchedEffect
         processSelectedPhoto(input.id, input.uriString, input.sourceStatus)
@@ -454,6 +559,46 @@ fun AddEditClothingScreen(
     }
 
     BackHandler { requestClose() }
+
+    if (showQuickEdit && !photoUri.isNullOrBlank()) {
+        QuickEditDialog(
+            photoUri = photoUri.orEmpty(),
+            beforePhotoUri = originalPhotoUri ?: photoUri.orEmpty(),
+            segmenterAvailable = quickEditSegmenter.isAvailable,
+            onDismiss = { showQuickEdit = false },
+            onSave = { adjustments, erasePoint ->
+                val currentPhotoUri = Uri.parse(photoUri.orEmpty())
+                coroutineScope.launch {
+                    showQuickEdit = false
+                    isPhotoProcessing = true
+                    photoProcessingStage = PhotoProcessingStage.ApplyingQuickEdit
+                    val editedResult = runCatching {
+                        withContext(Dispatchers.IO) {
+                            val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, adjustments)
+                            if (quickEditSegmenter.isAvailable && erasePoint != null) {
+                                quickEditSegmenter.eraseSegment(
+                                    context,
+                                    adjustedUri,
+                                    quickEditSegmenter.highlightSegment(context, adjustedUri, erasePoint),
+                                )
+                            } else {
+                                adjustedUri
+                            }
+                        }
+                    }
+                    editedResult.fold(
+                        onSuccess = { editedUri -> reprocessEditedPhoto(editedUri) },
+                        onFailure = { throwable ->
+                            quickEditStatus = context.getString(R.string.quick_edit_save_failed)
+                            developerDiagnostics = developerDiagnostics + "Quick Edit apply failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}"
+                            isPhotoProcessing = false
+                            photoProcessingStage = null
+                        },
+                    )
+                }
+            },
+        )
+    }
 
     if (showDiscardDialog) {
         AlertDialog(
@@ -545,6 +690,8 @@ fun AddEditClothingScreen(
                     onRetryPhotoProcessing = photoRetrySource?.let { retryInput ->
                         { queuePhotoForProcessing(retryInput.uriString, retryInput.sourceStatus) }
                     },
+                    onQuickEditClick = if (hasUsablePhoto && !isPhotoProcessing) ({ showQuickEdit = true }) else null,
+                    quickEditStatus = quickEditStatus,
                     onBatchPhotosSelected = onBatchPhotosSelected,
                 )
             } else {
@@ -555,6 +702,8 @@ fun AddEditClothingScreen(
                     isPhotoProcessing = false,
                     processingStage = null,
                     onRetryPhotoProcessing = null,
+                    onQuickEditClick = null,
+                    quickEditStatus = null,
                     onGalleryClick = null,
                     onCameraClick = null,
                 )
@@ -1235,6 +1384,8 @@ private fun PhotoCaptureCardWithLaunchers(
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
     onRetryPhotoProcessing: (() -> Unit)?,
+    onQuickEditClick: (() -> Unit)?,
+    quickEditStatus: String?,
     onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -1277,6 +1428,8 @@ private fun PhotoCaptureCardWithLaunchers(
         isPhotoProcessing = isPhotoProcessing,
         processingStage = processingStage,
         onRetryPhotoProcessing = onRetryPhotoProcessing,
+        onQuickEditClick = onQuickEditClick,
+        quickEditStatus = quickEditStatus,
         onGalleryClick = {
             runCatching { galleryLauncher.launch(arrayOf("image/*")) }
                 .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
@@ -1302,6 +1455,8 @@ private fun PhotoCaptureCard(
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
     onRetryPhotoProcessing: (() -> Unit)?,
+    onQuickEditClick: (() -> Unit)?,
+    quickEditStatus: String?,
     onGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
@@ -1323,6 +1478,7 @@ private fun PhotoCaptureCard(
                 modifier = Modifier.fillMaxWidth(),
                 aspectRatio = photoAspectRatio ?: 4f / 3f,
                 onEmptyPhotoClick = onCameraClick,
+                onQuickEditClick = onQuickEditClick,
             )
             Row(
                 modifier = Modifier
@@ -1359,6 +1515,7 @@ private fun PhotoCaptureCard(
                 PhotoStatus.Processed -> R.string.photo_processed_status
                 PhotoStatus.BackgroundRemoved -> R.string.background_removal_success_status
                 PhotoStatus.BackgroundFallback -> R.string.background_removal_fallback_status
+                PhotoStatus.QuickEdited -> R.string.quick_edit_saved_status
                 PhotoStatus.MediaUnavailable -> R.string.media_actions_unavailable_status
                 else -> null
             }
@@ -1372,6 +1529,13 @@ private fun PhotoCaptureCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    quickEditStatus?.let { status ->
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     if (captureStatus == PhotoStatus.BackgroundFallback && onRetryPhotoProcessing != null) {
                         OutlinedButton(
                             onClick = onRetryPhotoProcessing,
@@ -1397,6 +1561,7 @@ private fun PhotoPreview(
     modifier: Modifier = Modifier,
     aspectRatio: Float = 3f / 4f,
     onEmptyPhotoClick: (() -> Unit)? = null,
+    onQuickEditClick: (() -> Unit)? = null,
 ) {
     val uri = photoUri?.takeIf { it.isNotBlank() }
     val emptyPhotoContentDescription = stringResource(R.string.content_open_camera)
@@ -1429,6 +1594,23 @@ private fun PhotoPreview(
                 update = { imageView -> imageView.setImageURI(Uri.parse(uri)) },
                 modifier = Modifier.fillMaxSize(),
             )
+            if (!isProcessing && onQuickEditClick != null) {
+                IconButton(
+                    onClick = onQuickEditClick,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+                        .semantics { contentDescription = stringResource(R.string.content_quick_edit_photo) },
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             if (isProcessing) {
                 Box(
                     modifier = Modifier
@@ -1481,6 +1663,160 @@ private fun PhotoPreview(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuickEditDialog(
+    photoUri: String,
+    beforePhotoUri: String,
+    segmenterAvailable: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (QuickEditAdjustments, NormalizedImagePoint?) -> Unit,
+) {
+    var brightness by rememberSaveable { mutableStateOf(0f) }
+    var temperature by rememberSaveable { mutableStateOf(0f) }
+    var selectedTool by rememberSaveable { mutableStateOf(QuickEditTool.Brightness) }
+    var erasePoint by remember { mutableStateOf<NormalizedImagePoint?>(null) }
+    var showBefore by remember { mutableStateOf(false) }
+    val previewUri = if (showBefore) beforePhotoUri else photoUri
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.quick_edit_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(3f / 4f)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .pointerInput(selectedTool, segmenterAvailable) {
+                            detectTapGestures(
+                                onPress = {
+                                    showBefore = true
+                                    tryAwaitRelease()
+                                    showBefore = false
+                                },
+                                onTap = { offset: Offset ->
+                                    if (selectedTool == QuickEditTool.Eraser && segmenterAvailable) {
+                                        erasePoint = NormalizedImagePoint(
+                                            x = offset.x / size.width.coerceAtLeast(1).toFloat(),
+                                            y = offset.y / size.height.coerceAtLeast(1).toFloat(),
+                                        )
+                                    }
+                                },
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AndroidView(
+                        factory = { context ->
+                            ImageView(context).apply {
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                                adjustViewBounds = true
+                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            }
+                        },
+                        update = { imageView -> imageView.setImageURI(Uri.parse(previewUri)) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    erasePoint?.takeIf { selectedTool == QuickEditTool.Eraser }?.let { point ->
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            drawCircle(
+                                color = Color.Red.copy(alpha = 0.28f),
+                                radius = size.minDimension * 0.08f,
+                                center = Offset(point.x * size.width, point.y * size.height),
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (showBefore) stringResource(R.string.quick_edit_before_label) else stringResource(R.string.quick_edit_hold_compare_hint),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(12.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.46f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickEditToolChip(
+                        label = stringResource(R.string.quick_edit_brightness),
+                        selected = selectedTool == QuickEditTool.Brightness,
+                        onClick = { selectedTool = QuickEditTool.Brightness },
+                    )
+                    QuickEditToolChip(
+                        label = stringResource(R.string.quick_edit_temperature),
+                        selected = selectedTool == QuickEditTool.Temperature,
+                        onClick = { selectedTool = QuickEditTool.Temperature },
+                    )
+                    QuickEditToolChip(
+                        label = stringResource(R.string.quick_edit_eraser),
+                        selected = selectedTool == QuickEditTool.Eraser,
+                        onClick = { selectedTool = QuickEditTool.Eraser },
+                    )
+                }
+
+                when (selectedTool) {
+                    QuickEditTool.Brightness -> {
+                        Text(stringResource(R.string.quick_edit_brightness_hint), style = MaterialTheme.typography.bodySmall)
+                        Slider(value = brightness, onValueChange = { brightness = it }, valueRange = -1f..1f)
+                    }
+                    QuickEditTool.Temperature -> {
+                        Text(stringResource(R.string.quick_edit_temperature_hint), style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cool, -0.75f, temperature) { temperature = it }
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_neutral, 0f, temperature) { temperature = it }
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warm, 0.75f, temperature) { temperature = it }
+                        }
+                    }
+                    QuickEditTool.Eraser -> {
+                        Text(
+                            text = if (segmenterAvailable) stringResource(R.string.quick_edit_eraser_hint) else stringResource(R.string.quick_edit_eraser_unavailable),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (segmenterAvailable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(QuickEditAdjustments(brightness, temperature), erasePoint) }) {
+                Text(stringResource(R.string.save_item))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+@Composable
+private fun QuickEditToolChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+@Composable
+private fun QuickEditTemperaturePreset(
+    labelRes: Int,
+    value: Float,
+    selectedValue: Float,
+    onSelected: (Float) -> Unit,
+) {
+    val selected = selectedValue == value
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(if (value < 0f) Color(0xFFB9D8FF) else if (value > 0f) Color(0xFFFFC58C) else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                .clickable { onSelected(value) },
+        )
+        Text(stringResource(labelRes), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -1690,6 +2026,8 @@ private fun GarmentTag.localizedLabel(): String = localizedTagLabel()
 
 private enum class ColorPickerTarget { Primary, Secondary }
 
+private enum class QuickEditTool { Brightness, Temperature, Eraser }
+
 private data class PendingPhotoInput(
     val id: Long,
     val uriString: String,
@@ -1701,6 +2039,7 @@ private enum class PhotoProcessingStage(val labelRes: Int) {
     CroppingPicture(R.string.processing_stage_cropping_picture),
     ExtractingColor(R.string.processing_stage_extracting_color),
     DetectingAdditionalInformation(R.string.processing_stage_detecting_additional_information),
+    ApplyingQuickEdit(R.string.processing_stage_applying_quick_edit),
 }
 
 private fun mergePredictedAdditionalInfoTags(
@@ -1740,6 +2079,7 @@ internal object PhotoStatus {
     const val BackgroundRemoved = "background_removed"
     const val BackgroundDisabled = "background_disabled"
     const val BackgroundFallback = "background_fallback"
+    const val QuickEdited = "quick_edited"
     const val MediaUnavailable = "media_unavailable"
 }
 

@@ -170,6 +170,22 @@
     <string name="processing_stage_cropping_picture">Bild wird zugeschnitten</string>
     <string name="processing_stage_extracting_color">Farbe wird extrahiert</string>
     <string name="processing_stage_detecting_additional_information">Zusätzliche Informationen werden erkannt</string>
+    <string name="processing_stage_applying_quick_edit">Schnellbearbeitung wird angewendet</string>
+    <string name="quick_edit_title">Foto schnell bearbeiten</string>
+    <string name="quick_edit_brightness">Helligkeit</string>
+    <string name="quick_edit_temperature">Temperatur</string>
+    <string name="quick_edit_eraser">Radierer</string>
+    <string name="quick_edit_brightness_hint">Passe die Helligkeit von dunkler bis heller an.</string>
+    <string name="quick_edit_temperature_hint">Wähle eine kühlere, neutrale oder wärmere Temperatur.</string>
+    <string name="quick_edit_eraser_hint">Tippe auf den Kleidungsbereich, um ein Segment hervorzuheben, und speichere, um es zu löschen.</string>
+    <string name="quick_edit_eraser_unavailable">Der Segmentradierer ist nicht verfügbar, weil das MediaPipe-Modell noch nicht gebündelt ist. Helligkeit, Temperatur und Speichern funktionieren weiterhin.</string>
+    <string name="quick_edit_temperature_cool">Kühl</string>
+    <string name="quick_edit_temperature_neutral">Neutral</string>
+    <string name="quick_edit_temperature_warm">Warm</string>
+    <string name="quick_edit_hold_compare_hint">Zum Vorher-Vergleich halten</string>
+    <string name="quick_edit_before_label">Vorher</string>
+    <string name="quick_edit_saved_status">Schnellbearbeitung gespeichert; Farben und Details neu erkannt.</string>
+    <string name="quick_edit_save_failed">Schnellbearbeitung konnte nicht gespeichert werden.</string>
     <string name="colors_section">Farben</string>
 
     <string name="raw_color_required">Rohfarbwert</string>
@@ -256,6 +272,7 @@
     <string name="content_share_item">Kleidungsstück teilen</string>
     <string name="content_open_item_detail">Kleidungsdetail öffnen</string>
     <string name="content_open_gallery">Galerieauswahl öffnen</string>
+    <string name="content_quick_edit_photo">Schnellen Fotoeditor öffnen</string>
     <string name="content_open_batch_gallery">Galerieauswahl öffnen</string>
     <string name="content_open_camera">Kameraaufnahme öffnen</string>
     <string name="content_post_processing_on">Fotooptimierung ein</string>
