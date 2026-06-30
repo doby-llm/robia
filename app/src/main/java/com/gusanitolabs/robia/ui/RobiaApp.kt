@@ -223,19 +223,29 @@ private data class UiTag(
 
 private data class BrowseFilterState(
     val selectedTagIds: Set<String> = emptySet(),
+    val selectedUnsetTagCategoryIds: Set<String> = emptySet(),
     val selectedPaletteColorIds: Set<String> = emptySet(),
     val favoritesOnly: Boolean = false,
 ) {
     val hasActiveFilters: Boolean
-        get() = selectedTagIds.isNotEmpty() || selectedPaletteColorIds.isNotEmpty() || favoritesOnly
+        get() = selectedTagIds.isNotEmpty() ||
+            selectedUnsetTagCategoryIds.isNotEmpty() ||
+            selectedPaletteColorIds.isNotEmpty() ||
+            favoritesOnly
 
     val activeFilterCount: Int
-        get() = selectedTagIds.size + selectedPaletteColorIds.size + if (favoritesOnly) 1 else 0
+        get() = selectedTagIds.size +
+            selectedUnsetTagCategoryIds.size +
+            selectedPaletteColorIds.size +
+            if (favoritesOnly) 1 else 0
 
     fun matches(item: UiWardrobeItem, paletteColors: List<MainColor>): Boolean {
-        val itemTagIds = item.tags.map(UiTag::id).toSet()
+        val assignedTags = item.tags.filter { tag -> tag.id.isNotBlank() && tag.label.isNotBlank() }
+        val itemTagIds = assignedTags.map(UiTag::id).toSet()
+        val itemTagCategoryIds = assignedTags.map(UiTag::categoryId).toSet()
         return (!favoritesOnly || item.isFavorite) &&
             selectedTagIds.all(itemTagIds::contains) &&
+            selectedUnsetTagCategoryIds.none(itemTagCategoryIds::contains) &&
             (selectedPaletteColorIds.isEmpty() || item.matchesAnyPaletteColor(selectedPaletteColors(paletteColors)))
     }
 
@@ -2264,9 +2274,11 @@ private fun AdvancedFiltersScreen(
             FilterSection(title = stringResource(R.string.filter_category), icon = categoryIconFor("category")) {
                 FilterTagChips(
                     tags = categoryTags,
+                    categoryId = "category",
                     selectedTagIds = filters.selectedTagIds,
-                    emptyText = stringResource(R.string.filters_no_tags),
-                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                    selectedUnsetTagCategoryIds = filters.selectedUnsetTagCategoryIds,
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleSingleValueTag(tag, categoryTags)) },
+                    onUnsetToggled = { onFiltersChange(filters.toggleUnsetCategory("category", categoryTags)) },
                 )
             }
         }
@@ -2274,9 +2286,11 @@ private fun AdvancedFiltersScreen(
             FilterSection(title = stringResource(R.string.filter_season), icon = categoryIconFor("season")) {
                 FilterTagChips(
                     tags = seasonTags,
+                    categoryId = "season",
                     selectedTagIds = filters.selectedTagIds,
-                    emptyText = stringResource(R.string.filters_no_tags),
-                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                    selectedUnsetTagCategoryIds = filters.selectedUnsetTagCategoryIds,
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag)) },
+                    onUnsetToggled = { onFiltersChange(filters.toggleUnsetCategory("season", seasonTags)) },
                 )
             }
         }
@@ -2284,9 +2298,11 @@ private fun AdvancedFiltersScreen(
             FilterSection(title = stringResource(R.string.filter_occasion), icon = categoryIconFor("occasion")) {
                 FilterTagChips(
                     tags = occasionTags,
+                    categoryId = "occasion",
                     selectedTagIds = filters.selectedTagIds,
-                    emptyText = stringResource(R.string.filters_no_tags),
-                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                    selectedUnsetTagCategoryIds = filters.selectedUnsetTagCategoryIds,
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag)) },
+                    onUnsetToggled = { onFiltersChange(filters.toggleUnsetCategory("occasion", occasionTags)) },
                 )
             }
         }
@@ -2294,9 +2310,11 @@ private fun AdvancedFiltersScreen(
             FilterSection(title = stringResource(R.string.filter_location), icon = categoryIconFor("location")) {
                 FilterTagChips(
                     tags = locationTags,
+                    categoryId = "location",
                     selectedTagIds = filters.selectedTagIds,
-                    emptyText = stringResource(R.string.filters_no_tags),
-                    onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag.id)) },
+                    selectedUnsetTagCategoryIds = filters.selectedUnsetTagCategoryIds,
+                    onTagToggled = { tag -> onFiltersChange(filters.toggleSingleValueTag(tag, locationTags)) },
+                    onUnsetToggled = { onFiltersChange(filters.toggleUnsetCategory("location", locationTags)) },
                 )
             }
         }
@@ -2358,15 +2376,24 @@ private fun FilterSection(
 @Composable
 private fun FilterTagChips(
     tags: List<GarmentTag>,
+    categoryId: String,
     selectedTagIds: Set<String>,
-    emptyText: String,
+    selectedUnsetTagCategoryIds: Set<String>,
     onTagToggled: (GarmentTag) -> Unit,
+    onUnsetToggled: () -> Unit,
 ) {
-    if (tags.isEmpty()) {
-        Text(emptyText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        return
-    }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val notSetSelected = categoryId in selectedUnsetTagCategoryIds
+        FilterChip(
+            selected = notSetSelected,
+            onClick = onUnsetToggled,
+            label = { Text(stringResource(R.string.not_set)) },
+            leadingIcon = if (notSetSelected) {
+                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+            } else {
+                null
+            },
+        )
         tags.forEach { tag ->
             val selected = tag.id in selectedTagIds
             FilterChip(
@@ -2436,9 +2463,36 @@ private fun ColorPaletteChips(
     }
 }
 
-private fun BrowseFilterState.toggleTag(tagId: String): BrowseFilterState = copy(
-    selectedTagIds = selectedTagIds.toggle(tagId),
+private fun BrowseFilterState.toggleTag(tag: GarmentTag): BrowseFilterState = copy(
+    selectedTagIds = selectedTagIds.toggle(tag.id),
+    selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds - tag.categoryId,
 )
+
+private fun BrowseFilterState.toggleSingleValueTag(
+    tag: GarmentTag,
+    categoryTags: List<GarmentTag>,
+): BrowseFilterState {
+    val categoryTagIds = categoryTags.map(GarmentTag::id).toSet()
+    return copy(
+        selectedTagIds = if (tag.id in selectedTagIds) {
+            selectedTagIds - tag.id
+        } else {
+            (selectedTagIds - categoryTagIds) + tag.id
+        },
+        selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds - tag.categoryId,
+    )
+}
+
+private fun BrowseFilterState.toggleUnsetCategory(
+    categoryId: String,
+    categoryTags: List<GarmentTag>,
+): BrowseFilterState {
+    val categoryTagIds = categoryTags.map(GarmentTag::id).toSet()
+    return copy(
+        selectedTagIds = selectedTagIds - categoryTagIds,
+        selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds.toggle(categoryId),
+    )
+}
 
 private fun BrowseFilterState.togglePaletteColor(colorId: String): BrowseFilterState = copy(
     selectedPaletteColorIds = selectedPaletteColorIds.toggle(colorId),
