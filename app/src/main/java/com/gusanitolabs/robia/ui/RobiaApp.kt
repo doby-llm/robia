@@ -2945,6 +2945,7 @@ private fun RobiaAppPreview() {
         RobiaShell(
             settings = RobiaSettings(),
             syncState = WardrobeSyncState.notConfigured(),
+            pendingGarmentSyncCount = 0,
             clothingItems = emptyList(),
             tagCategories = emptyList(),
             availableTags = emptyList(),
