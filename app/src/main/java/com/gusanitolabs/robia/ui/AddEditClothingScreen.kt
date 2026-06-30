@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +55,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -99,6 +101,8 @@ import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
+import com.gusanitolabs.robia.media.EditorPhotoState
 import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
@@ -140,6 +144,7 @@ fun AddEditClothingScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var originalPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var editorPhotoState by remember { mutableStateOf(EditorPhotoState()) }
     var photoAspectRatio by rememberSaveable { mutableStateOf<Float?>(null) }
     var selectedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fitValue by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -189,6 +194,13 @@ fun AddEditClothingScreen(
         photoProcessingToken += 1 // Immediately invalidate any older in-flight pipeline.
         originalPhotoUri = uriString
         photoUri = uriString
+        editorPhotoState = EditorPhotoState(
+            rawSourceUri = uriString,
+            currentEditedUri = uriString,
+            backgroundRemovalStatus = EditorBackgroundRemovalStatus.Queued,
+            processingEventId = inputId,
+            processingToken = photoProcessingToken,
+        )
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
@@ -218,6 +230,13 @@ fun AddEditClothingScreen(
         val tagIdsBeforeProcessing = selectedTagIds.toSet()
         originalPhotoUri = uriString
         photoUri = uriString
+        editorPhotoState = EditorPhotoState(
+            rawSourceUri = uriString,
+            currentEditedUri = uriString,
+            backgroundRemovalStatus = EditorBackgroundRemovalStatus.RemovingBackground,
+            processingEventId = inputId,
+            processingToken = token,
+        )
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
@@ -255,6 +274,17 @@ fun AddEditClothingScreen(
                 val backgroundStart = SystemClock.elapsedRealtime()
                 val result = backgroundRemover.removeBackground(context, Uri.parse(uriString))
                 addLine("Background removal: status=${result.status}, usedFallback=${result.usedFallback}, output=${result.outputUri}")
+                editorPhotoState = editorPhotoState.copy(
+                    foregroundUri = result.outputUri.toString(),
+                    currentEditedUri = result.outputUri.toString(),
+                    backgroundRemovalStatus = if (result.usedFallback) {
+                        EditorBackgroundRemovalStatus.OriginalFallback
+                    } else {
+                        EditorBackgroundRemovalStatus.ForegroundReady
+                    },
+                    processingEventId = inputId,
+                    processingToken = token,
+                )
                 result.failure?.let { failure ->
                     addLine("Background failure: reason=${failure.reason}, cause=${failure.causeClass ?: "n/a"}, message=${failure.message ?: "n/a"}")
                 }
@@ -288,6 +318,17 @@ fun AddEditClothingScreen(
                     PhotoStatus.BackgroundRemoved
                 }
                 captureStatus = finalStatus
+                editorPhotoState = editorPhotoState.copy(
+                    croppedForegroundUri = displayUri,
+                    currentEditedUri = displayUri,
+                    backgroundRemovalStatus = if (finalStatus == PhotoStatus.BackgroundFallback) {
+                        EditorBackgroundRemovalStatus.OriginalFallback
+                    } else {
+                        EditorBackgroundRemovalStatus.CroppedForegroundReady
+                    },
+                    processingEventId = inputId,
+                    processingToken = token,
+                )
                 addLine("Final photo status: $finalStatus")
                 if (finalStatus != PhotoStatus.BackgroundFallback) {
                     photoRetrySource = null
@@ -323,6 +364,7 @@ fun AddEditClothingScreen(
                 val tagsForDetection = latestAvailableTags
                 val classifierUri = croppedUri
                 additionalInfoSourceUri = classifierUri.toString()
+                editorPhotoState = editorPhotoState.copy(additionalInfoSourceUri = classifierUri.toString())
                 addLine("Additional-info classifier source: cropped foreground uri=$classifierUri")
                 var detectionResult = runCatching {
                     withContext(Dispatchers.IO) {
@@ -333,9 +375,10 @@ fun AddEditClothingScreen(
                     null
                 }
                 val originalFallbackUri = Uri.parse(originalPhotoUri ?: uriString)
-                if (detectionResult?.prediction == null && originalFallbackUri != classifierUri) {
-                    addLine("Additional-info cropped-source detection failed; falling back to original uri=$originalFallbackUri")
+                if (detectionResult?.prediction == null && editorPhotoState.usesOriginalPhotoFallback && originalFallbackUri != classifierUri) {
+                    addLine("Additional-info foreground fallback unavailable; falling back to original explicit fallback uri=$originalFallbackUri")
                     additionalInfoSourceUri = originalFallbackUri.toString()
+                    editorPhotoState = editorPhotoState.copy(additionalInfoSourceUri = originalFallbackUri.toString())
                     detectionResult = runCatching {
                         withContext(Dispatchers.IO) {
                             additionalInfoDetector.detect(context, originalFallbackUri, tagsForDetection)
@@ -366,6 +409,13 @@ fun AddEditClothingScreen(
                 if (token != photoProcessingToken) return
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
+                editorPhotoState = EditorPhotoState(
+                    rawSourceUri = uriString,
+                    currentEditedUri = uriString,
+                    backgroundRemovalStatus = EditorBackgroundRemovalStatus.OriginalFallback,
+                    processingEventId = inputId,
+                    processingToken = token,
+                )
                 photoRetrySource = PendingPhotoInput(
                     id = inputId,
                     uriString = uriString,
@@ -401,6 +451,11 @@ fun AddEditClothingScreen(
         try {
             photoUri = editedUri.toString()
             captureStatus = PhotoStatus.QuickEdited
+            editorPhotoState = editorPhotoState.copy(
+                currentEditedUri = editedUri.toString(),
+                backgroundRemovalStatus = EditorBackgroundRemovalStatus.QuickEdited,
+                processingToken = token,
+            )
             isPhotoProcessing = true
             quickEditStatus = null
             photoProcessingStage = PhotoProcessingStage.CroppingPicture
@@ -409,6 +464,12 @@ fun AddEditClothingScreen(
             }
             val croppedUri = croppedResult.getOrDefault(editedUri)
             photoUri = croppedUri.toString()
+            editorPhotoState = editorPhotoState.copy(
+                croppedForegroundUri = croppedUri.toString(),
+                currentEditedUri = croppedUri.toString(),
+                backgroundRemovalStatus = EditorBackgroundRemovalStatus.QuickEdited,
+                processingToken = token,
+            )
             addLine("Quick Edit crop: success=${croppedResult.isSuccess}, uri=$croppedUri")
             if (token != photoProcessingToken) return
 
@@ -434,6 +495,7 @@ fun AddEditClothingScreen(
             photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
             val tagsForDetection = latestAvailableTags
             additionalInfoSourceUri = croppedUri.toString()
+            editorPhotoState = editorPhotoState.copy(additionalInfoSourceUri = croppedUri.toString())
             val detectionResult = runCatching {
                 withContext(Dispatchers.IO) { additionalInfoDetector.detect(context, croppedUri, tagsForDetection) }
             }.getOrElse { throwable ->
@@ -482,6 +544,17 @@ fun AddEditClothingScreen(
         notes = existingItem?.notes.orEmpty()
         originalPhotoUri = existingItem?.photoUri
         photoUri = existingItem?.photoUri
+        editorPhotoState = EditorPhotoState(
+            rawSourceUri = existingItem?.photoUri,
+            croppedForegroundUri = existingItem?.photoUri,
+            currentEditedUri = existingItem?.photoUri,
+            additionalInfoSourceUri = existingItem?.photoUri,
+            backgroundRemovalStatus = if (existingItem?.photoUri.isNullOrBlank()) {
+                EditorBackgroundRemovalStatus.None
+            } else {
+                EditorBackgroundRemovalStatus.CroppedForegroundReady
+            },
+        )
         photoAspectRatio = null
         selectedTagIds = existingItem?.tags?.map(GarmentTag::id).orEmpty()
         fitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
@@ -507,7 +580,8 @@ fun AddEditClothingScreen(
     val developerExportNoPhotoStatus = stringResource(R.string.developer_export_input_image_no_photo)
     val developerExportSavedStatus = stringResource(R.string.developer_export_input_image_saved)
     val developerExportErrorStatus = stringResource(R.string.developer_export_input_image_error)
-    val hasUsablePhoto = !photoUri.isNullOrBlank()
+    val canonicalPhotoUri = editorPhotoState.canonicalEditorUri ?: photoUri
+    val hasUsablePhoto = !canonicalPhotoUri.isNullOrBlank()
     val canSaveItem = hasUsablePhoto && !isPhotoProcessing
     val saveHelperTextRes = when {
         isPhotoProcessing -> R.string.item_save_photo_processing_helper
@@ -516,7 +590,7 @@ fun AddEditClothingScreen(
     }
     val hasUnsavedChanges = name != existingItem?.name.orEmpty() ||
         notes != existingItem?.notes.orEmpty() ||
-        photoUri != existingItem?.photoUri ||
+        canonicalPhotoUri != existingItem?.photoUri ||
         selectedTagIds != existingItem?.tags?.map(GarmentTag::id).orEmpty() ||
         fitValue != initialFitValue ||
         selectedPrimaryColorId != existingItem?.colorMetrics?.primaryPaletteColorId ||
@@ -531,7 +605,7 @@ fun AddEditClothingScreen(
     }
 
     fun exportAdditionalInfoInputImage() {
-        val source = additionalInfoSourceUri ?: originalPhotoUri ?: photoUri
+        val source = editorPhotoState.canonicalAdditionalInfoUri ?: additionalInfoSourceUri ?: photoUri
         if (source.isNullOrBlank()) {
             developerExportStatus = developerExportNoPhotoStatus
             return
@@ -560,14 +634,15 @@ fun AddEditClothingScreen(
 
     BackHandler { requestClose() }
 
-    if (showQuickEdit && !photoUri.isNullOrBlank()) {
+    if (showQuickEdit && !canonicalPhotoUri.isNullOrBlank()) {
+        val quickEditBaseUri = editorPhotoState.quickEditComparisonBaseUri ?: canonicalPhotoUri.orEmpty()
         QuickEditDialog(
-            photoUri = photoUri.orEmpty(),
-            beforePhotoUri = originalPhotoUri ?: photoUri.orEmpty(),
+            photoUri = canonicalPhotoUri.orEmpty(),
+            beforePhotoUri = quickEditBaseUri,
             segmenterAvailable = quickEditSegmenter.isAvailable,
             onDismiss = { showQuickEdit = false },
             onSave = { adjustments, erasePoint ->
-                val currentPhotoUri = Uri.parse(photoUri.orEmpty())
+                val currentPhotoUri = Uri.parse(canonicalPhotoUri.orEmpty())
                 coroutineScope.launch {
                     showQuickEdit = false
                     isPhotoProcessing = true
@@ -680,7 +755,7 @@ fun AddEditClothingScreen(
         item {
             if (activityResultRegistryOwner != null) {
                 PhotoCaptureCardWithLaunchers(
-                    photoUri = photoUri,
+                    photoUri = canonicalPhotoUri,
                     photoAspectRatio = photoAspectRatio,
                     captureStatus = captureStatus,
                     isPhotoProcessing = isPhotoProcessing,
@@ -696,7 +771,7 @@ fun AddEditClothingScreen(
                 )
             } else {
                 PhotoCaptureCard(
-                    photoUri = photoUri,
+                    photoUri = canonicalPhotoUri,
                     photoAspectRatio = photoAspectRatio,
                     captureStatus = PhotoStatus.MediaUnavailable,
                     isPhotoProcessing = false,
@@ -800,7 +875,7 @@ fun AddEditClothingScreen(
                                 id = existingItem?.id ?: UUID.randomUUID().toString(),
                                 name = existingItem?.name.orEmpty(),
                                 notes = notes,
-                                photoUri = photoUri,
+                                photoUri = canonicalPhotoUri,
                                 tags = selectedTags,
                                 fitValue = fitValue,
                                 colorMetrics = ClothingColorMetrics(
@@ -1667,6 +1742,7 @@ private fun PhotoPreview(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickEditDialog(
     photoUri: String,
@@ -1745,23 +1821,43 @@ private fun QuickEditDialog(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickEditToolChip(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    QuickEditToolIconButton(
+                        icon = Icons.Rounded.Edit,
                         label = stringResource(R.string.quick_edit_brightness),
                         selected = selectedTool == QuickEditTool.Brightness,
                         onClick = { selectedTool = QuickEditTool.Brightness },
                     )
-                    QuickEditToolChip(
+                    Spacer(Modifier.width(8.dp))
+                    QuickEditToolIconButton(
+                        icon = Icons.Rounded.Straighten,
                         label = stringResource(R.string.quick_edit_temperature),
                         selected = selectedTool == QuickEditTool.Temperature,
                         onClick = { selectedTool = QuickEditTool.Temperature },
                     )
-                    QuickEditToolChip(
+                    Spacer(Modifier.width(8.dp))
+                    QuickEditToolIconButton(
+                        icon = Icons.Rounded.Delete,
                         label = stringResource(R.string.quick_edit_eraser),
                         selected = selectedTool == QuickEditTool.Eraser,
                         onClick = { selectedTool = QuickEditTool.Eraser },
                     )
                 }
+
+                Text(
+                    text = when (selectedTool) {
+                        QuickEditTool.Brightness -> stringResource(R.string.quick_edit_brightness)
+                        QuickEditTool.Temperature -> stringResource(R.string.quick_edit_temperature)
+                        QuickEditTool.Eraser -> stringResource(R.string.quick_edit_eraser)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
 
                 when (selectedTool) {
                     QuickEditTool.Brightness -> {
@@ -1770,10 +1866,16 @@ private fun QuickEditDialog(
                     }
                     QuickEditTool.Temperature -> {
                         Text(stringResource(R.string.quick_edit_temperature_hint), style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cool, -0.75f, temperature) { temperature = it }
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cooler, -1f, temperature) { temperature = it }
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cool, -0.5f, temperature) { temperature = it }
                             QuickEditTemperaturePreset(R.string.quick_edit_temperature_neutral, 0f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warm, 0.75f, temperature) { temperature = it }
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warm, 0.5f, temperature) { temperature = it }
+                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warmer, 1f, temperature) { temperature = it }
                         }
                     }
                     QuickEditTool.Eraser -> {
@@ -1796,8 +1898,35 @@ private fun QuickEditDialog(
 }
 
 @Composable
-private fun QuickEditToolChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+private fun QuickEditToolIconButton(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        ),
+        modifier = Modifier
+            .size(48.dp)
+            .semantics {
+                contentDescription = label
+                this.selected = selected
+            },
+    ) {
+        Icon(imageVector = icon, contentDescription = null)
+    }
 }
 
 @Composable

@@ -179,11 +179,13 @@
     <string name="quick_edit_temperature_hint">Wähle eine kühlere, neutrale oder wärmere Temperatur.</string>
     <string name="quick_edit_eraser_hint">Tippe auf den Kleidungsbereich, um ein Segment hervorzuheben, und speichere, um es zu löschen.</string>
     <string name="quick_edit_eraser_unavailable">Der Segmentradierer ist nicht verfügbar, weil das MediaPipe-Modell noch nicht gebündelt ist. Helligkeit, Temperatur und Speichern funktionieren weiterhin.</string>
+    <string name="quick_edit_temperature_cooler">Kühler</string>
     <string name="quick_edit_temperature_cool">Kühl</string>
     <string name="quick_edit_temperature_neutral">Neutral</string>
     <string name="quick_edit_temperature_warm">Warm</string>
-    <string name="quick_edit_hold_compare_hint">Zum Vorher-Vergleich halten</string>
-    <string name="quick_edit_before_label">Vorher</string>
+    <string name="quick_edit_temperature_warmer">Wärmer</string>
+    <string name="quick_edit_hold_compare_hint">Zum Vergleich vor der Bearbeitung halten</string>
+    <string name="quick_edit_before_label">Vor der Bearbeitung</string>
     <string name="quick_edit_saved_status">Schnellbearbeitung gespeichert; Farben und Details neu erkannt.</string>
     <string name="quick_edit_save_failed">Schnellbearbeitung konnte nicht gespeichert werden.</string>
     <string name="colors_section">Farben</string>

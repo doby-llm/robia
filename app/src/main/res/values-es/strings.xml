@@ -179,11 +179,13 @@
     <string name="quick_edit_temperature_hint">Elige una temperatura más fría, neutra o más cálida.</string>
     <string name="quick_edit_eraser_hint">Toca la zona de la prenda para resaltar un segmento y guarda para borrarlo.</string>
     <string name="quick_edit_eraser_unavailable">El borrador por segmentos no está disponible porque el modelo de MediaPipe aún no está incluido. El brillo, la temperatura y el guardado siguen funcionando.</string>
+    <string name="quick_edit_temperature_cooler">Más fría</string>
     <string name="quick_edit_temperature_cool">Fría</string>
     <string name="quick_edit_temperature_neutral">Neutra</string>
     <string name="quick_edit_temperature_warm">Cálida</string>
-    <string name="quick_edit_hold_compare_hint">Mantén pulsado para comparar antes</string>
-    <string name="quick_edit_before_label">Antes</string>
+    <string name="quick_edit_temperature_warmer">Más cálida</string>
+    <string name="quick_edit_hold_compare_hint">Mantén pulsado para comparar antes de editar</string>
+    <string name="quick_edit_before_label">Antes de editar</string>
     <string name="quick_edit_saved_status">Edición rápida guardada; colores y detalles detectados de nuevo.</string>
     <string name="quick_edit_save_failed">No se pudo guardar la edición rápida.</string>
     <string name="colors_section">Colores</string>
