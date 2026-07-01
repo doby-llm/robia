@@ -195,7 +195,13 @@
     <string name="quick_edit_apply_on_save_hint">Preview updates live; Save keeps the result.</string>
     <string name="quick_edit_preview_loading">Updating preview…</string>
     <string name="quick_edit_brightness_reset">Reset to neutral</string>
-    <string name="quick_edit_temperature_preset_content_description">Temperature preset: %1$s</string>
+    <string name="quick_edit_brightness_reset_content_description">Reset brightness to neutral</string>
+    <string name="quick_edit_temperature_preset_content_description">Temperature: %1$s, %2$s, %3$s</string>
+    <string name="quick_edit_temperature_strength_gentle">Gentle</string>
+    <string name="quick_edit_temperature_strength_strongest">Strongest</string>
+    <string name="quick_edit_temperature_strength_neutral">Neutral</string>
+    <string name="quick_edit_temperature_selected">selected</string>
+    <string name="quick_edit_temperature_not_selected">not selected</string>
     <string name="quick_edit_brightness_hint">Adjust brightness from darker to brighter.</string>
     <string name="quick_edit_temperature_hint">Choose a cooler, neutral, or warmer temperature.</string>
     <string name="quick_edit_eraser_hint">Tap a garment area to select a segment. Tapping only previews; use Erase to commit it.</string>
