@@ -198,7 +198,7 @@
     <string name="quick_edit_brightness_hint">Adjust brightness from darker to brighter.</string>
     <string name="quick_edit_temperature_hint">Choose a cooler, neutral, or warmer temperature.</string>
     <string name="quick_edit_eraser_hint">Tap a garment area to select a segment. Tapping only previews; use Erase to commit it.</string>
-    <string name="quick_edit_eraser_unavailable">Segment eraser is unavailable because the MediaPipe model is not bundled yet. Brightness, temperature, and saving still work.</string>
+    <string name="quick_edit_eraser_unavailable">Segment eraser is unavailable because the MediaPipe model is disabled or absent. Brightness, temperature, and saving still work.</string>
     <string name="quick_edit_loading_segmenter">Loading segmenter…</string>
     <string name="quick_edit_no_segment_found">No segment found. Try tapping another garment area.</string>
     <string name="quick_edit_select_segment_first">Tap inside the displayed photo to select a segment first.</string>

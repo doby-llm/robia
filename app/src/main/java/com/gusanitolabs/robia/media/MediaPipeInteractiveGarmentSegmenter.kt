@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import com.gusanitolabs.robia.BuildConfig
 import com.google.mediapipe.framework.image.BitmapExtractor
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.ByteBufferExtractor
@@ -16,7 +17,10 @@ import java.io.Closeable
 import java.nio.ByteOrder
 
 fun createInteractiveGarmentSegmenter(context: Context): InteractiveGarmentSegmenter =
-    if (MediaPipeInteractiveGarmentSegmenter.isModelAssetBundled(context)) {
+    if (
+        BuildConfig.ROBIA_INTERACTIVE_SEGMENTER_ENABLED &&
+        MediaPipeInteractiveGarmentSegmenter.isModelAssetBundled(context)
+    ) {
         MediaPipeInteractiveGarmentSegmenter()
     } else {
         UnavailableInteractiveGarmentSegmenter()
@@ -26,8 +30,9 @@ fun createInteractiveGarmentSegmenter(context: Context): InteractiveGarmentSegme
  * MediaPipe Tasks Vision adapter for the Quick Edit segment eraser.
  *
  * The UI depends only on [InteractiveGarmentSegmenter]. This adapter stays inert
- * until an approved model asset is bundled at [modelAssetPath], so the rest of
- * Quick Edit continues to work when MediaPipe/model initialization is unavailable.
+ * until the build enables and bundles a model asset at [modelAssetPath], so the
+ * rest of Quick Edit continues to work when MediaPipe/model initialization is
+ * unavailable.
  */
 class MediaPipeInteractiveGarmentSegmenter(
     private val modelAssetPath: String = DEFAULT_MODEL_ASSET_PATH,

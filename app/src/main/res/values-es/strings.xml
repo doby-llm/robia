@@ -198,7 +198,7 @@
     <string name="quick_edit_brightness_hint">Ajusta el brillo de más oscuro a más claro.</string>
     <string name="quick_edit_temperature_hint">Elige una temperatura más fría, neutra o más cálida.</string>
     <string name="quick_edit_eraser_hint">Toca una zona de la prenda para seleccionar un segmento. Tocar solo previsualiza; usa Borrar para confirmarlo.</string>
-    <string name="quick_edit_eraser_unavailable">El borrador por segmentos no está disponible porque el modelo de MediaPipe aún no está incluido. El brillo, la temperatura y el guardado siguen funcionando.</string>
+    <string name="quick_edit_eraser_unavailable">El borrador por segmentos no está disponible porque el modelo de MediaPipe está desactivado o no está incluido. El brillo, la temperatura y el guardado siguen funcionando.</string>
     <string name="quick_edit_loading_segmenter">Cargando segmentador…</string>
     <string name="quick_edit_no_segment_found">No se encontró ningún segmento. Prueba a tocar otra zona de la prenda.</string>
     <string name="quick_edit_select_segment_first">Toca dentro de la foto mostrada para seleccionar primero un segmento.</string>
