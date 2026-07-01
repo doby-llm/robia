@@ -306,6 +306,7 @@ fun RobiaApp(
 ) {
     val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
+    val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
     val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
@@ -318,10 +319,10 @@ fun RobiaApp(
 
     LocalizedRobiaContent(settings.languagePreference) {
         RobiaTheme {
-        val displaySettings = settings.copy(driveSyncConnectionStatus = syncState.connectionStatus)
+        val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
         RobiaShell(
             settings = displaySettings,
-            syncState = syncState,
+            syncState = displaySyncState,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
             clothingItems = clothingItems,
             tagCategories = tagCategories,
@@ -412,6 +413,17 @@ fun RobiaApp(
         )
         }
     }
+}
+
+private fun WardrobeSyncState.reconcileWithSettings(
+    settingsConnectionStatus: DriveSyncConnectionStatus,
+): WardrobeSyncState = if (
+    connectionStatus == DriveSyncConnectionStatus.NotConfigured &&
+    settingsConnectionStatus != DriveSyncConnectionStatus.NotConfigured
+) {
+    copy(connectionStatus = settingsConnectionStatus)
+} else {
+    this
 }
 
 @Composable

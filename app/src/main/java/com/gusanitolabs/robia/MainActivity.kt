@@ -16,6 +16,9 @@ import com.gusanitolabs.robia.data.LocalTagRepository
 import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
+import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
+import com.gusanitolabs.robia.sync.NotConfiguredDriveWardrobeRepository
+import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
 import com.gusanitolabs.robia.ui.RobiaApp
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
@@ -51,12 +54,25 @@ class MainActivity : ComponentActivity() {
         settingsRepository = DataStoreSettingsRepository(settingsDataStore)
         val wardrobeRepository = LocalWardrobeRepository(database.wardrobeDao())
         val tagRepository = LocalTagRepository(database.tagDao(), database.syncTombstoneDao())
+        val syncSnapshotRepository = LocalWardrobeSyncSnapshotRepository(
+            wardrobeDao = database.wardrobeDao(),
+            tagDao = database.tagDao(),
+            syncTombstoneDao = database.syncTombstoneDao(),
+        )
+        val syncGateway = WardrobeSyncOutboxProcessor(
+            settingsRepository = settingsRepository,
+            wardrobeRepository = wardrobeRepository,
+            snapshotRepository = syncSnapshotRepository,
+            driveRepository = NotConfiguredDriveWardrobeRepository(),
+            scope = lifecycleScope,
+        )
 
         setContent {
             RobiaApp(
                 settingsRepository = settingsRepository,
                 wardrobeRepository = wardrobeRepository,
                 tagRepository = tagRepository,
+                syncGateway = syncGateway,
                 onRequestCloudSetup = ::requestGoogleDriveAuthorization,
             )
         }

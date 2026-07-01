@@ -11,6 +11,7 @@ import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
 import com.gusanitolabs.robia.data.local.MainColorEntity
+import com.gusanitolabs.robia.data.local.PendingGarmentSyncWorkEntity
 import com.gusanitolabs.robia.data.local.SyncTombstoneDao
 import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
@@ -29,6 +30,11 @@ class LocalWardrobeRepository(
         wardrobeDao.observeItem(id).map { it?.toDomain() }
 
     override fun observePendingGarmentSyncCount(): Flow<Int> = wardrobeDao.observePendingGarmentSyncCount()
+
+    override fun observeGarmentSyncAttentionCount(): Flow<Int> = wardrobeDao.observeGarmentSyncAttentionCount()
+
+    override suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWork> =
+        wardrobeDao.pendingGarmentSyncWork().map(PendingGarmentSyncWorkEntity::toDomain)
 
     override suspend fun upsertItem(item: ClothingItem) {
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
@@ -139,6 +145,11 @@ class LocalTagRepository(
         }
     }
 }
+
+private fun PendingGarmentSyncWorkEntity.toDomain(): PendingGarmentSyncWork = PendingGarmentSyncWork(
+    id = id,
+    revision = revision,
+)
 
 private fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
     id = item.id,

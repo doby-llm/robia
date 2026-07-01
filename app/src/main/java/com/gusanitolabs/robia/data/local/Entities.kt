@@ -129,3 +129,8 @@ data class ClothingItemWithTags(
     )
     val tags: List<GarmentTagEntity>,
 )
+
+data class PendingGarmentSyncWorkEntity(
+    val id: String,
+    val revision: Long,
+)
