@@ -43,7 +43,10 @@ class TfliteAdditionalInfoDetector(
                 failureReason = AdditionalInfoDetectionResult.FailureReason.MappingFailed,
                 debug = debug,
             )
-        return AdditionalInfoDetectionResult(prediction = prediction, debug = debug)
+        return AdditionalInfoDetectionResult(
+            prediction = prediction,
+            debug = debug.copy(topScoresByHead = prediction.topScoresByHead()),
+        )
     }
 
     internal fun runModel(
@@ -84,13 +87,26 @@ class TfliteAdditionalInfoDetector(
         sourceUri = imageUri.toString(),
         sourceWidth = sourceWidth,
         sourceHeight = sourceHeight,
+        modelId = "${config.modelVersion}/${config.modelFile}",
         modelVersion = config.modelVersion,
         modelFile = config.modelFile,
         inputShape = config.input.shape,
         normalizationType = config.input.normalizationType,
+        externalValueRange = AdditionalInfoPreprocessingPolicy.externalValueRange,
+        resizeStrategy = AdditionalInfoPreprocessingPolicy.resizeStrategy,
+        backgroundStrategy = AdditionalInfoPreprocessingPolicy.backgroundStrategy,
         preprocessing = preprocessing,
         tensorStats = stats,
     )
+
+    private fun com.gusanitolabs.robia.core.model.AdditionalInfoPrediction.topScoresByHead() = mapOf(
+        "category" to categoryScores.topScores(),
+        "season" to seasonScores.topScores(),
+        "occasion" to occasionScores.topScores(),
+    )
+
+    private fun List<com.gusanitolabs.robia.core.model.AdditionalInfoLabelScore>.topScores() =
+        sortedByDescending(com.gusanitolabs.robia.core.model.AdditionalInfoLabelScore::score).take(DEBUG_TOP_K)
 
     private fun loadModel(context: Context, config: AdditionalInfoModelConfig): MappedByteBuffer = context.assets
         .openFd(AdditionalInfoModelAssets.modelAssetPath(config.modelFile))
@@ -104,3 +120,5 @@ class TfliteAdditionalInfoDetector(
             }
         }
 }
+
+private const val DEBUG_TOP_K = 5

@@ -37,7 +37,9 @@ RUNTIME_DETECTOR_PATH = (
     / "additionalinfo"
     / "TfliteAdditionalInfoDetector.kt"
 )
-EXPECTED_GENERATOR = "python numpy default_rng(seed=123), normalized RGB float32 [-1,1]"
+EXPECTED_NORMALIZATION = "raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input"
+EXPECTED_FORMULA = "rgb"
+EXPECTED_GENERATOR = "python numpy default_rng(seed=123), raw RGB float32 [0,255]; graph embeds MobileNetV3 rescale"
 EXPECTED_INPUT_SHAPE = [1, 224, 224, 3]
 SAFE_MODEL_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.tflite")
 
@@ -59,7 +61,7 @@ def main() -> int:
     if input_detail["dtype"] != np.float32:
         fail(f"Expected float32 input tensor, found {input_detail['dtype']}")
 
-    input_tensor = deterministic_normalized_noise(EXPECTED_INPUT_SHAPE)
+    input_tensor = deterministic_raw_rgb_noise(EXPECTED_INPUT_SHAPE)
     interpreter.set_tensor(input_detail["index"], input_tensor)
     interpreter.invoke()
 
@@ -118,8 +120,9 @@ def assert_manifest_contract(manifest: dict[str, Any]) -> None:
     assert_equal(input_spec.get("shape"), EXPECTED_INPUT_SHAPE, "manifest input shape")
     assert_equal(input_spec.get("dtype"), "float32", "manifest input dtype")
     normalization = input_spec.get("normalization", {})
-    assert_equal(normalization.get("type"), "mobilenet_v3_preprocess_input", "normalization type")
-    assert_equal(normalization.get("formula"), "rgb / 127.5 - 1.0", "normalization formula")
+    assert_equal(normalization.get("type"), EXPECTED_NORMALIZATION, "normalization type")
+    assert_equal(normalization.get("range"), [0.0, 255.0], "normalization range")
+    assert_equal(normalization.get("formula"), EXPECTED_FORMULA, "normalization formula")
     assert_equal(
         manifest.get("deterministicNoiseBaseline", {}).get("generator"),
         EXPECTED_GENERATOR,
@@ -148,10 +151,10 @@ def assert_manifest_driven_model_selection() -> None:
     assert_contains(main_source, "Interpreter(model_path=str(model_path))", "CI opens manifest-selected model path")
 
 
-def deterministic_normalized_noise(shape: list[int]) -> np.ndarray:
-    # Matches the pinned manifest baseline: generated normalized RGB float32 in [-1, 1].
+def deterministic_raw_rgb_noise(shape: list[int]) -> np.ndarray:
+    # The graph starts with MobileNetV3 rescaling, so the host feeds raw RGB float32.
     rng = np.random.default_rng(seed=123)
-    return (rng.random(shape, dtype=np.float32) * np.float32(2.0) - np.float32(1.0)).astype(np.float32)
+    return (rng.random(shape, dtype=np.float32) * np.float32(255.0)).astype(np.float32)
 
 
 def read_outputs_by_head(interpreter: Interpreter, manifest: dict[str, Any]) -> dict[str, np.ndarray]:

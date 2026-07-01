@@ -32,8 +32,19 @@ def main() -> int:
     assert_equal(manifest["input"]["shape"], [1, 224, 224, 3], "manifest input shape")
     assert_equal(manifest["input"]["dtype"], "float32", "manifest input dtype")
     normalization = manifest["input"]["normalization"]
-    assert_equal(normalization["type"], "mobilenet_v3_preprocess_input", "manifest normalization type")
-    assert_equal(normalization["formula"], "rgb / 127.5 - 1.0", "manifest normalization formula")
+    assert_equal(normalization["type"], "raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input", "manifest normalization type")
+    assert_equal(normalization["range"], [0.0, 255.0], "manifest normalization range")
+    assert_equal(normalization["formula"], "rgb", "manifest normalization formula")
+    assert_equal(
+        normalization.get("resizeStrategy"),
+        "square_pad_preserve_aspect_then_resize_224",
+        "manifest resize strategy",
+    )
+    assert_contains(
+        normalization.get("graphPreprocessing", ""),
+        "do not apply external [-1,1] normalization",
+        "manifest graph preprocessing warning",
+    )
     assert_equal(
         normalization.get("transparentPixels"),
         "auto_composite_black_or_white_after_square_pad",
@@ -48,7 +59,11 @@ def main() -> int:
     shared_tensor = SHARED_TENSOR.read_text(encoding="utf-8")
     assert_contains(shared_tensor, "object AdditionalInfoPreprocessingPolicy", "shared preprocessing policy exists")
     assert_contains(shared_tensor, "fun fromRgbPixels", "shared tensor builder exists")
-    assert_contains(shared_tensor, "channel / 127.5f - 1f", "shared MobileNetV3 normalization math")
+    assert_contains(shared_tensor, "channel.toFloat()", "shared raw RGB tensor math")
+    assert_contains(shared_tensor, "externalValueRange", "shared diagnostics expose external input range")
+    assert_contains(shared_tensor, "resizeStrategy", "shared diagnostics expose resize strategy")
+    assert_contains(shared_tensor, "backgroundStrategy", "shared diagnostics expose background strategy")
+    assert_contains(shared_tensor, "model_embedded_mobilenet_v3_preprocess_input", "shared preprocessing diagnostics mention embedded graph preprocessing")
     assert_contains(shared_tensor, "AdditionalInfoTensorStats", "shared tensor stats collected")
 
     shared_mapper = SHARED_MAPPER.read_text(encoding="utf-8")
@@ -78,11 +93,16 @@ def main() -> int:
     assert_contains(detector_source, "preprocessWithDiagnostics", "detector uses diagnostic preprocessor")
     assert_contains(detector_source, "availableTags.map(GarmentTag::id).toSet()", "detector passes available tag ids to shared mapper")
     assert_contains(detector_source, "outputShapes = rawScores.mapValues", "detector reports output shapes")
+    assert_contains(detector_source, "topScoresByHead", "detector reports top-k labels in diagnostics")
 
     cli_source = CLI.read_text(encoding="utf-8")
     assert_contains(cli_source, "AdditionalInfoModelManifest.parse", "CLI uses shared manifest parser")
     assert_contains(cli_source, "AdditionalInfoTensorBuilder.fromRgbPixels", "CLI uses shared tensor builder")
     assert_contains(cli_source, "AdditionalInfoTagMapper.map", "CLI uses shared tag mapper")
+    assert_contains(cli_source, "modelId", "CLI diagnostics expose model id")
+    assert_contains(cli_source, "externalValueRange", "CLI diagnostics expose external value range")
+    assert_contains(cli_source, "resizeStrategy", "CLI diagnostics expose resize strategy")
+    assert_contains(cli_source, "backgroundStrategy", "CLI diagnostics expose background strategy")
 
     add_edit_source = ADD_EDIT.read_text(encoding="utf-8")
     assert_contains(add_edit_source, "val classifierUri = croppedUri", "additional-info classifier defaults to cropped foreground photo")
@@ -91,15 +111,23 @@ def main() -> int:
     assert_contains(add_edit_source, "developerModeEnabled", "developer input-image export remains gated by developer mode")
     assert_contains(add_edit_source, "Additional info tensor:", "developer diagnostics show tensor stats")
     assert_contains(add_edit_source, "Additional info sourceUri:", "developer diagnostics show classifier source")
+    assert_contains(add_edit_source, "Additional info model: id=", "developer diagnostics show model id")
+    assert_contains(add_edit_source, "externalValueRange", "developer diagnostics show external value range")
+    assert_contains(add_edit_source, "Additional info resize/background:", "developer diagnostics show resize/background strategy")
+    assert_contains(add_edit_source, "Additional info debug topK:", "developer diagnostics show top-k labels")
 
     debug_script_source = DEBUG_SCRIPT.read_text(encoding="utf-8")
     assert_contains(debug_script_source, "square-pad then auto-composite", "offline harness documents fixed preprocessing order")
+    assert_contains(debug_script_source, "raw RGB float32 NHWC [0,255]", "offline harness documents raw RGB contract")
     assert_contains(debug_script_source, "select_tags(outputs, manifest)", "Python harness remains available as comparison fallback")
 
     doc_source = DOC.read_text(encoding="utf-8")
     assert_contains(doc_source, "./gradlew :additional-info-cli:run", "Raspberry Pi CLI command documented")
     assert_contains(doc_source, "Developer Mode export", "developer input-image export documented")
     assert_contains(doc_source, "Shared-code boundary", "shared-code boundary documented")
+    assert_contains(doc_source, "raw RGB float32 [0,255]", "raw RGB embedded-preprocessing contract documented")
+    assert_contains(doc_source, "Non-square resize contract", "non-square resize contract documented")
+    assert_contains(doc_source, "tf.image.resize", "training direct-resize deviation documented")
 
     print("Android additional-info shared-core static checks passed")
     return 0

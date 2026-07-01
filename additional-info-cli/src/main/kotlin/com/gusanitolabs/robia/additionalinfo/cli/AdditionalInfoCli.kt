@@ -24,8 +24,12 @@ fun main(rawArgs: Array<String>) {
     val result = linkedMapOf<String, Any?>(
         "image" to args.image.absolutePath,
         "manifest" to args.manifest.absolutePath,
+        "modelId" to "${config.modelVersion}/${config.modelFile}",
         "modelVersion" to config.modelVersion,
         "preprocessing" to preprocessed.preprocessing,
+        "externalValueRange" to AdditionalInfoPreprocessingPolicy.externalValueRange,
+        "resizeStrategy" to AdditionalInfoPreprocessingPolicy.resizeStrategy,
+        "backgroundStrategy" to AdditionalInfoPreprocessingPolicy.backgroundStrategy,
         "sourceWidth" to preprocessed.sourceWidth,
         "sourceHeight" to preprocessed.sourceHeight,
         "inputShape" to config.input.shape,

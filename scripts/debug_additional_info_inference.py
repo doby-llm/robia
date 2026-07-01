@@ -9,7 +9,9 @@ manifest-driven and intentionally mirrors the same documented contract.
 Given an image path, this script reproduces the Android model-input contract from
 app/src/main/assets/additional_info/mobilenet_v3_large.json: RGBA decode,
 square-pad then auto-composite transparent/padded pixels over black or white,
-RGB float32 NHWC, and MobileNetV3 normalization (rgb / 127.5 - 1.0). When tflite_runtime or TensorFlow is
+raw RGB float32 NHWC [0,255]. The bundled TFLite graph embeds MobileNetV3
+rescaling (rgb * 0.0078431377 - 1.0), so this script must not apply external
+[-1,1] normalization. When tflite_runtime or TensorFlow is
 installed it also runs the bundled TFLite model and prints top-k scores plus the
 same selection policy as the Android mapper.
 """
@@ -38,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = REPO_ROOT / "app" / "src" / "main" / "assets" / "additional_info"
 DEFAULT_MANIFEST = ASSET_DIR / "mobilenet_v3_large.json"
 EXPECTED_SHAPE = [1, 224, 224, 3]
-EXPECTED_NORMALIZATION = "mobilenet_v3_preprocess_input"
+EXPECTED_NORMALIZATION = "raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input"
 
 
 def main() -> int:
@@ -103,7 +105,7 @@ def assert_manifest_contract(manifest: dict[str, Any]) -> None:
     normalization = input_spec.get("normalization", {})
     if normalization.get("type") != EXPECTED_NORMALIZATION:
         fail(f"Unsupported normalization: {normalization.get('type')!r}")
-    if normalization.get("formula") != "rgb / 127.5 - 1.0":
+    if normalization.get("formula") != "rgb":
         fail(f"Unsupported normalization formula: {normalization.get('formula')!r}")
 
 
@@ -122,13 +124,13 @@ def preprocess_image(path: Path, mode: str) -> tuple[np.ndarray, dict[str, Any]]
             background = "white"
 
     rgb_array = np.asarray(rgb, dtype=np.float32)
-    tensor = (rgb_array / np.float32(127.5) - np.float32(1.0))[np.newaxis, ...].astype(np.float32)
+    tensor = rgb_array[np.newaxis, ...].astype(np.float32)
     return tensor, {
         "sourceSize": list(source_size),
         "targetSize": [224, 224],
         "hasAlpha": has_alpha,
         "colorMode": f"RGBA->square RGB over {background}",
-        "normalization": "rgb / 127.5 - 1.0",
+        "normalization": "raw RGB float32 [0,255]; graph embeds MobileNetV3 rescale",
         "shape": list(tensor.shape),
         "dtype": str(tensor.dtype),
     }

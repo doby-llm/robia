@@ -981,15 +981,19 @@ private fun addDetectionDebugLines(
         val stats = debug.tensorStats
         lines += "Additional info sourceUri: ${debug.sourceUri}"
         lines += "Additional info sourceSize: ${debug.sourceWidth}x${debug.sourceHeight}"
-        lines += "Additional info model: version=${debug.modelVersion}, file=${debug.modelFile}"
-        lines += "Additional info input: shape=${debug.inputShape}, normalization=${debug.normalizationType}"
+        lines += "Additional info model: id=${debug.modelId}, version=${debug.modelVersion}, file=${debug.modelFile}"
+        lines += "Additional info input: shape=${debug.inputShape}, externalValueRange=${debug.externalValueRange}, normalization=${debug.normalizationType}"
         lines += "Additional info preprocessing: ${debug.preprocessing}"
+        lines += "Additional info resize/background: resize=${debug.resizeStrategy}, background=${debug.backgroundStrategy}"
         lines += "Additional info tensor: min=${stats.min.formatDebugFloat()}, max=${stats.max.formatDebugFloat()}, mean=${stats.mean.formatDebugFloat()}, std=${stats.standardDeviation.formatDebugFloat()}, nonFinite=${stats.nonFiniteCount}, checksum=${stats.checksum}"
         lines += "Additional info tensor channelMeans: ${stats.channelMeans.joinToString { it.formatDebugFloat() }}"
         lines += "Additional info tensor channelMins: ${stats.channelMins.joinToString { it.formatDebugFloat() }}"
         lines += "Additional info tensor channelMaxs: ${stats.channelMaxs.joinToString { it.formatDebugFloat() }}"
         if (debug.outputShapes.isNotEmpty()) {
             lines += "Additional info outputShapes: ${debug.outputShapes.entries.joinToString { (name, shape) -> "$name=$shape" }}"
+        }
+        if (debug.topScoresByHead.isNotEmpty()) {
+            lines += "Additional info debug topK: ${debug.topScoresByHead.formatDebugTopK()}"
         }
     }
     val prediction = detectionResult.prediction
@@ -1005,6 +1009,10 @@ private fun addDetectionDebugLines(
     prediction.seasonScores.appendDebugScores(lines)
     lines += "Additional info occasion scores (${prediction.occasionScores.size}):"
     prediction.occasionScores.appendDebugScores(lines)
+}
+
+private fun Map<String, List<AdditionalInfoLabelScore>>.formatDebugTopK(): String = entries.joinToString { (name, scores) ->
+    "$name=${scores.joinToString { score -> "${score.label}:${score.score.formatDebugFloat()}" }}"
 }
 
 private fun List<AdditionalInfoLabelScore>.appendDebugScores(lines: MutableList<String>) {

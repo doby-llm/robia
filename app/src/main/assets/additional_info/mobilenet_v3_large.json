@@ -7,9 +7,11 @@
     "shape": [1, 224, 224, 3],
     "dtype": "float32",
     "normalization": {
-      "type": "mobilenet_v3_preprocess_input",
-      "range": [-1.0, 1.0],
-      "formula": "rgb / 127.5 - 1.0",
+      "type": "raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input",
+      "range": [0.0, 255.0],
+      "formula": "rgb",
+      "graphPreprocessing": "The bundled MobileNetV3 TFLite graph embeds rgb * 0.0078431377 - 1.0; do not apply external [-1,1] normalization.",
+      "resizeStrategy": "square_pad_preserve_aspect_then_resize_224",
       "transparentPixels": "auto_composite_black_or_white_after_square_pad"
     }
   },
@@ -46,8 +48,17 @@
       "multiSeasonTagIds": ["season-spring", "season-summer", "season-fall", "season-winter"]
     }
   ],
+  "localImageEvidence": {
+    "image": "image_nn.png",
+    "contract": "raw RGB float32 [0,255] into this embedded-preprocessing graph",
+    "categoryTopScores": [
+      { "label": "Shirts", "score": 0.487181 },
+      { "label": "Tops", "score": 0.377286 },
+      { "label": "Sweaters", "score": 0.064816 }
+    ]
+  },
   "deterministicNoiseBaseline": {
-    "generator": "python numpy default_rng(seed=123), normalized RGB float32 [-1,1]",
+    "generator": "python numpy default_rng(seed=123), raw RGB float32 [0,255]; graph embeds MobileNetV3 rescale",
     "category": { "argmax": 16, "maxScore": 0.73013633, "shape": [1, 19] },
     "occasion": { "argmax": 2, "maxScore": 0.9040952, "shape": [1, 6] },
     "season": { "argmax": 4, "maxScore": 0.48142487, "shape": [1, 5] },

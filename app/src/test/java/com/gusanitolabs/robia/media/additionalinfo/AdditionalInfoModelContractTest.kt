@@ -19,7 +19,10 @@ class AdditionalInfoModelContractTest {
         assertTrue(manifest.contains("\"name\": \"season\""))
         assertTrue(manifest.contains("\"shape\": [1, 5]"))
         assertTrue(manifest.contains("\"normalization\""))
-        assertTrue(manifest.contains("\"mobilenet_v3_preprocess_input\""))
+        assertTrue(manifest.contains("\"raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input\""))
+        assertTrue(manifest.contains("\"formula\": \"rgb\""))
+        assertTrue(manifest.contains("\"resizeStrategy\": \"square_pad_preserve_aspect_then_resize_224\""))
+        assertTrue(manifest.contains("do not apply external [-1,1] normalization"))
     }
 
     @Test
@@ -44,12 +47,23 @@ class AdditionalInfoModelContractTest {
     fun deterministicNoiseBaselineIsPinnedForDriftReview() {
         val manifest = readManifest()
 
+        assertTrue(manifest.contains("raw RGB float32 [0,255]"))
         assertTrue(manifest.contains("\"argmax\": 16"))
         assertTrue(manifest.contains("\"maxScore\": 0.73013633"))
         assertTrue(manifest.contains("\"argmax\": 2"))
         assertTrue(manifest.contains("\"maxScore\": 0.9040952"))
         assertTrue(manifest.contains("\"argmax\": 4"))
         assertTrue(manifest.contains("\"maxScore\": 0.48142487"))
+    }
+
+    @Test
+    fun localImageEvidenceDocumentsRawContractResult() {
+        val manifest = readManifest()
+
+        assertTrue(manifest.contains("\"image\": \"image_nn.png\""))
+        assertTrue(manifest.contains("\"label\": \"Shirts\""))
+        assertTrue(manifest.contains("\"label\": \"Tops\""))
+        assertFalse(manifest.contains("Coats 0.989"))
     }
 
     @Test

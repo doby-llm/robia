@@ -9,8 +9,11 @@ object AdditionalInfoPreprocessingPolicy {
     const val inputSize = 224
     const val rgbChannels = 3
     const val floatBytes = 4
-    const val normalizationType = "mobilenet_v3_preprocess_input"
-    const val description = "decode_argb8888__square_pad_preserve_aspect__auto_background_composite__resize__rgb_float32_nhwc__mobilenet_v3"
+    const val normalizationType = "raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input"
+    const val description = "decode_argb8888__square_pad_preserve_aspect__auto_background_composite__resize__raw_rgb_float32_0_255_nhwc__model_embedded_mobilenet_v3_preprocess_input"
+    const val resizeStrategy = "square_pad_preserve_aspect_then_resize_224"
+    const val backgroundStrategy = "auto_black_or_white_contrast_composite"
+    val externalValueRange = listOf(0f, 255f)
     val expectedShape = listOf(1, inputSize, inputSize, rgbChannels)
 }
 
@@ -88,7 +91,7 @@ object AdditionalInfoTensorBuilder {
         )
     }
 
-    fun normalize(channel: Int): Float = channel / 127.5f - 1f
+    fun normalize(channel: Int): Float = channel.toFloat()
 
     private const val CHECKSUM_SEED = 1125899906842597L
     private const val CHECKSUM_MULTIPLIER = 31L

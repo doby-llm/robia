@@ -31,13 +31,18 @@ data class AdditionalInfoDetectionDebug(
     val sourceUri: String,
     val sourceWidth: Int,
     val sourceHeight: Int,
+    val modelId: String,
     val modelVersion: String,
     val modelFile: String,
     val inputShape: List<Int>,
     val normalizationType: String,
+    val externalValueRange: List<Float>,
+    val resizeStrategy: String,
+    val backgroundStrategy: String,
     val preprocessing: String,
     val tensorStats: AdditionalInfoTensorStats,
     val outputShapes: Map<String, List<Int>> = emptyMap(),
+    val topScoresByHead: Map<String, List<AdditionalInfoLabelScore>> = emptyMap(),
 )
 
 data class AdditionalInfoDetectionResult(

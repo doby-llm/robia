@@ -9,7 +9,7 @@ class AdditionalInfoTagMapperTest {
     private val config = AdditionalInfoModelConfig(
         modelVersion = "test",
         modelFile = "test.tflite",
-        input = AdditionalInfoInputSpec("image", listOf(1, 224, 224, 3), "mobilenet_v3_preprocess_input"),
+        input = AdditionalInfoInputSpec("image", listOf(1, 224, 224, 3), "raw_rgb_0_255_embedded_mobilenet_v3_preprocess_input"),
         heads = listOf(
             AdditionalInfoHeadSpec(
                 name = "category",
