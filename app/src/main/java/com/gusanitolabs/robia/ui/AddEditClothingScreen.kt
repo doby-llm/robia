@@ -117,12 +117,14 @@ import com.gusanitolabs.robia.media.InteractiveSegmentResult
 import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
+import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
 import com.gusanitolabs.robia.media.createInteractiveGarmentSegmenter
 import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.Closeable
@@ -658,20 +660,20 @@ fun AddEditClothingScreen(
             segmenter = quickEditSegmenter,
             photoAspectRatio = photoAspectRatio,
             onDismiss = { showQuickEdit = false },
-            onSave = { adjustments, eraseSegment ->
-                val currentPhotoUri = Uri.parse(canonicalPhotoUri.orEmpty())
+            onSave = { draft ->
+                val currentPhotoUri = draft.sourceUri
                 coroutineScope.launch {
                     showQuickEdit = false
                     isPhotoProcessing = true
                     photoProcessingStage = PhotoProcessingStage.ApplyingQuickEdit
                     val editedResult = runCatching {
                         withContext(Dispatchers.IO) {
-                            val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, adjustments)
-                            if (eraseSegment != null) {
+                            val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, draft.adjustments)
+                            if (draft.committedSegment != null) {
                                 quickEditSegmenter.eraseSegment(
                                     context,
                                     adjustedUri,
-                                    eraseSegment,
+                                    draft.committedSegment,
                                 )
                             } else {
                                 adjustedUri
@@ -1775,7 +1777,7 @@ private fun QuickEditDialog(
     segmenter: InteractiveGarmentSegmenter,
     photoAspectRatio: Float?,
     onDismiss: () -> Unit,
-    onSave: (QuickEditAdjustments, InteractiveSegmentResult?) -> Unit,
+    onSave: (QuickEditDraftState) -> Unit,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1787,8 +1789,58 @@ private fun QuickEditDialog(
     var isSegmenting by remember { mutableStateOf(false) }
     var segmentError by rememberSaveable { mutableStateOf<String?>(null) }
     var showBefore by remember { mutableStateOf(false) }
+    var draftPreviewUri by remember(photoUri) { mutableStateOf(photoUri) }
+    var previewGenerationId by remember(photoUri) { mutableStateOf(0L) }
+    var previewRendering by remember { mutableStateOf(false) }
+    var showPreviewLoading by remember { mutableStateOf(false) }
     val segmenterAvailable = segmenter.isAvailable
-    val previewUri = if (showBefore) beforePhotoUri else photoUri
+    val sourcePhotoUri = remember(photoUri) { Uri.parse(photoUri) }
+    val currentDraft = remember(
+        sourcePhotoUri,
+        brightness,
+        temperature,
+        pendingSegment,
+        committedSegment,
+        previewGenerationId,
+    ) {
+        QuickEditDraftState(
+            sourceUri = sourcePhotoUri,
+            adjustments = QuickEditAdjustments(brightness, temperature),
+            pendingSegment = pendingSegment,
+            committedSegment = committedSegment,
+            previewGenerationId = previewGenerationId,
+        )
+    }
+    val previewUri = if (showBefore) beforePhotoUri else draftPreviewUri
+
+    LaunchedEffect(photoUri, brightness, temperature, pendingSegment, committedSegment) {
+        val generationId = previewGenerationId + 1
+        previewGenerationId = generationId
+        previewRendering = true
+        val draft = QuickEditDraftState(
+            sourceUri = sourcePhotoUri,
+            adjustments = QuickEditAdjustments(brightness, temperature),
+            pendingSegment = pendingSegment,
+            committedSegment = committedSegment,
+            previewGenerationId = generationId,
+        )
+        val renderedUri = withContext(Dispatchers.IO) {
+            QuickEditImageProcessor.renderDraftPreview(context, draft)
+        }
+        if (generationId == previewGenerationId) {
+            draftPreviewUri = renderedUri.toString()
+            previewRendering = false
+        }
+    }
+
+    LaunchedEffect(previewRendering) {
+        if (previewRendering) {
+            delay(180)
+            showPreviewLoading = previewRendering
+        } else {
+            showPreviewLoading = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = {
@@ -1864,6 +1916,25 @@ private fun QuickEditDialog(
                         update = { imageView -> imageView.setImageURI(Uri.parse(previewUri)) },
                         modifier = Modifier.fillMaxSize(),
                     )
+                    if (showPreviewLoading && !showBefore) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(12.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.46f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                            Text(
+                                text = stringResource(R.string.quick_edit_preview_loading),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
+                    }
                     val highlightSegment = pendingSegment ?: committedSegment
                     highlightSegment?.takeIf { selectedTool == QuickEditTool.Eraser }?.let { segment ->
                         SegmentMaskOverlay(
@@ -1997,7 +2068,7 @@ private fun QuickEditDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(QuickEditAdjustments(brightness, temperature), committedSegment) }) {
+            Button(onClick = { onSave(currentDraft) }) {
                 Text(stringResource(R.string.save_item))
             }
         },
