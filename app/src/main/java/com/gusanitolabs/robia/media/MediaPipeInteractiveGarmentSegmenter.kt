@@ -60,7 +60,8 @@ class MediaPipeInteractiveGarmentSegmenter(
                     NormalizedKeypoint.create(point.x.coerceIn(0f, 1f), point.y.coerceIn(0f, 1f)),
                 ),
             )
-            InteractiveSegmentResult(point = point, mask = result.toInteractiveMask())
+            val mask = result.toInteractiveMask()?.takeUnless { it.isBroadOrInvariantFor(point) }
+            InteractiveSegmentResult(point = point, mask = mask)
         } finally {
             mpImage.close()
             sourceBitmap.recycle()
