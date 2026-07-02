@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.net.Uri
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /** Lightweight photo adjustments for the post-background-removal Quick Edit flow. */
@@ -48,15 +49,15 @@ object QuickEditImageProcessor {
         sourceUri: Uri,
         point: NormalizedImagePoint,
         radiusRatio: Float = DEFAULT_ERASER_RADIUS_RATIO,
-    ): Uri = eraseBrushPath(context, sourceUri, listOf(point), radiusRatio)
+    ): Uri = eraseBrushStroke(context, sourceUri, listOf(point), radiusRatio)
 
-    fun eraseBrushPath(
+    fun eraseBrushStroke(
         context: Context,
         sourceUri: Uri,
-        points: List<NormalizedImagePoint>,
+        brushPoints: List<NormalizedImagePoint>,
         radiusRatio: Float = DEFAULT_ERASER_RADIUS_RATIO,
     ): Uri {
-        val constrainedPoints = points.ifEmpty { return sourceUri }
+        val sampledPoints = brushPoints.normalizedPathOrNull() ?: return sourceUri
         val source = decodeBitmap(context, sourceUri) ?: return sourceUri
         return source.useForQuickEdit { bitmap ->
             val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -64,19 +65,11 @@ object QuickEditImageProcessor {
                 val radius = maxOf(output.width, output.height) * radiusRatio.coerceIn(0.02f, 0.2f)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-                    strokeWidth = radius * 2f
                     strokeCap = Paint.Cap.ROUND
                     strokeJoin = Paint.Join.ROUND
+                    strokeWidth = radius * 2f
                 }
-                val canvas = Canvas(output)
-                constrainedPoints.forEach { point ->
-                    canvas.drawCircle(
-                        point.x.coerceIn(0f, 1f) * output.width,
-                        point.y.coerceIn(0f, 1f) * output.height,
-                        radius,
-                        paint,
-                    )
-                }
+                Canvas(output).drawBrushPath(sampledPoints, output.width, output.height, radius, paint)
                 ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit-erased")
             } finally {
                 output.recycle()
@@ -89,16 +82,24 @@ object QuickEditImageProcessor {
         sourceUri: Uri,
         segment: InteractiveSegmentResult,
     ): Uri {
-        val mask = segment.mask ?: return eraseBrushPath(context, sourceUri, segment.brushPoints)
+        val brushPoints = segment.brushPoints.normalizedPathOrNull() ?: listOf(segment.point.coerced())
+        val mask = segment.mask ?: return eraseBrushStroke(context, sourceUri, brushPoints)
         val source = decodeBitmap(context, sourceUri) ?: return sourceUri
         return source.useForQuickEdit { bitmap ->
             val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
             try {
+                val constrainToBrushStroke = brushPoints.size > 1
+                val brushRadius = DEFAULT_ERASER_RADIUS_RATIO.coerceIn(0.02f, 0.2f)
                 for (y in 0 until output.height) {
                     val maskY = (y * mask.height / output.height).coerceIn(0, mask.height - 1)
                     for (x in 0 until output.width) {
                         val maskX = (x * mask.width / output.width).coerceIn(0, mask.width - 1)
-                        if (mask.isSelected(maskX, maskY)) {
+                        val withinBrush = !constrainToBrushStroke || brushPoints.isNearStroke(
+                            x = x.toFloat() / output.width.coerceAtLeast(1),
+                            y = y.toFloat() / output.height.coerceAtLeast(1),
+                            radius = brushRadius,
+                        )
+                        if (mask.isSelected(maskX, maskY) && withinBrush) {
                             output.setPixel(x, y, output.getPixel(x, y) and 0x00FFFFFF)
                         }
                     }
@@ -189,6 +190,46 @@ object QuickEditImageProcessor {
     private fun decodeBitmap(context: Context, sourceUri: Uri): Bitmap? =
         context.contentResolver.openInputStream(sourceUri)?.use(BitmapFactory::decodeStream)
 
+    private fun Canvas.drawBrushPath(
+        brushPoints: List<NormalizedImagePoint>,
+        width: Int,
+        height: Int,
+        radius: Float,
+        paint: Paint,
+    ) {
+        brushPoints.forEach { point ->
+            drawCircle(point.x * width, point.y * height, radius, paint)
+        }
+        brushPoints.zipWithNext { start, end ->
+            drawLine(start.x * width, start.y * height, end.x * width, end.y * height, paint)
+        }
+    }
+
+    private fun List<NormalizedImagePoint>.normalizedPathOrNull(): List<NormalizedImagePoint>? =
+        map { it.coerced() }.distinctBy { point ->
+            // Collapse duplicate move events without losing intentional stroke shape.
+            (point.x * PATH_DEDUPE_PRECISION).roundToInt() to (point.y * PATH_DEDUPE_PRECISION).roundToInt()
+        }.takeIf { it.isNotEmpty() }
+
+    private fun NormalizedImagePoint.coerced(): NormalizedImagePoint =
+        NormalizedImagePoint(x = x.coerceIn(0f, 1f), y = y.coerceIn(0f, 1f))
+
+    private fun List<NormalizedImagePoint>.isNearStroke(x: Float, y: Float, radius: Float): Boolean {
+        if (any { point -> hypot((x - point.x).toDouble(), (y - point.y).toDouble()) <= radius }) return true
+        return zipWithNext().any { (start, end) -> distanceToSegment(x, y, start, end) <= radius }
+    }
+
+    private fun distanceToSegment(x: Float, y: Float, start: NormalizedImagePoint, end: NormalizedImagePoint): Double {
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val lengthSquared = dx * dx + dy * dy
+        if (lengthSquared == 0f) return hypot((x - start.x).toDouble(), (y - start.y).toDouble())
+        val t = (((x - start.x) * dx + (y - start.y) * dy) / lengthSquared).coerceIn(0f, 1f)
+        val projectionX = start.x + t * dx
+        val projectionY = start.y + t * dy
+        return hypot((x - projectionX).toDouble(), (y - projectionY).toDouble())
+    }
+
     private inline fun <T> Bitmap.useForQuickEdit(block: (Bitmap) -> T): T = try {
         block(this)
     } finally {
@@ -199,6 +240,7 @@ object QuickEditImageProcessor {
     private const val MAX_TEMPERATURE_OFFSET = 46f
     private const val DEFAULT_ERASER_RADIUS_RATIO = 0.065f
     private const val OPAQUE_SAMPLE_ALPHA = 64
+    private const val PATH_DEDUPE_PRECISION = 512f
 }
 
 data class QuickEditAdjustments(
