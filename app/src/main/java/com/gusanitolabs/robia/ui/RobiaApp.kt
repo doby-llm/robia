@@ -341,6 +341,9 @@ fun RobiaApp(
                 scope.launch { settingsRepository.markCloudSetupPromptInteracted() }
             },
             onRequestCloudSetup = onRequestCloudSetup,
+            onRequestCloudManualSync = {
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
+            },
             onSaveItem = { item ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -503,6 +506,7 @@ private fun RobiaShell(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
+    onRequestCloudManualSync: () -> Unit,
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
@@ -749,7 +753,7 @@ private fun RobiaShell(
         if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
         ) {
-            coroutineScope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
+            onRequestCloudManualSync()
             Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
         } else if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
             Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
