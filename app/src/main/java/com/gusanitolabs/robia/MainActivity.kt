@@ -17,7 +17,7 @@ import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
 import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
-import com.gusanitolabs.robia.sync.NotConfiguredDriveWardrobeRepository
+import com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
 import com.gusanitolabs.robia.ui.RobiaApp
 import com.google.android.gms.auth.api.identity.AuthorizationClient
@@ -63,7 +63,10 @@ class MainActivity : ComponentActivity() {
             settingsRepository = settingsRepository,
             wardrobeRepository = wardrobeRepository,
             snapshotRepository = syncSnapshotRepository,
-            driveRepository = NotConfiguredDriveWardrobeRepository(),
+            driveRepository = GoogleDriveWardrobeRepository(
+                authorizationClient = authorizationClient,
+                driveScope = Scope(DRIVE_APPDATA_SCOPE),
+            ),
             scope = lifecycleScope,
         )
 
@@ -100,7 +103,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun persistDriveAuthorizationResult(result: AuthorizationResult) {
-        val grantedDriveScope = result.grantedScopes.any { scope -> scope == DRIVE_APPDATA_SCOPE }
+        val driveScope = Scope(DRIVE_APPDATA_SCOPE)
+        val grantedDriveScope = result.grantedScopes.any { scope ->
+            scope == driveScope || scope.toString() == DRIVE_APPDATA_SCOPE
+        }
         lifecycleScope.launch {
             settingsRepository.setDriveSyncConnectionStatus(
                 if (grantedDriveScope) {
