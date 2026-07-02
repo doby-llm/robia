@@ -1,8 +1,10 @@
 package com.gusanitolabs.robia.sync
 
+import androidx.room.withTransaction
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentColorRole
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
 import com.gusanitolabs.robia.core.model.MainColorSyncRecord
@@ -14,8 +16,10 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemTagCrossRef
+import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
 import com.gusanitolabs.robia.data.local.MainColorEntity
+import com.gusanitolabs.robia.data.local.RobiaDatabase
 import com.gusanitolabs.robia.data.local.SyncTombstoneDao
 import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
@@ -24,6 +28,7 @@ import com.gusanitolabs.robia.data.local.WardrobeDao
 
 /** Builds deterministic snapshots of the full local wardrobe graph for Drive sync. */
 class LocalWardrobeSyncSnapshotRepository(
+    private val database: RobiaDatabase,
     private val wardrobeDao: WardrobeDao,
     private val tagDao: TagDao,
     private val syncTombstoneDao: SyncTombstoneDao,
@@ -61,7 +66,52 @@ class LocalWardrobeSyncSnapshotRepository(
             tombstones = tombstones.map(SyncTombstoneEntity::toSyncRecord),
         ).sortedDeterministically()
     }
+
+    /**
+     * Applies a fetched Drive snapshot as one Room transaction. Remote photo metadata is kept in the
+     * Drive payload, but local rows only keep photo URIs that are still device-addressable; this avoids
+     * silently restoring broken file/content URIs until binary blob download is implemented.
+     */
+    suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
+        val deterministicSnapshot = snapshot.sortedDeterministically()
+        val remotePhotoByGarmentId = deterministicSnapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
+        val remoteColorsByGarmentId = deterministicSnapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
+        val restoredItems = deterministicSnapshot.garments.map { garment ->
+            garment.toEntity(
+                photoUri = remotePhotoByGarmentId[garment.id]?.restorableLocalUri(),
+                colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
+            )
+        }
+        val itemIds = restoredItems.map(ClothingItemEntity::id)
+        val itemIdSet = itemIds.toSet()
+        val tagRefs = deterministicSnapshot.garmentTags
+            .filter { record -> record.garmentId in itemIdSet }
+            .map { record -> ClothingItemTagCrossRef(record.garmentId, record.tagId) }
+        val tombstones = deterministicSnapshot.tombstones.map(SyncTombstoneRecord::toEntity)
+
+        database.withTransaction {
+            deterministicSnapshot.taxonomies.categories.forEach { record -> tagDao.upsertCategory(record.toEntity()) }
+            tagDao.upsertTags(deterministicSnapshot.taxonomies.tags.map(TagSyncRecord::toEntity))
+            tagDao.upsertMainColors(deterministicSnapshot.taxonomies.mainColors.map(MainColorSyncRecord::toEntity))
+            if (restoredItems.isNotEmpty()) {
+                tagDao.upsertClothingItems(restoredItems)
+                tagDao.clearTagsForItems(itemIds)
+                tagDao.insertItemTagRefs(tagRefs)
+            }
+            if (tombstones.isNotEmpty()) tagDao.upsertSyncTombstones(tombstones)
+        }
+
+        return ImportSnapshotResult(
+            restoredGarmentCount = restoredItems.count { item -> !item.isArchived },
+            guardedPhotoCount = deterministicSnapshot.photos.count { photo -> photo.restorableLocalUri() == null },
+        )
+    }
 }
+
+data class ImportSnapshotResult(
+    val restoredGarmentCount: Int,
+    val guardedPhotoCount: Int,
+)
 
 private fun TagCategoryEntity.toSyncRecord(): TagCategorySyncRecord = TagCategorySyncRecord(
     id = id,
@@ -146,3 +196,71 @@ private fun SyncTombstoneEntity.toSyncRecord(): SyncTombstoneRecord = SyncTombst
     deletedAtEpochMillis = deletedAtEpochMillis,
     revision = revision,
 )
+
+private fun TagCategorySyncRecord.toEntity(): TagCategoryEntity = TagCategoryEntity(
+    id = id,
+    name = name,
+    sortOrder = sortOrder,
+    isSystem = isSystem,
+)
+
+private fun TagSyncRecord.toEntity(): GarmentTagEntity = GarmentTagEntity(
+    id = id,
+    categoryId = categoryId,
+    name = name,
+    sortOrder = sortOrder,
+    isSystem = isSystem,
+)
+
+private fun MainColorSyncRecord.toEntity(): MainColorEntity = MainColorEntity(
+    id = id,
+    name = name,
+    hex = hex,
+    sortOrder = sortOrder,
+    isDefault = isDefault,
+)
+
+private fun GarmentSyncRecord.toEntity(
+    photoUri: String?,
+    colorRecords: List<GarmentColorMappingRecord>,
+): ClothingItemEntity {
+    val colorsByRole = colorRecords.associateBy(GarmentColorMappingRecord::role)
+    return ClothingItemEntity(
+        id = id,
+        name = name,
+        notes = notes,
+        photoUri = photoUri,
+        fitValue = fitValue,
+        colorMetrics = ColorMetricsEntity(
+            primaryRawValue = colorsByRole[GarmentColorRole.Primary]?.rawValue,
+            primaryDisplayLabel = colorsByRole[GarmentColorRole.Primary]?.displayLabel,
+            primaryPaletteColorId = colorsByRole[GarmentColorRole.Primary]?.paletteColorId,
+            primaryPaletteColorName = colorsByRole[GarmentColorRole.Primary]?.paletteColorName,
+            primaryPaletteColorHex = colorsByRole[GarmentColorRole.Primary]?.paletteColorHex,
+            secondaryRawValue = colorsByRole[GarmentColorRole.Secondary]?.rawValue,
+            secondaryDisplayLabel = colorsByRole[GarmentColorRole.Secondary]?.displayLabel,
+            secondaryPaletteColorId = colorsByRole[GarmentColorRole.Secondary]?.paletteColorId,
+            secondaryPaletteColorName = colorsByRole[GarmentColorRole.Secondary]?.paletteColorName,
+            secondaryPaletteColorHex = colorsByRole[GarmentColorRole.Secondary]?.paletteColorHex,
+        ),
+        isFavorite = isFavorite,
+        isArchived = isArchived,
+        createdAtEpochMillis = createdAtEpochMillis,
+        updatedAtEpochMillis = updatedAtEpochMillis,
+        syncStatus = GarmentSyncStatus.Synced,
+        syncRevision = revision,
+        syncDirtyAtEpochMillis = null,
+        lastSyncedAtEpochMillis = System.currentTimeMillis(),
+        syncFailureMessage = null,
+    )
+}
+
+private fun SyncTombstoneRecord.toEntity(): SyncTombstoneEntity = SyncTombstoneEntity(
+    id = "$entityType:$entityId",
+    entityType = entityType,
+    entityId = entityId,
+    deletedAtEpochMillis = deletedAtEpochMillis,
+    revision = revision,
+)
+
+private fun GarmentPhotoRecord.restorableLocalUri(): String? = null

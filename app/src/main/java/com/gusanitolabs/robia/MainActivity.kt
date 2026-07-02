@@ -18,6 +18,7 @@ import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
 import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
 import com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository
+import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
 import com.gusanitolabs.robia.ui.RobiaApp
 import com.google.android.gms.auth.api.identity.AuthorizationClient
@@ -33,6 +34,7 @@ private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.a
 class MainActivity : ComponentActivity() {
     private lateinit var authorizationClient: AuthorizationClient
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var syncGateway: WardrobeSyncOutboxProcessor
 
     private val driveAuthorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -55,11 +57,12 @@ class MainActivity : ComponentActivity() {
         val wardrobeRepository = LocalWardrobeRepository(database.wardrobeDao())
         val tagRepository = LocalTagRepository(database.tagDao(), database.syncTombstoneDao())
         val syncSnapshotRepository = LocalWardrobeSyncSnapshotRepository(
+            database = database,
             wardrobeDao = database.wardrobeDao(),
             tagDao = database.tagDao(),
             syncTombstoneDao = database.syncTombstoneDao(),
         )
-        val syncGateway = WardrobeSyncOutboxProcessor(
+        syncGateway = WardrobeSyncOutboxProcessor(
             settingsRepository = settingsRepository,
             wardrobeRepository = wardrobeRepository,
             snapshotRepository = syncSnapshotRepository,
@@ -114,6 +117,9 @@ class MainActivity : ComponentActivity() {
                     DriveSyncConnectionStatus.Disconnected
                 },
             )
+            if (grantedDriveScope) {
+                syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
+            }
         }
     }
 
