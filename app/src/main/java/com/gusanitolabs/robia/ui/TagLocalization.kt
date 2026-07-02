@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
@@ -11,6 +12,11 @@ import com.gusanitolabs.robia.core.model.TagDisplayPolicy
 internal fun GarmentTag.localizedTagLabel(): String {
     if (TagDisplayPolicy.shouldUseStoredName(this)) return name
     return defaultTagLabelRes(id)?.let { resId -> stringResource(resId) } ?: name
+}
+
+internal fun GarmentTag.localizedTagLabel(context: Context): String {
+    if (TagDisplayPolicy.shouldUseStoredName(this)) return name
+    return defaultTagLabelRes(id)?.let(context::getString) ?: name
 }
 
 @StringRes

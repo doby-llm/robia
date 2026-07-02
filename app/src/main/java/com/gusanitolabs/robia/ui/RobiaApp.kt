@@ -544,8 +544,8 @@ private fun RobiaShell(
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
     val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
-    val items = remember(clothingItems, syncState, needsWardrobeUiModels) {
-        if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState) else emptyList()
+    val items = remember(context, clothingItems, syncState, needsWardrobeUiModels) {
+        if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, context) else emptyList()
     }
     val filteredItems = remember(items, browseFilters, mainColors, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) {
@@ -2866,18 +2866,18 @@ private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
     }
 }
 
-@Composable
 private fun List<ClothingItem>.toUiWardrobeItems(
     syncState: WardrobeSyncState,
+    context: Context,
 ): List<UiWardrobeItem> = map { item ->
     val effectiveSyncStatus = item.syncStatus.resolveForConnection(syncState.connectionStatus)
     UiWardrobeItem(
         id = item.id,
         name = item.name,
-        subtitle = item.notes.ifBlank { stringResource(effectiveSyncStatus.itemStatusLabelRes) },
+        subtitle = item.notes.ifBlank { context.getString(effectiveSyncStatus.itemStatusLabelRes) },
         notes = item.notes,
         photoUri = item.photoUri,
-        tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
+        tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedTagLabel(context)) },
         fitValue = item.fitValue,
         primaryColor = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
         primaryRawValue = item.colorMetrics.primaryRawValue,
