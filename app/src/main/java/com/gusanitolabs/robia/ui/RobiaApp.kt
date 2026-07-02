@@ -296,6 +296,13 @@ private val bottomDestinations = listOf(
     BottomNavDestination(RobiaRoute.ManageTags, R.string.manage, Icons.Rounded.Style),
 )
 
+private val WardrobeUiModelRoutes = setOf(
+    RobiaRoute.Browse,
+    RobiaRoute.ItemDetail,
+    RobiaRoute.AdvancedFilters,
+    RobiaRoute.ColorReview,
+)
+
 @Composable
 fun RobiaApp(
     settingsRepository: SettingsRepository,
@@ -536,12 +543,19 @@ private fun RobiaShell(
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
-    val items = clothingItems.toUiWardrobeItems(syncState)
-    val filteredItems = remember(items, browseFilters, mainColors) {
-        items.filter { item -> browseFilters.matches(item, mainColors) }
+    val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
+    val items = remember(clothingItems, syncState, needsWardrobeUiModels) {
+        if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState) else emptyList()
     }
-    val selectedItem = items.firstOrNull { it.id == selectedItemId }
-    val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
+    val filteredItems = remember(items, browseFilters, mainColors, needsWardrobeUiModels) {
+        if (needsWardrobeUiModels) {
+            items.filter { item -> browseFilters.matches(item, mainColors) }
+        } else {
+            emptyList()
+        }
+    }
+    val selectedItem = remember(items, selectedItemId) { items.firstOrNull { it.id == selectedItemId } }
+    val selectedDomainItem = remember(clothingItems, selectedItemId) { clothingItems.firstOrNull { it.id == selectedItemId } }
     val cloudSetupGuard = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
         CloudSetupGuard(
             garmentCount = clothingItems.size,
@@ -568,8 +582,8 @@ private fun RobiaShell(
         }
     }
 
-    LaunchedEffect(items) {
-        val activeIds = items.map(UiWardrobeItem::id).toSet()
+    LaunchedEffect(clothingItems) {
+        val activeIds = clothingItems.map(ClothingItem::id).toSet()
         selectedBrowseItemIds = selectedBrowseItemIds.intersect(activeIds)
         selectedItemId?.let { itemId ->
             if (itemId !in activeIds) selectedItemId = null

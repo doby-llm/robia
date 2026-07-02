@@ -83,6 +83,11 @@ private data class ColorEditorState(
     val existingColor: MainColor? = null,
 )
 
+private data class DisplayMainColor(
+    val color: MainColor,
+    val swatchColor: Color?,
+)
+
 private sealed interface RestoreDefaultTarget {
     data object MainColors : RestoreDefaultTarget
     data class Tags(val category: TagCategory) : RestoreDefaultTarget
@@ -111,7 +116,13 @@ fun ManageTagsScreen(
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
     val visibleTags = remember(tags) { tags.filterNot { tag -> tag.categoryId == "care" } }
     val tagsByCategory = remember(visibleTags) { visibleTags.groupBy(GarmentTag::categoryId) }
+    val displayMainColors = remember(mainColors) {
+        mainColors.map { color -> DisplayMainColor(color = color, swatchColor = color.hex.toComposeColor()) }
+    }
 
+    // Keep cards grouped for this low-risk pass: flattening every nested tag row would alter
+    // section-card spacing/elevation behavior. The upstream route gating and remembered swatch
+    // models remove the broad recomposition and hex-parsing hotspots without visual churn.
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -136,7 +147,7 @@ fun ManageTagsScreen(
 
         item(key = "main-color-palette") {
             MainColorPaletteCard(
-                colors = mainColors,
+                colors = displayMainColors,
                 onAddColor = { colorEditorState = ColorEditorState() },
                 onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
                 onDeleteColor = { color -> pendingDeleteColor = color },
@@ -398,7 +409,7 @@ private fun TagListRow(
 
 @Composable
 private fun MainColorPaletteCard(
-    colors: List<MainColor>,
+    colors: List<DisplayMainColor>,
     onAddColor: () -> Unit,
     onEditColor: (MainColor) -> Unit,
     onDeleteColor: (MainColor) -> Unit,
@@ -450,10 +461,12 @@ private fun MainColorPaletteCard(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                colors.forEach { color ->
+                colors.forEach { displayColor ->
+                    val color = displayColor.color
                     key(color.id) {
                         ColorListRow(
                             color = color,
+                            swatchColor = displayColor.swatchColor,
                             canEdit = true,
                             canDelete = colors.size > 1,
                             onEdit = { onEditColor(color) },
@@ -469,6 +482,7 @@ private fun MainColorPaletteCard(
 @Composable
 private fun ColorListRow(
     color: MainColor,
+    swatchColor: Color?,
     canEdit: Boolean,
     canDelete: Boolean,
     onEdit: () -> Unit,
@@ -493,7 +507,7 @@ private fun ColorListRow(
                 modifier = Modifier
                     .size(24.dp)
                     .clip(CircleShape)
-                    .background(color.hex.toComposeColor() ?: MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .background(swatchColor ?: MaterialTheme.colorScheme.surfaceContainerHigh)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                     .semantics { contentDescription = swatchDescription },
             )
