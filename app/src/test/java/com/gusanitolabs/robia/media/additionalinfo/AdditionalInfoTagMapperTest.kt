@@ -20,6 +20,8 @@ class AdditionalInfoTagMapperTest {
                 margin = 0.15f,
                 multiSelectThreshold = null,
                 nearTieMargin = null,
+                candidateMinSelections = null,
+                candidateMaxSelections = null,
                 multiSeasonLabel = null,
                 multiSeasonTagIds = emptySet(),
             ),
@@ -32,6 +34,8 @@ class AdditionalInfoTagMapperTest {
                 margin = null,
                 multiSelectThreshold = 0.40f,
                 nearTieMargin = 0.08f,
+                candidateMinSelections = 1,
+                candidateMaxSelections = 2,
                 multiSeasonLabel = "Multi Season",
                 multiSeasonTagIds = setOf("season-spring", "season-summer", "season-fall", "season-winter"),
             ),
@@ -44,6 +48,8 @@ class AdditionalInfoTagMapperTest {
                 margin = null,
                 multiSelectThreshold = 0.40f,
                 nearTieMargin = 0.08f,
+                candidateMinSelections = 1,
+                candidateMaxSelections = 2,
                 multiSeasonLabel = null,
                 multiSeasonTagIds = emptySet(),
             ),
@@ -77,7 +83,27 @@ class AdditionalInfoTagMapperTest {
 
     @Test
     fun nearTieSeasonsCanSelectMultipleRealSeasonTags() {
-        val prediction = map(season = floatArrayOf(0.50f, 0.47f, 0.05f, 0.02f, 0.01f))
+        val prediction = map(season = floatArrayOf(0.45f, 0.40f, 0.24f, 0.02f, 0.01f))
+
+        assertEquals(
+            setOf("season-spring", "season-summer"),
+            prediction.selectedTagIds.filter { id -> id.startsWith("season-") }.toSet(),
+        )
+    }
+
+    @Test
+    fun lowConfidenceNearTiesAreNotMultiSelected() {
+        val prediction = map(season = floatArrayOf(0.44f, 0.43f, 0.42f, 0.02f, 0.01f))
+
+        assertEquals(
+            emptySet<String>(),
+            prediction.selectedTagIds.filter { id -> id.startsWith("season-") }.toSet(),
+        )
+    }
+
+    @Test
+    fun multiCandidateSelectionIsCappedByHeadPolicy() {
+        val prediction = map(season = floatArrayOf(0.60f, 0.56f, 0.54f, 0.02f, 0.01f))
 
         assertEquals(
             setOf("season-spring", "season-summer"),

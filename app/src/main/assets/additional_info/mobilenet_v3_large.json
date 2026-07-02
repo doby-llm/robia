@@ -33,7 +33,9 @@
       "policy": "multi_confident_or_near_tie",
       "threshold": 0.45,
       "multiSelectThreshold": 0.40,
-      "nearTieMargin": 0.08
+      "nearTieMargin": 0.08,
+      "candidateMinSelections": 1,
+      "candidateMaxSelections": 2
     },
     {
       "name": "season",
@@ -44,6 +46,8 @@
       "threshold": 0.45,
       "multiSelectThreshold": 0.40,
       "nearTieMargin": 0.08,
+      "candidateMinSelections": 1,
+      "candidateMaxSelections": 2,
       "multiSeasonLabel": "Multi Season",
       "multiSeasonTagIds": ["season-spring", "season-summer", "season-fall", "season-winter"]
     }
