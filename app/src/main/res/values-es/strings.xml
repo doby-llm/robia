@@ -192,7 +192,7 @@
     <string name="quick_edit_temperature_content_description">Herramienta de temperatura</string>
     <string name="quick_edit_erase_segment_content_description">Herramienta para borrar segmento</string>
     <string name="quick_edit_selected_tool_label">Herramienta seleccionada: %1$s</string>
-    <string name="quick_edit_apply_on_save_hint">La vista previa se actualiza en vivo; Guardar conserva el resultado.</string>
+    <string name="quick_edit_apply_on_save_hint">La vista previa se actualiza en vivo; Guardar se activa cuando coincide con el resultado.</string>
     <string name="quick_edit_preview_loading">Actualizando vista previa…</string>
     <string name="quick_edit_brightness_reset">Restablecer a neutro</string>
     <string name="quick_edit_temperature_preset_content_description">Preajuste de temperatura: %1$s</string>

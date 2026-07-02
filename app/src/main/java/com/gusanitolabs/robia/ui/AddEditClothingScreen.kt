@@ -1792,6 +1792,7 @@ private fun QuickEditDialog(
     var segmentError by rememberSaveable { mutableStateOf<String?>(null) }
     var showBefore by remember { mutableStateOf(false) }
     var draftPreviewUri by remember(photoUri) { mutableStateOf(photoUri) }
+    var renderedPreviewDraft by remember(photoUri) { mutableStateOf<QuickEditDraftState?>(null) }
     var previewGenerationId by remember(photoUri) { mutableStateOf(0L) }
     var previewRendering by remember { mutableStateOf(false) }
     var showPreviewLoading by remember { mutableStateOf(false) }
@@ -1815,6 +1816,10 @@ private fun QuickEditDialog(
         )
     }
     val previewUri = if (showBefore) beforePhotoUri else draftPreviewUri
+    val saveableDraft = renderedPreviewDraft?.takeIf { renderedDraft ->
+        // Save must consume the exact draft generation that produced the visible preview.
+        renderedDraft == currentDraft && !previewRendering && pendingSegment == null && !isSegmenting
+    }
 
     LaunchedEffect(sourcePhotoUri) {
         sourceImageDimensions = withContext(Dispatchers.IO) {
@@ -1826,6 +1831,7 @@ private fun QuickEditDialog(
         val generationId = previewGenerationId + 1
         previewGenerationId = generationId
         previewRendering = true
+        renderedPreviewDraft = null
         val draft = QuickEditDraftState(
             sourceUri = sourcePhotoUri,
             adjustments = QuickEditAdjustments(brightness, temperature),
@@ -1838,6 +1844,7 @@ private fun QuickEditDialog(
         }
         if (generationId == previewGenerationId) {
             draftPreviewUri = renderedUri.toString()
+            renderedPreviewDraft = draft
             previewRendering = false
         }
     }
@@ -2083,7 +2090,10 @@ private fun QuickEditDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(currentDraft) }) {
+            Button(
+                enabled = saveableDraft != null,
+                onClick = { saveableDraft?.let(onSave) },
+            ) {
                 Text(stringResource(R.string.save_item))
             }
         },

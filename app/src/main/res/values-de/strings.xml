@@ -192,7 +192,7 @@
     <string name="quick_edit_temperature_content_description">Temperaturwerkzeug</string>
     <string name="quick_edit_erase_segment_content_description">Segment-radieren-Werkzeug</string>
     <string name="quick_edit_selected_tool_label">Ausgewähltes Werkzeug: %1$s</string>
-    <string name="quick_edit_apply_on_save_hint">Die Vorschau aktualisiert sich live; Speichern übernimmt das Ergebnis.</string>
+    <string name="quick_edit_apply_on_save_hint">Die Vorschau aktualisiert sich live; Speichern wird aktiv, sobald sie dem Ergebnis entspricht.</string>
     <string name="quick_edit_preview_loading">Vorschau wird aktualisiert…</string>
     <string name="quick_edit_brightness_reset">Auf neutral zurücksetzen</string>
     <string name="quick_edit_temperature_preset_content_description">Temperaturvoreinstellung: %1$s</string>
