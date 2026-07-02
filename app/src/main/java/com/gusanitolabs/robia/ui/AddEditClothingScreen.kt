@@ -91,6 +91,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -117,12 +118,14 @@ import com.gusanitolabs.robia.media.InteractiveSegmentResult
 import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
+import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
 import com.gusanitolabs.robia.media.createInteractiveGarmentSegmenter
 import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.Closeable
@@ -731,20 +734,20 @@ fun AddEditClothingScreen(
             segmenter = quickEditSegmenter,
             photoAspectRatio = photoAspectRatio,
             onDismiss = { showQuickEdit = false },
-            onSave = { adjustments, eraseSegment ->
-                val currentPhotoUri = Uri.parse(canonicalPhotoUri.orEmpty())
+            onSave = { draft ->
+                val currentPhotoUri = draft.sourceUri
                 coroutineScope.launch {
                     showQuickEdit = false
                     isPhotoProcessing = true
                     photoProcessingStage = PhotoProcessingStage.ApplyingQuickEdit
                     val editedResult = runCatching {
                         withContext(Dispatchers.IO) {
-                            val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, adjustments)
-                            if (eraseSegment != null) {
+                            val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, draft.adjustments)
+                            if (draft.committedSegment != null) {
                                 quickEditSegmenter.eraseSegment(
                                     context,
                                     adjustedUri,
-                                    eraseSegment,
+                                    draft.committedSegment,
                                 )
                             } else {
                                 adjustedUri
@@ -1852,7 +1855,7 @@ private fun QuickEditDialog(
     segmenter: InteractiveGarmentSegmenter,
     photoAspectRatio: Float?,
     onDismiss: () -> Unit,
-    onSave: (QuickEditAdjustments, InteractiveSegmentResult?) -> Unit,
+    onSave: (QuickEditDraftState) -> Unit,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1864,8 +1867,58 @@ private fun QuickEditDialog(
     var isSegmenting by remember { mutableStateOf(false) }
     var segmentError by rememberSaveable { mutableStateOf<String?>(null) }
     var showBefore by remember { mutableStateOf(false) }
+    var draftPreviewUri by remember(photoUri) { mutableStateOf(photoUri) }
+    var previewGenerationId by remember(photoUri) { mutableStateOf(0L) }
+    var previewRendering by remember { mutableStateOf(false) }
+    var showPreviewLoading by remember { mutableStateOf(false) }
     val segmenterAvailable = segmenter.isAvailable
-    val previewUri = if (showBefore) beforePhotoUri else photoUri
+    val sourcePhotoUri = remember(photoUri) { Uri.parse(photoUri) }
+    val currentDraft = remember(
+        sourcePhotoUri,
+        brightness,
+        temperature,
+        pendingSegment,
+        committedSegment,
+        previewGenerationId,
+    ) {
+        QuickEditDraftState(
+            sourceUri = sourcePhotoUri,
+            adjustments = QuickEditAdjustments(brightness, temperature),
+            pendingSegment = pendingSegment,
+            committedSegment = committedSegment,
+            previewGenerationId = previewGenerationId,
+        )
+    }
+    val previewUri = if (showBefore) beforePhotoUri else draftPreviewUri
+
+    LaunchedEffect(photoUri, brightness, temperature, pendingSegment, committedSegment) {
+        val generationId = previewGenerationId + 1
+        previewGenerationId = generationId
+        previewRendering = true
+        val draft = QuickEditDraftState(
+            sourceUri = sourcePhotoUri,
+            adjustments = QuickEditAdjustments(brightness, temperature),
+            pendingSegment = pendingSegment,
+            committedSegment = committedSegment,
+            previewGenerationId = generationId,
+        )
+        val renderedUri = withContext(Dispatchers.IO) {
+            QuickEditImageProcessor.renderDraftPreview(context, draft)
+        }
+        if (generationId == previewGenerationId) {
+            draftPreviewUri = renderedUri.toString()
+            previewRendering = false
+        }
+    }
+
+    LaunchedEffect(previewRendering) {
+        if (previewRendering) {
+            delay(180)
+            showPreviewLoading = previewRendering
+        } else {
+            showPreviewLoading = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = {
@@ -1941,6 +1994,25 @@ private fun QuickEditDialog(
                         update = { imageView -> imageView.setImageURI(Uri.parse(previewUri)) },
                         modifier = Modifier.fillMaxSize(),
                     )
+                    if (showPreviewLoading && !showBefore) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(12.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.46f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                            Text(
+                                text = stringResource(R.string.quick_edit_preview_loading),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
+                    }
                     val highlightSegment = pendingSegment ?: committedSegment
                     highlightSegment?.takeIf { selectedTool == QuickEditTool.Eraser }?.let { segment ->
                         SegmentMaskOverlay(
@@ -2009,13 +2081,20 @@ private fun QuickEditDialog(
                     QuickEditTool.Brightness -> {
                         Text(stringResource(R.string.quick_edit_brightness_hint), style = MaterialTheme.typography.bodySmall)
                         Slider(value = brightness, onValueChange = { brightness = it }, valueRange = -1f..1f)
+                        val resetLabel = stringResource(R.string.quick_edit_brightness_reset)
+                        val resetContentDescription = stringResource(R.string.quick_edit_brightness_reset_content_description)
                         OutlinedButton(
                             onClick = { brightness = 0f },
-                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .semantics {
+                                    contentDescription = resetContentDescription
+                                },
                         ) {
                             Icon(Icons.Rounded.Refresh, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.quick_edit_brightness_reset))
+                            Text(resetLabel, textAlign = TextAlign.Center)
                         }
                     }
                     QuickEditTool.Temperature -> {
@@ -2025,11 +2104,36 @@ private fun QuickEditDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cooler, -1f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cool, -0.5f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_neutral, 0f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warm, 0.5f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warmer, 1f, temperature) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_cooler,
+                                strengthRes = R.string.quick_edit_temperature_strength_strongest,
+                                value = -1f,
+                                selectedValue = temperature,
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_cool,
+                                strengthRes = R.string.quick_edit_temperature_strength_gentle,
+                                value = -0.5f,
+                                selectedValue = temperature,
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_neutral,
+                                strengthRes = R.string.quick_edit_temperature_strength_neutral,
+                                value = 0f,
+                                selectedValue = temperature,
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_warm,
+                                strengthRes = R.string.quick_edit_temperature_strength_gentle,
+                                value = 0.5f,
+                                selectedValue = temperature,
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_warmer,
+                                strengthRes = R.string.quick_edit_temperature_strength_strongest,
+                                value = 1f,
+                                selectedValue = temperature,
+                            ) { temperature = it }
                         }
                     }
                     QuickEditTool.Eraser -> {
@@ -2074,7 +2178,7 @@ private fun QuickEditDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(QuickEditAdjustments(brightness, temperature), committedSegment) }) {
+            Button(onClick = { onSave(currentDraft) }) {
                 Text(stringResource(R.string.save_item))
             }
         },
@@ -2208,32 +2312,83 @@ private fun QuickEditToolIconButton(
 @Composable
 private fun QuickEditTemperaturePreset(
     labelRes: Int,
+    strengthRes: Int,
     value: Float,
     selectedValue: Float,
     onSelected: (Float) -> Unit,
 ) {
     val selected = selectedValue == value
     val label = stringResource(labelRes)
-    val contentDescription = stringResource(R.string.quick_edit_temperature_preset_content_description, label)
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val strengthLabel = stringResource(strengthRes)
+    val selectedStatus = stringResource(
+        if (selected) R.string.quick_edit_temperature_selected else R.string.quick_edit_temperature_not_selected,
+    )
+    val contentDescription = stringResource(
+        R.string.quick_edit_temperature_preset_content_description,
+        label,
+        strengthLabel,
+        selectedStatus,
+    )
+    val swatchColor = when (value) {
+        -1f -> Color(0xFF4E8FE7)
+        -0.5f -> Color(0xFFB9D8FF)
+        0f -> MaterialTheme.colorScheme.surfaceContainerHigh
+        0.5f -> Color(0xFFFFC58C)
+        else -> Color(0xFFE07021)
+    }
+    val swatchSize = when (kotlin.math.abs(value)) {
+        1f -> 46.dp
+        0.5f -> 36.dp
+        else -> 28.dp
+    }
+    Column(
+        modifier = Modifier
+            .width(76.dp)
+            .heightIn(min = 88.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { onSelected(value) }
+            .semantics {
+                this.contentDescription = contentDescription
+                this.selected = selected
+            }
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(56.dp)
                 .clip(CircleShape)
-                .background(if (value < 0f) Color(0xFFB9D8FF) else if (value > 0f) Color(0xFFFFC58C) else MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                .clickable { onSelected(value) }
-                .semantics {
-                    this.contentDescription = contentDescription
-                    this.selected = selected
-                },
+                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
+            Box(
+                modifier = Modifier
+                    .size(swatchSize)
+                    .clip(CircleShape)
+                    .background(swatchColor)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
             if (selected) {
-                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                )
             }
         }
-        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
+        Text(
+            text = strengthLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

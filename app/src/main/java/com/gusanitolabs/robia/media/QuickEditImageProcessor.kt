@@ -22,17 +22,25 @@ object QuickEditImageProcessor {
         if (!adjustments.hasColorAdjustment) return sourceUri
         val source = decodeBitmap(context, sourceUri) ?: return sourceUri
         return source.useForQuickEdit { bitmap ->
-            val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-            try {
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    colorFilter = ColorMatrixColorFilter(adjustments.colorMatrix())
-                }
-                Canvas(output).drawBitmap(bitmap, 0f, 0f, paint)
-                ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit")
-            } finally {
-                output.recycle()
-            }
+            writeAdjustedBitmap(context, bitmap, adjustments, prefix = "quick-edit")
         }
+    }
+
+    /**
+     * Builds the dialog preview from the same draft state that Save consumes.
+     *
+     * The preview is intentionally persisted as a cached processed Uri so the Compose layer can keep
+     * using a lightweight ImageView while preview jobs are cancelled and generation-guarded upstream.
+     */
+    fun renderDraftPreview(
+        context: Context,
+        draft: QuickEditDraftState,
+    ): Uri {
+        var currentUri = applyAdjustments(context, draft.sourceUri, draft.adjustments)
+        draft.committedSegment?.let { segment ->
+            currentUri = eraseSegmentMask(context, currentUri, segment)
+        }
+        return currentUri
     }
 
     fun eraseCircle(
@@ -119,6 +127,24 @@ object QuickEditImageProcessor {
         }
     }
 
+    private fun writeAdjustedBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        adjustments: QuickEditAdjustments,
+        prefix: String,
+    ): Uri {
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        return try {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                colorFilter = ColorMatrixColorFilter(adjustments.colorMatrix())
+            }
+            Canvas(output).drawBitmap(bitmap, 0f, 0f, paint)
+            ClothingImageStore.writeProcessedBitmap(context, output, prefix = prefix)
+        } finally {
+            output.recycle()
+        }
+    }
+
     private fun QuickEditAdjustments.colorMatrix(): ColorMatrix {
         val brightnessOffset = brightness.coerceIn(-1f, 1f) * MAX_BRIGHTNESS_OFFSET
         val warmth = temperature.coerceIn(-1f, 1f) * MAX_TEMPERATURE_OFFSET
@@ -167,6 +193,15 @@ data class QuickEditAdjustments(
 ) {
     val hasColorAdjustment: Boolean = brightness != 0f || temperature != 0f
 }
+
+/** Draft state for the live Quick Edit preview and the full-resolution Save path. */
+data class QuickEditDraftState(
+    val sourceUri: Uri,
+    val adjustments: QuickEditAdjustments = QuickEditAdjustments(),
+    val pendingSegment: InteractiveSegmentResult? = null,
+    val committedSegment: InteractiveSegmentResult? = null,
+    val previewGenerationId: Long = 0L,
+)
 
 data class NormalizedImagePoint(
     val x: Float,
