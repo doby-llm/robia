@@ -2,6 +2,18 @@ package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
+import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
+import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
+import com.gusanitolabs.robia.core.model.GarmentSyncRecord
+import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
+import com.gusanitolabs.robia.core.model.MainColorSyncRecord
+import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
+import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
+import com.gusanitolabs.robia.core.model.TagSyncRecord
+import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
+import com.gusanitolabs.robia.core.model.WardrobeSnapshotMetadata
+import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
+import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 import com.gusanitolabs.robia.data.PendingGarmentSyncWork
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
@@ -21,8 +33,9 @@ import kotlinx.coroutines.withContext
 /**
  * Durable Room/DataStore-backed sync outbox processor.
  *
- * The settings repository remains the source of truth for setup/account state; the processor only
- * derives transient activity (pending/syncing/needs attention) and advances garment revisions.
+ * Every sync cycle downloads Drive first, merges by stable ids/revisions, imports the merged snapshot
+ * locally, then uploads the merged local snapshot. This prevents a clean reinstall from uploading an
+ * empty local database over an existing Drive backup.
  */
 class WardrobeSyncOutboxProcessor(
     private val settingsRepository: SettingsRepository,
@@ -34,6 +47,7 @@ class WardrobeSyncOutboxProcessor(
 ) : WardrobeSyncGateway {
     private val mutex = Mutex()
     private val isProcessing = MutableStateFlow(false)
+    private val needsPhotoRestoreAttention = MutableStateFlow(false)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
 
     override val state: Flow<WardrobeSyncState> = mutableState
@@ -45,11 +59,13 @@ class WardrobeSyncOutboxProcessor(
                 wardrobeRepository.observePendingGarmentSyncCount(),
                 wardrobeRepository.observeGarmentSyncAttentionCount(),
                 isProcessing,
-            ) { settings, pendingCount, attentionCount, processing ->
+                needsPhotoRestoreAttention,
+            ) { settings, pendingCount, attentionCount, processing, photoAttention ->
                 settings.driveSyncConnectionStatus.toWardrobeSyncState(
                     pendingOperationCount = pendingCount,
                     attentionOperationCount = attentionCount,
                     isProcessing = processing,
+                    needsPhotoRestoreAttention = photoAttention,
                 )
             }.collect { nextState ->
                 mutableState.value = nextState
@@ -72,6 +88,7 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.Syncing,
                 DriveSyncConnectionStatus.NeedsAttention -> processPendingGarments(
                     forceSnapshot = operation.affectedGarmentIds().isEmpty(),
+                    forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
                 )
                 DriveSyncConnectionStatus.Disconnected -> markOperationAuthBlocked(operation)
                 DriveSyncConnectionStatus.Disabled,
@@ -80,33 +97,72 @@ class WardrobeSyncOutboxProcessor(
         }
     }
 
-    private suspend fun processPendingGarments(forceSnapshot: Boolean = false) {
+    private suspend fun processPendingGarments(
+        forceSnapshot: Boolean = false,
+        forceImport: Boolean = false,
+    ) {
         mutex.withLock {
             if (settingsRepository.settings.first().driveSyncConnectionStatus != DriveSyncConnectionStatus.Connected) {
                 return@withLock
             }
 
             val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
-            if (pendingWork.isEmpty() && !forceSnapshot) return@withLock
+            if (pendingWork.isEmpty() && !forceSnapshot && !forceImport) return@withLock
 
             isProcessing.value = true
             val lockedWork = pendingWork.filter { work ->
                 wardrobeRepository.markGarmentSyncing(work.id, work.revision)
             }
-            if (lockedWork.isEmpty() && !forceSnapshot) {
+            if (lockedWork.isEmpty() && !forceSnapshot && !forceImport) {
                 isProcessing.value = false
                 return@withLock
             }
 
             try {
-                when (val result = driveRepository.upsertSnapshot(snapshotRepository.exportSnapshot())) {
-                    is DriveSyncResult.Success -> markSynced(lockedWork)
-                    is DriveSyncResult.Blocked -> markBlocked(lockedWork, result.reason)
-                    is DriveSyncResult.Failure -> markFailedRetryable(lockedWork)
+                when (val result = syncFetchMergeThenUpload()) {
+                    is SyncCycleResult.Success -> {
+                        needsPhotoRestoreAttention.value = result.guardedPhotoCount > 0
+                        markSynced(lockedWork)
+                    }
+                    SyncCycleResult.NoBackup -> {
+                        needsPhotoRestoreAttention.value = false
+                        markSynced(lockedWork)
+                    }
+                    is SyncCycleResult.Blocked -> markBlocked(lockedWork, result.reason)
+                    is SyncCycleResult.Failure -> markFailedRetryable(lockedWork)
                 }
             } finally {
                 isProcessing.value = false
             }
+        }
+    }
+
+    private suspend fun syncFetchMergeThenUpload(): SyncCycleResult {
+        val localSnapshot = snapshotRepository.exportSnapshot()
+        val remoteSnapshot = when (val result = driveRepository.fetchSnapshot()) {
+            is DriveSyncResult.Success -> result.value.sortedDeterministically()
+            is DriveSyncResult.Blocked -> return SyncCycleResult.Blocked(result.reason)
+            is DriveSyncResult.Failure -> return SyncCycleResult.Failure
+        }
+        if (remoteSnapshot.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) {
+            return SyncCycleResult.Failure
+        }
+
+        val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot)
+        val importResult = if (mergedSnapshot.hasUserData()) {
+            snapshotRepository.importSnapshot(mergedSnapshot)
+        } else {
+            ImportSnapshotResult(restoredGarmentCount = 0, guardedPhotoCount = 0)
+        }
+
+        return when (driveRepository.upsertSnapshot(snapshotRepository.exportSnapshot())) {
+            is DriveSyncResult.Success -> if (localSnapshot.hasUserData() || remoteSnapshot.hasUserData()) {
+                SyncCycleResult.Success(importResult.guardedPhotoCount)
+            } else {
+                SyncCycleResult.NoBackup
+            }
+            is DriveSyncResult.Blocked -> SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
+            is DriveSyncResult.Failure -> SyncCycleResult.Failure
         }
     }
 
@@ -162,9 +218,11 @@ class WardrobeSyncOutboxProcessor(
         pendingOperationCount: Int,
         attentionOperationCount: Int,
         isProcessing: Boolean,
+        needsPhotoRestoreAttention: Boolean,
     ): WardrobeSyncState {
         val displayStatus = when {
             isProcessing && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.Syncing
+            needsPhotoRestoreAttention && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.NeedsAttention
             attentionOperationCount > 0 && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.NeedsAttention
             else -> this
         }
@@ -194,3 +252,68 @@ class WardrobeSyncOutboxProcessor(
         is WardrobeSyncOperation.RecordTombstones -> emptySet()
     }
 }
+
+private sealed interface SyncCycleResult {
+    data class Success(val guardedPhotoCount: Int) : SyncCycleResult
+    data object NoBackup : SyncCycleResult
+    data class Blocked(val reason: DriveSyncDisabledReason) : SyncCycleResult
+    data object Failure : SyncCycleResult
+}
+
+private fun WardrobeSyncSnapshot.hasUserData(): Boolean =
+    garments.isNotEmpty() || photos.isNotEmpty() || tombstones.isNotEmpty()
+
+private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): WardrobeSyncSnapshot {
+    val tombstones = mergeByKey(local.tombstones + remote.tombstones, { "${it.entityType}:${it.entityId}" }, SyncTombstoneRecord::revision)
+    val tombstoneByGarmentId = tombstones
+        .filter { tombstone -> tombstone.entityType in garmentEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
+
+    val mergedGarments = mergeByKey(local.garments + remote.garments, GarmentSyncRecord::id, GarmentSyncRecord::revision)
+        .filterNot { garment -> (tombstoneByGarmentId[garment.id]?.revision ?: Long.MIN_VALUE) > garment.revision }
+    val activeGarmentIds = mergedGarments.map(GarmentSyncRecord::id).toSet()
+    val mergedMetadata = WardrobeSnapshotMetadata(
+        generatedAtEpochMillis = System.currentTimeMillis(),
+        revision = maxOf(local.metadata.revision, remote.metadata.revision, System.currentTimeMillis()),
+        wardrobeId = local.metadata.wardrobeId ?: remote.metadata.wardrobeId,
+    )
+
+    return WardrobeSyncSnapshot(
+        metadata = mergedMetadata,
+        taxonomies = WardrobeTaxonomySnapshot(
+            categories = mergeByKey(
+                local.taxonomies.categories + remote.taxonomies.categories,
+                TagCategorySyncRecord::id,
+                TagCategorySyncRecord::revision,
+            ),
+            tags = mergeByKey(local.taxonomies.tags + remote.taxonomies.tags, TagSyncRecord::id, TagSyncRecord::revision),
+            mainColors = mergeByKey(
+                local.taxonomies.mainColors + remote.taxonomies.mainColors,
+                MainColorSyncRecord::id,
+                MainColorSyncRecord::revision,
+            ),
+        ),
+        garments = mergedGarments,
+        garmentTags = mergeByKey(
+            local.garmentTags + remote.garmentTags,
+            { "${it.garmentId}:${it.tagId}" },
+            GarmentTagMappingRecord::revision,
+        ).filter { record -> record.garmentId in activeGarmentIds },
+        garmentColors = mergeByKey(
+            local.garmentColors + remote.garmentColors,
+            { "${it.garmentId}:${it.role}" },
+            GarmentColorMappingRecord::revision,
+        ).filter { record -> record.garmentId in activeGarmentIds },
+        photos = mergeByKey(local.photos + remote.photos, GarmentPhotoRecord::garmentId, GarmentPhotoRecord::revision)
+            .filter { record -> record.garmentId in activeGarmentIds },
+        tombstones = tombstones,
+    ).sortedDeterministically()
+}
+
+private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> Long): List<T> =
+    records
+        .groupBy(key)
+        .values
+        .map { group -> group.maxWith(compareBy<T> { revision(it) }.thenBy { records.indexOf(it) }) }
+
+private val garmentEntityTypes = setOf("garment", "clothing_item", "item")

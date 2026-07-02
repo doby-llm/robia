@@ -746,10 +746,13 @@ private fun RobiaShell(
     }
 
     fun requestCloudSetup() {
-        if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
+        if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
+            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
+        ) {
+            coroutineScope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
+            Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
+        } else if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
             Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
-        } else if (cloudSetupGuard.hasUnsafeLocalState) {
-            cloudSetupDialogMode = CloudSetupDialogMode.LateEnableBlocked
         } else {
             onRequestCloudSetup()
         }
