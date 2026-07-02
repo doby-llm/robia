@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -61,7 +62,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -86,7 +86,6 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -1995,59 +1994,47 @@ private fun QuickEditDialog(
                 when (selectedTool) {
                     QuickEditTool.Brightness -> {
                         Text(stringResource(R.string.quick_edit_brightness_hint), style = MaterialTheme.typography.bodySmall)
-                        Slider(value = brightness, onValueChange = { brightness = it }, valueRange = -1f..1f)
-                        val resetLabel = stringResource(R.string.quick_edit_brightness_reset)
-                        val resetContentDescription = stringResource(R.string.quick_edit_brightness_reset_content_description)
-                        OutlinedButton(
-                            onClick = { brightness = 0f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .semantics {
-                                    contentDescription = resetContentDescription
-                                },
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(resetLabel, textAlign = TextAlign.Center)
-                        }
+                        QuickEditBrightnessSlider(
+                            value = brightness,
+                            onValueChange = { brightness = it },
+                        )
                     }
                     QuickEditTool.Temperature -> {
                         Text(stringResource(R.string.quick_edit_temperature_hint), style = MaterialTheme.typography.bodySmall)
-                        FlowRow(
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             QuickEditTemperaturePreset(
                                 labelRes = R.string.quick_edit_temperature_cooler,
-                                strengthRes = R.string.quick_edit_temperature_strength_strongest,
                                 value = -1f,
                                 selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
                             ) { temperature = it }
                             QuickEditTemperaturePreset(
                                 labelRes = R.string.quick_edit_temperature_cool,
-                                strengthRes = R.string.quick_edit_temperature_strength_gentle,
                                 value = -0.5f,
                                 selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
                             ) { temperature = it }
                             QuickEditTemperaturePreset(
                                 labelRes = R.string.quick_edit_temperature_neutral,
-                                strengthRes = R.string.quick_edit_temperature_strength_neutral,
                                 value = 0f,
                                 selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
                             ) { temperature = it }
                             QuickEditTemperaturePreset(
                                 labelRes = R.string.quick_edit_temperature_warm,
-                                strengthRes = R.string.quick_edit_temperature_strength_gentle,
                                 value = 0.5f,
                                 selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
                             ) { temperature = it }
                             QuickEditTemperaturePreset(
                                 labelRes = R.string.quick_edit_temperature_warmer,
-                                strengthRes = R.string.quick_edit_temperature_strength_strongest,
                                 value = 1f,
                                 selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
                             ) { temperature = it }
                         }
                     }
@@ -2101,61 +2088,110 @@ private fun QuickEditToolIconButton(
 }
 
 @Composable
+private fun QuickEditBrightnessSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+) {
+    val normalizedValue = ((value.coerceIn(-1f, 1f) + 1f) / 2f).coerceIn(0f, 1f)
+    val sliderContentDescription = stringResource(R.string.quick_edit_brightness_content_description)
+    val thumbSize = 24.dp
+
+    fun updateValue(pointerX: Float, width: Int) {
+        if (width <= 0) return
+        val normalized = (pointerX / width).coerceIn(0f, 1f)
+        onValueChange((normalized * 2f) - 1f)
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .semantics { contentDescription = sliderContentDescription }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    updateValue(down.position.x, size.width)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressedChange = event.changes.firstOrNull { change -> change.pressed } ?: break
+                        updateValue(pressedChange.position.x, size.width)
+                    }
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(normalizedValue)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Box(
+            modifier = Modifier
+                .padding(start = (maxWidth - thumbSize) * normalizedValue)
+                .size(thumbSize)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .border(2.dp, MaterialTheme.colorScheme.surfaceContainerLowest, CircleShape),
+        )
+    }
+}
+
+@Composable
 private fun QuickEditTemperaturePreset(
     labelRes: Int,
-    strengthRes: Int,
     value: Float,
     selectedValue: Float,
+    modifier: Modifier = Modifier,
     onSelected: (Float) -> Unit,
 ) {
     val selected = selectedValue == value
     val label = stringResource(labelRes)
-    val strengthLabel = stringResource(strengthRes)
     val selectedStatus = stringResource(
         if (selected) R.string.quick_edit_temperature_selected else R.string.quick_edit_temperature_not_selected,
     )
     val contentDescription = stringResource(
         R.string.quick_edit_temperature_preset_content_description,
         label,
-        strengthLabel,
         selectedStatus,
     )
     val swatchColor = when (value) {
-        -1f -> Color(0xFF4E8FE7)
-        -0.5f -> Color(0xFFB9D8FF)
+        -1f -> Color(0xFF0B4FB3)
+        -0.5f -> Color(0xFF5FA8FF)
         0f -> MaterialTheme.colorScheme.surfaceContainerHigh
-        0.5f -> Color(0xFFFFC58C)
-        else -> Color(0xFFE07021)
+        0.5f -> Color(0xFFFFB36B)
+        else -> Color(0xFFE56A1F)
     }
-    val swatchSize = when (kotlin.math.abs(value)) {
-        1f -> 46.dp
-        0.5f -> 36.dp
-        else -> 28.dp
-    }
-    Column(
-        modifier = Modifier
-            .width(76.dp)
-            .heightIn(min = 88.dp)
+    Box(
+        modifier = modifier
+            .size(48.dp)
             .clip(MaterialTheme.shapes.medium)
             .clickable { onSelected(value) }
             .semantics {
                 this.contentDescription = contentDescription
                 this.selected = selected
             }
-            .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(2.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(44.dp)
                 .clip(CircleShape)
                 .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
-                    .size(swatchSize)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(swatchColor)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
@@ -2173,13 +2209,6 @@ private fun QuickEditTemperaturePreset(
                 )
             }
         }
-        Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
-        Text(
-            text = strengthLabel,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 
