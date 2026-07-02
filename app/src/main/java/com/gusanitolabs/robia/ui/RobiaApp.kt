@@ -506,7 +506,7 @@ private fun RobiaShell(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
-    onRequestCloudManualSync: () -> Unit,
+    onRequestCloudManualSync: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
