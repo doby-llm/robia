@@ -500,10 +500,31 @@ private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnap
             record.garmentId in activeGarmentIds &&
                 record.paletteColorId?.let(activeMainColorIds::contains) != false
         },
-        photos = mergeByKey(local.photos + remote.photos, GarmentPhotoRecord::garmentId, GarmentPhotoRecord::revision)
+        photos = mergePhotos(local.photos, remote.photos)
             .filter { record -> record.garmentId in activeGarmentIds },
         tombstones = tombstones,
     ).sortedDeterministically()
+}
+
+private fun mergePhotos(
+    localPhotos: List<GarmentPhotoRecord>,
+    remotePhotos: List<GarmentPhotoRecord>,
+): List<GarmentPhotoRecord> {
+    val localPhotoByGarmentId = localPhotos.associateBy(GarmentPhotoRecord::garmentId)
+    return mergeByKey(localPhotos + remotePhotos, GarmentPhotoRecord::garmentId, GarmentPhotoRecord::revision)
+        .map { merged ->
+            val local = localPhotoByGarmentId[merged.garmentId]
+            if (
+                local != null &&
+                local.revision >= merged.revision &&
+                merged.restoredLocalUri.isNullOrBlank() &&
+                merged.localUri != local.localUri
+            ) {
+                local
+            } else {
+                merged
+            }
+        }
 }
 
 private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> Long): List<T> =

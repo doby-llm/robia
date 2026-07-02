@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.sync
 
+import android.content.Context
+import android.net.Uri
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.common.api.Scope
@@ -15,6 +17,7 @@ import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
 import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
 import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
+import com.gusanitolabs.robia.media.ClothingImageStore
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,6 +35,7 @@ import kotlin.coroutines.resume
  * an honest blocked state instead of pretending the snapshot was uploaded.
  */
 class GoogleDriveWardrobeRepository(
+    private val context: Context,
     private val authorizationClient: AuthorizationClient,
     private val driveScope: Scope,
     private val api: DriveSnapshotApi = HttpDriveSnapshotApi(),
@@ -50,7 +54,7 @@ class GoogleDriveWardrobeRepository(
 
     override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { accessToken ->
         when (val snapshotResult = api.fetchSnapshot(accessToken)) {
-            is DriveApiResult.Success -> DriveSyncResult.Success(snapshotResult.value.sortedDeterministically())
+            is DriveApiResult.Success -> hydratePhotoBlobs(accessToken, snapshotResult.value.sortedDeterministically())
             is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
             is DriveApiResult.Unauthorized -> authBlocked()
             is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
@@ -59,7 +63,11 @@ class GoogleDriveWardrobeRepository(
 
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> =
         withAccessToken { accessToken ->
-            val deterministicSnapshot = snapshot.sortedDeterministically()
+            val deterministicSnapshot = when (val result = uploadPhotoBlobs(accessToken, snapshot.sortedDeterministically())) {
+                is DriveSyncResult.Success -> result.value
+                is DriveSyncResult.Blocked -> return@withAccessToken result
+                is DriveSyncResult.Failure -> return@withAccessToken result
+            }
             when (val result = api.upsertSnapshot(accessToken, deterministicSnapshot)) {
                 is DriveApiResult.Success -> DriveSyncResult.Success(DriveManifest.fromSnapshot(result.value))
                 is DriveApiResult.Unauthorized -> authBlocked()
@@ -98,6 +106,67 @@ class GoogleDriveWardrobeRepository(
         return operation(accessToken)
     }
 
+    private fun hydratePhotoBlobs(
+        accessToken: String,
+        snapshot: WardrobeSyncSnapshot,
+    ): DriveSyncResult<WardrobeSyncSnapshot> {
+        val hydratedPhotos = snapshot.photos.map { photo ->
+            val blobPath = photo.blobPath.takeIf(String::isNotBlank) ?: return@map photo
+            when (val blobResult = api.fetchBlob(accessToken, blobPath)) {
+                is DriveApiResult.Success -> runCatching {
+                    val restoredUri = ClothingImageStore.writeRestoredImageBlob(
+                        context = context,
+                        bytes = blobResult.value.bytes,
+                        blobPath = blobPath,
+                        mimeType = photo.mimeType,
+                    )
+                    check(ClothingImageStore.readImageAspectRatio(context, restoredUri) != null)
+                    photo.copy(
+                        restoredLocalUri = restoredUri.toString(),
+                        byteSize = photo.byteSize ?: blobResult.value.bytes.size.toLong(),
+                        contentHash = photo.contentHash ?: blobResult.value.bytes.sha256Hex(),
+                    )
+                }.getOrElse { photo }
+                is DriveApiResult.NotFound,
+                is DriveApiResult.Failure -> photo
+                is DriveApiResult.Unauthorized -> return authBlocked()
+            }
+        }
+        return DriveSyncResult.Success(snapshot.copy(photos = hydratedPhotos).sortedDeterministically())
+    }
+
+    private fun uploadPhotoBlobs(
+        accessToken: String,
+        snapshot: WardrobeSyncSnapshot,
+    ): DriveSyncResult<WardrobeSyncSnapshot> {
+        val uploadedPhotos = snapshot.photos.map { photo ->
+            val blobPath = photo.blobPath.takeIf(String::isNotBlank) ?: return DriveSyncResult.Failure(
+                IllegalStateException("Garment photo ${photo.garmentId} is missing a Drive blob path."),
+            )
+            val sourceUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: photo.localUri
+            val blob = runCatching { ClothingImageStore.readImageBlob(context, Uri.parse(sourceUri)) }
+                .getOrNull()
+                ?: return DriveSyncResult.Failure(
+                    IllegalStateException("Garment photo ${photo.garmentId} could not be read for Drive upload."),
+                )
+            when (val uploadResult = api.upsertBlob(accessToken, blobPath, blob.bytes, blob.mimeType ?: photo.mimeType)) {
+                is DriveApiResult.Success -> Unit
+                is DriveApiResult.Unauthorized -> return authBlocked()
+                is DriveApiResult.NotFound -> return DriveSyncResult.Failure(
+                    IllegalStateException("Drive photo blob upload completed without a readable file."),
+                )
+                is DriveApiResult.Failure -> return DriveSyncResult.Failure(uploadResult.throwable)
+            }
+            photo.copy(
+                blobPath = blobPath,
+                mimeType = blob.mimeType ?: photo.mimeType,
+                contentHash = blob.contentHash,
+                byteSize = blob.byteSize,
+            )
+        }
+        return DriveSyncResult.Success(snapshot.copy(photos = uploadedPhotos).sortedDeterministically())
+    }
+
     private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
         reason = DriveSyncDisabledReason.UserNotConnected,
         message = "Google Drive authorization is required before sync can continue.",
@@ -106,8 +175,12 @@ class GoogleDriveWardrobeRepository(
 
 interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
+    fun fetchBlob(accessToken: String, blobPath: String): DriveApiResult<DriveBlob>
+    fun upsertBlob(accessToken: String, blobPath: String, bytes: ByteArray, mimeType: String?): DriveApiResult<Unit>
     suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot>
 }
+
+data class DriveBlob(val bytes: ByteArray)
 
 sealed interface DriveApiResult<out T> {
     data class Success<T>(val value: T) : DriveApiResult<T>
@@ -150,8 +223,45 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    private fun findSnapshotFileId(accessToken: String): String? {
-        val query = "name='$SNAPSHOT_FILE_NAME' and trashed=false"
+    override fun fetchBlob(accessToken: String, blobPath: String): DriveApiResult<DriveBlob> {
+        val fileId = findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
+        return byteRequest(
+            method = "GET",
+            url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media",
+            accessToken = accessToken,
+        ) { bytes -> DriveApiResult.Success(DriveBlob(bytes)) }
+    }
+
+    override fun upsertBlob(
+        accessToken: String,
+        blobPath: String,
+        bytes: ByteArray,
+        mimeType: String?,
+    ): DriveApiResult<Unit> {
+        val existingFileId = findFileIdByName(accessToken, blobPath)
+        val method = if (existingFileId == null) "POST" else "PATCH"
+        val url = if (existingFileId == null) {
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+        } else {
+            "https://www.googleapis.com/upload/drive/v3/files/$existingFileId?uploadType=multipart"
+        }
+        val metadata = JSONObject()
+            .put("name", blobPath)
+            .put("mimeType", mimeType ?: PHOTO_BLOB_MIME_TYPE)
+            .apply {
+                if (existingFileId == null) put("parents", JSONArray().put("appDataFolder"))
+            }
+            .toString()
+        return multipartRequest(method, url, accessToken, metadata, bytes, mimeType ?: PHOTO_BLOB_MIME_TYPE) {
+            DriveApiResult.Success(Unit)
+        }
+    }
+
+    private fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
+
+    private fun findFileIdByName(accessToken: String, name: String): String? {
+        val escapedName = name.replace("\\", "\\\\").replace("'", "\\'")
+        val query = "name='$escapedName' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
             "?spaces=appDataFolder&fields=files(id,name,modifiedTime)&pageSize=1&q=" +
             URLEncoder.encode(query, "UTF-8")
@@ -183,6 +293,23 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         DriveApiResult.Failure(throwable)
     }
 
+    private fun <T> byteRequest(
+        method: String,
+        url: String,
+        accessToken: String,
+        parse: (bytes: ByteArray) -> DriveApiResult<T>,
+    ): DriveApiResult<T> = try {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            connectTimeout = CONNECT_TIMEOUT_MILLIS
+            readTimeout = READ_TIMEOUT_MILLIS
+        }
+        connection.toDriveByteResult(parse)
+    } catch (throwable: Throwable) {
+        DriveApiResult.Failure(throwable)
+    }
+
     private fun <T> multipartRequest(
         method: String,
         url: String,
@@ -190,17 +317,35 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         metadata: String,
         body: String,
         parse: (body: String) -> DriveApiResult<T>,
+    ): DriveApiResult<T> = multipartRequest(
+        method = method,
+        url = url,
+        accessToken = accessToken,
+        metadata = metadata,
+        body = body.toByteArray(Charsets.UTF_8),
+        bodyMimeType = "$SNAPSHOT_MIME_TYPE; charset=UTF-8",
+        parse = parse,
+    )
+
+    private fun <T> multipartRequest(
+        method: String,
+        url: String,
+        accessToken: String,
+        metadata: String,
+        body: ByteArray,
+        bodyMimeType: String,
+        parse: (body: String) -> DriveApiResult<T>,
     ): DriveApiResult<T> = try {
         val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
-        val payload = buildString {
+        val header = buildString {
             append("--$boundary\r\n")
             append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
             append(metadata)
             append("\r\n--$boundary\r\n")
-            append("Content-Type: $SNAPSHOT_MIME_TYPE; charset=UTF-8\r\n\r\n")
-            append(body)
-            append("\r\n--$boundary--\r\n")
+            append("Content-Type: $bodyMimeType\r\n\r\n")
         }.toByteArray(Charsets.UTF_8)
+        val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+        val payload = header + body + footer
 
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
@@ -235,13 +380,37 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             disconnect()
         }
 
+    private fun <T> HttpURLConnection.toDriveByteResult(parse: (bytes: ByteArray) -> DriveApiResult<T>): DriveApiResult<T> =
+        try {
+            val bytes = if (responseCode in 200..299) {
+                inputStream.use { input -> input.readBytes() }
+            } else {
+                errorStream?.use { input -> input.readBytes() } ?: ByteArray(0)
+            }
+            when (responseCode) {
+                in 200..299 -> parse(bytes)
+                HttpURLConnection.HTTP_UNAUTHORIZED,
+                HttpURLConnection.HTTP_FORBIDDEN -> DriveApiResult.Unauthorized
+                HttpURLConnection.HTTP_NOT_FOUND -> DriveApiResult.NotFound
+                else -> DriveApiResult.Failure(IOException("Drive API returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8)}"))
+            }
+        } finally {
+            disconnect()
+        }
+
+
     private companion object {
         const val SNAPSHOT_FILE_NAME = "wardrobe_snapshot.json"
         const val SNAPSHOT_MIME_TYPE = "application/vnd.gusanitolabs.robia.wardrobe-snapshot+json"
+        const val PHOTO_BLOB_MIME_TYPE = "application/octet-stream"
         const val CONNECT_TIMEOUT_MILLIS = 15_000
         const val READ_TIMEOUT_MILLIS = 30_000
     }
 }
+
+private fun ByteArray.sha256Hex(): String = java.security.MessageDigest.getInstance("SHA-256")
+    .digest(this)
+    .joinToString(separator = "") { byte -> "%02x".format(byte) }
 
 private object DriveSnapshotJson {
     fun encode(snapshot: WardrobeSyncSnapshot): String {

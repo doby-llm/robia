@@ -166,6 +166,8 @@ data class GarmentPhotoRecord(
     val byteSize: Long? = null,
     val revision: Long = 0L,
     val updatedAtEpochMillis: Long = 0L,
+    /** Local private-storage URI materialized from a Drive blob during restore. Not serialized to Drive. */
+    val restoredLocalUri: String? = null,
 )
 
 data class SyncTombstoneRecord(
