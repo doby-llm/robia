@@ -178,6 +178,13 @@ fun AddEditClothingScreen(
     var additionalInfoSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
     var showQuickEdit by rememberSaveable { mutableStateOf(false) }
     var quickEditStatus by rememberSaveable { mutableStateOf<String?>(null) }
+    var photoAnalysisGeneration by rememberSaveable { mutableStateOf(0L) }
+    var modelOwnedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var userOverriddenTagCategories by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var modelPrimaryColorGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var modelSecondaryColorGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var userPrimaryColorOverrideGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var userSecondaryColorOverrideGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     var nextPhotoInputId by remember { mutableStateOf(0L) }
     var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
@@ -191,23 +198,83 @@ fun AddEditClothingScreen(
     val primaryLabel = remember(primaryRawColor) { ColorLabelResolver.fromRawValue(primaryRawColor) }
     val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
 
-    fun applyExtractedColors(colors: List<PaletteColorMatch>) {
-        val primaryColorId = colors.getOrNull(0)?.color?.id
-        if (primaryColorId != null) {
-            selectedPrimaryColorId = primaryColorId
+    fun beginPhotoAnalysisGeneration(availableTagsSnapshot: List<GarmentTag>): Long {
+        val nextGeneration = photoAnalysisGeneration + 1
+        photoAnalysisGeneration = nextGeneration
+        val tagsById = availableTagsSnapshot.associateBy(GarmentTag::id)
+        val modelOwnedIds = modelOwnedTagIds.toSet()
+        selectedTagIds = selectedTagIds.filterNot { tagId ->
+            tagId in modelOwnedIds && tagsById[tagId]?.categoryId in MODEL_PREDICTED_CATEGORIES
         }
-        selectedSecondaryColorId = colors
-            .drop(1)
-            .firstOrNull { match ->
-                match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId
+        modelOwnedTagIds = emptyList()
+        userOverriddenTagCategories = emptyList()
+        if (modelPrimaryColorGeneration != null) {
+            selectedPrimaryColorId = null
+        }
+        if (modelSecondaryColorGeneration != null) {
+            selectedSecondaryColorId = null
+        }
+        modelPrimaryColorGeneration = null
+        modelSecondaryColorGeneration = null
+        userPrimaryColorOverrideGeneration = null
+        userSecondaryColorOverrideGeneration = null
+        return nextGeneration
+    }
+
+    fun applyExtractedColors(generation: Long, colors: List<PaletteColorMatch>) {
+        val primaryColorId = colors.getOrNull(0)?.color?.id
+        if (userPrimaryColorOverrideGeneration != generation) {
+            selectedPrimaryColorId = primaryColorId
+            modelPrimaryColorGeneration = primaryColorId?.let { generation }
+        }
+        if (userSecondaryColorOverrideGeneration != generation) {
+            selectedSecondaryColorId = colors
+                .drop(1)
+                .firstOrNull { match ->
+                    match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId
+                }
+                ?.color
+                ?.id
+            modelSecondaryColorGeneration = selectedSecondaryColorId?.let { generation }
+        }
+    }
+
+    fun applyPredictedTags(predictedTagIds: Set<String>, availableTagsSnapshot: List<GarmentTag>): PredictedTagReconciliation {
+        val result = reconcilePredictedAdditionalInfoTags(
+            currentTagIds = selectedTagIds,
+            currentModelOwnedTagIds = modelOwnedTagIds,
+            predictedTagIds = predictedTagIds,
+            availableTags = availableTagsSnapshot,
+            userOverriddenCategories = userOverriddenTagCategories,
+        )
+        selectedTagIds = result.selectedTagIds
+        modelOwnedTagIds = result.modelOwnedTagIds
+        return result
+    }
+
+    fun updateUserSelectedTagIds(newTagIds: List<String>) {
+        val tagsById = latestAvailableTags.associateBy(GarmentTag::id)
+        val oldIds = selectedTagIds.toSet()
+        val newIds = newTagIds.toSet()
+        val touchedCategories = (oldIds + newIds)
+            .mapNotNull { tagId -> tagsById[tagId]?.categoryId }
+            .filter { categoryId -> categoryId in MODEL_PREDICTED_CATEGORIES }
+            .filter { categoryId ->
+                oldIds.filter { tagsById[it]?.categoryId == categoryId }.toSet() !=
+                    newIds.filter { tagsById[it]?.categoryId == categoryId }.toSet()
             }
-            ?.color
-            ?.id
+            .toSet()
+        selectedTagIds = newTagIds
+        if (touchedCategories.isNotEmpty()) {
+            userOverriddenTagCategories = (userOverriddenTagCategories + touchedCategories).distinct()
+            modelOwnedTagIds = modelOwnedTagIds.filterNot { tagId -> tagsById[tagId]?.categoryId in touchedCategories }
+        }
     }
 
     fun queuePhotoForProcessing(uriString: String, sourceStatus: String) {
         val inputId = ++nextPhotoInputId
         photoProcessingToken += 1 // Immediately invalidate any older in-flight pipeline.
+        val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
         originalPhotoUri = uriString
         photoUri = uriString
         editorPhotoState = EditorPhotoState(
@@ -233,6 +300,8 @@ fun AddEditClothingScreen(
             "source=$sourceStatus",
             "uri=$uriString",
             "event=$inputId",
+            "analysisGeneration=$generation",
+            "cleared stale model-owned tags/colors for new image content",
         )
         pendingPhotoInput = PendingPhotoInput(
             id = inputId,
@@ -243,7 +312,7 @@ fun AddEditClothingScreen(
 
     suspend fun processSelectedPhoto(inputId: Long, uriString: String, sourceStatus: String) {
         val token = ++photoProcessingToken
-        val tagIdsBeforeProcessing = selectedTagIds.toSet()
+        val generation = photoAnalysisGeneration
         originalPhotoUri = uriString
         photoUri = uriString
         editorPhotoState = EditorPhotoState(
@@ -272,6 +341,7 @@ fun AddEditClothingScreen(
             "Pipeline event: $inputId",
             "Palette colors available at start: ${latestMainColors.size}",
             "Tags available at start: ${latestAvailableTags.size}",
+            "Analysis generation: $generation",
         )
 
         fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
@@ -372,7 +442,7 @@ fun AddEditClothingScreen(
                 }
                 if (token != photoProcessingToken) return
                 if (extracted.isNotEmpty()) {
-                    applyExtractedColors(extracted)
+                    applyExtractedColors(generation, extracted)
                 }
 
                 photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
@@ -408,16 +478,14 @@ fun AddEditClothingScreen(
                 addDetectionDebugLines(diagnostics, detectionResult)
                 if (token != photoProcessingToken) return
                 detectionResult?.prediction?.let { prediction ->
-                    if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
-                        selectedTagIds = mergePredictedAdditionalInfoTags(
-                            currentTagIds = selectedTagIds,
-                            predictedTagIds = prediction.selectedTagIds,
-                            availableTags = tagsForDetection,
-                        )
-                    } else {
-                        addLine("Predicted tags not merged because user changed tag selection during processing")
+                    val tagResult = applyPredictedTags(
+                        predictedTagIds = prediction.selectedTagIds,
+                        availableTagsSnapshot = tagsForDetection,
+                    )
+                    if (tagResult.skippedCategories.isNotEmpty()) {
+                        addLine("Preserved user-overridden tag categories: ${tagResult.skippedCategories.sorted().joinToString()}")
                     }
-                }
+                } ?: addLine("No additional-info prediction for generation $generation; model-owned tags remain cleared")
         } catch (throwable: CancellationException) {
             addLine("Pipeline cancelled because a newer photo input superseded this one")
             throw throwable
@@ -450,13 +518,14 @@ fun AddEditClothingScreen(
 
     suspend fun reprocessEditedPhoto(editedUri: Uri) {
         val token = ++photoProcessingToken
-        val tagIdsBeforeProcessing = selectedTagIds.toSet()
+        val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
         val startedAt = SystemClock.elapsedRealtime()
         val diagnostics = mutableListOf(
             "Quick Edit save started",
             "Edited URI: $editedUri",
             "Palette colors available at start: ${latestMainColors.size}",
             "Tags available at start: ${latestAvailableTags.size}",
+            "Analysis generation: $generation",
         )
 
         fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
@@ -506,7 +575,7 @@ fun AddEditClothingScreen(
                 addLine("Color extraction failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
             }
             if (token != photoProcessingToken) return
-            if (extracted.isNotEmpty()) applyExtractedColors(extracted)
+            if (extracted.isNotEmpty()) applyExtractedColors(generation, extracted)
 
             photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
             val tagsForDetection = latestAvailableTags
@@ -521,16 +590,14 @@ fun AddEditClothingScreen(
             addDetectionDebugLines(diagnostics, detectionResult)
             if (token != photoProcessingToken) return
             detectionResult?.prediction?.let { prediction ->
-                if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
-                    selectedTagIds = mergePredictedAdditionalInfoTags(
-                        currentTagIds = selectedTagIds,
-                        predictedTagIds = prediction.selectedTagIds,
-                        availableTags = tagsForDetection,
-                    )
-                } else {
-                    addLine("Predicted tags not merged because user changed tag selection during Quick Edit re-analysis")
+                val tagResult = applyPredictedTags(
+                    predictedTagIds = prediction.selectedTagIds,
+                    availableTagsSnapshot = tagsForDetection,
+                )
+                if (tagResult.skippedCategories.isNotEmpty()) {
+                    addLine("Preserved user-overridden tag categories: ${tagResult.skippedCategories.sorted().joinToString()}")
                 }
-            }
+            } ?: addLine("No Quick Edit additional-info prediction for generation $generation; model-owned tags remain cleared")
             captureStatus = PhotoStatus.QuickEdited
             quickEditStatus = context.getString(R.string.quick_edit_saved_status)
         } catch (throwable: CancellationException) {
@@ -578,6 +645,12 @@ fun AddEditClothingScreen(
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
+        modelOwnedTagIds = emptyList()
+        userOverriddenTagCategories = emptyList()
+        modelPrimaryColorGeneration = null
+        modelSecondaryColorGeneration = null
+        userPrimaryColorOverrideGeneration = null
+        userSecondaryColorOverrideGeneration = null
         captureStatus = initialPhotoReviewState?.captureStatus.orEmpty()
         photoRetrySource = initialPhotoReviewState?.let { reviewState ->
             PendingPhotoInput(
@@ -738,8 +811,12 @@ fun AddEditClothingScreen(
             onColorSelected = { color ->
                 if (target == ColorPickerTarget.Primary) {
                     selectedPrimaryColorId = color?.id
+                    modelPrimaryColorGeneration = null
+                    userPrimaryColorOverrideGeneration = photoAnalysisGeneration
                 } else {
                     selectedSecondaryColorId = color?.id
+                    modelSecondaryColorGeneration = null
+                    userSecondaryColorOverrideGeneration = photoAnalysisGeneration
                 }
                 colorPickerTarget = null
             },
@@ -848,7 +925,7 @@ fun AddEditClothingScreen(
                 availableTags = availableTags,
                 selectedTagIds = selectedTagIds,
                 fitValue = fitValue,
-                onSelectedTagIdsChange = { selectedTagIds = it },
+                onSelectedTagIdsChange = { updateUserSelectedTagIds(it) },
                 onFitValueChange = { fitValue = it },
             )
         }
@@ -2382,19 +2459,52 @@ private enum class PhotoProcessingStage(val labelRes: Int) {
     ApplyingQuickEdit(R.string.processing_stage_applying_quick_edit),
 }
 
-private fun mergePredictedAdditionalInfoTags(
+private data class PredictedTagReconciliation(
+    val selectedTagIds: List<String>,
+    val modelOwnedTagIds: List<String>,
+    val skippedCategories: Set<String>,
+)
+
+private fun reconcilePredictedAdditionalInfoTags(
     currentTagIds: List<String>,
+    currentModelOwnedTagIds: List<String>,
     predictedTagIds: Set<String>,
     availableTags: List<GarmentTag>,
-): List<String> {
-    if (predictedTagIds.isEmpty()) return currentTagIds
+    userOverriddenCategories: List<String>,
+): PredictedTagReconciliation {
     val tagsById = availableTags.associateBy(GarmentTag::id)
-    val hasCurrentCategory = currentTagIds.any { tagId -> tagsById[tagId]?.categoryId == "category" }
-    val inferredTagIds = predictedTagIds.filter { tagId ->
-        val categoryId = tagsById[tagId]?.categoryId ?: return@filter false
-        categoryId in MODEL_PREDICTED_CATEGORIES && (categoryId != "category" || !hasCurrentCategory)
+    val userOverridden = userOverriddenCategories.toSet()
+    val predictedByCategory = MODEL_PREDICTED_CATEGORIES.associateWith { categoryId ->
+        predictedTagIds.filter { tagId -> tagsById[tagId]?.categoryId == categoryId }
     }
-    return (currentTagIds + inferredTagIds).distinct()
+    val categoriesWithPredictions = predictedByCategory
+        .filterValues { tagIds -> tagIds.isNotEmpty() }
+        .keys
+    val replacedCategories = MODEL_PREDICTED_CATEGORIES - userOverridden
+    val modelOwnedIds = currentModelOwnedTagIds.toSet()
+    val selected = currentTagIds.filterNot { tagId ->
+        val categoryId = tagsById[tagId]?.categoryId
+        categoryId in replacedCategories && (categoryId == "category" || tagId in modelOwnedIds)
+    }.toMutableList()
+    val nextModelOwned = currentModelOwnedTagIds.filterNot { tagId ->
+        tagsById[tagId]?.categoryId in replacedCategories
+    }.toMutableList()
+
+    categoriesWithPredictions.forEach { categoryId ->
+        if (categoryId in userOverridden) return@forEach
+        // A new photo generation owns only the detector output for category/season/occasion.
+        // Previous model-owned selections are removed first, so trousers -> shirt cannot keep trousers.
+        predictedByCategory.getValue(categoryId).forEach { tagId ->
+            if (tagId !in selected) selected += tagId
+            if (tagId !in nextModelOwned) nextModelOwned += tagId
+        }
+    }
+
+    return PredictedTagReconciliation(
+        selectedTagIds = selected.distinct(),
+        modelOwnedTagIds = nextModelOwned.distinct(),
+        skippedCategories = categoriesWithPredictions.intersect(userOverridden),
+    )
 }
 
 private val MODEL_PREDICTED_CATEGORIES = setOf("category", "season", "occasion")
