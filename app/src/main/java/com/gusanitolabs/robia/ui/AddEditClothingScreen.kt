@@ -11,7 +11,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -81,9 +82,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -128,6 +131,7 @@ import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1789,6 +1793,35 @@ private fun QuickEditDialog(
     var showBefore by remember { mutableStateOf(false) }
     val segmenterAvailable = segmenter.isAvailable
     val previewUri = if (showBefore) beforePhotoUri else photoUri
+    fun previewEraserStroke(brushPoints: List<NormalizedImagePoint>) {
+        if (brushPoints.isEmpty()) {
+            segmentError = context.getString(R.string.quick_edit_select_segment_first)
+            pendingSegment = null
+            return
+        }
+        isSegmenting = true
+        segmentError = null
+        pendingSegment = null
+        coroutineScope.launch {
+            val sampledBrushPoints = brushPoints
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    // MediaPipe still receives one ROI seed; the full sampled path is preserved
+                    // on the result so commit erases only the user's displayed-image stroke.
+                    segmenter.highlightSegment(context, Uri.parse(photoUri), sampledBrushPoints.first())
+                }
+            }
+            pendingSegment = result.getOrNull()
+                ?.takeIf { it.mask != null }
+                ?.copy(brushPoints = sampledBrushPoints)
+            segmentError = when {
+                result.isFailure -> context.getString(R.string.quick_edit_eraser_unavailable)
+                pendingSegment == null -> context.getString(R.string.quick_edit_no_segment_found)
+                else -> null
+            }
+            isSegmenting = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = {
@@ -1809,47 +1842,49 @@ private fun QuickEditDialog(
                         .clip(MaterialTheme.shapes.large)
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
                         .pointerInput(selectedTool, segmenterAvailable, photoAspectRatio, photoUri, isSegmenting) {
-                            detectTapGestures(
-                                onPress = {
-                                    if (selectedTool != QuickEditTool.Eraser) {
-                                        showBefore = true
-                                        tryAwaitRelease()
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                if (selectedTool != QuickEditTool.Eraser) {
+                                    showBefore = true
+                                    try {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.changes.none { it.pressed }) break
+                                        }
+                                    } finally {
                                         showBefore = false
                                     }
-                                },
-                                onTap = { offset: Offset ->
-                                    if (selectedTool == QuickEditTool.Eraser && segmenterAvailable && !isSegmenting) {
-                                        val imagePoint = mapFitCenterTapToImagePoint(
-                                            offset = offset,
-                                            containerWidth = size.width,
-                                            containerHeight = size.height,
-                                            imageAspectRatio = photoAspectRatio,
-                                        )
-                                        if (imagePoint == null) {
-                                            segmentError = context.getString(R.string.quick_edit_select_segment_first)
-                                            pendingSegment = null
-                                        } else {
-                                            isSegmenting = true
-                                            segmentError = null
-                                            pendingSegment = null
-                                            coroutineScope.launch {
-                                                val result = runCatching {
-                                                    withContext(Dispatchers.IO) {
-                                                        segmenter.highlightSegment(context, Uri.parse(photoUri), imagePoint)
-                                                    }
-                                                }
-                                                pendingSegment = result.getOrNull()?.takeIf { it.mask != null }
-                                                segmentError = when {
-                                                    result.isFailure -> context.getString(R.string.quick_edit_eraser_unavailable)
-                                                    pendingSegment == null -> context.getString(R.string.quick_edit_no_segment_found)
-                                                    else -> null
-                                                }
-                                                isSegmenting = false
-                                            }
-                                        }
+                                    return@awaitEachGesture
+                                }
+                                if (!segmenterAvailable || isSegmenting) return@awaitEachGesture
+
+                                val transform = DisplayedImageTransform.fitCenter(
+                                    containerWidth = size.width.toFloat(),
+                                    containerHeight = size.height.toFloat(),
+                                    imageAspectRatio = photoAspectRatio,
+                                )
+                                val brushPoints = mutableListOf<NormalizedImagePoint>()
+                                fun sampleDisplayedPoint(offset: Offset) {
+                                    val imagePoint = transform.toImagePoint(offset) ?: return
+                                    val previous = brushPoints.lastOrNull()
+                                    if (previous == null || previous.distanceTo(imagePoint) >= ERASER_STROKE_SAMPLE_DISTANCE) {
+                                        brushPoints += imagePoint
                                     }
-                                },
-                            )
+                                }
+
+                                sampleDisplayedPoint(down.position)
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change != null && change.pressed && change.positionChanged()) {
+                                        sampleDisplayedPoint(change.position)
+                                        change.consume()
+                                    }
+                                    if (event.changes.none { it.id == down.id && it.pressed }) break
+                                }
+
+                                previewEraserStroke(brushPoints)
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -2023,10 +2058,10 @@ private fun SegmentMaskOverlay(
     modifier: Modifier = Modifier,
 ) {
     val mask = segment.mask
-    val overlay = remember(mask) { mask?.toOverlayImageBitmap() }
+    val overlay = remember(segment) { mask?.toOverlayImageBitmap(segment.brushPoints) }
     if (overlay != null) {
         Canvas(modifier = modifier) {
-            val rect = fitCenterRect(size.width, size.height, imageAspectRatio)
+            val rect = DisplayedImageTransform.fitCenter(size.width, size.height, imageAspectRatio).rect
             drawImage(
                 image = overlay,
                 dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
@@ -2035,37 +2070,84 @@ private fun SegmentMaskOverlay(
         }
     } else {
         Canvas(modifier = modifier) {
-            val rect = fitCenterRect(size.width, size.height, imageAspectRatio)
-            drawCircle(
-                color = Color.Red.copy(alpha = 0.28f),
-                radius = minOf(rect.width, rect.height) * 0.08f,
-                center = Offset(rect.left + segment.point.x * rect.width, rect.top + segment.point.y * rect.height),
-            )
+            val transform = DisplayedImageTransform.fitCenter(size.width, size.height, imageAspectRatio)
+            val rect = transform.rect
+            val brushPoints = segment.brushPoints.ifEmpty { listOf(segment.point) }
+            val strokeWidth = minOf(rect.width, rect.height) * 0.12f
+            brushPoints.forEach { point ->
+                drawCircle(
+                    color = Color.Red.copy(alpha = 0.28f),
+                    radius = strokeWidth / 2f,
+                    center = transform.toDisplayedOffset(point),
+                )
+            }
+            brushPoints.zipWithNext { start, end ->
+                drawLine(
+                    color = Color.Red.copy(alpha = 0.28f),
+                    start = transform.toDisplayedOffset(start),
+                    end = transform.toDisplayedOffset(end),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round,
+                )
+            }
         }
     }
 }
 
-private fun InteractiveSegmentMask.toOverlayImageBitmap(): ImageBitmap {
+private fun InteractiveSegmentMask.toOverlayImageBitmap(brushPoints: List<NormalizedImagePoint>): ImageBitmap {
+    val strokePoints = brushPoints.takeIf { it.size > 1 }
     val pixels = IntArray(width * height)
     for (index in pixels.indices) {
-        val alphaValue = (alpha[index].toInt() and 0xFF).coerceIn(0, 255)
+        val x = index % width
+        val y = index / width
+        val withinStroke = strokePoints == null || strokePoints.isNearStroke(
+            x = x.toFloat() / width.coerceAtLeast(1),
+            y = y.toFloat() / height.coerceAtLeast(1),
+            radius = ERASER_STROKE_RADIUS,
+        )
+        val alphaValue = if (withinStroke) (alpha[index].toInt() and 0xFF).coerceIn(0, 255) else 0
         pixels[index] = (alphaValue shl 24) or 0x00FF1744
     }
     return android.graphics.Bitmap.createBitmap(pixels, width, height, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
 }
 
-private fun mapFitCenterTapToImagePoint(
-    offset: Offset,
-    containerWidth: Int,
-    containerHeight: Int,
-    imageAspectRatio: Float?,
-): NormalizedImagePoint? {
-    val rect = fitCenterRect(containerWidth.toFloat(), containerHeight.toFloat(), imageAspectRatio)
-    if (offset.x < rect.left || offset.x > rect.right || offset.y < rect.top || offset.y > rect.bottom) return null
-    return NormalizedImagePoint(
-        x = ((offset.x - rect.left) / rect.width).coerceIn(0f, 1f),
-        y = ((offset.y - rect.top) / rect.height).coerceIn(0f, 1f),
+private data class DisplayedImageTransform(
+    val rect: FitCenterRect,
+) {
+    fun toImagePoint(offset: Offset): NormalizedImagePoint? {
+        if (offset.x < rect.left || offset.x > rect.right || offset.y < rect.top || offset.y > rect.bottom) return null
+        return NormalizedImagePoint(
+            x = ((offset.x - rect.left) / rect.width).coerceIn(0f, 1f),
+            y = ((offset.y - rect.top) / rect.height).coerceIn(0f, 1f),
+        )
+    }
+
+    fun toDisplayedOffset(point: NormalizedImagePoint): Offset = Offset(
+        x = rect.left + point.x.coerceIn(0f, 1f) * rect.width,
+        y = rect.top + point.y.coerceIn(0f, 1f) * rect.height,
     )
+
+    companion object {
+        fun fitCenter(containerWidth: Float, containerHeight: Float, imageAspectRatio: Float?): DisplayedImageTransform {
+            val safeWidth = containerWidth.coerceAtLeast(1f)
+            val safeHeight = containerHeight.coerceAtLeast(1f)
+            val aspectRatio = imageAspectRatio?.takeIf { it > 0f } ?: (safeWidth / safeHeight)
+            val containerAspectRatio = safeWidth / safeHeight
+            val (contentWidth, contentHeight) = if (aspectRatio > containerAspectRatio) {
+                safeWidth to safeWidth / aspectRatio
+            } else {
+                safeHeight * aspectRatio to safeHeight
+            }
+            return DisplayedImageTransform(
+                FitCenterRect(
+                    left = (safeWidth - contentWidth) / 2f,
+                    top = (safeHeight - contentHeight) / 2f,
+                    width = contentWidth,
+                    height = contentHeight,
+                ),
+            )
+        }
+    }
 }
 
 private data class FitCenterRect(
@@ -2078,22 +2160,23 @@ private data class FitCenterRect(
     val bottom: Float = top + height
 }
 
-private fun fitCenterRect(containerWidth: Float, containerHeight: Float, imageAspectRatio: Float?): FitCenterRect {
-    val safeWidth = containerWidth.coerceAtLeast(1f)
-    val safeHeight = containerHeight.coerceAtLeast(1f)
-    val aspectRatio = imageAspectRatio?.takeIf { it > 0f } ?: (safeWidth / safeHeight)
-    val containerAspectRatio = safeWidth / safeHeight
-    val (contentWidth, contentHeight) = if (aspectRatio > containerAspectRatio) {
-        safeWidth to safeWidth / aspectRatio
-    } else {
-        safeHeight * aspectRatio to safeHeight
-    }
-    return FitCenterRect(
-        left = (safeWidth - contentWidth) / 2f,
-        top = (safeHeight - contentHeight) / 2f,
-        width = contentWidth,
-        height = contentHeight,
-    )
+private fun NormalizedImagePoint.distanceTo(other: NormalizedImagePoint): Double =
+    hypot((x - other.x).toDouble(), (y - other.y).toDouble())
+
+private fun List<NormalizedImagePoint>.isNearStroke(x: Float, y: Float, radius: Float): Boolean {
+    if (any { point -> hypot((x - point.x).toDouble(), (y - point.y).toDouble()) <= radius }) return true
+    return zipWithNext().any { (start, end) -> distanceToSegment(x, y, start, end) <= radius }
+}
+
+private fun distanceToSegment(x: Float, y: Float, start: NormalizedImagePoint, end: NormalizedImagePoint): Double {
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val lengthSquared = dx * dx + dy * dy
+    if (lengthSquared == 0f) return hypot((x - start.x).toDouble(), (y - start.y).toDouble())
+    val t = (((x - start.x) * dx + (y - start.y) * dy) / lengthSquared).coerceIn(0f, 1f)
+    val projectionX = start.x + t * dx
+    val projectionY = start.y + t * dy
+    return hypot((x - projectionX).toDouble(), (y - projectionY).toDouble())
 }
 
 @Composable
@@ -2404,6 +2487,8 @@ private const val FIT_VALUE_FITS = 2
 private const val SECONDARY_COLOR_MIN_RATIO = 0.20f
 private const val PHOTO_PREVIEW_MIN_ASPECT_RATIO = 0.66f
 private const val PHOTO_PREVIEW_MAX_ASPECT_RATIO = 1.6f
+private const val ERASER_STROKE_SAMPLE_DISTANCE = 0.0125
+private const val ERASER_STROKE_RADIUS = 0.065f
 
 data class AddEditPhotoReviewState(
     val captureStatus: String,

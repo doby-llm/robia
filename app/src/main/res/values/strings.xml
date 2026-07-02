@@ -197,11 +197,11 @@
     <string name="quick_edit_temperature_preset_content_description">Temperature preset: %1$s</string>
     <string name="quick_edit_brightness_hint">Adjust brightness from darker to brighter.</string>
     <string name="quick_edit_temperature_hint">Choose a cooler, neutral, or warmer temperature.</string>
-    <string name="quick_edit_eraser_hint">Tap a garment area to select a segment. Tapping only previews; use Erase to commit it.</string>
+    <string name="quick_edit_eraser_hint">Tap or drag across a garment area to preview the eraser stroke; use Erase to commit it.</string>
     <string name="quick_edit_eraser_unavailable">Segment eraser is unavailable because the MediaPipe model is disabled or absent. Brightness, temperature, and saving still work.</string>
     <string name="quick_edit_loading_segmenter">Loading segmenter…</string>
     <string name="quick_edit_no_segment_found">No segment found. Try tapping another garment area.</string>
-    <string name="quick_edit_select_segment_first">Tap inside the displayed photo to select a segment first.</string>
+    <string name="quick_edit_select_segment_first">Tap or drag inside the displayed photo to select an eraser stroke first.</string>
     <string name="quick_edit_segment_pending">Segment highlighted. Tap Erase to commit it, or Cancel to clear it.</string>
     <string name="quick_edit_segment_committed">Segment marked for erasing. Undo restores it before final save.</string>
     <string name="quick_edit_erase_segment">Erase</string>
