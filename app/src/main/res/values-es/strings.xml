@@ -38,6 +38,7 @@
     <string name="cloud_restore_phase_downloading">Descargando instantánea</string>
     <string name="cloud_restore_phase_validating">Validando datos del armario</string>
     <string name="cloud_restore_phase_applying">Aplicando armario restaurado</string>
+    <string name="cloud_restore_phase_uploading">Actualizando copia en la nube</string>
     <string name="cloud_restore_phase_rolling_back">Revirtiendo cambios</string>
     <string name="cloud_restore_phase_complete">Finalizando restauración</string>
     <string name="drive_sync_status_disabled">Desactivada</string>

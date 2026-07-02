@@ -38,6 +38,7 @@
     <string name="cloud_restore_phase_downloading">Downloading snapshot</string>
     <string name="cloud_restore_phase_validating">Validating wardrobe data</string>
     <string name="cloud_restore_phase_applying">Applying restored wardrobe</string>
+    <string name="cloud_restore_phase_uploading">Updating cloud backup</string>
     <string name="cloud_restore_phase_rolling_back">Rolling back changes</string>
     <string name="cloud_restore_phase_complete">Finishing restore</string>
     <string name="drive_sync_status_disabled">Disabled</string>

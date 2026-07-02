@@ -1354,6 +1354,7 @@ private val CloudRestorePhase.labelRes: Int
         CloudRestorePhase.Downloading -> R.string.cloud_restore_phase_downloading
         CloudRestorePhase.Validating -> R.string.cloud_restore_phase_validating
         CloudRestorePhase.Applying -> R.string.cloud_restore_phase_applying
+        CloudRestorePhase.Uploading -> R.string.cloud_restore_phase_uploading
         CloudRestorePhase.RollingBack -> R.string.cloud_restore_phase_rolling_back
         CloudRestorePhase.Complete -> R.string.cloud_restore_phase_complete
     }

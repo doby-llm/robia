@@ -48,6 +48,7 @@ class WardrobeSyncOutboxProcessor(
     private val mutex = Mutex()
     private val isProcessing = MutableStateFlow(false)
     private val needsPhotoRestoreAttention = MutableStateFlow(false)
+    private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
 
     override val state: Flow<WardrobeSyncState> = mutableState
@@ -61,11 +62,20 @@ class WardrobeSyncOutboxProcessor(
                 isProcessing,
                 needsPhotoRestoreAttention,
             ) { settings, pendingCount, attentionCount, processing, photoAttention ->
-                settings.driveSyncConnectionStatus.toWardrobeSyncState(
+                WardrobeSyncStateInputs(
+                    connectionStatus = settings.driveSyncConnectionStatus,
                     pendingOperationCount = pendingCount,
                     attentionOperationCount = attentionCount,
                     isProcessing = processing,
                     needsPhotoRestoreAttention = photoAttention,
+                )
+            }.combine(restoreProgress) { inputs, progress ->
+                inputs.connectionStatus.toWardrobeSyncState(
+                    pendingOperationCount = inputs.pendingOperationCount,
+                    attentionOperationCount = inputs.attentionOperationCount,
+                    isProcessing = inputs.isProcessing,
+                    needsPhotoRestoreAttention = inputs.needsPhotoRestoreAttention,
+                    restoreProgress = progress,
                 )
             }.collect { nextState ->
                 mutableState.value = nextState
@@ -118,6 +128,7 @@ class WardrobeSyncOutboxProcessor(
                 return@withLock
             }
 
+            var keepTerminalProgress = false
             try {
                 when (val result = syncFetchMergeThenUpload()) {
                     is SyncCycleResult.Success -> {
@@ -128,41 +139,98 @@ class WardrobeSyncOutboxProcessor(
                         needsPhotoRestoreAttention.value = false
                         markSynced(lockedWork)
                     }
-                    is SyncCycleResult.Blocked -> markBlocked(lockedWork, result.reason)
-                    is SyncCycleResult.Failure -> markFailedRetryable(lockedWork)
+                    is SyncCycleResult.Blocked -> {
+                        keepTerminalProgress = true
+                        markBlocked(lockedWork, result.reason)
+                    }
+                    is SyncCycleResult.Failure -> {
+                        keepTerminalProgress = true
+                        markFailedRetryable(lockedWork)
+                    }
                 }
             } finally {
                 isProcessing.value = false
+                if (!keepTerminalProgress) {
+                    restoreProgress.value = null
+                }
             }
         }
     }
 
     private suspend fun syncFetchMergeThenUpload(): SyncCycleResult {
+        restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Preparing,
+            completedWork = RESTORE_STEP_PREPARING,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
         val localSnapshot = snapshotRepository.exportSnapshot()
+        restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Downloading,
+            completedWork = RESTORE_STEP_DOWNLOADED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
         val remoteSnapshot = when (val result = driveRepository.fetchSnapshot()) {
             is DriveSyncResult.Success -> result.value.sortedDeterministically()
-            is DriveSyncResult.Blocked -> return SyncCycleResult.Blocked(result.reason)
-            is DriveSyncResult.Failure -> return SyncCycleResult.Failure
+            is DriveSyncResult.Blocked -> {
+                restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Downloading)
+                return SyncCycleResult.Blocked(result.reason)
+            }
+            is DriveSyncResult.Failure -> {
+                restoreProgress.value = offlineRestoreProgress(CloudRestorePhase.Downloading)
+                return SyncCycleResult.Failure
+            }
         }
+        restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Validating,
+            completedWork = RESTORE_STEP_VALIDATED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
         if (remoteSnapshot.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) {
+            restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Validating)
             return SyncCycleResult.Failure
         }
 
         val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot)
+        restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Applying,
+            completedWork = RESTORE_STEP_APPLIED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
         val importResult = if (mergedSnapshot.hasUserData()) {
             snapshotRepository.importSnapshot(mergedSnapshot)
         } else {
             ImportSnapshotResult(restoredGarmentCount = 0, guardedPhotoCount = 0)
         }
 
-        return when (driveRepository.upsertSnapshot(snapshotRepository.exportSnapshot())) {
+        restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Uploading,
+            completedWork = RESTORE_STEP_UPLOADED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
+        return when (driveRepository.upsertSnapshot(mergedSnapshot)) {
             is DriveSyncResult.Success -> if (localSnapshot.hasUserData() || remoteSnapshot.hasUserData()) {
+                restoreProgress.value = CloudRestoreProgress(
+                    phase = CloudRestorePhase.Complete,
+                    completedWork = RESTORE_TOTAL_STEPS,
+                    totalWork = RESTORE_TOTAL_STEPS,
+                )
                 SyncCycleResult.Success(importResult.guardedPhotoCount)
             } else {
+                restoreProgress.value = CloudRestoreProgress(
+                    phase = CloudRestorePhase.Complete,
+                    completedWork = RESTORE_TOTAL_STEPS,
+                    totalWork = RESTORE_TOTAL_STEPS,
+                )
                 SyncCycleResult.NoBackup
             }
-            is DriveSyncResult.Blocked -> SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
-            is DriveSyncResult.Failure -> SyncCycleResult.Failure
+            is DriveSyncResult.Blocked -> {
+                restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Uploading)
+                SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
+            }
+            is DriveSyncResult.Failure -> {
+                restoreProgress.value = offlineRestoreProgress(CloudRestorePhase.Uploading)
+                SyncCycleResult.Failure
+            }
         }
     }
 
@@ -219,6 +287,7 @@ class WardrobeSyncOutboxProcessor(
         attentionOperationCount: Int,
         isProcessing: Boolean,
         needsPhotoRestoreAttention: Boolean,
+        restoreProgress: CloudRestoreProgress?,
     ): WardrobeSyncState {
         val displayStatus = when {
             isProcessing && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.Syncing
@@ -237,6 +306,7 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.NeedsAttention -> null
             },
             pendingOperationCount = pendingOperationCount,
+            restoreProgress = restoreProgress,
         )
     }
 
@@ -260,8 +330,41 @@ private sealed interface SyncCycleResult {
     data object Failure : SyncCycleResult
 }
 
+private data class WardrobeSyncStateInputs(
+    val connectionStatus: DriveSyncConnectionStatus,
+    val pendingOperationCount: Int,
+    val attentionOperationCount: Int,
+    val isProcessing: Boolean,
+    val needsPhotoRestoreAttention: Boolean,
+)
+
 private fun WardrobeSyncSnapshot.hasUserData(): Boolean =
     garments.isNotEmpty() || photos.isNotEmpty() || tombstones.isNotEmpty()
+
+private fun failedRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgress = CloudRestoreProgress(
+    phase = phase,
+    completedWork = phase.completedRestoreWork,
+    totalWork = RESTORE_TOTAL_STEPS,
+    status = CloudRestoreStatus.Failed,
+)
+
+private fun offlineRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgress = CloudRestoreProgress(
+    phase = phase,
+    completedWork = phase.completedRestoreWork,
+    totalWork = RESTORE_TOTAL_STEPS,
+    status = CloudRestoreStatus.Offline,
+)
+
+private val CloudRestorePhase.completedRestoreWork: Int
+    get() = when (this) {
+        CloudRestorePhase.Preparing -> RESTORE_STEP_PREPARING
+        CloudRestorePhase.Downloading -> RESTORE_STEP_DOWNLOADED
+        CloudRestorePhase.Validating -> RESTORE_STEP_VALIDATED
+        CloudRestorePhase.Applying -> RESTORE_STEP_APPLIED
+        CloudRestorePhase.Uploading -> RESTORE_STEP_UPLOADED
+        CloudRestorePhase.RollingBack,
+        CloudRestorePhase.Complete -> RESTORE_TOTAL_STEPS
+    }
 
 private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): WardrobeSyncSnapshot {
     val tombstones = mergeByKey(local.tombstones + remote.tombstones, { "${it.entityType}:${it.entityId}" }, SyncTombstoneRecord::revision)
@@ -317,3 +420,10 @@ private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> 
         .map { group -> group.maxWith(compareBy<T> { revision(it) }.thenBy { records.indexOf(it) }) }
 
 private val garmentEntityTypes = setOf("garment", "clothing_item", "item")
+
+private const val RESTORE_STEP_PREPARING = 0
+private const val RESTORE_STEP_DOWNLOADED = 1
+private const val RESTORE_STEP_VALIDATED = 2
+private const val RESTORE_STEP_APPLIED = 3
+private const val RESTORE_STEP_UPLOADED = 4
+private const val RESTORE_TOTAL_STEPS = 5

@@ -38,6 +38,7 @@
     <string name="cloud_restore_phase_downloading">Snapshot herunterladen</string>
     <string name="cloud_restore_phase_validating">Garderobendaten prüfen</string>
     <string name="cloud_restore_phase_applying">Wiederhergestellte Garderobe anwenden</string>
+    <string name="cloud_restore_phase_uploading">Cloud-Sicherung aktualisieren</string>
     <string name="cloud_restore_phase_rolling_back">Änderungen zurücksetzen</string>
     <string name="cloud_restore_phase_complete">Wiederherstellung abschließen</string>
     <string name="drive_sync_status_disabled">Deaktiviert</string>
