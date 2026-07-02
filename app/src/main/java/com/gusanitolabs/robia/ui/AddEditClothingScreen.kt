@@ -121,6 +121,7 @@ import com.gusanitolabs.robia.media.ImageDimensions
 import com.gusanitolabs.robia.media.InteractiveGarmentSegmenter
 import com.gusanitolabs.robia.media.InteractiveSegmentMask
 import com.gusanitolabs.robia.media.InteractiveSegmentResult
+import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
 import com.gusanitolabs.robia.media.QuickEditDraftState
