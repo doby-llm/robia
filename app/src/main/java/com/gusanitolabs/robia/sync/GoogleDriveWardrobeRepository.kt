@@ -88,7 +88,7 @@ class GoogleDriveWardrobeRepository(
         }
 
         val grantedDriveScope = authorizationResult.grantedScopes.any { scope ->
-            scope == driveScope || scope.toString() == driveScope.scopeUri
+            scope == driveScope.scopeUri
         }
         val accessToken = authorizationResult.accessToken
         if (!grantedDriveScope || accessToken.isNullOrBlank()) {
