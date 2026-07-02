@@ -29,6 +29,12 @@ interface WardrobeDao {
     @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')")
     fun observePendingGarmentSyncCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')")
+    fun observeGarmentSyncAttentionCount(): Flow<Int>
+
+    @Query("SELECT id, sync_revision AS revision FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing') ORDER BY sync_dirty_at_epoch_millis, updated_at_epoch_millis, id")
+    suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWorkEntity>
+
     @Query("UPDATE clothing_items SET sync_status = 'Syncing' WHERE id = :itemId AND sync_revision = :revision")
     suspend fun markGarmentSyncing(itemId: String, revision: Long): Int
 

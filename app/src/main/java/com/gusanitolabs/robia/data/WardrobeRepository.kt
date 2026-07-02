@@ -10,6 +10,8 @@ interface WardrobeRepository {
     fun observeActiveItems(): Flow<List<ClothingItem>>
     fun observeItem(id: String): Flow<ClothingItem?>
     fun observePendingGarmentSyncCount(): Flow<Int>
+    fun observeGarmentSyncAttentionCount(): Flow<Int>
+    suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWork>
     suspend fun upsertItem(item: ClothingItem)
     suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)
@@ -19,6 +21,11 @@ interface WardrobeRepository {
     suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String? = null): Boolean
     suspend fun markGarmentSyncAuthBlocked(id: String, message: String? = null): Boolean
 }
+
+data class PendingGarmentSyncWork(
+    val id: String,
+    val revision: Long,
+)
 
 interface TagRepository {
     fun observeCategories(): Flow<List<TagCategory>>
