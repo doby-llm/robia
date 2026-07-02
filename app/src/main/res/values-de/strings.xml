@@ -192,7 +192,7 @@
     <string name="quick_edit_temperature_content_description">Temperaturwerkzeug</string>
     <string name="quick_edit_erase_segment_content_description">Segment-radieren-Werkzeug</string>
     <string name="quick_edit_selected_tool_label">Ausgewähltes Werkzeug: %1$s</string>
-    <string name="quick_edit_apply_on_save_hint">Die Vorschau aktualisiert sich live; Speichern übernimmt das Ergebnis.</string>
+    <string name="quick_edit_apply_on_save_hint">Die Vorschau aktualisiert sich live; Speichern wird aktiv, sobald sie dem Ergebnis entspricht.</string>
     <string name="quick_edit_preview_loading">Vorschau wird aktualisiert…</string>
     <string name="quick_edit_brightness_reset">Auf neutral zurücksetzen</string>
     <string name="quick_edit_brightness_reset_content_description">Helligkeit auf neutral zurücksetzen</string>
@@ -204,11 +204,13 @@
     <string name="quick_edit_temperature_not_selected">nicht ausgewählt</string>
     <string name="quick_edit_brightness_hint">Passe die Helligkeit von dunkler bis heller an.</string>
     <string name="quick_edit_temperature_hint">Wähle eine kühlere, neutrale oder wärmere Temperatur.</string>
-    <string name="quick_edit_eraser_hint">Tippe auf einen Kleidungsbereich, um ein Segment auszuwählen. Tippen zeigt nur die Vorschau; mit Radieren bestätigst du es.</string>
+    <string name="quick_edit_eraser_hint">Tippe in das angezeigte Foto, um einen Bereich auszuwählen. Dieses Werkzeug reagiert nur auf Tippen; mit Radieren bestätigst du den markierten Bereich.</string>
     <string name="quick_edit_eraser_unavailable">Der Segmentradierer ist nicht verfügbar, weil das MediaPipe-Modell deaktiviert ist oder fehlt. Helligkeit, Temperatur und Speichern funktionieren weiterhin.</string>
     <string name="quick_edit_loading_segmenter">Segmentierer wird geladen…</string>
     <string name="quick_edit_no_segment_found">Kein Segment gefunden. Tippe auf einen anderen Kleidungsbereich.</string>
     <string name="quick_edit_select_segment_first">Tippe zuerst in das angezeigte Foto, um ein Segment auszuwählen.</string>
+    <string name="quick_edit_tap_outside_photo">Tippe in das sichtbare Foto, nicht in den Randbereich.</string>
+    <string name="quick_edit_brush_fallback_hint">Der Segmentierer hat kein präzises lokales Segment gefunden, daher wird für diesen Punkt eine tippgroße Radier-Vorschau angezeigt.</string>
     <string name="quick_edit_segment_pending">Segment hervorgehoben. Tippe auf Radieren, um es zu bestätigen, oder auf Abbrechen, um es zu löschen.</string>
     <string name="quick_edit_segment_committed">Segment zum Radieren markiert. Rückgängig stellt es vor dem endgültigen Speichern wieder her.</string>
     <string name="quick_edit_erase_segment">Radieren</string>

@@ -48,7 +48,15 @@ object QuickEditImageProcessor {
         sourceUri: Uri,
         point: NormalizedImagePoint,
         radiusRatio: Float = DEFAULT_ERASER_RADIUS_RATIO,
+    ): Uri = eraseBrushPath(context, sourceUri, listOf(point), radiusRatio)
+
+    fun eraseBrushPath(
+        context: Context,
+        sourceUri: Uri,
+        points: List<NormalizedImagePoint>,
+        radiusRatio: Float = DEFAULT_ERASER_RADIUS_RATIO,
     ): Uri {
+        val constrainedPoints = points.ifEmpty { return sourceUri }
         val source = decodeBitmap(context, sourceUri) ?: return sourceUri
         return source.useForQuickEdit { bitmap ->
             val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -56,13 +64,19 @@ object QuickEditImageProcessor {
                 val radius = maxOf(output.width, output.height) * radiusRatio.coerceIn(0.02f, 0.2f)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+                    strokeWidth = radius * 2f
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
                 }
-                Canvas(output).drawCircle(
-                    point.x.coerceIn(0f, 1f) * output.width,
-                    point.y.coerceIn(0f, 1f) * output.height,
-                    radius,
-                    paint,
-                )
+                val canvas = Canvas(output)
+                constrainedPoints.forEach { point ->
+                    canvas.drawCircle(
+                        point.x.coerceIn(0f, 1f) * output.width,
+                        point.y.coerceIn(0f, 1f) * output.height,
+                        radius,
+                        paint,
+                    )
+                }
                 ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit-erased")
             } finally {
                 output.recycle()
@@ -75,7 +89,7 @@ object QuickEditImageProcessor {
         sourceUri: Uri,
         segment: InteractiveSegmentResult,
     ): Uri {
-        val mask = segment.mask ?: return eraseCircle(context, sourceUri, segment.point)
+        val mask = segment.mask ?: return eraseBrushPath(context, sourceUri, segment.brushPoints)
         val source = decodeBitmap(context, sourceUri) ?: return sourceUri
         return source.useForQuickEdit { bitmap ->
             val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -217,6 +231,7 @@ interface InteractiveGarmentSegmenter {
 data class InteractiveSegmentResult(
     val point: NormalizedImagePoint,
     val mask: InteractiveSegmentMask? = null,
+    val brushPoints: List<NormalizedImagePoint> = listOf(point),
 )
 
 data class InteractiveSegmentMask(
@@ -227,6 +242,23 @@ data class InteractiveSegmentMask(
     fun isSelected(x: Int, y: Int): Boolean {
         if (x !in 0 until width || y !in 0 until height) return false
         return alpha[y * width + x].toInt() and 0xFF >= MASK_SELECTED_ALPHA
+    }
+
+    fun selectedRatio(): Float {
+        if (alpha.isEmpty()) return 0f
+        val selected = alpha.count { (it.toInt() and 0xFF) >= MASK_SELECTED_ALPHA }
+        return selected.toFloat() / alpha.size.toFloat()
+    }
+
+    fun isSelected(point: NormalizedImagePoint): Boolean {
+        val x = (point.x.coerceIn(0f, 1f) * (width - 1)).roundToInt()
+        val y = (point.y.coerceIn(0f, 1f) * (height - 1)).roundToInt()
+        return isSelected(x, y)
+    }
+
+    fun isBroadOrInvariantFor(point: NormalizedImagePoint): Boolean {
+        val ratio = selectedRatio()
+        return ratio <= MIN_USEFUL_SELECTED_RATIO || ratio >= MAX_USEFUL_SELECTED_RATIO || !isSelected(point)
     }
 
     override fun equals(other: Any?): Boolean =
@@ -240,6 +272,8 @@ data class InteractiveSegmentMask(
 
     private companion object {
         const val MASK_SELECTED_ALPHA = 96
+        const val MIN_USEFUL_SELECTED_RATIO = 0.002f
+        const val MAX_USEFUL_SELECTED_RATIO = 0.72f
     }
 }
 
