@@ -10,13 +10,17 @@ import kotlinx.coroutines.flow.flowOf
 /** Future seam for Drive or another backend; MVP deliberately stays credential-gated. */
 interface WardrobeSyncGateway {
     val state: Flow<WardrobeSyncState>
+    val restoreSyncLogText: Flow<String>
 
     suspend fun enqueue(operation: WardrobeSyncOperation)
+    suspend fun clearRestoreSyncLog()
 }
 
 object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
     override val state: Flow<WardrobeSyncState> = flowOf(WardrobeSyncState.notConfigured())
+    override val restoreSyncLogText: Flow<String> = flowOf("")
     override suspend fun enqueue(operation: WardrobeSyncOperation) = Unit
+    override suspend fun clearRestoreSyncLog() = Unit
 }
 
 /** Testable queue-only gateway that never talks to Google services. */
@@ -27,6 +31,7 @@ class RecordingWardrobeSyncGateway(
     private val operations = mutableListOf<WardrobeSyncOperation>()
 
     override val state: Flow<WardrobeSyncState> = mutableState
+    override val restoreSyncLogText: Flow<String> = flowOf("")
 
     val pendingOperations: List<WardrobeSyncOperation>
         get() = operations.toList()
@@ -35,6 +40,8 @@ class RecordingWardrobeSyncGateway(
         operations += operation
         mutableState.value = mutableState.value.copy(pendingOperationCount = operations.size)
     }
+
+    override suspend fun clearRestoreSyncLog() = Unit
 }
 
 data class WardrobeSyncState(

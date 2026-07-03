@@ -57,8 +57,16 @@
     <string name="drive_sync_status_syncing">Sincronizando…</string>
     <string name="drive_sync_status_needs_attention">La sincronización requiere atención</string>
     <string name="developer_mode">Modo de desarrollador</string>
-    <string name="developer_mode_summary">Mostrar diagnósticos al añadir prenda</string>
+    <string name="developer_mode_summary">Mostrar diagnósticos al añadir prenda y restaurar</string>
     <string name="developer_mode_unlocked">Modo de desarrollador desbloqueado</string>
+    <string name="restore_sync_log_title">Registro de restauración/sincronización</string>
+    <string name="restore_sync_log_summary">Ver, copiar, exportar o borrar el registro acotado de desarrollador</string>
+    <string name="restore_sync_log_help">El Modo de desarrollador mantiene un registro acotado y privado de restauración/sincronización. Guarda fases seguras, conteos, motivos de marcador de foto, rutas de blob, tamaños, hashes de contenido y errores saneados. Robia guarda las copias en datos de app de Google Drive (appDataFolder), así que es normal no ver estos archivos en Mi unidad.</string>
+    <string name="restore_sync_log_empty">Aún no hay entradas de restauración/sincronización. Solo se registran mientras el Modo de desarrollador está activado.</string>
+    <string name="restore_sync_log_copy">Copiar</string>
+    <string name="restore_sync_log_export">Exportar .log</string>
+    <string name="restore_sync_log_clear">Borrar</string>
+    <string name="restore_sync_log_copied">Registro de restauración/sincronización copiado</string>
     <string name="wardrobe_title">Tu armario</string>
     <string name="wardrobe_intro">Empieza a crear un catálogo local de ropa, etiquetas y detalles listos para combinar.</string>
     <string name="filters">Filtros</string>

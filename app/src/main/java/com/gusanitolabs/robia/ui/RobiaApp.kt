@@ -198,6 +198,10 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.language
     }
 
+    data object DeveloperSyncLog : RobiaRoute {
+        override val titleRes = R.string.restore_sync_log_title
+    }
+
     data object AdvancedFilters : RobiaRoute {
         override val titleRes = R.string.advanced_filters_title
     }
@@ -315,6 +319,7 @@ fun RobiaApp(
 ) {
     val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
+    val restoreSyncLogText by syncGateway.restoreSyncLogText.collectAsState(initial = "")
     val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
     val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
@@ -332,6 +337,7 @@ fun RobiaApp(
         RobiaShell(
             settings = displaySettings,
             syncState = displaySyncState,
+            restoreSyncLogText = restoreSyncLogText,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
             clothingItems = clothingItems,
             tagCategories = tagCategories,
@@ -355,6 +361,9 @@ fun RobiaApp(
             },
             onRequestCloudRestoreRetry = {
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
+            },
+            onClearRestoreSyncLog = {
+                scope.launch { syncGateway.clearRestoreSyncLog() }
             },
             onSaveItem = { item ->
                 scope.launch {
@@ -508,6 +517,7 @@ private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean 
 private fun RobiaShell(
     settings: RobiaSettings,
     syncState: WardrobeSyncState,
+    restoreSyncLogText: String,
     pendingGarmentSyncCount: Int,
     clothingItems: List<ClothingItem>,
     tagCategories: List<TagCategory>,
@@ -520,6 +530,7 @@ private fun RobiaShell(
     onRequestCloudSetup: () -> Unit,
     onRequestCloudManualSync: () -> Unit = {},
     onRequestCloudRestoreRetry: () -> Unit = {},
+    onClearRestoreSyncLog: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
@@ -979,6 +990,10 @@ private fun RobiaShell(
                                     requestCloudSetup()
                                     settingsExpanded = false
                                 },
+                                onRestoreSyncLogClick = {
+                                    pushRoute(RobiaRoute.DeveloperSyncLog)
+                                    settingsExpanded = false
+                                },
                             )
                         }
                     }
@@ -994,6 +1009,7 @@ private fun RobiaShell(
         bottomBar = {
             if (currentRoute != RobiaRoute.ItemDetail &&
                 currentRoute != RobiaRoute.AdvancedFilters &&
+                currentRoute != RobiaRoute.DeveloperSyncLog &&
                 currentRoute != RobiaRoute.BatchAddClothing &&
                 currentRoute != RobiaRoute.BatchEditClothing &&
                 currentRoute != RobiaRoute.ColorReview
@@ -1027,6 +1043,7 @@ private fun RobiaShell(
             mainColors = mainColors,
             colorReviewChangeSet = activeColorReviewChangeSet,
             developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
+            restoreSyncLogText = restoreSyncLogText,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
@@ -1081,6 +1098,7 @@ private fun RobiaShell(
                 replaceRoute(RobiaRoute.Browse)
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
+            onClearRestoreSyncLog = onClearRestoreSyncLog,
         )
     }
     restoreProgress?.let { progress ->
@@ -1106,6 +1124,7 @@ private fun SettingsMenu(
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
     onCloudSetupClick: () -> Unit,
+    onRestoreSyncLogClick: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -1148,6 +1167,21 @@ private fun SettingsMenu(
                 },
                 onClick = { onDeveloperModeEnabledChange(!developerModeEnabled) },
             )
+            if (developerModeEnabled) {
+                DropdownMenuItem(
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(stringResource(R.string.restore_sync_log_title))
+                            Text(
+                                text = stringResource(R.string.restore_sync_log_summary),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
+                    onClick = onRestoreSyncLogClick,
+                )
+            }
             Divider()
         }
         DropdownMenuItem(
@@ -1554,6 +1588,7 @@ private fun RobiaNavHost(
     mainColors: List<MainColor>,
     colorReviewChangeSet: ColorPaletteChangeSet?,
     developerModeEnabled: Boolean,
+    restoreSyncLogText: String,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -1579,6 +1614,7 @@ private fun RobiaNavHost(
     onCommitColorReview: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
+    onClearRestoreSyncLog: () -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -1669,6 +1705,11 @@ private fun RobiaNavHost(
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
+        RobiaRoute.DeveloperSyncLog -> DeveloperRestoreSyncLogScreen(
+            innerPadding = innerPadding,
+            logText = restoreSyncLogText,
+            onClear = onClearRestoreSyncLog,
+        )
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
             innerPadding = innerPadding,
             filters = filters,
@@ -2909,6 +2950,25 @@ private fun Context.launchShareChooser(
     }.getOrDefault(false)
 }
 
+private fun Context.launchTextShareChooser(
+    text: String,
+    chooserTitle: String,
+): Boolean {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    val chooserIntent = Intent.createChooser(shareIntent, chooserTitle)
+    val activity = findActivity()
+    if (activity == null) {
+        chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    return runCatching {
+        (activity ?: this).startActivity(chooserIntent)
+        true
+    }.getOrDefault(false)
+}
+
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
@@ -2961,6 +3021,82 @@ private fun List<UiTag>.valuesInCategory(categoryId: String): List<String> =
 
 private fun String.toComposeColor(): Color? = normalizedHexOrNull()?.let { normalized ->
     Color(android.graphics.Color.parseColor("#$normalized"))
+}
+
+@Composable
+private fun DeveloperRestoreSyncLogScreen(
+    innerPadding: PaddingValues,
+    logText: String,
+    onClear: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val copiedMessage = stringResource(R.string.restore_sync_log_copied)
+    val noShareAppMessage = stringResource(R.string.share_no_app_error)
+    val chooserTitle = stringResource(R.string.restore_sync_log_export)
+    val effectiveLogText = logText.takeIf { it.isNotBlank() } ?: stringResource(R.string.restore_sync_log_empty)
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.restore_sync_log_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.restore_sync_log_help),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(effectiveLogText))
+                        Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = logText.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.restore_sync_log_copy))
+                }
+                OutlinedButton(
+                    onClick = {
+                        val launched = context.launchTextShareChooser(effectiveLogText, chooserTitle)
+                        if (!launched) Toast.makeText(context, noShareAppMessage, Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = logText.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.restore_sync_log_export))
+                }
+                TextButton(onClick = onClear, enabled = logText.isNotBlank()) {
+                    Text(stringResource(R.string.restore_sync_log_clear))
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                SelectionContainer {
+                    Text(
+                        text = effectiveLogText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -3123,6 +3259,7 @@ private fun RobiaAppPreview() {
         RobiaShell(
             settings = RobiaSettings(),
             syncState = WardrobeSyncState.notConfigured(),
+            restoreSyncLogText = "",
             pendingGarmentSyncCount = 0,
             clothingItems = emptyList(),
             tagCategories = emptyList(),
