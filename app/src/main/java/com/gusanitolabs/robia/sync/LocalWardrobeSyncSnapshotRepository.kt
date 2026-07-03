@@ -75,10 +75,14 @@ class LocalWardrobeSyncSnapshotRepository(
     suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
         val deterministicSnapshot = snapshot.sortedDeterministically().withoutTombstonedTaxonomy()
         val remotePhotoByGarmentId = deterministicSnapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
+        val guardedPhotoByGarmentId = deterministicSnapshot.photos
+            .mapNotNull { photo -> photo.toImportPhotoRestoreIssue()?.let { issue -> photo.garmentId to issue } }
+            .toMap()
         val remoteColorsByGarmentId = deterministicSnapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
         val restoredItems = deterministicSnapshot.garments.map { garment ->
             garment.toEntity(
                 photoUri = remotePhotoByGarmentId[garment.id]?.restorableLocalUri(),
+                photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
                 colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
             )
         }
@@ -222,6 +226,7 @@ private fun MainColorSyncRecord.toEntity(): MainColorEntity = MainColorEntity(
 
 private fun GarmentSyncRecord.toEntity(
     photoUri: String?,
+    photoRestoreIssue: ImportPhotoRestoreIssue?,
     colorRecords: List<GarmentColorMappingRecord>,
 ): ClothingItemEntity {
     val colorsByRole = colorRecords.associateBy(GarmentColorMappingRecord::role)
@@ -247,11 +252,11 @@ private fun GarmentSyncRecord.toEntity(
         isArchived = isArchived,
         createdAtEpochMillis = createdAtEpochMillis,
         updatedAtEpochMillis = updatedAtEpochMillis,
-        syncStatus = GarmentSyncStatus.Synced,
+        syncStatus = if (photoRestoreIssue == null) GarmentSyncStatus.Synced else GarmentSyncStatus.FailedRetryable,
         syncRevision = revision,
         syncDirtyAtEpochMillis = null,
         lastSyncedAtEpochMillis = System.currentTimeMillis(),
-        syncFailureMessage = null,
+        syncFailureMessage = photoRestoreIssue?.userVisibleMessage,
     )
 }
 
@@ -303,3 +308,20 @@ private val tagEntityTypes = setOf("garment_tag", "tag")
 private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
 private fun GarmentPhotoRecord.restorableLocalUri(): String? = restoredLocalUri?.takeIf(String::isNotBlank)
+
+internal data class ImportPhotoRestoreIssue(
+    val category: String,
+    val userVisibleMessage: String,
+)
+
+internal fun GarmentPhotoRecord.toImportPhotoRestoreIssue(): ImportPhotoRestoreIssue? {
+    if (restorableLocalUri() != null) return null
+    val category = restoreFailureCategory?.takeIf(String::isNotBlank) ?: return null
+    return ImportPhotoRestoreIssue(
+        category = category,
+        userVisibleMessage = MISSING_RESTORED_PHOTO_MESSAGE,
+    )
+}
+
+internal const val MISSING_RESTORED_PHOTO_MESSAGE =
+    "Foto no restaurada desde Drive. Activa Modo desarrollador y exporta el registro de sincronización."

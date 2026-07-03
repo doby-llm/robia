@@ -120,6 +120,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -146,6 +147,7 @@ import com.gusanitolabs.robia.media.GarmentShareMetadata
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
+import com.gusanitolabs.robia.sync.MISSING_RESTORED_PHOTO_MESSAGE
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -2012,24 +2014,43 @@ private fun GarmentPhotoPlaceholder(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(MaterialTheme.shapes.large)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large),
-                contentAlignment = Alignment.Center,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(12.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Style,
-                    contentDescription = null,
-                    tint = swatchColor,
-                    modifier = Modifier.size(56.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Style,
+                        contentDescription = null,
+                        tint = swatchColor,
+                        modifier = Modifier.size(56.dp),
+                    )
+                }
+                if (item.hasMissingRestoredPhoto) {
+                    Text(
+                        text = item.syncFailureMessage.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
+    get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE
 
 @Composable
 private fun TonalTag(text: String) {
