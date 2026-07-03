@@ -18,6 +18,7 @@ import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 class LocalWardrobeRepository(
@@ -73,15 +74,21 @@ class LocalTagRepository(
     private val syncTombstoneDao: SyncTombstoneDao? = null,
 ) : TagRepository {
     override fun observeCategories(): Flow<List<TagCategory>> =
-        tagDao.observeCategories().map { categories ->
-            categories.map(TagCategoryEntity::toDomain).filterNot { category -> category.id == "care" }
-        }
+        tagDao.observeCategories()
+            .map { categories ->
+                categories.map(TagCategoryEntity::toDomain).filterNot { category -> category.id == "care" }
+            }
+            .distinctUntilChanged()
 
     override fun observeTags(): Flow<List<GarmentTag>> =
-        tagDao.observeTags().map { tags -> tags.map(GarmentTagEntity::toDomain).filterNotCare() }
+        tagDao.observeTags()
+            .map { tags -> tags.map(GarmentTagEntity::toDomain).filterNotCare() }
+            .distinctUntilChanged()
 
     override fun observeMainColors(): Flow<List<MainColor>> =
-        tagDao.observeMainColors().map { colors -> colors.map(MainColorEntity::toDomain) }
+        tagDao.observeMainColors()
+            .map { colors -> colors.map(MainColorEntity::toDomain) }
+            .distinctUntilChanged()
 
     override suspend fun upsertCategory(category: TagCategory) {
         tagDao.upsertCategory(category.toEntity())
