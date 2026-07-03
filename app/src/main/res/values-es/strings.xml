@@ -31,9 +31,10 @@
     <string name="cloud_restore_title">Restaurando armario desde la nube</string>
     <string name="cloud_restore_remaining">Quedan %1$d de %2$d pasos</string>
     <string name="cloud_restore_status_running">Mantén Robia abierta. Los cambios locales están bloqueados hasta que termine la restauración.</string>
-    <string name="cloud_restore_status_offline">Se perdió la conexión. Robia reintentará antes de aplicar cambios locales.</string>
+    <string name="cloud_restore_status_offline">Se perdió la conexión. Reintenta la restauración antes de añadir cambios locales.</string>
     <string name="cloud_restore_status_failed">La restauración falló. Los datos locales no se modificaron.</string>
     <string name="cloud_restore_status_rolled_back">La restauración falló y se revirtió. Tu armario local anterior está intacto.</string>
+    <string name="cloud_restore_retry">Reintentar restauración</string>
     <string name="cloud_restore_phase_preparing">Preparando restauración</string>
     <string name="cloud_restore_phase_downloading">Descargando instantánea</string>
     <string name="cloud_restore_phase_validating">Validando datos del armario</string>

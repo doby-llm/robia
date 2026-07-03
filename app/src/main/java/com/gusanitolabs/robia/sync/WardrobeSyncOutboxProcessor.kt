@@ -119,10 +119,22 @@ class WardrobeSyncOutboxProcessor(
     }
 
     private suspend fun restoreFreshInstallOnceIfNeeded() {
-        if (hasAttemptedFreshInstallRestore) return
-        hasAttemptedFreshInstallRestore = true
-        if (snapshotRepository.exportSnapshot().isFreshInstallSnapshot()) {
-            processPendingGarments(forceSnapshot = true, forceImport = true)
+        if (hasAttemptedFreshInstallRestore || restoreProgress.value?.isRetryableTerminal == true) return
+
+        val localSnapshot = snapshotRepository.exportSnapshot()
+        if (!localSnapshot.isFreshInstallSnapshot()) {
+            // Once the phone has user wardrobe data, it is authoritative and must not be overwritten.
+            hasAttemptedFreshInstallRestore = true
+            return
+        }
+
+        processPendingGarments(forceSnapshot = true, forceImport = true)
+
+        // Do not burn the one-shot bootstrap attempt on a retryable Drive/photo failure. Keeping the
+        // flag false lets a later explicit retry or reconnect re-enter the restore path instead of
+        // leaving a fresh install permanently empty/placeholder-only.
+        if (restoreProgress.value?.isRetryableTerminal != true) {
+            hasAttemptedFreshInstallRestore = true
         }
     }
 
@@ -470,6 +482,11 @@ private fun offlineRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgre
     totalWork = RESTORE_TOTAL_STEPS,
     status = CloudRestoreStatus.Offline,
 )
+
+private val CloudRestoreProgress.isRetryableTerminal: Boolean
+    get() = status == CloudRestoreStatus.Offline ||
+        status == CloudRestoreStatus.Failed ||
+        status == CloudRestoreStatus.RolledBack
 
 private val CloudRestorePhase.completedRestoreWork: Int
     get() = when (this) {

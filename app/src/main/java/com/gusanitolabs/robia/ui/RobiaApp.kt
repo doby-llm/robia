@@ -345,6 +345,9 @@ fun RobiaApp(
             onRequestCloudManualSync = {
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
             },
+            onRequestCloudRestoreRetry = {
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
+            },
             onSaveItem = { item ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -508,6 +511,7 @@ private fun RobiaShell(
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
     onRequestCloudManualSync: () -> Unit = {},
+    onRequestCloudRestoreRetry: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
@@ -1072,7 +1076,10 @@ private fun RobiaShell(
         )
     }
     restoreProgress?.let { progress ->
-        CloudRestoreProgressOverlay(progress = progress)
+        CloudRestoreProgressOverlay(
+            progress = progress,
+            onRetry = onRequestCloudRestoreRetry,
+        )
     }
     }
 }
@@ -1278,7 +1285,10 @@ private fun CloudSetupDialog(
 }
 
 @Composable
-private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
+private fun CloudRestoreProgressOverlay(
+    progress: CloudRestoreProgress,
+    onRetry: () -> Unit,
+) {
     val statusText = cloudRestoreStatusText(progress)
     val animatedProgress by animateFloatAsState(
         targetValue = progress.progressFraction?.coerceIn(0f, 1f) ?: 0f,
@@ -1338,6 +1348,14 @@ private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+            if (progress.status != CloudRestoreStatus.Running) {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.padding(top = 16.dp),
+                ) {
+                    Text(stringResource(R.string.cloud_restore_retry))
+                }
             }
         }
     }
