@@ -64,6 +64,46 @@ class DriveRestoreDiagnosticsTest {
     }
 
     @Test
+    fun toImportPhotoRestoreIssue_marksOnlyGuardedPhotosAsVisibleMissingPhotoState() {
+        val guarded = GarmentPhotoRecord(
+            garmentId = "garment-missing",
+            localUri = "content://old-device/missing.jpg",
+            restoreFailureCategory = REMOTE_PHOTO_MISSING,
+            restoreFailureMessage = "Drive photo blob was not found.",
+        )
+        val restored = guarded.copy(
+            restoreFailureCategory = null,
+            restoreFailureMessage = null,
+            restoredLocalUri = "content://local/restored.jpg",
+        )
+
+        val issue = guarded.toImportPhotoRestoreIssue()
+
+        assertEquals(REMOTE_PHOTO_MISSING, issue?.category)
+        assertEquals(MISSING_RESTORED_PHOTO_MESSAGE, issue?.userVisibleMessage)
+        assertEquals(null, restored.toImportPhotoRestoreIssue())
+    }
+
+    @Test
+    fun restoreDiagnosticEvent_includesPerPhotoBlobEvidenceWithoutFullHash() {
+        val event = GarmentPhotoRecord(
+            garmentId = "garment-restored",
+            localUri = "content://old-device/restored.jpg",
+            blobPath = "photos/garment-restored/original",
+            byteSize = 1234,
+            contentHash = "abcdef1234567890",
+            restoredLocalUri = "content://local/restored.jpg",
+        ).restoreDiagnosticEvent()
+
+        assertTrue(event.contains("status=fetched_importable"))
+        assertTrue(event.contains("garmentId=garment-restored"))
+        assertTrue(event.contains("blobPath=photos/garment-restored/original"))
+        assertTrue(event.contains("byteSize=1234"))
+        assertTrue(event.contains("contentHash=abcdef123456"))
+        assertTrue(event.contains("restoredLocalUri=true"))
+    }
+
+    @Test
     fun restoreFetchFailureStatus_onlyReportsOfflineForNetworkFailures() {
         assertEquals(CloudRestoreStatus.Offline, UnknownHostException("dns").restoreFetchFailureStatus())
         assertEquals(CloudRestoreStatus.Offline, IOException("socket closed").restoreFetchFailureStatus())

@@ -493,6 +493,12 @@ private class RestoreDiagnosticsTracker(
             "remote_snapshot schema=${snapshot.metadata.schemaVersion} revision=${snapshot.metadata.revision} " +
                 "garments=${snapshot.garments.size} photos=${snapshot.photos.size} favorites=${snapshot.garments.count { it.isFavorite }}",
         )
+        snapshot.photos.take(MAX_PHOTO_EVENTS).forEach { photo ->
+            event(photo.restoreDiagnosticEvent())
+        }
+        if (snapshot.photos.size > MAX_PHOTO_EVENTS) {
+            event("photo_restore_events_truncated total=${snapshot.photos.size} shown=$MAX_PHOTO_EVENTS")
+        }
     }
 
     fun recordLocalSave(result: ImportSnapshotResult) {
@@ -604,6 +610,7 @@ private class RestoreDiagnosticsTracker(
 
     private companion object {
         const val MAX_EVENTS = 32
+        const val MAX_PHOTO_EVENTS = 12
     }
 }
 
@@ -801,6 +808,23 @@ internal fun WardrobeSyncSnapshot.guardedPhotoRestoreIssues(): List<PhotoRestore
         category = category,
         message = photo.restoreFailureMessage,
     )
+}
+
+internal fun GarmentPhotoRecord.restoreDiagnosticEvent(): String {
+    val status = when {
+        restoreFailureCategory != null -> "guarded:$restoreFailureCategory"
+        !restoredLocalUri.isNullOrBlank() -> "fetched_importable"
+        else -> "metadata_only"
+    }
+    return buildString {
+        append("photo_restore status=$status garmentId=$garmentId blobPath=$blobPath")
+        byteSize?.let { append(" byteSize=$it") }
+        contentHash?.takeIf(String::isNotBlank)?.let { append(" contentHash=${it.take(12)}") }
+        append(" restoredLocalUri=${!restoredLocalUri.isNullOrBlank()}")
+        restoreFailureMessage?.takeIf(String::isNotBlank)?.let { message ->
+            append(" message=${sanitizeDiagnosticMessage(message)}")
+        }
+    }.let(::sanitizeDiagnosticMessage)
 }
 
 internal fun Throwable.restoreFetchFailureStatus(): CloudRestoreStatus =

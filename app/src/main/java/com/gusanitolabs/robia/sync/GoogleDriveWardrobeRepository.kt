@@ -293,7 +293,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         val escapedName = name.replace("\\", "\\\\").replace("'", "\\'")
         val query = "name='$escapedName' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
-            "?spaces=appDataFolder&fields=files(id,name,modifiedTime)&pageSize=1&q=" +
+            "?spaces=appDataFolder&fields=files(id,name,modifiedTime)&pageSize=1&orderBy=modifiedTime%20desc&q=" +
             URLEncoder.encode(query, "UTF-8")
         val result = request(
             method = "GET",
