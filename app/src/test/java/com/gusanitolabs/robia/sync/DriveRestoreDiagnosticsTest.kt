@@ -111,6 +111,74 @@ class DriveRestoreDiagnosticsTest {
     }
 
     @Test
+    fun perPhotoRestoreDiagnostics_includeLookupFetchWriteDecodeAndImportEvidence() {
+        val photo = GarmentPhotoRecord(
+            garmentId = "garment-restored",
+            localUri = "content://old-device/restored.jpg",
+            blobPath = "photos/garment-restored/original",
+            mimeType = "image/jpeg",
+            byteSize = 1234,
+            contentHash = "abcdef1234567890",
+        )
+        val bytes = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte(), 0x00, 0x10)
+
+        val events = photo.restoreFetchStartedEvents(description = "Blue jacket") +
+            DriveBlob(
+                bytes = bytes,
+                file = DriveFileMetadata(
+                    id = "drive-file-secret-id",
+                    modifiedTime = "2026-07-04T01:02:03Z",
+                    mimeType = "image/jpeg",
+                    size = 987,
+                ),
+                httpStatusCode = 200,
+                contentType = "image/jpeg",
+                contentLength = 6,
+            ).restoreFetchResultEvents(photo) +
+            photo.localWriteDiagnosticEvent(
+                targetExtension = "jpg",
+                fileLength = 6,
+                readBackBytes = bytes,
+            ) +
+            photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory", width = 640, height = 480) +
+            photo.importDiagnosticEvent(persistedPhotoUriPresent = true, placeholderReason = null)
+
+        assertTrue(events.any { it.contains("photo_restore_fetch_started") })
+        assertTrue(events.any { it.contains("description=\"Blue jacket\"") })
+        assertTrue(events.any { it.contains("drive_file_lookup_result") && it.contains("found=true") })
+        assertTrue(events.any { it.contains("fileIdHash=") })
+        assertTrue(events.none { it.contains("drive-file-secret-id") })
+        assertTrue(events.any { it.contains("photo_restore_fetch_result") && it.contains("httpStatus=200") })
+        assertTrue(events.any { it.contains("bytesLength=6") && it.contains("magic=ffd8ffe00010") })
+        assertTrue(events.any { it.contains("photo_restore_local_write_result") && it.contains("readbackByteCount=6") })
+        assertTrue(events.any { it.contains("photo_restore_decode_result") && it.contains("width=640 height=480") })
+        assertTrue(events.any { it.contains("photo_restore_import_result") && it.contains("persistedPhotoUriPresent=true") })
+    }
+
+    @Test
+    fun perPhotoRestoreDiagnostics_includeMissingBlobRootCauseAndPlaceholderReason() {
+        val photo = GarmentPhotoRecord(
+            garmentId = "garment-missing",
+            localUri = "content://old-device/missing.jpg",
+            blobPath = "photos/garment-missing/original",
+        )
+
+        val events = photo.restoreFetchStartedEvents(description = null) + listOf(
+            photo.driveLookupMissingEvent(),
+            photo.fetchMissingEvent(),
+            photo.importDiagnosticEvent(
+                persistedPhotoUriPresent = false,
+                placeholderReason = REMOTE_PHOTO_MISSING,
+            ),
+        )
+
+        assertTrue(events.any { it.contains("photo_restore_fetch_started") })
+        assertTrue(events.any { it.contains("drive_file_lookup_result") && it.contains("found=false") })
+        assertTrue(events.any { it.contains("photo_restore_fetch_result") && it.contains("status=not_found") })
+        assertTrue(events.any { it.contains("photo_restore_import_result") && it.contains("placeholderReason=$REMOTE_PHOTO_MISSING") })
+    }
+
+    @Test
     fun restoreFetchFailureStatus_onlyReportsOfflineForNetworkFailures() {
         assertEquals(CloudRestoreStatus.Offline, UnknownHostException("dns").restoreFetchFailureStatus())
         assertEquals(CloudRestoreStatus.Offline, IOException("socket closed").restoreFetchFailureStatus())

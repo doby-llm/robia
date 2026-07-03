@@ -503,7 +503,8 @@ private class RestoreDiagnosticsTracker(
                 "garments=${snapshot.garments.size} photos=${snapshot.photos.size} favorites=${snapshot.garments.count { it.isFavorite }}",
         )
         snapshot.photos.take(MAX_PHOTO_EVENTS).forEach { photo ->
-            event(photo.restoreDiagnosticEvent())
+            val photoEvents = photo.restoreDiagnosticEvents.ifEmpty { listOf(photo.restoreDiagnosticEvent()) }
+            photoEvents.take(MAX_EVENTS_PER_PHOTO).forEach(::event)
         }
         if (snapshot.photos.size > MAX_PHOTO_EVENTS) {
             event("photo_restore_events_truncated total=${snapshot.photos.size} shown=$MAX_PHOTO_EVENTS")
@@ -527,6 +528,10 @@ private class RestoreDiagnosticsTracker(
         )
         val categoryCounts = issues.groupingBy(PhotoRestoreIssue::category).eachCount().toSortedMap()
         event("guarded_remote_photos total=${issues.size} categories=$categoryCounts")
+        event(
+            "guarded_remote_photos_recovery path=install_new_apk_then_delete_or_readd_affected_garment " +
+                "effect=delete_tombstone_purges_appDataFolder_photo_blobs old_bad_blobs_may_be_unrecoverable",
+        )
         issues.take(MAX_EVENTS).forEach { issue ->
             restoreSyncLogRepository.append(
                 RestoreSyncLogEvent(
@@ -662,6 +667,7 @@ private class RestoreDiagnosticsTracker(
     private companion object {
         const val MAX_EVENTS = 32
         const val MAX_PHOTO_EVENTS = 12
+        const val MAX_EVENTS_PER_PHOTO = 12
     }
 }
 
@@ -881,9 +887,9 @@ internal fun GarmentPhotoRecord.restoreDiagnosticEvent(): String {
         append("photo_restore status=$status garmentId=$garmentId blobPath=$blobPath")
         byteSize?.let { append(" byteSize=$it") }
         mimeType?.takeIf(String::isNotBlank)?.let { append(" mimeType=$it") }
-        byteMagic?.takeIf(String::isNotBlank)?.let { append(" byteMagic=$it") }
-        if (decodedWidth != null && decodedHeight != null) append(" decoded=${decodedWidth}x$decodedHeight")
         contentHash?.takeIf(String::isNotBlank)?.let { append(" contentHash=${it.take(12)}") }
+        byteMagic?.takeIf(String::isNotBlank)?.let { append(" byteMagic=${it.take(32)}") }
+        if (decodedWidth != null && decodedHeight != null) append(" decoded=${decodedWidth}x$decodedHeight")
         append(" restoredLocalUri=${!restoredLocalUri.isNullOrBlank()}")
         restoreFailureMessage?.takeIf(String::isNotBlank)?.let { message ->
             append(" message=${sanitizeDiagnosticMessage(message)}")

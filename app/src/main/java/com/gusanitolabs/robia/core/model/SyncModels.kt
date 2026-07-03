@@ -178,6 +178,8 @@ data class GarmentPhotoRecord(
     val decodedWidth: Int? = null,
     /** Local-only decoded height from Drive restore/upload verification. */
     val decodedHeight: Int? = null,
+    /** Local-only bounded Developer Mode event lines for per-photo restore/upload diagnostics. */
+    val restoreDiagnosticEvents: List<String> = emptyList(),
 )
 
 data class SyncTombstoneRecord(
