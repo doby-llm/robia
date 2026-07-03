@@ -302,4 +302,4 @@ private val categoryEntityTypes = setOf("tag_category", "category")
 private val tagEntityTypes = setOf("garment_tag", "tag")
 private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
-private fun GarmentPhotoRecord.restorableLocalUri(): String? = null
+private fun GarmentPhotoRecord.restorableLocalUri(): String? = restoredLocalUri?.takeIf(String::isNotBlank)
