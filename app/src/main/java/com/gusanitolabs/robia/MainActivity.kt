@@ -17,6 +17,7 @@ import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
 import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
+import com.gusanitolabs.robia.sync.FileRestoreSyncLogRepository
 import com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity() {
                 authorizationClient = authorizationClient,
                 driveScope = Scope(DRIVE_APPDATA_SCOPE),
             ),
+            restoreSyncLogRepository = FileRestoreSyncLogRepository(applicationContext),
             scope = lifecycleScope,
         )
 

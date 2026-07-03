@@ -50,6 +50,7 @@ class WardrobeSyncOutboxProcessor(
     private val wardrobeRepository: WardrobeRepository,
     private val snapshotRepository: LocalWardrobeSyncSnapshotRepository,
     private val driveRepository: DriveWardrobeRepository,
+    private val restoreSyncLogRepository: RestoreSyncLogRepository = NoOpRestoreSyncLogRepository,
     scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : WardrobeSyncGateway {
@@ -62,6 +63,7 @@ class WardrobeSyncOutboxProcessor(
     private var restoreAttemptCounter = 0
 
     override val state: Flow<WardrobeSyncState> = mutableState
+    override val restoreSyncLogText: Flow<String> = restoreSyncLogRepository.text
 
     init {
         scope.launch(dispatcher) {
@@ -72,6 +74,7 @@ class WardrobeSyncOutboxProcessor(
                 isProcessing,
                 needsPhotoRestoreAttention,
             ) { settings, pendingCount, attentionCount, processing, photoAttention ->
+                restoreSyncLogRepository.setEnabled(settings.developerModeEnabled)
                 WardrobeSyncStateInputs(
                     connectionStatus = settings.driveSyncConnectionStatus,
                     pendingOperationCount = pendingCount,
@@ -120,6 +123,10 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.NotConfigured -> markOperationSetupRequired(operation)
             }
         }
+    }
+
+    override suspend fun clearRestoreSyncLog() {
+        withContext(dispatcher) { restoreSyncLogRepository.clear() }
     }
 
     private suspend fun restoreFreshInstallOnceIfNeeded() {
@@ -216,6 +223,7 @@ class WardrobeSyncOutboxProcessor(
         val diagnostics = RestoreDiagnosticsTracker(
             attempt = ++restoreAttemptCounter,
             localSnapshot = localSnapshot,
+            restoreSyncLogRepository = restoreSyncLogRepository,
         )
         diagnostics.event("account_configured")
         restoreProgress.value = diagnostics.progress(
@@ -464,6 +472,7 @@ private data class WardrobeSyncStateInputs(
 private class RestoreDiagnosticsTracker(
     private val attempt: Int,
     localSnapshot: WardrobeSyncSnapshot,
+    private val restoreSyncLogRepository: RestoreSyncLogRepository,
     private val startedAtEpochMillis: Long = System.currentTimeMillis(),
     private val correlationId: String = UUID.randomUUID().toString().take(8),
 ) {
@@ -512,6 +521,20 @@ private class RestoreDiagnosticsTracker(
         )
         val categoryCounts = issues.groupingBy(PhotoRestoreIssue::category).eachCount().toSortedMap()
         event("guarded_remote_photos total=${issues.size} categories=$categoryCounts")
+        issues.take(MAX_EVENTS).forEach { issue ->
+            restoreSyncLogRepository.append(
+                RestoreSyncLogEvent(
+                    correlationId = correlationId,
+                    phase = CloudRestorePhase.Downloading,
+                    status = CloudRestoreStatus.Running,
+                    message = "remote photo restore guarded",
+                    garmentId = issue.garmentId,
+                    placeholderReason = issue.category,
+                    exceptionClass = "RemotePhotoRestoreGuarded",
+                    exceptionMessage = issue.message,
+                ),
+            )
+        }
     }
 
     fun recordFinalUploadAttempted() {
@@ -559,6 +582,14 @@ private class RestoreDiagnosticsTracker(
         events += sanitizedName
         if (events.size > MAX_EVENTS) events.removeAt(0)
         Log.d(DIAGNOSTIC_LOG_TAG, "[$correlationId] $sanitizedName")
+        restoreSyncLogRepository.append(
+            RestoreSyncLogEvent(
+                correlationId = correlationId,
+                phase = null,
+                status = null,
+                message = sanitizedName,
+            ),
+        )
     }
 
     fun progress(
@@ -566,14 +597,29 @@ private class RestoreDiagnosticsTracker(
         completedWork: Int,
         status: CloudRestoreStatus = CloudRestoreStatus.Running,
         message: String? = null,
-    ): CloudRestoreProgress = CloudRestoreProgress(
-        phase = phase,
-        completedWork = completedWork,
-        totalWork = RESTORE_TOTAL_STEPS,
-        status = status,
-        message = message,
-        diagnostics = snapshot(phase, status),
-    )
+    ): CloudRestoreProgress {
+        restoreSyncLogRepository.append(
+            RestoreSyncLogEvent(
+                correlationId = correlationId,
+                phase = phase,
+                status = status,
+                message = message ?: "restore progress ${phase.name}",
+                completedWork = completedWork,
+                totalWork = RESTORE_TOTAL_STEPS,
+                placeholderReason = failureCategory,
+                exceptionClass = lastExceptionClass,
+                exceptionMessage = lastExceptionMessage,
+            ),
+        )
+        return CloudRestoreProgress(
+            phase = phase,
+            completedWork = completedWork,
+            totalWork = RESTORE_TOTAL_STEPS,
+            status = status,
+            message = message,
+            diagnostics = snapshot(phase, status),
+        )
+    }
 
     private fun snapshot(phase: CloudRestorePhase, status: CloudRestoreStatus): CloudRestoreDiagnostics = CloudRestoreDiagnostics(
         correlationId = correlationId,

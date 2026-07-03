@@ -76,4 +76,48 @@ class DriveRestoreDiagnosticsTest {
             IOException("Drive API returned HTTP 404: not found").restoreFetchFailureStatus(),
         )
     }
+
+    @Test
+    fun restoreSyncLogSanitizer_redactsSecretsAndDevicePaths() {
+        val sanitized = sanitizeLogField(
+            "Bearer abc.def access_token=secret manu@example.com content://media/p/1 file:///tmp/photo.jpg /data/user/0/app/photo.jpg",
+        )
+
+        assertTrue(sanitized.contains("Bearer <redacted>"))
+        assertTrue(sanitized.contains("access_token=<redacted>"))
+        assertTrue(sanitized.contains("<email-redacted>"))
+        assertTrue(sanitized.contains("content://<redacted>"))
+        assertTrue(sanitized.contains("file://<redacted>"))
+        assertTrue(sanitized.contains("<path-redacted>"))
+        assertTrue(!sanitized.contains("secret"))
+        assertTrue(!sanitized.contains("manu@example.com"))
+    }
+
+    @Test
+    fun restoreSyncLogEvent_usesSanitizedCopyableLine() {
+        val line = RestoreSyncLogEvent(
+            correlationId = "abc123",
+            phase = CloudRestorePhase.Downloading,
+            status = CloudRestoreStatus.Running,
+            message = "fetch Bearer token-value",
+            garmentId = "garment-1",
+            blobPath = "photos/garment-1/original",
+            byteSize = 42,
+            contentHash = "abcDEF1234567890",
+            restoredUriStatus = "content://private/image.jpg",
+            exceptionMessage = "refresh_token=sensitive",
+            completedWork = 3,
+            totalWork = 12,
+        ).toLogLine()
+
+        assertTrue(line.contains("correlation_id=abc123"))
+        assertTrue(line.contains("phase=Downloading"))
+        assertTrue(line.contains("progress=3/12"))
+        assertTrue(line.contains("blob_path=photos/garment-1/original"))
+        assertTrue(line.contains("content_hash=abcDEF1234567890"))
+        assertTrue(line.contains("content://<redacted>"))
+        assertTrue(line.contains("refresh_token=<redacted>"))
+        assertTrue(!line.contains("token-value"))
+        assertTrue(!line.contains("sensitive"))
+    }
 }
