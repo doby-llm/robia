@@ -23,6 +23,23 @@ class AdditionalInfoModelContractTest {
         assertTrue(manifest.contains("\"formula\": \"rgb\""))
         assertTrue(manifest.contains("\"resizeStrategy\": \"square_pad_preserve_aspect_then_resize_224\""))
         assertTrue(manifest.contains("do not apply external [-1,1] normalization"))
+        assertTrue(manifest.contains("\"candidateMaxSelections\": 2"))
+    }
+
+    @Test
+    fun multiCandidateHeadsDeclareDeterministicNearTiePolicy() {
+        val config = AdditionalInfoModelManifest.parse(readManifest())
+
+        assertTrue(AdditionalInfoModelManifest.validate(config))
+        listOf("occasion", "season").forEach { headName ->
+            val head = config.requireHead(headName)
+            assertEquals(0.45f, head.threshold)
+            assertEquals(0.40f, head.multiSelectThreshold)
+            assertEquals(0.08f, head.nearTieMargin)
+            assertEquals(1, head.candidateMinSelections)
+            assertEquals(2, head.candidateMaxSelections)
+        }
+        assertEquals(null, config.requireHead("category").candidateMaxSelections)
     }
 
     @Test

@@ -85,6 +85,8 @@ data class AdditionalInfoHeadSpec(
     val margin: Float?,
     val multiSelectThreshold: Float?,
     val nearTieMargin: Float?,
+    val candidateMinSelections: Int?,
+    val candidateMaxSelections: Int?,
     val multiSeasonLabel: String?,
     val multiSeasonTagIds: Set<String>,
 ) {
@@ -111,6 +113,8 @@ object AdditionalInfoModelManifest {
                 margin = output.optionalFloat("margin"),
                 multiSelectThreshold = output.optionalFloat("multiSelectThreshold"),
                 nearTieMargin = output.optionalFloat("nearTieMargin"),
+                candidateMinSelections = output.optionalInt("candidateMinSelections"),
+                candidateMaxSelections = output.optionalInt("candidateMaxSelections"),
                 multiSeasonLabel = output.optionalString("multiSeasonLabel")?.takeIf(String::isNotBlank),
                 multiSeasonTagIds = output.optionalArray("multiSeasonTagIds")?.strings().orEmpty().toSet(),
             )
@@ -145,8 +149,20 @@ object AdditionalInfoModelManifest {
             head.shape.size == 2 &&
                 head.shape.first() == 1 &&
                 head.width == head.labels.size &&
-                head.width == head.tagIds.size
+                head.width == head.tagIds.size &&
+                head.hasValidCandidateSelectionBounds()
         }
+    }
+}
+
+private fun AdditionalInfoHeadSpec.hasValidCandidateSelectionBounds(): Boolean {
+    val min = candidateMinSelections
+    val max = candidateMaxSelections
+    return when {
+        min == null && max == null -> true
+        min == null || max == null -> false
+        min < 1 || max < min -> false
+        else -> true
     }
 }
 
@@ -284,6 +300,7 @@ private fun JsonObjectValue.optionalArray(name: String): JsonArrayValue? = entri
 private fun JsonObjectValue.stringValue(name: String): String = (value(name) as? JsonStringValue)?.value ?: error("Expected string: $name")
 private fun JsonObjectValue.optionalString(name: String): String? = (entries[name] as? JsonStringValue)?.value
 private fun JsonObjectValue.intValue(name: String): Int = (value(name) as? JsonNumberValue)?.value?.toInt() ?: error("Expected integer: $name")
+private fun JsonObjectValue.optionalInt(name: String): Int? = (entries[name] as? JsonNumberValue)?.value?.toInt()
 private fun JsonObjectValue.floatValue(name: String): Float = (value(name) as? JsonNumberValue)?.value?.toFloat() ?: error("Expected float: $name")
 private fun JsonObjectValue.optionalFloat(name: String): Float? = (entries[name] as? JsonNumberValue)?.value?.toFloat()
 private fun JsonArrayValue.objects(): List<JsonObjectValue> = values.map { it as? JsonObjectValue ?: error("Expected object array item") }

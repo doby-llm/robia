@@ -83,15 +83,22 @@ object AdditionalInfoTagMapper {
 
         val multiThreshold = head.multiSelectThreshold ?: head.threshold
         val nearTieMargin = head.nearTieMargin ?: 0f
-        return scores.mapNotNullTo(linkedSetOf()) { score ->
-            val tagId = score.tagId
-            when {
-                tagId == null || tagId !in availableTagIds -> null
-                score.score >= multiThreshold -> tagId
-                top.score - score.score <= nearTieMargin -> tagId
-                else -> null
+        val minSelections = head.candidateMinSelections ?: 1
+        val maxSelections = head.candidateMaxSelections ?: 1
+        val candidates = scores
+            .asSequence()
+            .filter { score ->
+                val tagId = score.tagId
+                tagId != null &&
+                    tagId in availableTagIds &&
+                    score.score >= multiThreshold &&
+                    top.score - score.score <= nearTieMargin
             }
-        }
+            .sortedByDescending(AdditionalInfoLabelScore::score)
+            .take(maxSelections)
+            .mapNotNullTo(linkedSetOf()) { score -> score.tagId }
+
+        return candidates.takeIf { it.size >= minSelections }.orEmpty()
     }
 
     private const val CATEGORY_HEAD = "category"
