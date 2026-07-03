@@ -14,6 +14,8 @@ import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,7 +80,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -1279,6 +1280,11 @@ private fun CloudSetupDialog(
 @Composable
 private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
     val statusText = cloudRestoreStatusText(progress)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.progressFraction?.coerceIn(0f, 1f) ?: 0f,
+        animationSpec = tween(durationMillis = 450),
+        label = "cloudRestoreProgress",
+    )
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -1301,9 +1307,8 @@ private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             progress.progressFraction?.let { fraction ->
-                LinearProgressIndicator(
-                    progress = { fraction.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
+                CloudRestoreProgressBar(
+                    progress = animatedProgress.coerceAtMost(fraction.coerceIn(0f, 1f)),
                 )
             } ?: CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
@@ -1335,6 +1340,24 @@ private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CloudRestoreProgressBar(progress: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(8.dp)
+                .background(MaterialTheme.colorScheme.primary),
+        )
     }
 }
 

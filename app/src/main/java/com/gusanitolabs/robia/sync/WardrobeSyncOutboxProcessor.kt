@@ -160,13 +160,18 @@ class WardrobeSyncOutboxProcessor(
     private suspend fun syncFetchMergeThenUpload(): SyncCycleResult {
         restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Preparing,
-            completedWork = RESTORE_STEP_PREPARING,
+            completedWork = RESTORE_STEP_AUTH_CHECKED,
             totalWork = RESTORE_TOTAL_STEPS,
         )
         val localSnapshot = snapshotRepository.exportSnapshot()
         restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Preparing,
+            completedWork = RESTORE_STEP_LOCAL_EXPORTED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
+        restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Downloading,
-            completedWork = RESTORE_STEP_DOWNLOADED,
+            completedWork = RESTORE_STEP_REMOTE_FETCH_STARTED,
             totalWork = RESTORE_TOTAL_STEPS,
         )
         val remoteSnapshot = when (val result = driveRepository.fetchSnapshot()) {
@@ -181,6 +186,11 @@ class WardrobeSyncOutboxProcessor(
             }
         }
         restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Downloading,
+            completedWork = RESTORE_STEP_REMOTE_FETCHED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
+        restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Validating,
             completedWork = RESTORE_STEP_VALIDATED,
             totalWork = RESTORE_TOTAL_STEPS,
@@ -192,8 +202,13 @@ class WardrobeSyncOutboxProcessor(
 
         val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot)
         restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Validating,
+            completedWork = RESTORE_STEP_MERGED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
+        restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Applying,
-            completedWork = RESTORE_STEP_APPLIED,
+            completedWork = RESTORE_STEP_IMPORT_STARTED,
             totalWork = RESTORE_TOTAL_STEPS,
         )
         val importResult = if (mergedSnapshot.hasUserData()) {
@@ -203,12 +218,22 @@ class WardrobeSyncOutboxProcessor(
         }
 
         restoreProgress.value = CloudRestoreProgress(
+            phase = CloudRestorePhase.Applying,
+            completedWork = RESTORE_STEP_LOCAL_SAVED,
+            totalWork = RESTORE_TOTAL_STEPS,
+        )
+        restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Uploading,
-            completedWork = RESTORE_STEP_UPLOADED,
+            completedWork = RESTORE_STEP_UPLOAD_STARTED,
             totalWork = RESTORE_TOTAL_STEPS,
         )
         return when (driveRepository.upsertSnapshot(mergedSnapshot)) {
             is DriveSyncResult.Success -> if (localSnapshot.hasUserData() || remoteSnapshot.hasUserData()) {
+                restoreProgress.value = CloudRestoreProgress(
+                    phase = CloudRestorePhase.Uploading,
+                    completedWork = RESTORE_STEP_FINAL_SYNCED,
+                    totalWork = RESTORE_TOTAL_STEPS,
+                )
                 restoreProgress.value = CloudRestoreProgress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
@@ -216,6 +241,11 @@ class WardrobeSyncOutboxProcessor(
                 )
                 SyncCycleResult.Success(importResult.guardedPhotoCount)
             } else {
+                restoreProgress.value = CloudRestoreProgress(
+                    phase = CloudRestorePhase.Uploading,
+                    completedWork = RESTORE_STEP_FINAL_SYNCED,
+                    totalWork = RESTORE_TOTAL_STEPS,
+                )
                 restoreProgress.value = CloudRestoreProgress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
@@ -357,11 +387,11 @@ private fun offlineRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgre
 
 private val CloudRestorePhase.completedRestoreWork: Int
     get() = when (this) {
-        CloudRestorePhase.Preparing -> RESTORE_STEP_PREPARING
-        CloudRestorePhase.Downloading -> RESTORE_STEP_DOWNLOADED
+        CloudRestorePhase.Preparing -> RESTORE_STEP_AUTH_CHECKED
+        CloudRestorePhase.Downloading -> RESTORE_STEP_REMOTE_FETCH_STARTED
         CloudRestorePhase.Validating -> RESTORE_STEP_VALIDATED
-        CloudRestorePhase.Applying -> RESTORE_STEP_APPLIED
-        CloudRestorePhase.Uploading -> RESTORE_STEP_UPLOADED
+        CloudRestorePhase.Applying -> RESTORE_STEP_IMPORT_STARTED
+        CloudRestorePhase.Uploading -> RESTORE_STEP_UPLOAD_STARTED
         CloudRestorePhase.RollingBack,
         CloudRestorePhase.Complete -> RESTORE_TOTAL_STEPS
     }
@@ -421,9 +451,14 @@ private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> 
 
 private val garmentEntityTypes = setOf("garment", "clothing_item", "item")
 
-private const val RESTORE_STEP_PREPARING = 0
-private const val RESTORE_STEP_DOWNLOADED = 1
-private const val RESTORE_STEP_VALIDATED = 2
-private const val RESTORE_STEP_APPLIED = 3
-private const val RESTORE_STEP_UPLOADED = 4
-private const val RESTORE_TOTAL_STEPS = 5
+private const val RESTORE_STEP_AUTH_CHECKED = 1
+private const val RESTORE_STEP_LOCAL_EXPORTED = 2
+private const val RESTORE_STEP_REMOTE_FETCH_STARTED = 3
+private const val RESTORE_STEP_REMOTE_FETCHED = 4
+private const val RESTORE_STEP_VALIDATED = 5
+private const val RESTORE_STEP_MERGED = 6
+private const val RESTORE_STEP_IMPORT_STARTED = 7
+private const val RESTORE_STEP_LOCAL_SAVED = 8
+private const val RESTORE_STEP_UPLOAD_STARTED = 9
+private const val RESTORE_STEP_FINAL_SYNCED = 11
+private const val RESTORE_TOTAL_STEPS = 12
