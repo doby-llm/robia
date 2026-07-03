@@ -11,6 +11,7 @@ import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.MainColor
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 
 object ClothingImageStore {
@@ -30,6 +31,34 @@ object ClothingImageStore {
         context.contentResolver.openInputStream(sourceUri)?.use { input ->
             imageFile.outputStream().use(input::copyTo)
         } ?: error("Unable to open selected image")
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            imageFile,
+        )
+    }
+
+    fun readImageBlob(context: Context, imageUri: Uri): ImageBlob? {
+        val bytes = context.contentResolver.openInputStream(imageUri)?.use { input -> input.readBytes() } ?: return null
+        return ImageBlob(
+            bytes = bytes,
+            mimeType = context.contentResolver.getType(imageUri),
+            contentHash = bytes.sha256Hex(),
+        )
+    }
+
+    fun writeRestoredImageBlob(
+        context: Context,
+        bytes: ByteArray,
+        blobPath: String,
+        mimeType: String?,
+    ): Uri {
+        val imageFile = createImageFile(
+            context = context,
+            prefix = "drive-${blobPath.substringAfterLast('/').substringBeforeLast('.').ifBlank { "photo" }}",
+            extension = mimeType.toImageExtension() ?: blobPath.substringAfterLast('.', "jpg"),
+        )
+        imageFile.outputStream().use { output -> output.write(bytes) }
         return FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -305,6 +334,25 @@ object ClothingImageStore {
     private const val MIN_CROP_CONTENT_SIZE = 16
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f
+}
+
+data class ImageBlob(
+    val bytes: ByteArray,
+    val mimeType: String?,
+    val contentHash: String,
+) {
+    val byteSize: Long = bytes.size.toLong()
+}
+
+private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
+    .digest(this)
+    .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+private fun String?.toImageExtension(): String? = when (this?.lowercase()) {
+    "image/jpeg", "image/jpg" -> "jpg"
+    "image/png" -> "png"
+    "image/webp" -> "webp"
+    else -> null
 }
 
 data class PaletteColorDiagnostics(

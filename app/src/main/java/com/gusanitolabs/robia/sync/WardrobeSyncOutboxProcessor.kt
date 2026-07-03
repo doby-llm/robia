@@ -1,13 +1,17 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
+import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
+import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.MainColorSyncRecord
 import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
+import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
 import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
@@ -33,9 +37,10 @@ import kotlinx.coroutines.withContext
 /**
  * Durable Room/DataStore-backed sync outbox processor.
  *
- * Every sync cycle downloads Drive first, merges by stable ids/revisions, imports the merged snapshot
- * locally, then uploads the merged local snapshot. This prevents a clean reinstall from uploading an
- * empty local database over an existing Drive backup.
+ * Normal sync is local-first: once the local wardrobe contains user data, Room/DataStore remains
+ * the source of truth and the processor uploads the local snapshot without fetching Drive first.
+ * Drive -> phone restore is reserved for an explicit setup/restore request on a fresh local install.
+ * This prevents an empty reinstall from overwriting Drive while avoiding stale cloud overwrites.
  */
 class WardrobeSyncOutboxProcessor(
     private val settingsRepository: SettingsRepository,
@@ -50,6 +55,7 @@ class WardrobeSyncOutboxProcessor(
     private val needsPhotoRestoreAttention = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
+    private var hasAttemptedFreshInstallRestore = false
 
     override val state: Flow<WardrobeSyncState> = mutableState
 
@@ -84,6 +90,11 @@ class WardrobeSyncOutboxProcessor(
                     nextState.pendingOperationCount > 0
                 ) {
                     processPendingGarments()
+                } else if (nextState.connectionStatus == DriveSyncConnectionStatus.Connected &&
+                    nextState.pendingOperationCount == 0 &&
+                    !isProcessing.value
+                ) {
+                    restoreFreshInstallOnceIfNeeded()
                 } else if (nextState.pendingOperationCount > 0) {
                     markBlockedForCurrentSetupState(nextState.connectionStatus)
                 }
@@ -104,6 +115,14 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.Disabled,
                 DriveSyncConnectionStatus.NotConfigured -> markOperationSetupRequired(operation)
             }
+        }
+    }
+
+    private suspend fun restoreFreshInstallOnceIfNeeded() {
+        if (hasAttemptedFreshInstallRestore) return
+        hasAttemptedFreshInstallRestore = true
+        if (snapshotRepository.exportSnapshot().isFreshInstallSnapshot()) {
+            processPendingGarments(forceSnapshot = true, forceImport = true)
         }
     }
 
@@ -130,7 +149,18 @@ class WardrobeSyncOutboxProcessor(
 
             var keepTerminalProgress = false
             try {
-                when (val result = syncFetchMergeThenUpload()) {
+                val localSnapshot = snapshotRepository.exportSnapshot()
+                val result = when (
+                    SyncDirectionPolicy.resolve(
+                        localSnapshot = localSnapshot,
+                        explicitRestoreRequested = forceImport,
+                    )
+                ) {
+                    SyncDirection.UploadLocalSnapshot -> syncUploadLocalSnapshot(localSnapshot)
+                    SyncDirection.RestoreRemoteThenUpload -> syncRestoreRemoteThenUpload(localSnapshot)
+                    SyncDirection.SkipEmptyLocalUpload -> SyncCycleResult.NoBackup
+                }
+                when (result) {
                     is SyncCycleResult.Success -> {
                         needsPhotoRestoreAttention.value = result.guardedPhotoCount > 0
                         markSynced(lockedWork)
@@ -157,13 +187,21 @@ class WardrobeSyncOutboxProcessor(
         }
     }
 
-    private suspend fun syncFetchMergeThenUpload(): SyncCycleResult {
+    private suspend fun syncUploadLocalSnapshot(localSnapshot: WardrobeSyncSnapshot): SyncCycleResult {
+        // Local edits own the snapshot once the phone has user data; do not fetch stale Drive data here.
+        return when (driveRepository.upsertSnapshot(localSnapshot.sortedDeterministically())) {
+            is DriveSyncResult.Success -> SyncCycleResult.Success(guardedPhotoCount = 0)
+            is DriveSyncResult.Blocked -> SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
+            is DriveSyncResult.Failure -> SyncCycleResult.Failure
+        }
+    }
+
+    private suspend fun syncRestoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot): SyncCycleResult {
         restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Preparing,
             completedWork = RESTORE_STEP_AUTH_CHECKED,
             totalWork = RESTORE_TOTAL_STEPS,
         )
-        val localSnapshot = snapshotRepository.exportSnapshot()
         restoreProgress.value = CloudRestoreProgress(
             phase = CloudRestorePhase.Preparing,
             completedWork = RESTORE_STEP_LOCAL_EXPORTED,
@@ -227,8 +265,17 @@ class WardrobeSyncOutboxProcessor(
             completedWork = RESTORE_STEP_UPLOAD_STARTED,
             totalWork = RESTORE_TOTAL_STEPS,
         )
+        if (!mergedSnapshot.hasUserData()) {
+            restoreProgress.value = CloudRestoreProgress(
+                phase = CloudRestorePhase.Complete,
+                completedWork = RESTORE_TOTAL_STEPS,
+                totalWork = RESTORE_TOTAL_STEPS,
+            )
+            return SyncCycleResult.NoBackup
+        }
+
         return when (driveRepository.upsertSnapshot(mergedSnapshot)) {
-            is DriveSyncResult.Success -> if (localSnapshot.hasUserData() || remoteSnapshot.hasUserData()) {
+            is DriveSyncResult.Success -> {
                 restoreProgress.value = CloudRestoreProgress(
                     phase = CloudRestorePhase.Uploading,
                     completedWork = RESTORE_STEP_FINAL_SYNCED,
@@ -240,18 +287,6 @@ class WardrobeSyncOutboxProcessor(
                     totalWork = RESTORE_TOTAL_STEPS,
                 )
                 SyncCycleResult.Success(importResult.guardedPhotoCount)
-            } else {
-                restoreProgress.value = CloudRestoreProgress(
-                    phase = CloudRestorePhase.Uploading,
-                    completedWork = RESTORE_STEP_FINAL_SYNCED,
-                    totalWork = RESTORE_TOTAL_STEPS,
-                )
-                restoreProgress.value = CloudRestoreProgress(
-                    phase = CloudRestorePhase.Complete,
-                    completedWork = RESTORE_TOTAL_STEPS,
-                    totalWork = RESTORE_TOTAL_STEPS,
-                )
-                SyncCycleResult.NoBackup
             }
             is DriveSyncResult.Blocked -> {
                 restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Uploading)
@@ -368,8 +403,55 @@ private data class WardrobeSyncStateInputs(
     val needsPhotoRestoreAttention: Boolean,
 )
 
+private enum class SyncDirection {
+    UploadLocalSnapshot,
+    RestoreRemoteThenUpload,
+    SkipEmptyLocalUpload,
+}
+
+private object SyncDirectionPolicy {
+    fun resolve(
+        localSnapshot: WardrobeSyncSnapshot,
+        explicitRestoreRequested: Boolean,
+    ): SyncDirection = when {
+        explicitRestoreRequested && localSnapshot.isFreshInstallSnapshot() -> SyncDirection.RestoreRemoteThenUpload
+        localSnapshot.hasUserData() -> SyncDirection.UploadLocalSnapshot
+        else -> SyncDirection.SkipEmptyLocalUpload
+    }
+}
+
+private fun WardrobeSyncSnapshot.isFreshInstallSnapshot(): Boolean = !hasUserData()
+
 private fun WardrobeSyncSnapshot.hasUserData(): Boolean =
-    garments.isNotEmpty() || photos.isNotEmpty() || tombstones.isNotEmpty()
+    garments.isNotEmpty() ||
+        photos.isNotEmpty() ||
+        tombstones.isNotEmpty() ||
+        taxonomies.categories.any { category -> DefaultTags.isCustomOrModifiedDefault(category.toDomain()) } ||
+        taxonomies.tags.any { tag -> DefaultTags.isCustomOrModifiedDefault(tag.toDomain()) } ||
+        taxonomies.mainColors.any { color -> DefaultTags.isCustomOrModifiedDefault(color.toDomain()) }
+
+private fun TagCategorySyncRecord.toDomain(): TagCategory = TagCategory(
+    id = id,
+    name = name,
+    sortOrder = sortOrder,
+    isSystem = isSystem,
+)
+
+private fun TagSyncRecord.toDomain(): GarmentTag = GarmentTag(
+    id = id,
+    categoryId = categoryId,
+    name = name,
+    sortOrder = sortOrder,
+    isSystem = isSystem,
+)
+
+private fun MainColorSyncRecord.toDomain(): MainColor = MainColor(
+    id = id,
+    name = name,
+    hex = hex,
+    sortOrder = sortOrder,
+    isDefault = isDefault,
+)
 
 private fun failedRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgress = CloudRestoreProgress(
     phase = phase,
@@ -401,10 +483,35 @@ private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnap
     val tombstoneByGarmentId = tombstones
         .filter { tombstone -> tombstone.entityType in garmentEntityTypes }
         .associateBy(SyncTombstoneRecord::entityId)
+    val tombstoneByCategoryId = tombstones
+        .filter { tombstone -> tombstone.entityType in categoryEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
+    val tombstoneByTagId = tombstones
+        .filter { tombstone -> tombstone.entityType in tagEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
+    val tombstoneByMainColorId = tombstones
+        .filter { tombstone -> tombstone.entityType in mainColorEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
 
     val mergedGarments = mergeByKey(local.garments + remote.garments, GarmentSyncRecord::id, GarmentSyncRecord::revision)
         .filterNot { garment -> (tombstoneByGarmentId[garment.id]?.revision ?: Long.MIN_VALUE) > garment.revision }
     val activeGarmentIds = mergedGarments.map(GarmentSyncRecord::id).toSet()
+    val mergedCategories = mergeByKey(
+        local.taxonomies.categories + remote.taxonomies.categories,
+        TagCategorySyncRecord::id,
+        TagCategorySyncRecord::revision,
+    ).filterNot { category -> (tombstoneByCategoryId[category.id]?.revision ?: Long.MIN_VALUE) > category.revision }
+    val activeCategoryIds = mergedCategories.map(TagCategorySyncRecord::id).toSet()
+    val mergedTags = mergeByKey(local.taxonomies.tags + remote.taxonomies.tags, TagSyncRecord::id, TagSyncRecord::revision)
+        .filterNot { tag -> (tombstoneByTagId[tag.id]?.revision ?: Long.MIN_VALUE) > tag.revision }
+        .filter { tag -> tag.categoryId in activeCategoryIds }
+    val activeTagIds = mergedTags.map(TagSyncRecord::id).toSet()
+    val mergedMainColors = mergeByKey(
+        local.taxonomies.mainColors + remote.taxonomies.mainColors,
+        MainColorSyncRecord::id,
+        MainColorSyncRecord::revision,
+    ).filterNot { color -> (tombstoneByMainColorId[color.id]?.revision ?: Long.MIN_VALUE) > color.revision }
+    val activeMainColorIds = mergedMainColors.map(MainColorSyncRecord::id).toSet()
     val mergedMetadata = WardrobeSnapshotMetadata(
         generatedAtEpochMillis = System.currentTimeMillis(),
         revision = maxOf(local.metadata.revision, remote.metadata.revision, System.currentTimeMillis()),
@@ -414,33 +521,49 @@ private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnap
     return WardrobeSyncSnapshot(
         metadata = mergedMetadata,
         taxonomies = WardrobeTaxonomySnapshot(
-            categories = mergeByKey(
-                local.taxonomies.categories + remote.taxonomies.categories,
-                TagCategorySyncRecord::id,
-                TagCategorySyncRecord::revision,
-            ),
-            tags = mergeByKey(local.taxonomies.tags + remote.taxonomies.tags, TagSyncRecord::id, TagSyncRecord::revision),
-            mainColors = mergeByKey(
-                local.taxonomies.mainColors + remote.taxonomies.mainColors,
-                MainColorSyncRecord::id,
-                MainColorSyncRecord::revision,
-            ),
+            categories = mergedCategories,
+            tags = mergedTags,
+            mainColors = mergedMainColors,
         ),
         garments = mergedGarments,
         garmentTags = mergeByKey(
             local.garmentTags + remote.garmentTags,
             { "${it.garmentId}:${it.tagId}" },
             GarmentTagMappingRecord::revision,
-        ).filter { record -> record.garmentId in activeGarmentIds },
+        ).filter { record -> record.garmentId in activeGarmentIds && record.tagId in activeTagIds },
         garmentColors = mergeByKey(
             local.garmentColors + remote.garmentColors,
             { "${it.garmentId}:${it.role}" },
             GarmentColorMappingRecord::revision,
-        ).filter { record -> record.garmentId in activeGarmentIds },
-        photos = mergeByKey(local.photos + remote.photos, GarmentPhotoRecord::garmentId, GarmentPhotoRecord::revision)
+        ).filter { record ->
+            record.garmentId in activeGarmentIds &&
+                record.paletteColorId?.let(activeMainColorIds::contains) != false
+        },
+        photos = mergePhotos(local.photos, remote.photos)
             .filter { record -> record.garmentId in activeGarmentIds },
         tombstones = tombstones,
     ).sortedDeterministically()
+}
+
+private fun mergePhotos(
+    localPhotos: List<GarmentPhotoRecord>,
+    remotePhotos: List<GarmentPhotoRecord>,
+): List<GarmentPhotoRecord> {
+    val localPhotoByGarmentId = localPhotos.associateBy(GarmentPhotoRecord::garmentId)
+    return mergeByKey(localPhotos + remotePhotos, GarmentPhotoRecord::garmentId, GarmentPhotoRecord::revision)
+        .map { merged ->
+            val local = localPhotoByGarmentId[merged.garmentId]
+            if (
+                local != null &&
+                local.revision >= merged.revision &&
+                merged.restoredLocalUri.isNullOrBlank() &&
+                merged.localUri != local.localUri
+            ) {
+                local
+            } else {
+                merged
+            }
+        }
 }
 
 private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> Long): List<T> =
@@ -450,6 +573,9 @@ private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> 
         .map { group -> group.maxWith(compareBy<T> { revision(it) }.thenBy { records.indexOf(it) }) }
 
 private val garmentEntityTypes = setOf("garment", "clothing_item", "item")
+private val categoryEntityTypes = setOf("tag_category", "category")
+private val tagEntityTypes = setOf("garment_tag", "tag")
+private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
 private const val RESTORE_STEP_AUTH_CHECKED = 1
 private const val RESTORE_STEP_LOCAL_EXPORTED = 2

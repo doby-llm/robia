@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
             wardrobeRepository = wardrobeRepository,
             snapshotRepository = syncSnapshotRepository,
             driveRepository = GoogleDriveWardrobeRepository(
+                context = applicationContext,
                 authorizationClient = authorizationClient,
                 driveScope = Scope(DRIVE_APPDATA_SCOPE),
             ),
