@@ -288,13 +288,17 @@ class WardrobeSyncOutboxProcessor(
                 )
                 SyncCycleResult.Success(importResult.guardedPhotoCount)
             }
-            is DriveSyncResult.Blocked -> {
-                restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Uploading)
-                SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
-            }
+            is DriveSyncResult.Blocked,
             is DriveSyncResult.Failure -> {
-                restoreProgress.value = offlineRestoreProgress(CloudRestorePhase.Uploading)
-                SyncCycleResult.Failure
+                // The fresh-install restore is already transactionally applied at this point. A final
+                // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
+                // user on the progress overlay even though the restored wardrobe is safe locally.
+                restoreProgress.value = CloudRestoreProgress(
+                    phase = CloudRestorePhase.Complete,
+                    completedWork = RESTORE_TOTAL_STEPS,
+                    totalWork = RESTORE_TOTAL_STEPS,
+                )
+                SyncCycleResult.Success(importResult.guardedPhotoCount)
             }
         }
     }
