@@ -90,7 +90,11 @@ class DriveRestoreDiagnosticsTest {
             garmentId = "garment-restored",
             localUri = "content://old-device/restored.jpg",
             blobPath = "photos/garment-restored/original",
+            mimeType = "image/jpeg",
             byteSize = 1234,
+            byteMagic = "ffd8ffe000104a464946",
+            decodedWidth = 640,
+            decodedHeight = 480,
             contentHash = "abcdef1234567890",
             restoredLocalUri = "content://local/restored.jpg",
         ).restoreDiagnosticEvent()
@@ -99,6 +103,9 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(event.contains("garmentId=garment-restored"))
         assertTrue(event.contains("blobPath=photos/garment-restored/original"))
         assertTrue(event.contains("byteSize=1234"))
+        assertTrue(event.contains("mimeType=image/jpeg"))
+        assertTrue(event.contains("byteMagic=ffd8ffe000104a464946"))
+        assertTrue(event.contains("decoded=640x480"))
         assertTrue(event.contains("contentHash=abcdef123456"))
         assertTrue(event.contains("restoredLocalUri=true"))
     }
@@ -131,6 +138,14 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(sanitized.contains("<path-redacted>"))
         assertTrue(!sanitized.contains("secret"))
         assertTrue(!sanitized.contains("manu@example.com"))
+    }
+
+    @Test
+    fun restoreSyncLogSanitizer_preservesSafeDriveBlobPaths() {
+        val sanitized = sanitizeLogField("blobPath=photos/03562857-57a3-4a4f-9c1c-b337d78cac1f/original /data/user/0/app/photo.jpg")
+
+        assertTrue(sanitized.contains("photos/03562857-57a3-4a4f-9c1c-b337d78cac1f/original"))
+        assertTrue(sanitized.contains("<path-redacted>"))
     }
 
     @Test

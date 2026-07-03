@@ -172,6 +172,12 @@ data class GarmentPhotoRecord(
     val restoreFailureCategory: String? = null,
     /** Local-only sanitized guarded-restore detail; never serialized back to Drive. */
     val restoreFailureMessage: String? = null,
+    /** Local-only bounded photo header fingerprint for restore/upload diagnostics. */
+    val byteMagic: String? = null,
+    /** Local-only decoded width from Drive restore/upload verification. */
+    val decodedWidth: Int? = null,
+    /** Local-only decoded height from Drive restore/upload verification. */
+    val decodedHeight: Int? = null,
 )
 
 data class SyncTombstoneRecord(

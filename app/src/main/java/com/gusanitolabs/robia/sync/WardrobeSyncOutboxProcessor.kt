@@ -535,6 +535,11 @@ private class RestoreDiagnosticsTracker(
                     status = CloudRestoreStatus.Running,
                     message = "remote photo restore guarded",
                     garmentId = issue.garmentId,
+                    blobPath = issue.blobPath,
+                    byteSize = issue.byteSize,
+                    mimeType = issue.mimeType,
+                    byteMagic = issue.byteMagic,
+                    contentHash = issue.contentHash,
                     placeholderReason = issue.category,
                     exceptionClass = "RemotePhotoRestoreGuarded",
                     exceptionMessage = issue.message,
@@ -843,6 +848,11 @@ internal data class PhotoRestoreIssue(
     val garmentId: String,
     val category: String,
     val message: String?,
+    val blobPath: String?,
+    val byteSize: Long?,
+    val mimeType: String?,
+    val byteMagic: String?,
+    val contentHash: String?,
 )
 
 internal const val PHOTO_RESTORE_GUARDED_CATEGORY = "remote_photo_guarded"
@@ -853,6 +863,11 @@ internal fun WardrobeSyncSnapshot.guardedPhotoRestoreIssues(): List<PhotoRestore
         garmentId = photo.garmentId,
         category = category,
         message = photo.restoreFailureMessage,
+        blobPath = photo.blobPath,
+        byteSize = photo.byteSize,
+        mimeType = photo.mimeType,
+        byteMagic = photo.byteMagic,
+        contentHash = photo.contentHash,
     )
 }
 
@@ -865,6 +880,9 @@ internal fun GarmentPhotoRecord.restoreDiagnosticEvent(): String {
     return buildString {
         append("photo_restore status=$status garmentId=$garmentId blobPath=$blobPath")
         byteSize?.let { append(" byteSize=$it") }
+        mimeType?.takeIf(String::isNotBlank)?.let { append(" mimeType=$it") }
+        byteMagic?.takeIf(String::isNotBlank)?.let { append(" byteMagic=$it") }
+        if (decodedWidth != null && decodedHeight != null) append(" decoded=${decodedWidth}x$decodedHeight")
         contentHash?.takeIf(String::isNotBlank)?.let { append(" contentHash=${it.take(12)}") }
         append(" restoredLocalUri=${!restoredLocalUri.isNullOrBlank()}")
         restoreFailureMessage?.takeIf(String::isNotBlank)?.let { message ->
@@ -880,7 +898,7 @@ private fun sanitizeDiagnosticMessage(message: String): String = message
     .replace(Regex("Bearer\\s+[A-Za-z0-9._~+/=-]+", RegexOption.IGNORE_CASE), "Bearer <redacted>")
     .replace(Regex("(?i)(access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)=\\S+"), "\$1=<redacted>")
     .replace(Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"), "<email-redacted>")
-    .replace(Regex("/[^\\s:]+(?:/[^\\s:]+)+"), "<path-redacted>")
+    .replace(Regex("(^|\\s)(/[^\\s:]+(?:/[^\\s:]+)+)")) { match -> "${match.groupValues[1]}<path-redacted>" }
     .take(MAX_DIAGNOSTIC_MESSAGE_CHARS)
 
 private val garmentEntityTypes = setOf("garment", "clothing_item", "item")

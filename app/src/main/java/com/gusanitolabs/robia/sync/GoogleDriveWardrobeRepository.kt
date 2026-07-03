@@ -18,6 +18,8 @@ import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
 import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.ImageBlob
+import com.gusanitolabs.robia.media.magicHex
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -67,6 +69,11 @@ class GoogleDriveWardrobeRepository(
                 is DriveSyncResult.Success -> result.value
                 is DriveSyncResult.Blocked -> return@withAccessToken result
                 is DriveSyncResult.Failure -> return@withAccessToken result
+            }
+            when (val purgeResult = purgeDeletedPhotoBlobs(accessToken, deterministicSnapshot)) {
+                is DriveSyncResult.Success -> Unit
+                is DriveSyncResult.Blocked -> return@withAccessToken purgeResult
+                is DriveSyncResult.Failure -> return@withAccessToken purgeResult
             }
             when (val result = api.upsertSnapshot(accessToken, deterministicSnapshot)) {
                 is DriveApiResult.Success -> DriveSyncResult.Success(DriveManifest.fromSnapshot(result.value))
@@ -118,25 +125,38 @@ class GoogleDriveWardrobeRepository(
                 )
             when (val blobResult = api.fetchBlob(accessToken, blobPath)) {
                 is DriveApiResult.Success -> runCatching {
+                    val bytes = blobResult.value.bytes
                     val restoredUri = ClothingImageStore.writeRestoredImageBlob(
                         context = context,
-                        bytes = blobResult.value.bytes,
+                        bytes = bytes,
                         blobPath = blobPath,
                         mimeType = photo.mimeType,
                     )
-                    check(ClothingImageStore.readImageAspectRatio(context, restoredUri) != null) {
-                        "Restored Drive blob is not a readable garment image."
+                    val dimensions = ClothingImageStore.readImageDimensions(context, restoredUri)
+                    check(dimensions != null) {
+                        "Restored Drive blob is not a readable garment image " +
+                            "mime=${photo.mimeType ?: "unknown"} magic=${bytes.magicHex()} byteSize=${bytes.size}."
                     }
                     photo.copy(
                         restoredLocalUri = restoredUri.toString(),
-                        byteSize = photo.byteSize ?: blobResult.value.bytes.size.toLong(),
-                        contentHash = photo.contentHash ?: blobResult.value.bytes.sha256Hex(),
+                        byteSize = bytes.size.toLong(),
+                        contentHash = bytes.sha256Hex(),
+                        byteMagic = bytes.magicHex(),
+                        decodedWidth = dimensions.first,
+                        decodedHeight = dimensions.second,
+                        restoreFailureCategory = null,
+                        restoreFailureMessage = null,
                     )
                 }.getOrElse { throwable ->
+                    val bytes = blobResult.value.bytes
                     photo.guardedRestore(
                         category = REMOTE_PHOTO_UNREADABLE,
-                        message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} is corrupt or unreadable.",
+                        message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} is corrupt or unreadable " +
+                            "mime=${photo.mimeType ?: "unknown"} magic=${bytes.magicHex()} byteSize=${bytes.size}.",
                         cause = throwable,
+                        byteSize = bytes.size.toLong(),
+                        contentHash = bytes.sha256Hex(),
+                        byteMagic = bytes.magicHex(),
                     )
                 }
                 is DriveApiResult.NotFound -> photo.guardedRestore(
@@ -154,8 +174,16 @@ class GoogleDriveWardrobeRepository(
         category: String,
         message: String,
         cause: Throwable? = null,
+        byteSize: Long? = null,
+        contentHash: String? = null,
+        byteMagic: String? = null,
     ): GarmentPhotoRecord = copy(
         restoredLocalUri = null,
+        byteSize = byteSize ?: this.byteSize,
+        contentHash = contentHash ?: this.contentHash,
+        byteMagic = byteMagic ?: this.byteMagic,
+        decodedWidth = null,
+        decodedHeight = null,
         restoreFailureCategory = category,
         restoreFailureMessage = sanitizePhotoRestoreMessage(
             if (cause?.message.isNullOrBlank()) message else "$message Cause: ${cause?.message}",
@@ -174,12 +202,21 @@ class GoogleDriveWardrobeRepository(
                 return@map photo
             }
             val sourceUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: photo.localUri
-            val blob = runCatching { ClothingImageStore.readImageBlob(context, Uri.parse(sourceUri)) }
-                .getOrNull()
+            val blob = runCatching { ClothingImageStore.readCanonicalDriveImageBlob(context, Uri.parse(sourceUri)) }
+                .getOrElse { throwable ->
+                    return DriveSyncResult.Failure(
+                        IllegalStateException(
+                            "Garment photo ${photo.garmentId} could not be canonicalized for Drive upload: " +
+                                (throwable.message ?: throwable::class.java.simpleName),
+                            throwable,
+                        ),
+                    )
+                }
                 ?: return DriveSyncResult.Failure(
                     IllegalStateException("Garment photo ${photo.garmentId} could not be read for Drive upload."),
                 )
-            when (val uploadResult = api.upsertBlob(accessToken, blobPath, blob.bytes, blob.mimeType ?: photo.mimeType)) {
+            val verifiedBlob = blob.requireDriveReadable(photo.garmentId)
+            when (val uploadResult = api.upsertBlob(accessToken, blobPath, verifiedBlob.bytes, verifiedBlob.mimeType)) {
                 is DriveApiResult.Success -> Unit
                 is DriveApiResult.Unauthorized -> return authBlocked()
                 is DriveApiResult.NotFound -> return DriveSyncResult.Failure(
@@ -189,15 +226,61 @@ class GoogleDriveWardrobeRepository(
             }
             photo.copy(
                 blobPath = blobPath,
-                mimeType = blob.mimeType ?: photo.mimeType,
-                contentHash = blob.contentHash,
-                byteSize = blob.byteSize,
+                mimeType = verifiedBlob.mimeType,
+                contentHash = verifiedBlob.contentHash,
+                byteSize = verifiedBlob.byteSize,
+                byteMagic = verifiedBlob.byteMagic,
+                decodedWidth = verifiedBlob.decodedWidth,
+                decodedHeight = verifiedBlob.decodedHeight,
+                restoredLocalUri = null,
+                restoreFailureCategory = null,
+                restoreFailureMessage = null,
             )
         }
         return DriveSyncResult.Success(snapshot.copy(photos = uploadedPhotos).sortedDeterministically())
     }
 
-    private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
+    private fun purgeDeletedPhotoBlobs(
+        accessToken: String,
+        snapshot: WardrobeSyncSnapshot,
+    ): DriveSyncResult<Unit> {
+        val activeBlobPaths = snapshot.photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
+        val deletedGarmentIds = snapshot.tombstones
+            .filter { it.entityType in PHOTO_TOMBSTONE_ENTITY_TYPES }
+            .map { it.entityId }
+            .distinct()
+        val purgeCandidates = deletedGarmentIds
+            .flatMap { garmentId ->
+                listOf(
+                    DriveFolderNaming.photoBlobPath(garmentId),
+                    "photos/$garmentId/original",
+                )
+            }
+            .filterNot(activeBlobPaths::contains)
+            .distinct()
+        purgeCandidates.forEach { blobPath ->
+            when (val result = api.deleteBlob(accessToken, blobPath)) {
+                is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
+                is DriveApiResult.Unauthorized -> return authBlocked()
+                is DriveApiResult.Failure -> return DriveSyncResult.Failure(result.throwable)
+            }
+        }
+        return DriveSyncResult.Success(Unit)
+    }
+
+private fun ImageBlob.requireDriveReadable(garmentId: String): ImageBlob {
+    val width = decodedWidth
+    val height = decodedHeight
+    require(width != null && width > 0 && height != null && height > 0) {
+        "Garment photo $garmentId canonical Drive blob is not readable after encode " +
+            "mime=${mimeType ?: "unknown"} magic=$byteMagic byteSize=$byteSize " +
+            "sourceMime=${sourceMimeType ?: "unknown"} sourceMagic=${sourceByteMagic ?: "unknown"} " +
+            "sourceByteSize=${sourceByteSize ?: 0}."
+    }
+    return this
+}
+
+private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
         reason = DriveSyncDisabledReason.UserNotConnected,
         message = "Google Drive authorization is required before sync can continue.",
     )
@@ -207,6 +290,7 @@ interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
     fun fetchBlob(accessToken: String, blobPath: String): DriveApiResult<DriveBlob>
     fun upsertBlob(accessToken: String, blobPath: String, bytes: ByteArray, mimeType: String?): DriveApiResult<Unit>
+    fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit>
     suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot>
 }
 
@@ -285,6 +369,15 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         return multipartRequest(method, url, accessToken, metadata, bytes, mimeType ?: PHOTO_BLOB_MIME_TYPE) {
             DriveApiResult.Success(Unit)
         }
+    }
+
+    override fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit> {
+        val fileId = findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
+        return request(
+            method = "DELETE",
+            url = "https://www.googleapis.com/drive/v3/files/$fileId",
+            accessToken = accessToken,
+        ) { DriveApiResult.Success(Unit) }
     }
 
     private fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
@@ -441,9 +534,10 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
 internal const val REMOTE_PHOTO_MISSING_BLOB_PATH = "remote_photo_missing_blob_path"
 internal const val REMOTE_PHOTO_MISSING = "remote_photo_missing"
 internal const val REMOTE_PHOTO_UNREADABLE = "remote_photo_unreadable"
+private val PHOTO_TOMBSTONE_ENTITY_TYPES = setOf("garment", "clothing_item", "item")
 
 private fun sanitizePhotoRestoreMessage(message: String): String = message
-    .replace(Regex("/[^\\s:]+(?:/[^\\s:]+)+"), "<path-redacted>")
+    .replace(Regex("(^|\\s)(/[^\\s:]+(?:/[^\\s:]+)+)")) { match -> "${match.groupValues[1]}<path-redacted>" }
     .take(240)
 
 private fun ByteArray.sha256Hex(): String = java.security.MessageDigest.getInstance("SHA-256")

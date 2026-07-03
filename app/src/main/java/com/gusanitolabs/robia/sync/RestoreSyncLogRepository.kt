@@ -29,6 +29,8 @@ data class RestoreSyncLogEvent(
     val description: String? = null,
     val blobPath: String? = null,
     val byteSize: Long? = null,
+    val mimeType: String? = null,
+    val byteMagic: String? = null,
     val contentHash: String? = null,
     val restoredUriStatus: String? = null,
     val placeholderReason: String? = null,
@@ -52,6 +54,8 @@ data class RestoreSyncLogEvent(
         description?.let { append(" description=\"").append(sanitizeLogField(it)).append('"') }
         blobPath?.let { append(" blob_path=").append(sanitizeLogField(it)) }
         byteSize?.let { append(" byte_size=").append(it) }
+        mimeType?.let { append(" mime_type=").append(sanitizeLogField(it)) }
+        byteMagic?.let { append(" byte_magic=").append(sanitizeHash(it).take(24)) }
         contentHash?.let { append(" content_hash=").append(sanitizeHash(it)) }
         restoredUriStatus?.let { append(" restored_uri_status=").append(sanitizeLogField(it)) }
         placeholderReason?.let { append(" placeholder_reason=").append(sanitizeLogField(it)) }
@@ -117,7 +121,7 @@ internal fun sanitizeLogField(value: String): String = value
     .replace(Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"), "<email-redacted>")
     .replace(Regex("content://[^\\s]+"), "content://<redacted>")
     .replace(Regex("file://[^\\s]+"), "file://<redacted>")
-    .replace(Regex("/[^\\s:]+(?:/[^\\s:]+)+"), "<path-redacted>")
+    .replace(Regex("(^|\\s)(/[^\\s:]+(?:/[^\\s:]+)+)")) { match -> "${match.groupValues[1]}<path-redacted>" }
     .replace('\n', ' ')
     .replace('\r', ' ')
     .take(MAX_LOG_FIELD_CHARS)
