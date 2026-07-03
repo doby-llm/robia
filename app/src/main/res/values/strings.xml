@@ -35,6 +35,14 @@
     <string name="cloud_restore_status_failed">Restore failed. Local data was not changed.</string>
     <string name="cloud_restore_status_rolled_back">Restore failed and was rolled back. Your previous local wardrobe is intact.</string>
     <string name="cloud_restore_retry">Retry restore</string>
+    <string name="cloud_restore_diagnostics_title">Restore diagnostics</string>
+    <string name="cloud_restore_diagnostics_summary">Copy these safe technical details and send them to Doby if restore keeps failing.</string>
+    <string name="cloud_restore_diagnostics_show">Show details</string>
+    <string name="cloud_restore_diagnostics_hide">Hide details</string>
+    <string name="cloud_restore_diagnostics_copy">Copy diagnostics</string>
+    <string name="cloud_restore_diagnostics_copied">Restore diagnostics copied</string>
+    <string name="cloud_restore_diagnostics_content_description">Safe restore diagnostics text</string>
+    <string name="cloud_restore_diagnostics_copy_content_description">Copy safe restore diagnostics to clipboard</string>
     <string name="cloud_restore_phase_preparing">Preparing restore</string>
     <string name="cloud_restore_phase_downloading">Downloading snapshot</string>
     <string name="cloud_restore_phase_validating">Validating wardrobe data</string>

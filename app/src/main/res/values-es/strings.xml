@@ -35,6 +35,14 @@
     <string name="cloud_restore_status_failed">La restauración falló. Los datos locales no se modificaron.</string>
     <string name="cloud_restore_status_rolled_back">La restauración falló y se revirtió. Tu armario local anterior está intacto.</string>
     <string name="cloud_restore_retry">Reintentar restauración</string>
+    <string name="cloud_restore_diagnostics_title">Diagnóstico de restauración</string>
+    <string name="cloud_restore_diagnostics_summary">Copia estos detalles técnicos seguros y envíaselos a Doby si la restauración sigue fallando.</string>
+    <string name="cloud_restore_diagnostics_show">Mostrar detalles</string>
+    <string name="cloud_restore_diagnostics_hide">Ocultar detalles</string>
+    <string name="cloud_restore_diagnostics_copy">Copiar diagnóstico</string>
+    <string name="cloud_restore_diagnostics_copied">Diagnóstico de restauración copiado</string>
+    <string name="cloud_restore_diagnostics_content_description">Texto seguro del diagnóstico de restauración</string>
+    <string name="cloud_restore_diagnostics_copy_content_description">Copiar diagnóstico seguro de restauración al portapapeles</string>
     <string name="cloud_restore_phase_preparing">Preparando restauración</string>
     <string name="cloud_restore_phase_downloading">Descargando instantánea</string>
     <string name="cloud_restore_phase_validating">Validando datos del armario</string>

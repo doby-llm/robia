@@ -68,12 +68,85 @@ data class CloudRestoreProgress(
     val totalWork: Int,
     val status: CloudRestoreStatus = CloudRestoreStatus.Running,
     val message: String? = null,
+    val diagnostics: CloudRestoreDiagnostics? = null,
 ) {
     val remainingWork: Int
         get() = (totalWork - completedWork).coerceAtLeast(0)
 
     val progressFraction: Float?
         get() = totalWork.takeIf { it > 0 }?.let { completedWork.coerceIn(0, it).toFloat() / it }
+}
+
+/**
+ * Sanitized, support-copyable telemetry for opaque Drive restore failures.
+ *
+ * Keep this model free of tokens, email addresses, file paths, garment names/notes, raw JSON, and
+ * photo bytes. Values are aggregate counts, schema/revision metadata, and bounded error summaries.
+ */
+data class CloudRestoreDiagnostics(
+    val correlationId: String,
+    val attempt: Int,
+    val startedAtEpochMillis: Long,
+    val elapsedMillis: Long,
+    val phase: CloudRestorePhase,
+    val status: CloudRestoreStatus,
+    val localWasEmpty: Boolean? = null,
+    val localGarmentCount: Int? = null,
+    val localPhotoCount: Int? = null,
+    val remoteSchemaVersion: Int? = null,
+    val remoteRevision: Long? = null,
+    val remoteGarmentCount: Int? = null,
+    val remotePhotoCount: Int? = null,
+    val remoteFavoriteFieldPresent: Boolean? = null,
+    val remoteFavoriteMarkedCount: Int? = null,
+    val restoredGarmentCount: Int? = null,
+    val guardedPhotoCount: Int? = null,
+    val localSaveCompleted: Boolean? = null,
+    val finalUploadAttempted: Boolean? = null,
+    val finalUploadSucceeded: Boolean? = null,
+    val lastExceptionClass: String? = null,
+    val lastExceptionMessage: String? = null,
+    val failureCategory: String? = null,
+    val events: List<String> = emptyList(),
+) {
+    fun toCopyText(): String = buildString {
+        appendLine("robia_restore_diagnostics")
+        appendLine("correlation_id: $correlationId")
+        appendLine("attempt: $attempt")
+        appendLine("started_at_epoch_ms: $startedAtEpochMillis")
+        appendLine("elapsed_ms: $elapsedMillis")
+        appendLine("phase: ${phase.name}")
+        appendLine("status: ${status.name}")
+        appendNullable("local_was_empty", localWasEmpty)
+        appendNullable("local_garment_count", localGarmentCount)
+        appendNullable("local_photo_count", localPhotoCount)
+        appendNullable("remote_schema_version", remoteSchemaVersion)
+        appendNullable("remote_revision", remoteRevision)
+        appendNullable("remote_garment_count", remoteGarmentCount)
+        appendNullable("remote_photo_count", remotePhotoCount)
+        appendNullable("remote_favorite_field_present", remoteFavoriteFieldPresent)
+        appendNullable("remote_favorite_marked_count", remoteFavoriteMarkedCount)
+        appendNullable("restored_garment_count", restoredGarmentCount)
+        appendNullable("guarded_photo_count", guardedPhotoCount)
+        appendNullable("local_save_completed", localSaveCompleted)
+        appendNullable("final_upload_attempted", finalUploadAttempted)
+        appendNullable("final_upload_succeeded", finalUploadSucceeded)
+        appendNullable("last_exception_class", lastExceptionClass)
+        appendNullable("last_exception_message", lastExceptionMessage)
+        appendNullable("failure_category", failureCategory)
+        if (events.isNotEmpty()) {
+            appendLine("events:")
+            events.takeLast(MAX_DIAGNOSTIC_EVENTS).forEach { event -> appendLine("- $event") }
+        }
+    }
+
+    private fun StringBuilder.appendNullable(name: String, value: Any?) {
+        if (value != null) appendLine("$name: $value")
+    }
+
+    private companion object {
+        const val MAX_DIAGNOSTIC_EVENTS = 32
+    }
 }
 
 enum class CloudRestorePhase {

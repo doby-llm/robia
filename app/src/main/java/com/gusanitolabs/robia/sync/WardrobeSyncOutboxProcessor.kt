@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync
 
+import android.util.Log
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
@@ -33,6 +34,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.util.UUID
 
 /**
  * Durable Room/DataStore-backed sync outbox processor.
@@ -56,6 +59,7 @@ class WardrobeSyncOutboxProcessor(
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
     private var hasAttemptedFreshInstallRestore = false
+    private var restoreAttemptCounter = 0
 
     override val state: Flow<WardrobeSyncState> = mutableState
 
@@ -209,106 +213,143 @@ class WardrobeSyncOutboxProcessor(
     }
 
     private suspend fun syncRestoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot): SyncCycleResult {
-        restoreProgress.value = CloudRestoreProgress(
+        val diagnostics = RestoreDiagnosticsTracker(
+            attempt = ++restoreAttemptCounter,
+            localSnapshot = localSnapshot,
+        )
+        diagnostics.event("account_configured")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Preparing,
             completedWork = RESTORE_STEP_AUTH_CHECKED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.event("local_snapshot_exported")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Preparing,
             completedWork = RESTORE_STEP_LOCAL_EXPORTED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.event("remote_snapshot_fetch_started")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Downloading,
             completedWork = RESTORE_STEP_REMOTE_FETCH_STARTED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
         val remoteSnapshot = when (val result = driveRepository.fetchSnapshot()) {
-            is DriveSyncResult.Success -> result.value.sortedDeterministically()
+            is DriveSyncResult.Success -> {
+                val snapshot = result.value.sortedDeterministically()
+                diagnostics.recordRemoteSnapshot(snapshot)
+                snapshot
+            }
             is DriveSyncResult.Blocked -> {
-                restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Downloading)
+                diagnostics.recordBlocked(result.reason, result.message)
+                restoreProgress.value = diagnostics.progress(
+                    phase = CloudRestorePhase.Downloading,
+                    completedWork = CloudRestorePhase.Downloading.completedRestoreWork,
+                    status = CloudRestoreStatus.Failed,
+                )
                 return SyncCycleResult.Blocked(result.reason)
             }
             is DriveSyncResult.Failure -> {
-                restoreProgress.value = offlineRestoreProgress(CloudRestorePhase.Downloading)
+                diagnostics.recordFailure(result.throwable)
+                restoreProgress.value = diagnostics.progress(
+                    phase = CloudRestorePhase.Downloading,
+                    completedWork = CloudRestorePhase.Downloading.completedRestoreWork,
+                    status = CloudRestoreStatus.Offline,
+                )
                 return SyncCycleResult.Failure
             }
         }
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.event("remote_snapshot_fetched")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Downloading,
             completedWork = RESTORE_STEP_REMOTE_FETCHED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.event("remote_snapshot_validating")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Validating,
             completedWork = RESTORE_STEP_VALIDATED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
         if (remoteSnapshot.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) {
-            restoreProgress.value = failedRestoreProgress(CloudRestorePhase.Validating)
+            diagnostics.recordFailure(
+                IllegalStateException(
+                    "Remote schema ${remoteSnapshot.metadata.schemaVersion} is newer than supported schema $WARDROBE_SYNC_SCHEMA_VERSION.",
+                ),
+                category = "schema_version",
+            )
+            restoreProgress.value = diagnostics.progress(
+                phase = CloudRestorePhase.Validating,
+                completedWork = CloudRestorePhase.Validating.completedRestoreWork,
+                status = CloudRestoreStatus.Failed,
+            )
             return SyncCycleResult.Failure
         }
 
         val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot)
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.event("snapshots_merged")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Validating,
             completedWork = RESTORE_STEP_MERGED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.event("local_import_started")
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,
             completedWork = RESTORE_STEP_IMPORT_STARTED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
         val importResult = if (mergedSnapshot.hasUserData()) {
             snapshotRepository.importSnapshot(mergedSnapshot)
         } else {
             ImportSnapshotResult(restoredGarmentCount = 0, guardedPhotoCount = 0)
         }
+        diagnostics.recordLocalSave(importResult)
 
-        restoreProgress.value = CloudRestoreProgress(
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,
             completedWork = RESTORE_STEP_LOCAL_SAVED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
-        restoreProgress.value = CloudRestoreProgress(
+        diagnostics.recordFinalUploadAttempted()
+        restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Uploading,
             completedWork = RESTORE_STEP_UPLOAD_STARTED,
-            totalWork = RESTORE_TOTAL_STEPS,
         )
         if (!mergedSnapshot.hasUserData()) {
-            restoreProgress.value = CloudRestoreProgress(
+            diagnostics.recordFinalUploadSkipped()
+            restoreProgress.value = diagnostics.progress(
                 phase = CloudRestorePhase.Complete,
                 completedWork = RESTORE_TOTAL_STEPS,
-                totalWork = RESTORE_TOTAL_STEPS,
             )
             return SyncCycleResult.NoBackup
         }
 
-        return when (driveRepository.upsertSnapshot(mergedSnapshot)) {
+        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot)) {
             is DriveSyncResult.Success -> {
-                restoreProgress.value = CloudRestoreProgress(
+                diagnostics.recordFinalUploadSucceeded()
+                restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Uploading,
                     completedWork = RESTORE_STEP_FINAL_SYNCED,
-                    totalWork = RESTORE_TOTAL_STEPS,
                 )
-                restoreProgress.value = CloudRestoreProgress(
+                restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
-                    totalWork = RESTORE_TOTAL_STEPS,
                 )
                 SyncCycleResult.Success(importResult.guardedPhotoCount)
             }
-            is DriveSyncResult.Blocked,
-            is DriveSyncResult.Failure -> {
+            is DriveSyncResult.Blocked -> {
+                diagnostics.recordBlocked(uploadResult.reason, uploadResult.message, finalUploadSucceeded = false)
                 // The fresh-install restore is already transactionally applied at this point. A final
                 // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
                 // user on the progress overlay even though the restored wardrobe is safe locally.
-                restoreProgress.value = CloudRestoreProgress(
+                restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
-                    totalWork = RESTORE_TOTAL_STEPS,
+                )
+                SyncCycleResult.Success(importResult.guardedPhotoCount)
+            }
+            is DriveSyncResult.Failure -> {
+                diagnostics.recordFailure(uploadResult.throwable, finalUploadSucceeded = false)
+                // The fresh-install restore is already transactionally applied at this point. A final
+                // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
+                // user on the progress overlay even though the restored wardrobe is safe locally.
+                restoreProgress.value = diagnostics.progress(
+                    phase = CloudRestorePhase.Complete,
+                    completedWork = RESTORE_TOTAL_STEPS,
                 )
                 SyncCycleResult.Success(importResult.guardedPhotoCount)
             }
@@ -419,6 +460,140 @@ private data class WardrobeSyncStateInputs(
     val needsPhotoRestoreAttention: Boolean,
 )
 
+private class RestoreDiagnosticsTracker(
+    private val attempt: Int,
+    localSnapshot: WardrobeSyncSnapshot,
+    private val startedAtEpochMillis: Long = System.currentTimeMillis(),
+    private val correlationId: String = UUID.randomUUID().toString().take(8),
+) {
+    private var localSaveCompleted: Boolean? = null
+    private var finalUploadAttempted: Boolean? = null
+    private var finalUploadSucceeded: Boolean? = null
+    private var remoteSnapshot: WardrobeSyncSnapshot? = null
+    private var restoredGarmentCount: Int? = null
+    private var guardedPhotoCount: Int? = null
+    private var lastExceptionClass: String? = null
+    private var lastExceptionMessage: String? = null
+    private var failureCategory: String? = null
+    private val events = mutableListOf<String>()
+
+    private val localWasEmpty = localSnapshot.isFreshInstallSnapshot()
+    private val localGarmentCount = localSnapshot.garments.size
+    private val localPhotoCount = localSnapshot.photos.size
+
+    init {
+        event("restore_started")
+        event("local_empty=$localWasEmpty garments=$localGarmentCount photos=$localPhotoCount")
+    }
+
+    fun recordRemoteSnapshot(snapshot: WardrobeSyncSnapshot) {
+        remoteSnapshot = snapshot
+        event(
+            "remote_snapshot schema=${snapshot.metadata.schemaVersion} revision=${snapshot.metadata.revision} " +
+                "garments=${snapshot.garments.size} photos=${snapshot.photos.size} favorites=${snapshot.garments.count { it.isFavorite }}",
+        )
+    }
+
+    fun recordLocalSave(result: ImportSnapshotResult) {
+        localSaveCompleted = true
+        restoredGarmentCount = result.restoredGarmentCount
+        guardedPhotoCount = result.guardedPhotoCount
+        event("local_save_completed restored_garments=${result.restoredGarmentCount} guarded_photos=${result.guardedPhotoCount}")
+    }
+
+    fun recordFinalUploadAttempted() {
+        finalUploadAttempted = true
+        event("final_upload_attempted")
+    }
+
+    fun recordFinalUploadSucceeded() {
+        finalUploadSucceeded = true
+        event("final_upload_succeeded")
+    }
+
+    fun recordFinalUploadSkipped() {
+        finalUploadAttempted = false
+        finalUploadSucceeded = null
+        event("final_upload_skipped_no_remote_user_data")
+    }
+
+    fun recordBlocked(
+        reason: DriveSyncDisabledReason,
+        message: String,
+        finalUploadSucceeded: Boolean? = this.finalUploadSucceeded,
+    ) {
+        this.finalUploadSucceeded = finalUploadSucceeded
+        lastExceptionClass = reason.name
+        lastExceptionMessage = sanitizeDiagnosticMessage(message)
+        failureCategory = "blocked_${reason.name}"
+        event("blocked reason=${reason.name}")
+    }
+
+    fun recordFailure(
+        throwable: Throwable,
+        category: String = throwable.diagnosticCategory(),
+        finalUploadSucceeded: Boolean? = this.finalUploadSucceeded,
+    ) {
+        this.finalUploadSucceeded = finalUploadSucceeded
+        lastExceptionClass = throwable::class.java.simpleName
+        lastExceptionMessage = sanitizeDiagnosticMessage(throwable.message ?: throwable.toString())
+        failureCategory = category
+        event("failure class=$lastExceptionClass category=$failureCategory")
+    }
+
+    fun event(name: String) {
+        val sanitizedName = sanitizeDiagnosticMessage(name)
+        events += sanitizedName
+        if (events.size > MAX_EVENTS) events.removeAt(0)
+        Log.d(DIAGNOSTIC_LOG_TAG, "[$correlationId] $sanitizedName")
+    }
+
+    fun progress(
+        phase: CloudRestorePhase,
+        completedWork: Int,
+        status: CloudRestoreStatus = CloudRestoreStatus.Running,
+        message: String? = null,
+    ): CloudRestoreProgress = CloudRestoreProgress(
+        phase = phase,
+        completedWork = completedWork,
+        totalWork = RESTORE_TOTAL_STEPS,
+        status = status,
+        message = message,
+        diagnostics = snapshot(phase, status),
+    )
+
+    private fun snapshot(phase: CloudRestorePhase, status: CloudRestoreStatus): CloudRestoreDiagnostics = CloudRestoreDiagnostics(
+        correlationId = correlationId,
+        attempt = attempt,
+        startedAtEpochMillis = startedAtEpochMillis,
+        elapsedMillis = System.currentTimeMillis() - startedAtEpochMillis,
+        phase = phase,
+        status = status,
+        localWasEmpty = localWasEmpty,
+        localGarmentCount = localGarmentCount,
+        localPhotoCount = localPhotoCount,
+        remoteSchemaVersion = remoteSnapshot?.metadata?.schemaVersion,
+        remoteRevision = remoteSnapshot?.metadata?.revision,
+        remoteGarmentCount = remoteSnapshot?.garments?.size,
+        remotePhotoCount = remoteSnapshot?.photos?.size,
+        remoteFavoriteFieldPresent = remoteSnapshot?.let { true },
+        remoteFavoriteMarkedCount = remoteSnapshot?.garments?.count { it.isFavorite },
+        restoredGarmentCount = restoredGarmentCount,
+        guardedPhotoCount = guardedPhotoCount,
+        localSaveCompleted = localSaveCompleted,
+        finalUploadAttempted = finalUploadAttempted,
+        finalUploadSucceeded = finalUploadSucceeded,
+        lastExceptionClass = lastExceptionClass,
+        lastExceptionMessage = lastExceptionMessage,
+        failureCategory = failureCategory,
+        events = events.toList(),
+    )
+
+    private companion object {
+        const val MAX_EVENTS = 32
+    }
+}
+
 private enum class SyncDirection {
     UploadLocalSnapshot,
     RestoreRemoteThenUpload,
@@ -467,20 +642,6 @@ private fun MainColorSyncRecord.toDomain(): MainColor = MainColor(
     hex = hex,
     sortOrder = sortOrder,
     isDefault = isDefault,
-)
-
-private fun failedRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgress = CloudRestoreProgress(
-    phase = phase,
-    completedWork = phase.completedRestoreWork,
-    totalWork = RESTORE_TOTAL_STEPS,
-    status = CloudRestoreStatus.Failed,
-)
-
-private fun offlineRestoreProgress(phase: CloudRestorePhase): CloudRestoreProgress = CloudRestoreProgress(
-    phase = phase,
-    completedWork = phase.completedRestoreWork,
-    totalWork = RESTORE_TOTAL_STEPS,
-    status = CloudRestoreStatus.Offline,
 )
 
 private val CloudRestoreProgress.isRetryableTerminal: Boolean
@@ -593,6 +754,32 @@ private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> 
         .values
         .map { group -> group.maxWith(compareBy<T> { revision(it) }.thenBy { records.indexOf(it) }) }
 
+private fun Throwable.diagnosticCategory(): String = when (this) {
+    is java.net.SocketTimeoutException -> "network_timeout"
+    is java.net.UnknownHostException -> "network_dns"
+    is java.net.ConnectException -> "network_connect"
+    is IOException -> message?.httpStatusCategory() ?: "network_io"
+    else -> message?.httpStatusCategory() ?: "exception"
+}
+
+private fun String.httpStatusCategory(): String? {
+    val status = Regex("HTTP\\s+(\\d{3})").find(this)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return null
+    return when (status) {
+        401, 403 -> "http_auth_$status"
+        404 -> "http_not_found"
+        in 400..499 -> "http_client_$status"
+        in 500..599 -> "http_server_$status"
+        else -> "http_$status"
+    }
+}
+
+private fun sanitizeDiagnosticMessage(message: String): String = message
+    .replace(Regex("Bearer\\s+[A-Za-z0-9._~+/=-]+", RegexOption.IGNORE_CASE), "Bearer <redacted>")
+    .replace(Regex("(?i)(access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)=\\S+"), "\$1=<redacted>")
+    .replace(Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"), "<email-redacted>")
+    .replace(Regex("/[^\\s:]+(?:/[^\\s:]+)+"), "<path-redacted>")
+    .take(MAX_DIAGNOSTIC_MESSAGE_CHARS)
+
 private val garmentEntityTypes = setOf("garment", "clothing_item", "item")
 private val categoryEntityTypes = setOf("tag_category", "category")
 private val tagEntityTypes = setOf("garment_tag", "tag")
@@ -609,3 +796,5 @@ private const val RESTORE_STEP_LOCAL_SAVED = 8
 private const val RESTORE_STEP_UPLOAD_STARTED = 9
 private const val RESTORE_STEP_FINAL_SYNCED = 11
 private const val RESTORE_TOTAL_STEPS = 12
+private const val DIAGNOSTIC_LOG_TAG = "RobiaRestoreDiagnostics"
+private const val MAX_DIAGNOSTIC_MESSAGE_CHARS = 240

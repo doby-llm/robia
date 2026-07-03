@@ -21,6 +21,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -108,12 +111,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -1290,6 +1296,14 @@ private fun CloudRestoreProgressOverlay(
     onRetry: () -> Unit,
 ) {
     val statusText = cloudRestoreStatusText(progress)
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val diagnostics = progress.diagnostics
+    val diagnosticsText = diagnostics?.toCopyText().orEmpty()
+    val diagnosticsCopiedMessage = stringResource(R.string.cloud_restore_diagnostics_copied)
+    var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
+        mutableStateOf(progress.status != CloudRestoreStatus.Running)
+    }
     val animatedProgress by animateFloatAsState(
         targetValue = progress.progressFraction?.coerceIn(0f, 1f) ?: 0f,
         animationSpec = tween(durationMillis = 450),
@@ -1306,6 +1320,7 @@ private fun CloudRestoreProgressOverlay(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1349,6 +1364,18 @@ private fun CloudRestoreProgressOverlay(
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+            if (diagnostics != null) {
+                CloudRestoreDiagnosticsPanel(
+                    diagnosticsText = diagnosticsText,
+                    expanded = showDiagnostics,
+                    onToggleExpanded = { showDiagnostics = !showDiagnostics },
+                    onCopy = {
+                        clipboardManager.setText(AnnotatedString(diagnosticsText))
+                        Toast.makeText(context, diagnosticsCopiedMessage, Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
             if (progress.status != CloudRestoreStatus.Running) {
                 Button(
                     onClick = onRetry,
@@ -1356,6 +1383,75 @@ private fun CloudRestoreProgressOverlay(
                 ) {
                     Text(stringResource(R.string.cloud_restore_retry))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudRestoreDiagnosticsPanel(
+    diagnosticsText: String,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val diagnosticsContentDescription = stringResource(R.string.cloud_restore_diagnostics_content_description)
+    val copyContentDescription = stringResource(R.string.cloud_restore_diagnostics_copy_content_description)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.cloud_restore_diagnostics_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(onClick = onToggleExpanded) {
+                    Text(
+                        stringResource(
+                            if (expanded) {
+                                R.string.cloud_restore_diagnostics_hide
+                            } else {
+                                R.string.cloud_restore_diagnostics_show
+                            },
+                        ),
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.cloud_restore_diagnostics_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (expanded) {
+                SelectionContainer {
+                    Text(
+                        text = diagnosticsText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = diagnosticsContentDescription },
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onCopy,
+                modifier = Modifier.semantics {
+                    contentDescription = copyContentDescription
+                },
+            ) {
+                Text(stringResource(R.string.cloud_restore_diagnostics_copy))
             }
         }
     }
