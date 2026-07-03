@@ -304,8 +304,11 @@ fun RobiaApp(
     syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
     onRequestCloudSetup: () -> Unit = {},
 ) {
-    val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
-    val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
+    val loadedSettings: RobiaSettings? by settingsRepository.settings.collectAsState(initial = null)
+    val loadedSyncState: WardrobeSyncState? by syncGateway.state.collectAsState(initial = null)
+    val settings = loadedSettings ?: RobiaSettings()
+    val syncState = loadedSyncState ?: WardrobeSyncState.notConfigured()
+    val isCloudSetupStateReady = loadedSettings != null && loadedSyncState != null
     val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
     val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
@@ -323,6 +326,7 @@ fun RobiaApp(
         RobiaShell(
             settings = displaySettings,
             syncState = displaySyncState,
+            isCloudSetupStateReady = isCloudSetupStateReady,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
             clothingItems = clothingItems,
             tagCategories = tagCategories,
@@ -496,6 +500,7 @@ private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean 
 private fun RobiaShell(
     settings: RobiaSettings,
     syncState: WardrobeSyncState,
+    isCloudSetupStateReady: Boolean,
     pendingGarmentSyncCount: Int,
     clothingItems: List<ClothingItem>,
     tagCategories: List<TagCategory>,
@@ -555,11 +560,13 @@ private fun RobiaShell(
     }
 
     LaunchedEffect(
+        isCloudSetupStateReady,
         settings.driveSyncConnectionStatus,
         settings.cloudSetupPromptInteracted,
         cloudSetupGuard.isFirstRunRecommendation,
     ) {
-        if (!settings.cloudSetupPromptInteracted &&
+        if (isCloudSetupStateReady &&
+            !settings.cloudSetupPromptInteracted &&
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
@@ -2965,6 +2972,7 @@ private fun RobiaAppPreview() {
         RobiaShell(
             settings = RobiaSettings(),
             syncState = WardrobeSyncState.notConfigured(),
+            isCloudSetupStateReady = true,
             pendingGarmentSyncCount = 0,
             clothingItems = emptyList(),
             tagCategories = emptyList(),
