@@ -112,8 +112,9 @@ class GoogleDriveWardrobeRepository(
     ): DriveSyncResult<WardrobeSyncSnapshot> {
         val hydratedPhotos = snapshot.photos.map { photo ->
             val blobPath = photo.blobPath.takeIf(String::isNotBlank)
-                ?: return DriveSyncResult.Failure(
-                    IllegalStateException("Garment photo ${photo.garmentId} is missing a Drive blob path."),
+                ?: return@map photo.guardedRestore(
+                    category = REMOTE_PHOTO_MISSING_BLOB_PATH,
+                    message = "Garment photo ${photo.garmentId} is missing a Drive blob path.",
                 )
             when (val blobResult = api.fetchBlob(accessToken, blobPath)) {
                 is DriveApiResult.Success -> runCatching {
@@ -132,12 +133,15 @@ class GoogleDriveWardrobeRepository(
                         contentHash = photo.contentHash ?: blobResult.value.bytes.sha256Hex(),
                     )
                 }.getOrElse { throwable ->
-                    return DriveSyncResult.Failure(
-                        IllegalStateException("Garment photo ${photo.garmentId} could not be restored from Drive.", throwable),
+                    photo.guardedRestore(
+                        category = REMOTE_PHOTO_UNREADABLE,
+                        message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} is corrupt or unreadable.",
+                        cause = throwable,
                     )
                 }
-                is DriveApiResult.NotFound -> return DriveSyncResult.Failure(
-                    IllegalStateException("Drive photo blob $blobPath was not found for garment ${photo.garmentId}."),
+                is DriveApiResult.NotFound -> photo.guardedRestore(
+                    category = REMOTE_PHOTO_MISSING,
+                    message = "Drive photo blob $blobPath was not found for garment ${photo.garmentId}.",
                 )
                 is DriveApiResult.Failure -> return DriveSyncResult.Failure(blobResult.throwable)
                 is DriveApiResult.Unauthorized -> return authBlocked()
@@ -145,6 +149,18 @@ class GoogleDriveWardrobeRepository(
         }
         return DriveSyncResult.Success(snapshot.copy(photos = hydratedPhotos).sortedDeterministically())
     }
+
+    private fun GarmentPhotoRecord.guardedRestore(
+        category: String,
+        message: String,
+        cause: Throwable? = null,
+    ): GarmentPhotoRecord = copy(
+        restoredLocalUri = null,
+        restoreFailureCategory = category,
+        restoreFailureMessage = sanitizePhotoRestoreMessage(
+            if (cause?.message.isNullOrBlank()) message else "$message Cause: ${cause?.message}",
+        ),
+    )
 
     private fun uploadPhotoBlobs(
         accessToken: String,
@@ -154,6 +170,9 @@ class GoogleDriveWardrobeRepository(
             val blobPath = photo.blobPath.takeIf(String::isNotBlank) ?: return DriveSyncResult.Failure(
                 IllegalStateException("Garment photo ${photo.garmentId} is missing a Drive blob path."),
             )
+            if (photo.restoreFailureCategory != null && photo.restoredLocalUri.isNullOrBlank()) {
+                return@map photo
+            }
             val sourceUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: photo.localUri
             val blob = runCatching { ClothingImageStore.readImageBlob(context, Uri.parse(sourceUri)) }
                 .getOrNull()
@@ -418,6 +437,14 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         const val READ_TIMEOUT_MILLIS = 30_000
     }
 }
+
+internal const val REMOTE_PHOTO_MISSING_BLOB_PATH = "remote_photo_missing_blob_path"
+internal const val REMOTE_PHOTO_MISSING = "remote_photo_missing"
+internal const val REMOTE_PHOTO_UNREADABLE = "remote_photo_unreadable"
+
+private fun sanitizePhotoRestoreMessage(message: String): String = message
+    .replace(Regex("/[^\\s:]+(?:/[^\\s:]+)+"), "<path-redacted>")
+    .take(240)
 
 private fun ByteArray.sha256Hex(): String = java.security.MessageDigest.getInstance("SHA-256")
     .digest(this)

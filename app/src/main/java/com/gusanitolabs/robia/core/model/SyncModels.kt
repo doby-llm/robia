@@ -168,6 +168,10 @@ data class GarmentPhotoRecord(
     val updatedAtEpochMillis: Long = 0L,
     /** Local private-storage URI materialized from a Drive blob during restore. Not serialized to Drive. */
     val restoredLocalUri: String? = null,
+    /** Local-only guarded-restore reason when Drive metadata restored but the photo blob did not. */
+    val restoreFailureCategory: String? = null,
+    /** Local-only sanitized guarded-restore detail; never serialized back to Drive. */
+    val restoreFailureMessage: String? = null,
 )
 
 data class SyncTombstoneRecord(

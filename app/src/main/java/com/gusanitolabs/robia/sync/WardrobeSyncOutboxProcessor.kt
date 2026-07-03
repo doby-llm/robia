@@ -236,6 +236,7 @@ class WardrobeSyncOutboxProcessor(
             is DriveSyncResult.Success -> {
                 val snapshot = result.value.sortedDeterministically()
                 diagnostics.recordRemoteSnapshot(snapshot)
+                diagnostics.recordGuardedRemotePhotos(snapshot.guardedPhotoRestoreIssues())
                 snapshot
             }
             is DriveSyncResult.Blocked -> {
@@ -252,7 +253,7 @@ class WardrobeSyncOutboxProcessor(
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Downloading,
                     completedWork = CloudRestorePhase.Downloading.completedRestoreWork,
-                    status = CloudRestoreStatus.Offline,
+                    status = result.throwable.restoreFetchFailureStatus(),
                 )
                 return SyncCycleResult.Failure
             }
@@ -499,6 +500,18 @@ private class RestoreDiagnosticsTracker(
         restoredGarmentCount = result.restoredGarmentCount
         guardedPhotoCount = result.guardedPhotoCount
         event("local_save_completed restored_garments=${result.restoredGarmentCount} guarded_photos=${result.guardedPhotoCount}")
+    }
+
+    fun recordGuardedRemotePhotos(issues: List<PhotoRestoreIssue>) {
+        if (issues.isEmpty()) return
+        guardedPhotoCount = issues.size
+        failureCategory = PHOTO_RESTORE_GUARDED_CATEGORY
+        lastExceptionClass = "RemotePhotoRestoreGuarded"
+        lastExceptionMessage = sanitizeDiagnosticMessage(
+            "${issues.size} remote photo blob(s) missing/corrupt/unreadable; restored garment metadata without those photos.",
+        )
+        val categoryCounts = issues.groupingBy(PhotoRestoreIssue::category).eachCount().toSortedMap()
+        event("guarded_remote_photos total=${issues.size} categories=$categoryCounts")
     }
 
     fun recordFinalUploadAttempted() {
@@ -772,6 +785,26 @@ private fun String.httpStatusCategory(): String? {
         else -> "http_$status"
     }
 }
+
+internal data class PhotoRestoreIssue(
+    val garmentId: String,
+    val category: String,
+    val message: String?,
+)
+
+internal const val PHOTO_RESTORE_GUARDED_CATEGORY = "remote_photo_guarded"
+
+internal fun WardrobeSyncSnapshot.guardedPhotoRestoreIssues(): List<PhotoRestoreIssue> = photos.mapNotNull { photo ->
+    val category = photo.restoreFailureCategory?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+    PhotoRestoreIssue(
+        garmentId = photo.garmentId,
+        category = category,
+        message = photo.restoreFailureMessage,
+    )
+}
+
+internal fun Throwable.restoreFetchFailureStatus(): CloudRestoreStatus =
+    if (diagnosticCategory().startsWith("network_")) CloudRestoreStatus.Offline else CloudRestoreStatus.Failed
 
 private fun sanitizeDiagnosticMessage(message: String): String = message
     .replace(Regex("Bearer\\s+[A-Za-z0-9._~+/=-]+", RegexOption.IGNORE_CASE), "Bearer <redacted>")
