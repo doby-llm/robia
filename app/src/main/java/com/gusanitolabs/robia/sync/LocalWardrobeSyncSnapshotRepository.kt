@@ -73,7 +73,7 @@ class LocalWardrobeSyncSnapshotRepository(
      * silently restoring broken file/content URIs until binary blob download is implemented.
      */
     suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
-        val deterministicSnapshot = snapshot.sortedDeterministically()
+        val deterministicSnapshot = snapshot.sortedDeterministically().withoutTombstonedTaxonomy()
         val remotePhotoByGarmentId = deterministicSnapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
         val remoteColorsByGarmentId = deterministicSnapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
         val restoredItems = deterministicSnapshot.garments.map { garment ->
@@ -262,5 +262,44 @@ private fun SyncTombstoneRecord.toEntity(): SyncTombstoneEntity = SyncTombstoneE
     deletedAtEpochMillis = deletedAtEpochMillis,
     revision = revision,
 )
+
+private fun WardrobeSyncSnapshot.withoutTombstonedTaxonomy(): WardrobeSyncSnapshot {
+    val tombstoneByCategoryId = tombstones
+        .filter { tombstone -> tombstone.entityType in categoryEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
+    val tombstoneByTagId = tombstones
+        .filter { tombstone -> tombstone.entityType in tagEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
+    val tombstoneByMainColorId = tombstones
+        .filter { tombstone -> tombstone.entityType in mainColorEntityTypes }
+        .associateBy(SyncTombstoneRecord::entityId)
+
+    val activeCategories = taxonomies.categories
+        .filterNot { category -> (tombstoneByCategoryId[category.id]?.revision ?: Long.MIN_VALUE) > category.revision }
+    val activeCategoryIds = activeCategories.map(TagCategorySyncRecord::id).toSet()
+    val activeTags = taxonomies.tags
+        .filterNot { tag -> (tombstoneByTagId[tag.id]?.revision ?: Long.MIN_VALUE) > tag.revision }
+        .filter { tag -> tag.categoryId in activeCategoryIds }
+    val activeTagIds = activeTags.map(TagSyncRecord::id).toSet()
+    val activeMainColors = taxonomies.mainColors
+        .filterNot { color -> (tombstoneByMainColorId[color.id]?.revision ?: Long.MIN_VALUE) > color.revision }
+    val activeMainColorIds = activeMainColors.map(MainColorSyncRecord::id).toSet()
+
+    return copy(
+        taxonomies = WardrobeTaxonomySnapshot(
+            categories = activeCategories,
+            tags = activeTags,
+            mainColors = activeMainColors,
+        ),
+        garmentTags = garmentTags.filter { record -> record.tagId in activeTagIds },
+        garmentColors = garmentColors.filter { record ->
+            record.paletteColorId?.let(activeMainColorIds::contains) != false
+        },
+    ).sortedDeterministically()
+}
+
+private val categoryEntityTypes = setOf("tag_category", "category")
+private val tagEntityTypes = setOf("garment_tag", "tag")
+private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
 private fun GarmentPhotoRecord.restorableLocalUri(): String? = null
