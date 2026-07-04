@@ -132,10 +132,17 @@ class WardrobeSyncOutboxProcessor(
     private suspend fun restoreFreshInstallOnceIfNeeded() {
         if (hasAttemptedFreshInstallRestore || restoreProgress.value?.isRetryableTerminal == true) return
 
+        val settings = settingsRepository.settings.first()
+        if (settings.driveFreshInstallRestoreAttempted) {
+            hasAttemptedFreshInstallRestore = true
+            return
+        }
+
         val localSnapshot = snapshotRepository.exportSnapshot()
         if (!localSnapshot.isFreshInstallSnapshot()) {
             // Once the phone has user wardrobe data, it is authoritative and must not be overwritten.
             hasAttemptedFreshInstallRestore = true
+            settingsRepository.markDriveFreshInstallRestoreAttempted()
             return
         }
 
@@ -146,6 +153,7 @@ class WardrobeSyncOutboxProcessor(
         // leaving a fresh install permanently empty/placeholder-only.
         if (restoreProgress.value?.isRetryableTerminal != true) {
             hasAttemptedFreshInstallRestore = true
+            settingsRepository.markDriveFreshInstallRestoreAttempted()
         }
     }
 

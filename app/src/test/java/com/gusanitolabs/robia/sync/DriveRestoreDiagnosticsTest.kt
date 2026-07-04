@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
+import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -9,6 +10,39 @@ import java.io.IOException
 import java.net.UnknownHostException
 
 class DriveRestoreDiagnosticsTest {
+    @Test
+    fun deletedPhotoBlobPurgeCandidates_includeGarmentTombstonesAndExcludeActiveBlobs() {
+        val snapshot = WardrobeSyncSnapshot(
+            photos = listOf(
+                GarmentPhotoRecord(
+                    garmentId = "active-garment",
+                    localUri = "content://local/active.jpg",
+                    blobPath = "photos/active-garment/original",
+                ),
+            ),
+            tombstones = listOf(
+                SyncTombstoneRecord(
+                    entityType = "garment",
+                    entityId = "deleted garment",
+                    deletedAtEpochMillis = 10L,
+                    revision = 11L,
+                ),
+                SyncTombstoneRecord(
+                    entityType = "garment",
+                    entityId = "active-garment",
+                    deletedAtEpochMillis = 12L,
+                    revision = 13L,
+                ),
+            ),
+        )
+
+        val candidates = snapshot.deletedPhotoBlobPurgeCandidates()
+
+        assertTrue(candidates.contains("photos/deleted_garment/original"))
+        assertTrue(candidates.contains("photos/deleted garment/original"))
+        assertTrue(candidates.none { it == "photos/active-garment/original" })
+    }
+
     @Test
     fun guardedPhotoRestoreIssues_reportsMissingAndUnreadableRemotePhotoBlobs() {
         val snapshot = WardrobeSyncSnapshot(

@@ -300,18 +300,21 @@ class GoogleDriveWardrobeRepository(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
     ): DriveSyncResult<Unit> {
-        val activeBlobPaths = snapshot.photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
         val deletedGarmentIds = snapshot.tombstones
             .filter { it.entityType in PHOTO_TOMBSTONE_ENTITY_TYPES }
             .map { it.entityId }
             .distinct()
-        val purgeCandidates = deletedGarmentIds
-            .flatMap { garmentId ->
-                listOf(
-                    DriveFolderNaming.photoBlobPath(garmentId),
-                    "photos/$garmentId/original",
-                )
+        val prefixCandidates = mutableListOf<String>()
+        deletedGarmentIds.forEach { garmentId ->
+            when (val result = api.listBlobPathsWithPrefix(accessToken, DriveFolderNaming.photoBlobPrefix(garmentId))) {
+                is DriveApiResult.Success -> prefixCandidates += result.value
+                is DriveApiResult.NotFound -> Unit
+                is DriveApiResult.Unauthorized -> return authBlocked()
+                is DriveApiResult.Failure -> return DriveSyncResult.Failure(result.throwable)
             }
+        }
+        val activeBlobPaths = snapshot.photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
+        val purgeCandidates = (snapshot.deletedPhotoBlobPurgeCandidates() + prefixCandidates)
             .filterNot(activeBlobPaths::contains)
             .distinct()
         purgeCandidates.forEach { blobPath ->
@@ -345,6 +348,7 @@ private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
 interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
     fun fetchBlob(accessToken: String, blobPath: String): DriveApiResult<DriveBlob>
+    fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>>
     fun upsertBlob(accessToken: String, blobPath: String, bytes: ByteArray, mimeType: String?): DriveApiResult<Unit>
     fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit>
     suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot>
@@ -450,6 +454,26 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
+    override fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> {
+        val escapedPrefix = blobPathPrefix.toDriveQueryLiteral()
+        val query = "name contains '$escapedPrefix' and trashed=false"
+        val url = "https://www.googleapis.com/drive/v3/files" +
+            "?spaces=appDataFolder&fields=files(name)&pageSize=1000&q=" +
+            URLEncoder.encode(query, "UTF-8")
+        return request(
+            method = "GET",
+            url = url,
+            accessToken = accessToken,
+        ) { body ->
+            val files = JSONObject(body).optJSONArray("files") ?: JSONArray()
+            DriveApiResult.Success(
+                (0 until files.length()).mapNotNull { index ->
+                    files.optJSONObject(index)?.optString("name")?.takeIf { name -> name.startsWith(blobPathPrefix) }
+                },
+            )
+        }
+    }
+
     override fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit> {
         val fileId = findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
         return request(
@@ -464,7 +488,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
     private fun findFileIdByName(accessToken: String, name: String): String? = findFileByName(accessToken, name)?.id
 
     private fun findFileByName(accessToken: String, name: String): DriveFileMetadata? {
-        val escapedName = name.replace("\\", "\\\\").replace("'", "\\'")
+        val escapedName = name.toDriveQueryLiteral()
         val query = "name='$escapedName' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
             "?spaces=appDataFolder&fields=files(id,name,modifiedTime,mimeType,size)&pageSize=1&orderBy=modifiedTime%20desc&q=" +
@@ -489,6 +513,8 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
         return (result as? DriveApiResult.Success)?.value
     }
+
+    private fun String.toDriveQueryLiteral(): String = replace("\\", "\\\\").replace("'", "\\'")
 
     private fun <T> request(
         method: String,
@@ -628,6 +654,22 @@ internal const val REMOTE_PHOTO_MISSING_BLOB_PATH = "remote_photo_missing_blob_p
 internal const val REMOTE_PHOTO_MISSING = "remote_photo_missing"
 internal const val REMOTE_PHOTO_UNREADABLE = "remote_photo_unreadable"
 private val PHOTO_TOMBSTONE_ENTITY_TYPES = setOf("garment", "clothing_item", "item")
+
+internal fun WardrobeSyncSnapshot.deletedPhotoBlobPurgeCandidates(): List<String> {
+    val activeBlobPaths = photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
+    return tombstones
+        .filter { it.entityType in PHOTO_TOMBSTONE_ENTITY_TYPES }
+        .map { it.entityId }
+        .distinct()
+        .flatMap { garmentId ->
+            listOf(
+                DriveFolderNaming.photoBlobPath(garmentId),
+                "photos/$garmentId/original",
+            )
+        }
+        .filterNot(activeBlobPaths::contains)
+        .distinct()
+}
 
 private fun sanitizePhotoRestoreMessage(message: String): String = message
     .replace(Regex("(^|\\s)(/[^\\s:]+(?:/[^\\s:]+)+)")) { match -> "${match.groupValues[1]}<path-redacted>" }

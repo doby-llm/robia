@@ -34,8 +34,12 @@ class LocalWardrobeSyncSnapshotRepository(
     private val syncTombstoneDao: SyncTombstoneDao,
 ) {
     suspend fun exportSnapshot(generatedAtEpochMillis: Long = System.currentTimeMillis()): WardrobeSyncSnapshot {
-        val items = wardrobeDao.getAllItemsForSync().map { itemWithTags -> itemWithTags.item }
+        val items = wardrobeDao.getAllItemsForSync()
+            .map { itemWithTags -> itemWithTags.item }
+            .filterNot(ClothingItemEntity::isArchived)
+        val activeItemIds = items.map(ClothingItemEntity::id).toSet()
         val itemTagRefs = wardrobeDao.getItemTagRefsForSync()
+            .filter { ref -> ref.clothingItemId in activeItemIds }
         val categories = tagDao.getCategoriesForSync()
         val tags = tagDao.getTagsForSync()
         val colors = tagDao.getMainColorsForSync()

@@ -335,6 +335,7 @@
     <string name="browse_selection_count">%1$d ausgewählt</string>
     <string name="content_delete_selected_items">Ausgewählte Kleidungsstücke löschen</string>
     <string name="content_select_garment">Kleidungsstück auswählen</string>
+    <string name="content_cloud_sync_active">Cloud-Synchronisierung läuft</string>
     <string name="category_style">Stil</string>
     <string name="category_season">Jahreszeiten</string>
     <string name="category_occasion">Anlässe</string>

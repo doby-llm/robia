@@ -85,4 +85,5 @@ data class RobiaSettings(
     val developerModeEnabled: Boolean = false,
     val driveSyncConnectionStatus: DriveSyncConnectionStatus = DriveSyncConnectionStatus.NotConfigured,
     val cloudSetupPromptInteracted: Boolean = false,
+    val driveFreshInstallRestoreAttempted: Boolean = false,
 )

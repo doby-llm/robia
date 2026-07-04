@@ -450,6 +450,11 @@ private fun WardrobeSyncState.reconcileWithSettings(
     this
 }
 
+private val WardrobeSyncState.hasVisibleSyncActivity: Boolean
+    get() = pendingOperationCount > 0 ||
+        connectionStatus == DriveSyncConnectionStatus.Syncing ||
+        restoreProgress?.status == CloudRestoreStatus.Running
+
 @Composable
 private fun LocalizedRobiaContent(
     languagePreference: LanguagePreference,
@@ -579,12 +584,12 @@ private fun RobiaShell(
     }
 
     LaunchedEffect(
-        settings.driveSyncConnectionStatus,
-        settings.cloudSetupPromptInteracted,
+        displaySettings.driveSyncConnectionStatus,
+        displaySettings.cloudSetupPromptInteracted,
         cloudSetupGuard.isFirstRunRecommendation,
     ) {
-        if (!settings.cloudSetupPromptInteracted &&
-            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
+        if (!displaySettings.cloudSetupPromptInteracted &&
+            displaySettings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
             onCloudSetupPromptInteracted()
@@ -1044,6 +1049,7 @@ private fun RobiaShell(
             colorReviewChangeSet = activeColorReviewChangeSet,
             developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
             restoreSyncLogText = restoreSyncLogText,
+            syncState = displaySyncState,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
@@ -1589,6 +1595,7 @@ private fun RobiaNavHost(
     colorReviewChangeSet: ColorPaletteChangeSet?,
     developerModeEnabled: Boolean,
     restoreSyncLogText: String,
+    syncState: WardrobeSyncState,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -1623,6 +1630,7 @@ private fun RobiaNavHost(
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             activeFilterCount = filters.activeFilterCount,
+            showSyncActivity = syncState.hasVisibleSyncActivity,
             selectedItemIds = selectedBrowseItemIds,
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
@@ -1731,6 +1739,7 @@ private fun BrowseWardrobeScreen(
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    showSyncActivity: Boolean,
     selectedItemIds: Set<String>,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
@@ -1754,6 +1763,7 @@ private fun BrowseWardrobeScreen(
             FilterBar(
                 hasActiveFilters = hasActiveFilters,
                 activeFilterCount = activeFilterCount,
+                showSyncActivity = showSyncActivity,
                 onFiltersClick = onFiltersClick,
             )
         }
@@ -1789,6 +1799,7 @@ private fun BrowseWardrobeScreen(
 private fun FilterBar(
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    showSyncActivity: Boolean,
     onFiltersClick: () -> Unit,
 ) {
     val filterLabel = if (hasActiveFilters) {
@@ -1813,6 +1824,16 @@ private fun FilterBar(
             label = { Text(stringResource(R.string.all_filters)) },
             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
+        Spacer(modifier = Modifier.weight(1f))
+        if (showSyncActivity) {
+            val syncDescription = stringResource(R.string.content_cloud_sync_active)
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(22.dp)
+                    .semantics { contentDescription = syncDescription },
+                strokeWidth = 2.dp,
+            )
+        }
         Spacer(
             modifier = Modifier
                 .height(24.dp)

@@ -56,6 +56,9 @@ interface WardrobeDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTagRefs(refs: List<ClothingItemTagCrossRef>)
 
+    @Upsert
+    suspend fun upsertSyncTombstones(tombstones: List<SyncTombstoneEntity>)
+
     @Query("SELECT id FROM garment_tags WHERE id IN (:ids)")
     suspend fun existingTagIds(ids: List<String>): List<String>
 
@@ -64,6 +67,22 @@ interface WardrobeDao {
 
     @Query("UPDATE clothing_items SET is_archived = 1, updated_at_epoch_millis = :updatedAtEpochMillis, sync_status = 'Queued', sync_revision = :updatedAtEpochMillis, sync_dirty_at_epoch_millis = :updatedAtEpochMillis, sync_failure_message = NULL WHERE id IN (:itemIds)")
     suspend fun archiveItems(itemIds: List<String>, updatedAtEpochMillis: Long)
+
+    @Transaction
+    suspend fun archiveItemWithTombstone(itemId: String, updatedAtEpochMillis: Long, tombstone: SyncTombstoneEntity) {
+        archiveItem(itemId, updatedAtEpochMillis)
+        upsertSyncTombstones(listOf(tombstone))
+    }
+
+    @Transaction
+    suspend fun archiveItemsWithTombstones(
+        itemIds: List<String>,
+        updatedAtEpochMillis: Long,
+        tombstones: List<SyncTombstoneEntity>,
+    ) {
+        archiveItems(itemIds, updatedAtEpochMillis)
+        upsertSyncTombstones(tombstones)
+    }
 
     @Transaction
     suspend fun upsertItemWithTags(item: ClothingItemEntity, tagIds: List<String>) {

@@ -335,6 +335,7 @@
     <string name="browse_selection_count">%1$d seleccionadas</string>
     <string name="content_delete_selected_items">Eliminar prendas seleccionadas</string>
     <string name="content_select_garment">Seleccionar prenda</string>
+    <string name="content_cloud_sync_active">Sincronización con la nube en curso</string>
     <string name="category_style">Estilo</string>
     <string name="category_season">Estaciones</string>
     <string name="category_occasion">Ocasiones</string>

@@ -335,6 +335,7 @@
     <string name="browse_selection_count">%1$d selected</string>
     <string name="content_delete_selected_items">Delete selected garments</string>
     <string name="content_select_garment">Select garment</string>
+    <string name="content_cloud_sync_active">Cloud sync in progress</string>
     <string name="category_style">Style</string>
     <string name="category_season">Seasons</string>
     <string name="category_occasion">Occasions</string>

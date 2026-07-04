@@ -48,11 +48,22 @@ class LocalWardrobeRepository(
     }
 
     override suspend fun archiveItem(id: String, updatedAtEpochMillis: Long) {
-        wardrobeDao.archiveItem(id, updatedAtEpochMillis)
+        wardrobeDao.archiveItemWithTombstone(
+            itemId = id,
+            updatedAtEpochMillis = updatedAtEpochMillis,
+            tombstone = syncTombstone(entityType = "garment", entityId = id, deletedAtEpochMillis = updatedAtEpochMillis),
+        )
     }
 
     override suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long) {
-        wardrobeDao.archiveItems(ids, updatedAtEpochMillis)
+        if (ids.isEmpty()) return
+        wardrobeDao.archiveItemsWithTombstones(
+            itemIds = ids,
+            updatedAtEpochMillis = updatedAtEpochMillis,
+            tombstones = ids.map { id ->
+                syncTombstone(entityType = "garment", entityId = id, deletedAtEpochMillis = updatedAtEpochMillis)
+            },
+        )
     }
 
     override suspend fun markGarmentSyncing(id: String, revision: Long): Boolean =
@@ -217,14 +228,17 @@ private fun GarmentTag.toEntity(): GarmentTagEntity = GarmentTagEntity(id, categ
 private fun MainColorEntity.toDomain(): MainColor = MainColor(id, name, hex, sortOrder, isDefault)
 private fun MainColor.toEntity(): MainColorEntity = MainColorEntity(id, name, hex, sortOrder, isDefault)
 
-private fun syncTombstone(entityType: String, entityId: String): SyncTombstoneEntity {
-    val deletedAtEpochMillis = System.currentTimeMillis()
+private fun syncTombstone(
+    entityType: String,
+    entityId: String,
+    deletedAtEpochMillis: Long = System.currentTimeMillis(),
+): SyncTombstoneEntity {
     return SyncTombstoneEntity(
         id = "$entityType:$entityId",
         entityType = entityType,
         entityId = entityId,
         deletedAtEpochMillis = deletedAtEpochMillis,
-        revision = deletedAtEpochMillis,
+        revision = deletedAtEpochMillis + 1,
     )
 }
 

@@ -18,6 +18,7 @@ interface SettingsRepository {
     suspend fun setDeveloperModeEnabled(enabled: Boolean)
     suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus)
     suspend fun markCloudSetupPromptInteracted()
+    suspend fun markDriveFreshInstallRestoreAttempted()
 }
 
 class DataStoreSettingsRepository(
@@ -31,6 +32,7 @@ class DataStoreSettingsRepository(
             developerModeEnabled = developerModeUnlocked && (preferences[developerModeEnabledKey] ?: false),
             driveSyncConnectionStatus = preferences[driveSyncConnectionStatusKey].toDriveSyncConnectionStatus(),
             cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false,
+            driveFreshInstallRestoreAttempted = preferences[driveFreshInstallRestoreAttemptedKey] ?: false,
         )
     }
 
@@ -62,12 +64,21 @@ class DataStoreSettingsRepository(
     override suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus) {
         dataStore.edit { preferences ->
             preferences[driveSyncConnectionStatusKey] = status.name
+            if (status != DriveSyncConnectionStatus.NotConfigured) {
+                preferences[cloudSetupPromptInteractedKey] = true
+            }
         }
     }
 
     override suspend fun markCloudSetupPromptInteracted() {
         dataStore.edit { preferences ->
             preferences[cloudSetupPromptInteractedKey] = true
+        }
+    }
+
+    override suspend fun markDriveFreshInstallRestoreAttempted() {
+        dataStore.edit { preferences ->
+            preferences[driveFreshInstallRestoreAttemptedKey] = true
         }
     }
 
@@ -83,5 +94,6 @@ class DataStoreSettingsRepository(
         val developerModeEnabledKey = booleanPreferencesKey("developer_mode_enabled")
         val driveSyncConnectionStatusKey = stringPreferencesKey("drive_sync_connection_status")
         val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
+        val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
     }
 }
