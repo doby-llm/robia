@@ -25,6 +25,7 @@ import com.gusanitolabs.robia.data.WardrobeRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -51,7 +52,7 @@ class WardrobeSyncOutboxProcessor(
     private val snapshotRepository: LocalWardrobeSyncSnapshotRepository,
     private val driveRepository: DriveWardrobeRepository,
     private val restoreSyncLogRepository: RestoreSyncLogRepository = NoOpRestoreSyncLogRepository,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : WardrobeSyncGateway {
     private val mutex = Mutex()
@@ -59,6 +60,7 @@ class WardrobeSyncOutboxProcessor(
     private val needsPhotoRestoreAttention = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
+    private var scheduledWorkJob: Job? = null
     private var hasAttemptedFreshInstallRestore = false
     private var restoreAttemptCounter = 0
 
@@ -92,21 +94,31 @@ class WardrobeSyncOutboxProcessor(
                 )
             }.collect { nextState ->
                 mutableState.value = nextState
-                if ((nextState.connectionStatus == DriveSyncConnectionStatus.Connected ||
-                        nextState.connectionStatus == DriveSyncConnectionStatus.NeedsAttention) &&
-                    nextState.pendingOperationCount > 0
-                ) {
-                    processPendingGarments()
-                } else if (nextState.connectionStatus == DriveSyncConnectionStatus.Connected &&
-                    nextState.pendingOperationCount == 0 &&
-                    !isProcessing.value
-                ) {
-                    restoreFreshInstallOnceIfNeeded()
-                } else if (nextState.pendingOperationCount > 0) {
-                    markBlockedForCurrentSetupState(nextState.connectionStatus)
-                }
+                scheduleWorkFor(nextState)
             }
         }
+    }
+
+    private fun scheduleWorkFor(nextState: WardrobeSyncState) {
+        when {
+            (nextState.connectionStatus == DriveSyncConnectionStatus.Connected ||
+                nextState.connectionStatus == DriveSyncConnectionStatus.NeedsAttention) &&
+                nextState.pendingOperationCount > 0 &&
+                !isProcessing.value -> launchSyncWork { processPendingGarments() }
+
+            nextState.connectionStatus == DriveSyncConnectionStatus.Connected &&
+                nextState.pendingOperationCount == 0 &&
+                !isProcessing.value -> launchSyncWork { restoreFreshInstallOnceIfNeeded() }
+
+            nextState.pendingOperationCount > 0 -> launchSyncWork {
+                markBlockedForCurrentSetupState(nextState.connectionStatus)
+            }
+        }
+    }
+
+    private fun launchSyncWork(block: suspend () -> Unit) {
+        if (scheduledWorkJob?.isActive == true) return
+        scheduledWorkJob = scope.launch(dispatcher) { block() }
     }
 
     override suspend fun enqueue(operation: WardrobeSyncOperation) {

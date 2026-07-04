@@ -1824,6 +1824,12 @@ private fun FilterBar(
             label = { Text(stringResource(R.string.all_filters)) },
             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
+        Spacer(
+            modifier = Modifier
+                .height(24.dp)
+                .width(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
         Spacer(modifier = Modifier.weight(1f))
         if (showSyncActivity) {
             val syncDescription = stringResource(R.string.content_cloud_sync_active)
@@ -1834,12 +1840,6 @@ private fun FilterBar(
                 strokeWidth = 2.dp,
             )
         }
-        Spacer(
-            modifier = Modifier
-                .height(24.dp)
-                .width(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant),
-        )
     }
 }
 
