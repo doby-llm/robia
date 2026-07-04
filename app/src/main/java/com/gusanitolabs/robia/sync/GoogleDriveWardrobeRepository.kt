@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
@@ -132,63 +133,77 @@ class GoogleDriveWardrobeRepository(
                 )
             val fetchStartedEvents = photo.restoreFetchStartedEvents(description = garmentNameById[photo.garmentId])
             when (val blobResult = api.fetchBlob(accessToken, blobPath)) {
-                is DriveApiResult.Success -> runCatching {
+                is DriveApiResult.Success -> {
                     val bytes = blobResult.value.bytes
                     val fetchEvents = fetchStartedEvents + blobResult.value.restoreFetchResultEvents(photo)
-                    val restoredUri = ClothingImageStore.writeRestoredImageBlob(
-                        context = context,
-                        bytes = bytes,
-                        blobPath = blobPath,
-                        mimeType = photo.mimeType,
-                    )
-                    val readBackBytes = context.contentResolver.openInputStream(restoredUri)?.use { input -> input.readBytes() }
+                    val byteDecode = decodeImageBytes(bytes)
+                    val restoredUriResult = runCatching {
+                        ClothingImageStore.writeRestoredImageBlob(
+                            context = context,
+                            bytes = bytes,
+                            blobPath = blobPath,
+                            mimeType = photo.mimeType,
+                        )
+                    }
+                    val restoredUri = restoredUriResult.getOrNull()
+                    val readBackBytes = restoredUri?.let { uri ->
+                        runCatching { context.contentResolver.openInputStream(uri)?.use { input -> input.readBytes() } }.getOrNull()
+                    }
+                    val readBackDecode = readBackBytes?.let(::decodeImageBytes)
+                    val uriDimensions = restoredUri?.let { uri -> runCatching { ClothingImageStore.readImageDimensions(context, uri) }.getOrNull() }
                     val localWriteEvent = photo.localWriteDiagnosticEvent(
                         targetExtension = photo.mimeType.toPhotoExtension() ?: blobPath.substringAfterLast('.', "jpg"),
                         fileLength = bytes.size.toLong(),
                         readBackBytes = readBackBytes,
+                        writeFailure = restoredUriResult.exceptionOrNull(),
                     )
-                    val dimensions = ClothingImageStore.readImageDimensions(context, restoredUri)
-                    check(dimensions != null) {
-                        "Restored Drive blob is not a readable garment image " +
-                            "mime=${photo.mimeType ?: "unknown"} magic=${bytes.magicHex()} byteSize=${bytes.size}."
-                    }
-                    val decodeEvent = photo.decodeDiagnosticEvent(
-                        decoderPath = "BitmapFactory",
-                        width = dimensions.first,
-                        height = dimensions.second,
-                    )
-                    photo.copy(
-                        restoredLocalUri = restoredUri.toString(),
-                        byteSize = bytes.size.toLong(),
-                        contentHash = bytes.sha256Hex(),
-                        byteMagic = bytes.magicHex(),
-                        decodedWidth = dimensions.first,
-                        decodedHeight = dimensions.second,
-                        restoreFailureCategory = null,
-                        restoreFailureMessage = null,
-                        restoreDiagnosticEvents = fetchEvents + localWriteEvent + decodeEvent +
-                            photo.importDiagnosticEvent(persistedPhotoUriPresent = true, placeholderReason = null),
-                    )
-                }.getOrElse { throwable ->
-                    val bytes = blobResult.value.bytes
-                    val fetchEvents = fetchStartedEvents + blobResult.value.restoreFetchResultEvents(photo)
-                    val failureDecodeEvent = photo.decodeDiagnosticEvent(
-                        decoderPath = "BitmapFactory",
-                        failure = throwable::class.java.simpleName + ": " + (throwable.message ?: "unknown"),
-                    )
-                    photo.guardedRestore(
-                        category = REMOTE_PHOTO_UNREADABLE,
-                        message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} is corrupt or unreadable " +
-                            "mime=${photo.mimeType ?: "unknown"} magic=${bytes.magicHex()} byteSize=${bytes.size}.",
-                        cause = throwable,
-                        byteSize = bytes.size.toLong(),
-                        contentHash = bytes.sha256Hex(),
-                        byteMagic = bytes.magicHex(),
-                        restoreDiagnosticEvents = fetchEvents + failureDecodeEvent + photo.importDiagnosticEvent(
-                            persistedPhotoUriPresent = false,
-                            placeholderReason = REMOTE_PHOTO_UNREADABLE,
+                    val decodeEvents = listOf(
+                        photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.byteArray", result = byteDecode),
+                        photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.readbackBytes", result = readBackDecode),
+                        photo.decodeDiagnosticEvent(
+                            decoderPath = "BitmapFactory.contentUriBounds",
+                            width = uriDimensions?.first,
+                            height = uriDimensions?.second,
+                            failure = if (uriDimensions == null) "contentUriBounds returned no dimensions" else null,
                         ),
                     )
+                    val authoritativeDecode = readBackDecode?.takeIf { it.isSuccess }
+                        ?: byteDecode.takeIf { it.isSuccess }
+                    if (restoredUri != null && authoritativeDecode != null) {
+                        photo.copy(
+                            restoredLocalUri = restoredUri.toString(),
+                            byteSize = bytes.size.toLong(),
+                            contentHash = bytes.sha256Hex(),
+                            byteMagic = bytes.magicHex(),
+                            decodedWidth = authoritativeDecode.width,
+                            decodedHeight = authoritativeDecode.height,
+                            restoreFailureCategory = null,
+                            restoreFailureMessage = null,
+                            restoreDiagnosticEvents = fetchEvents + localWriteEvent + decodeEvents +
+                                photo.importDiagnosticEvent(persistedPhotoUriPresent = true, placeholderReason = null),
+                        )
+                    } else {
+                        val failure = restoredUriResult.exceptionOrNull()
+                        val message = when {
+                            restoredUri == null -> "write_failed:${failure?.diagnosticSummary() ?: "unknown"}"
+                            byteDecode.failure != null -> byteDecode.failure
+                            readBackDecode?.failure != null -> readBackDecode.failure
+                            else -> "decode_failed: no decoder produced dimensions"
+                        }
+                        photo.guardedRestore(
+                            category = REMOTE_PHOTO_UNREADABLE,
+                            message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} fetched but could not be decoded/imported " +
+                                "mime=${photo.mimeType ?: "unknown"} magic=${bytes.magicHex()} byteSize=${bytes.size} detail=$message.",
+                            cause = failure,
+                            byteSize = bytes.size.toLong(),
+                            contentHash = bytes.sha256Hex(),
+                            byteMagic = bytes.magicHex(),
+                            restoreDiagnosticEvents = fetchEvents + localWriteEvent + decodeEvents + photo.importDiagnosticEvent(
+                                persistedPhotoUriPresent = false,
+                                placeholderReason = REMOTE_PHOTO_UNREADABLE,
+                            ),
+                        )
+                    }
                 }
                 is DriveApiResult.NotFound -> photo.guardedRestore(
                     category = REMOTE_PHOTO_MISSING,
@@ -616,7 +631,7 @@ private val PHOTO_TOMBSTONE_ENTITY_TYPES = setOf("garment", "clothing_item", "it
 
 private fun sanitizePhotoRestoreMessage(message: String): String = message
     .replace(Regex("(^|\\s)(/[^\\s:]+(?:/[^\\s:]+)+)")) { match -> "${match.groupValues[1]}<path-redacted>" }
-    .take(240)
+    .take(1_200)
 
 internal fun GarmentPhotoRecord.restoreFetchStartedEvents(description: String?): List<String> = listOf(
     buildString {
@@ -645,8 +660,10 @@ internal fun DriveBlob.restoreFetchResultEvents(photo: GarmentPhotoRecord): List
         append(" bytesLength=${bytes.size}")
         contentType?.let { append(" contentType=$it") }
         contentLength?.let { append(" contentLength=$it") }
-        append(" sha256Prefix=${bytes.sha256Hex().take(12)}")
-        append(" magic=${bytes.magicHex().take(32)}")
+        append(" sha256=${bytes.sha256Hex()}")
+        append(" first32=${bytes.firstHex(32)}")
+        append(" last32=${bytes.lastHex(32)}")
+        append(" png=${bytes.pngSanityLabel()}")
     },
 )
 
@@ -660,11 +677,17 @@ internal fun GarmentPhotoRecord.localWriteDiagnosticEvent(
     targetExtension: String,
     fileLength: Long,
     readBackBytes: ByteArray?,
+    writeFailure: Throwable? = null,
 ): String = buildString {
     append("photo_restore_local_write_result garmentId=$garmentId blobPath=$blobPath")
     append(" targetExtension=$targetExtension fileLength=$fileLength")
     append(" readbackByteCount=${readBackBytes?.size ?: 0}")
-    readBackBytes?.let { append(" readbackHash=${it.sha256Hex().take(12)}") }
+    readBackBytes?.let {
+        append(" readbackHash=${it.sha256Hex()}")
+        append(" readbackFirst32=${it.firstHex(32)}")
+        append(" readbackLast32=${it.lastHex(32)}")
+    }
+    writeFailure?.let { append(" writeFailure=\"").append(it.diagnosticSummary()).append('"') }
 }
 
 internal fun GarmentPhotoRecord.decodeDiagnosticEvent(
@@ -681,6 +704,20 @@ internal fun GarmentPhotoRecord.decodeDiagnosticEvent(
     }
 }
 
+private fun GarmentPhotoRecord.decodeDiagnosticEvent(
+    decoderPath: String,
+    result: ImageDecodeResult?,
+): String = if (result == null) {
+    decodeDiagnosticEvent(decoderPath = decoderPath, failure = "not_attempted")
+} else {
+    decodeDiagnosticEvent(
+        decoderPath = decoderPath,
+        width = result.width,
+        height = result.height,
+        failure = result.failure,
+    )
+}
+
 internal fun GarmentPhotoRecord.importDiagnosticEvent(
     persistedPhotoUriPresent: Boolean,
     placeholderReason: String?,
@@ -688,6 +725,41 @@ internal fun GarmentPhotoRecord.importDiagnosticEvent(
     append("photo_restore_import_result garmentId=$garmentId blobPath=$blobPath")
     append(" persistedPhotoUriPresent=$persistedPhotoUriPresent")
     placeholderReason?.let { append(" placeholderReason=$it") }
+}
+
+private data class ImageDecodeResult(
+    val width: Int? = null,
+    val height: Int? = null,
+    val failure: String? = null,
+) {
+    val isSuccess: Boolean = width != null && width > 0 && height != null && height > 0
+}
+
+private fun decodeImageBytes(bytes: ByteArray): ImageDecodeResult = runCatching {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    if (options.outWidth > 0 && options.outHeight > 0) {
+        ImageDecodeResult(width = options.outWidth, height = options.outHeight)
+    } else {
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        if (bitmap != null) {
+            try {
+                ImageDecodeResult(width = bitmap.width, height = bitmap.height)
+            } finally {
+                bitmap.recycle()
+            }
+        } else {
+            ImageDecodeResult(failure = "BitmapFactory returned null bounds=${options.outWidth}x${options.outHeight}")
+        }
+    }
+}.getOrElse { throwable -> ImageDecodeResult(failure = throwable.diagnosticSummary()) }
+
+private fun Throwable.diagnosticSummary(): String = buildString {
+    append(this@diagnosticSummary::class.java.name)
+    message?.takeIf(String::isNotBlank)?.let { append(": ").append(it) }
+    stackTrace.firstOrNull()?.let { top ->
+        append(" at ").append(top.className).append('.').append(top.methodName).append(':').append(top.lineNumber)
+    }
 }
 
 private fun String?.toPhotoExtension(): String? = when (this?.lowercase()) {
@@ -710,6 +782,28 @@ private fun Int.httpStatusCategoryLabel(): String = when (this) {
 private fun ByteArray.sha256Hex(): String = java.security.MessageDigest.getInstance("SHA-256")
     .digest(this)
     .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+private fun ByteArray.firstHex(byteCount: Int): String = take(byteCount).joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+private fun ByteArray.lastHex(byteCount: Int): String = takeLast(byteCount).joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+internal fun ByteArray.pngSanityLabel(): String {
+    val signature = byteArrayOf(
+        0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    )
+    val hasSignature = size >= signature.size && signature.indices.all { index -> this[index] == signature[index] }
+    if (!hasSignature) return "not_png_signature"
+    if (size < 12) return "png_truncated_before_iend"
+    val hasIend = this[size - 12] == 0.toByte() &&
+        this[size - 11] == 0.toByte() &&
+        this[size - 10] == 0.toByte() &&
+        this[size - 9] == 0.toByte() &&
+        this[size - 8] == 0x49.toByte() &&
+        this[size - 7] == 0x45.toByte() &&
+        this[size - 6] == 0x4e.toByte() &&
+        this[size - 5] == 0x44.toByte()
+    return if (hasIend) "png_signature_iend_present" else "png_signature_iend_missing"
+}
 
 private object DriveSnapshotJson {
     fun encode(snapshot: WardrobeSyncSnapshot): String {

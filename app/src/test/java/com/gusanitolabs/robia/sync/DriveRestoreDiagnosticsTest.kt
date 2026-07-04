@@ -44,11 +44,13 @@ class DriveRestoreDiagnosticsTest {
             issues.map(PhotoRestoreIssue::category),
         )
         assertEquals(listOf("garment-missing", "garment-unreadable"), issues.map(PhotoRestoreIssue::garmentId))
+        assertEquals("guarded_remote_photos count=2", snapshot.finalUploadGuardReasonAfterRestore())
     }
 
     @Test
     fun guardedPhotoRestoreIssues_isEmptyForNoRemoteBackupOrFullyRestoredSnapshot() {
         assertTrue(WardrobeSyncSnapshot().guardedPhotoRestoreIssues().isEmpty())
+        assertEquals(null, WardrobeSyncSnapshot().finalUploadGuardReasonAfterRestore())
 
         val fullyRestored = WardrobeSyncSnapshot(
             photos = listOf(
@@ -61,6 +63,7 @@ class DriveRestoreDiagnosticsTest {
         )
 
         assertTrue(fullyRestored.guardedPhotoRestoreIssues().isEmpty())
+        assertEquals(null, fullyRestored.finalUploadGuardReasonAfterRestore())
     }
 
     @Test
@@ -149,10 +152,72 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(events.any { it.contains("fileIdHash=") })
         assertTrue(events.none { it.contains("drive-file-secret-id") })
         assertTrue(events.any { it.contains("photo_restore_fetch_result") && it.contains("httpStatus=200") })
-        assertTrue(events.any { it.contains("bytesLength=6") && it.contains("magic=ffd8ffe00010") })
-        assertTrue(events.any { it.contains("photo_restore_local_write_result") && it.contains("readbackByteCount=6") })
+        assertTrue(events.any { it.contains("bytesLength=6") && it.contains("first32=ffd8ffe00010") })
+        assertTrue(events.any { it.contains("photo_restore_local_write_result") && it.contains("readbackByteCount=6") && it.contains("readbackHash=") })
         assertTrue(events.any { it.contains("photo_restore_decode_result") && it.contains("width=640 height=480") })
         assertTrue(events.any { it.contains("photo_restore_import_result") && it.contains("persistedPhotoUriPresent=true") })
+    }
+
+    @Test
+    fun perPhotoRestoreDiagnostics_includeFullFetchedPngEvidence() {
+        val photo = GarmentPhotoRecord(
+            garmentId = "garment-restored",
+            localUri = "content://old-device/restored.png",
+            blobPath = "photos/garment-restored/cropped-subject.png",
+            mimeType = "image/png",
+        )
+        val bytes = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+            0xae.toByte(), 0x42, 0x60, 0x82.toByte(),
+        )
+
+        val events = DriveBlob(
+            bytes = bytes,
+            httpStatusCode = 200,
+            contentType = "image/png",
+            contentLength = bytes.size.toLong(),
+        ).restoreFetchResultEvents(photo) +
+            photo.localWriteDiagnosticEvent(
+                targetExtension = "png",
+                fileLength = bytes.size.toLong(),
+                readBackBytes = bytes,
+            )
+
+        assertTrue(events.any { it.contains("sha256=") && !it.contains("sha256Prefix=") })
+        assertTrue(events.any { it.contains("first32=89504e470d0a1a0a0000000049454e44ae426082") })
+        assertTrue(events.any { it.contains("last32=89504e470d0a1a0a0000000049454e44ae426082") })
+        assertTrue(events.any { it.contains("png=png_signature_iend_present") })
+        assertTrue(events.any { it.contains("readbackHash=") && it.contains("readbackFirst32=") && it.contains("readbackLast32=") })
+    }
+
+    @Test
+    fun perPhotoRestoreDiagnostics_doNotTruncateExactDecodeFailureReason() {
+        val event = GarmentPhotoRecord(
+            garmentId = "garment-restored",
+            localUri = "content://old-device/restored.png",
+            blobPath = "photos/garment-restored/cropped-subject.png",
+        ).decodeDiagnosticEvent(
+            decoderPath = "BitmapFactory.byteArray",
+            failure = "java.lang.IllegalStateException: Decoder failed at com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository.decodeImageBytes:742",
+        )
+
+        assertTrue(event.contains("java.lang.IllegalStateException"))
+        assertTrue(event.contains("Decoder failed"))
+        assertTrue(event.contains("GoogleDriveWardrobeRepository.decodeImageBytes:742"))
+    }
+
+    @Test
+    fun pngSanityLabelDistinguishesSignatureAndIend() {
+        val validPngTail = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+            0xae.toByte(), 0x42, 0x60, 0x82.toByte(),
+        )
+
+        assertEquals("png_signature_iend_present", validPngTail.pngSanityLabel())
+        assertEquals("png_signature_iend_missing", validPngTail.dropLast(1).toByteArray().pngSanityLabel())
+        assertEquals("not_png_signature", byteArrayOf(0xff.toByte(), 0xd8.toByte()).pngSanityLabel())
     }
 
     @Test

@@ -313,19 +313,29 @@ class WardrobeSyncOutboxProcessor(
             phase = CloudRestorePhase.Applying,
             completedWork = RESTORE_STEP_LOCAL_SAVED,
         )
-        diagnostics.recordFinalUploadAttempted()
-        restoreProgress.value = diagnostics.progress(
-            phase = CloudRestorePhase.Uploading,
-            completedWork = RESTORE_STEP_UPLOAD_STARTED,
-        )
+        val finalUploadGuardReason = mergedSnapshot.finalUploadGuardReasonAfterRestore()
+        if (finalUploadGuardReason != null) {
+            diagnostics.recordFinalUploadSkipped(finalUploadGuardReason)
+            restoreProgress.value = diagnostics.progress(
+                phase = CloudRestorePhase.Complete,
+                completedWork = RESTORE_TOTAL_STEPS,
+            )
+            return SyncCycleResult.Success(importResult.guardedPhotoCount)
+        }
         if (!mergedSnapshot.hasUserData()) {
-            diagnostics.recordFinalUploadSkipped()
+            diagnostics.recordFinalUploadSkipped("no_remote_user_data")
             restoreProgress.value = diagnostics.progress(
                 phase = CloudRestorePhase.Complete,
                 completedWork = RESTORE_TOTAL_STEPS,
             )
             return SyncCycleResult.NoBackup
         }
+
+        diagnostics.recordFinalUploadAttempted()
+        restoreProgress.value = diagnostics.progress(
+            phase = CloudRestorePhase.Uploading,
+            completedWork = RESTORE_STEP_UPLOAD_STARTED,
+        )
 
         return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot)) {
             is DriveSyncResult.Success -> {
@@ -529,8 +539,8 @@ private class RestoreDiagnosticsTracker(
         val categoryCounts = issues.groupingBy(PhotoRestoreIssue::category).eachCount().toSortedMap()
         event("guarded_remote_photos total=${issues.size} categories=$categoryCounts")
         event(
-            "guarded_remote_photos_recovery path=install_new_apk_then_delete_or_readd_affected_garment " +
-                "effect=delete_tombstone_purges_appDataFolder_photo_blobs old_bad_blobs_may_be_unrecoverable",
+            "guarded_remote_photos_recovery path=install_new_apk_then_retry_restore_or_delete_readd_affected_garment " +
+                "effect=final_upload_skipped_until_photo_restore_issue_is_resolved",
         )
         issues.take(MAX_EVENTS).forEach { issue ->
             restoreSyncLogRepository.append(
@@ -563,10 +573,10 @@ private class RestoreDiagnosticsTracker(
         event("final_upload_succeeded")
     }
 
-    fun recordFinalUploadSkipped() {
+    fun recordFinalUploadSkipped(reason: String) {
         finalUploadAttempted = false
         finalUploadSucceeded = null
-        event("final_upload_skipped_no_remote_user_data")
+        event("final_upload_skipped reason=$reason")
     }
 
     fun recordBlocked(
@@ -877,6 +887,11 @@ internal fun WardrobeSyncSnapshot.guardedPhotoRestoreIssues(): List<PhotoRestore
     )
 }
 
+internal fun WardrobeSyncSnapshot.finalUploadGuardReasonAfterRestore(): String? {
+    val guardedCount = guardedPhotoRestoreIssues().size
+    return if (guardedCount > 0) "guarded_remote_photos count=$guardedCount" else null
+}
+
 internal fun GarmentPhotoRecord.restoreDiagnosticEvent(): String {
     val status = when {
         restoreFailureCategory != null -> "guarded:$restoreFailureCategory"
@@ -924,4 +939,4 @@ private const val RESTORE_STEP_UPLOAD_STARTED = 9
 private const val RESTORE_STEP_FINAL_SYNCED = 11
 private const val RESTORE_TOTAL_STEPS = 12
 private const val DIAGNOSTIC_LOG_TAG = "RobiaRestoreDiagnostics"
-private const val MAX_DIAGNOSTIC_MESSAGE_CHARS = 240
+private const val MAX_DIAGNOSTIC_MESSAGE_CHARS = 1_200
