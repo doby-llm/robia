@@ -584,12 +584,12 @@ private fun RobiaShell(
     }
 
     LaunchedEffect(
-        displaySettings.driveSyncConnectionStatus,
-        displaySettings.cloudSetupPromptInteracted,
+        settings.driveSyncConnectionStatus,
+        settings.cloudSetupPromptInteracted,
         cloudSetupGuard.isFirstRunRecommendation,
     ) {
-        if (!displaySettings.cloudSetupPromptInteracted &&
-            displaySettings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
+        if (!settings.cloudSetupPromptInteracted &&
+            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
             onCloudSetupPromptInteracted()
@@ -1049,7 +1049,7 @@ private fun RobiaShell(
             colorReviewChangeSet = activeColorReviewChangeSet,
             developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
             restoreSyncLogText = restoreSyncLogText,
-            syncState = displaySyncState,
+            syncState = syncState,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
