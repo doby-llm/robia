@@ -328,4 +328,4 @@ internal fun GarmentPhotoRecord.toImportPhotoRestoreIssue(): ImportPhotoRestoreI
 }
 
 internal const val MISSING_RESTORED_PHOTO_MESSAGE =
-    "Foto no restaurada desde Drive. Activa Modo desarrollador y exporta el registro de sincronización."
+    "Some images could not be restored from Drive. Robia will retry during the next cloud sync."

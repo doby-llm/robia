@@ -2041,8 +2041,11 @@ private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus)
     GarmentSyncStatus.Queued -> stringResource(R.string.garment_sync_queued)
     GarmentSyncStatus.Syncing -> stringResource(R.string.garment_sync_syncing)
     GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
-    GarmentSyncStatus.FailedRetryable -> syncFailureMessage?.takeIf(String::isNotBlank)
-        ?: stringResource(R.string.garment_sync_failed_retryable)
+    GarmentSyncStatus.FailedRetryable -> when {
+        hasMissingRestoredPhoto -> stringResource(R.string.cloud_restore_photo_missing_message)
+        else -> syncFailureMessage?.takeIf(String::isNotBlank)
+            ?: stringResource(R.string.garment_sync_failed_retryable)
+    }
     GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
 }
 
@@ -2129,7 +2132,7 @@ private fun GarmentPhotoPlaceholder(
                 }
                 if (item.hasMissingRestoredPhoto) {
                     Text(
-                        text = item.syncFailureMessage.orEmpty(),
+                        text = stringResource(R.string.cloud_restore_photo_missing_message),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
@@ -2143,7 +2146,8 @@ private fun GarmentPhotoPlaceholder(
 }
 
 private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
-    get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE
+    get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE ||
+        syncFailureMessage?.startsWith("Foto no restaurada desde Drive.") == true
 
 @Composable
 private fun TonalTag(text: String) {

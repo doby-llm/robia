@@ -35,6 +35,7 @@
     <string name="cloud_restore_status_failed">Wiederherstellung fehlgeschlagen. Lokale Daten wurden nicht geändert.</string>
     <string name="cloud_restore_status_rolled_back">Wiederherstellung fehlgeschlagen und zurückgesetzt. Deine vorherige lokale Garderobe ist intakt.</string>
     <string name="cloud_restore_retry">Wiederherstellung wiederholen</string>
+    <string name="cloud_restore_photo_missing_message">Einige Bilder konnten nicht aus Drive wiederhergestellt werden. Robia hält deine Garderobe sicher und versucht es bei der nächsten Cloud-Synchronisierung erneut.</string>
     <string name="cloud_restore_diagnostics_title">Wiederherstellungsdiagnose</string>
     <string name="cloud_restore_diagnostics_summary">Kopiere diese sicheren technischen Details und sende sie an Doby, wenn die Wiederherstellung weiter fehlschlägt. Robia speichert Sicherungen in Drive-App-Daten, die in der Drive-Weboberfläche verborgen sind.</string>
     <string name="cloud_restore_diagnostics_show">Details anzeigen</string>

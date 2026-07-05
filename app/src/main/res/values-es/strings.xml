@@ -35,6 +35,7 @@
     <string name="cloud_restore_status_failed">La restauración falló. Los datos locales no se modificaron.</string>
     <string name="cloud_restore_status_rolled_back">La restauración falló y se revirtió. Tu armario local anterior está intacto.</string>
     <string name="cloud_restore_retry">Reintentar restauración</string>
+    <string name="cloud_restore_photo_missing_message">Algunas imágenes no se pudieron restaurar desde Drive. Robia mantendrá tu armario seguro y lo reintentará en la próxima sincronización.</string>
     <string name="cloud_restore_diagnostics_title">Diagnóstico de restauración</string>
     <string name="cloud_restore_diagnostics_summary">Copia estos detalles técnicos seguros y envíaselos a Doby si la restauración sigue fallando. Robia guarda las copias en datos de app de Drive, ocultos en la web de Drive.</string>
     <string name="cloud_restore_diagnostics_show">Mostrar detalles</string>

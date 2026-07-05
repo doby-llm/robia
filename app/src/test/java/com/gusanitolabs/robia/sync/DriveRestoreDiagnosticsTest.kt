@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -118,6 +119,8 @@ class DriveRestoreDiagnosticsTest {
 
         assertEquals(REMOTE_PHOTO_MISSING, issue?.category)
         assertEquals(MISSING_RESTORED_PHOTO_MESSAGE, issue?.userVisibleMessage)
+        assertFalse(issue?.userVisibleMessage.orEmpty().contains("developer", ignoreCase = true))
+        assertFalse(issue?.userVisibleMessage.orEmpty().contains("export", ignoreCase = true))
         assertEquals(null, restored.toImportPhotoRestoreIssue())
     }
 
