@@ -3368,6 +3368,7 @@ private fun RobiaAppPreview() {
             restoreSyncLogText = "",
             pendingGarmentSyncCount = 0,
             clothingItems = emptyList(),
+            wardrobeItemsLoading = false,
             tagCategories = emptyList(),
             availableTags = emptyList(),
             mainColors = emptyList(),
