@@ -43,6 +43,19 @@ class RegressionSourceContractTest {
         )
     }
 
+    @Test
+    fun restoreProgressOverlay_gatesDiagnosticsToDeveloperModeAndStaysCentered() {
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val overlay = app
+            .substringAfter("private fun CloudRestoreProgressOverlay(")
+            .substringBefore("@Composable\nprivate fun CloudRestoreDiagnosticsPanel(")
+
+        assertTrue(overlay.contains("developerModeEnabled: Boolean"))
+        assertTrue(overlay.contains("progress.diagnostics.takeIf { developerModeEnabled }"))
+        assertTrue(overlay.contains("contentAlignment = Alignment.Center"))
+        assertTrue(overlay.contains(".widthIn(max = 520.dp)"))
+    }
+
     private fun assertIncreasing(vararg indices: Int) {
         assertTrue("Expected every source marker to be present", indices.all { it >= 0 })
         indices.zipWithNext().forEach { (left, right) ->

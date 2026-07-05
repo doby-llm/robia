@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -1110,6 +1111,7 @@ private fun RobiaShell(
     restoreProgress?.let { progress ->
         CloudRestoreProgressOverlay(
             progress = progress,
+            developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
             onRetry = onRequestCloudRestoreRetry,
         )
     }
@@ -1335,12 +1337,13 @@ private fun CloudSetupDialog(
 @Composable
 private fun CloudRestoreProgressOverlay(
     progress: CloudRestoreProgress,
+    developerModeEnabled: Boolean,
     onRetry: () -> Unit,
 ) {
     val statusText = cloudRestoreStatusText(progress)
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val diagnostics = progress.diagnostics
+    val diagnostics = progress.diagnostics.takeIf { developerModeEnabled }
     val diagnosticsText = diagnostics?.toCopyText().orEmpty()
     val diagnosticsCopiedMessage = stringResource(R.string.cloud_restore_diagnostics_copied)
     var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
@@ -1359,71 +1362,93 @@ private fun CloudRestoreProgressOverlay(
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = stringResource(R.string.cloud_restore_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            progress.progressFraction?.let { fraction ->
-                CloudRestoreProgressBar(
-                    progress = animatedProgress.coerceAtMost(fraction.coerceIn(0f, 1f)),
-                )
-            } ?: CircularProgressIndicator()
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = stringResource(progress.phase.labelRes),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.cloud_restore_remaining, progress.remainingWork, progress.totalWork),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (progress.status == CloudRestoreStatus.Running) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            progress.message?.takeIf(String::isNotBlank)?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            if (diagnostics != null) {
-                CloudRestoreDiagnosticsPanel(
-                    diagnosticsText = diagnosticsText,
-                    expanded = showDiagnostics,
-                    onToggleExpanded = { showDiagnostics = !showDiagnostics },
-                    onCopy = {
-                        clipboardManager.setText(AnnotatedString(diagnosticsText))
-                        Toast.makeText(context, diagnosticsCopiedMessage, Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-            }
-            if (progress.status != CloudRestoreStatus.Running) {
-                Button(
-                    onClick = onRetry,
-                    modifier = Modifier.padding(top = 16.dp),
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                 ) {
-                    Text(stringResource(R.string.cloud_restore_retry))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.cloud_restore_title),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        progress.progressFraction?.let { fraction ->
+                            CloudRestoreProgressBar(
+                                progress = animatedProgress.coerceAtMost(fraction.coerceIn(0f, 1f)),
+                            )
+                        } ?: CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = stringResource(progress.phase.labelRes),
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = stringResource(R.string.cloud_restore_remaining, progress.remainingWork, progress.totalWork),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (progress.status == CloudRestoreStatus.Running) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        progress.message?.takeIf(String::isNotBlank)?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                        if (progress.status != CloudRestoreStatus.Running) {
+                            Button(
+                                onClick = onRetry,
+                                modifier = Modifier.padding(top = 16.dp),
+                            ) {
+                                Text(stringResource(R.string.cloud_restore_retry))
+                            }
+                        }
+                    }
+                }
+                if (diagnostics != null) {
+                    CloudRestoreDiagnosticsPanel(
+                        diagnosticsText = diagnosticsText,
+                        expanded = showDiagnostics,
+                        onToggleExpanded = { showDiagnostics = !showDiagnostics },
+                        onCopy = {
+                            clipboardManager.setText(AnnotatedString(diagnosticsText))
+                            Toast.makeText(context, diagnosticsCopiedMessage, Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
                 }
             }
         }
