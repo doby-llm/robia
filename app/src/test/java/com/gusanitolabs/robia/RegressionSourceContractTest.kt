@@ -82,6 +82,41 @@ class RegressionSourceContractTest {
         assertTrue(promptEffect.contains("CloudSetupDialogMode.RecommendedFirstRun"))
     }
 
+    @Test
+    fun garmentPdfExport_usesMobileReferenceLayoutAndBundledBrandAsset() {
+        val exporter = source("app/src/main/java/com/gusanitolabs/robia/media/GarmentShareExporter.kt")
+
+        listOf(
+            "ROBIA_LOGO_ASSET = \"robia_logo.png\"",
+            "MIN_PDF_PAGE_HEIGHT = 1280",
+            "drawBitmapFitCover",
+            "drawColorRow",
+            "drawMetadataGrid",
+            "Created with Robia",
+        ).forEach { marker ->
+            assertTrue("Expected garment PDF marker: $marker", exporter.contains(marker))
+        }
+    }
+
+    @Test
+    fun garmentPdfExport_keepsRequiredMetadataGridOrder() {
+        val mapper = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+            .substringAfter("private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShareItem(")
+            .substringBefore("@Composable\nprivate fun shareColorName")
+
+        val metadataBlock = mapper
+            .substringAfter("metadata = listOf(")
+            .substringBefore("    ),\n    colorSectionLabel")
+
+        assertTrue("PDF metadata grid should not include location", !metadataBlock.contains("metadata_location"))
+        assertIncreasing(
+            metadataBlock.indexOf("metadata_category"),
+            metadataBlock.indexOf("metadata_season"),
+            metadataBlock.indexOf("metadata_occasions"),
+            metadataBlock.indexOf("metadata_fit"),
+        )
+    }
+
     private fun assertIncreasing(vararg indices: Int) {
         assertTrue("Expected every source marker to be present", indices.all { it >= 0 })
         indices.zipWithNext().forEach { (left, right) ->

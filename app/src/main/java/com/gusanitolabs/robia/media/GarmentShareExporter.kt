@@ -19,11 +19,12 @@ import kotlin.math.min
 
 object GarmentShareExporter {
     private const val SHARE_DIRECTORY = "robia_shares"
+    private const val ROBIA_LOGO_ASSET = "robia_logo.png"
     private const val PAGE_WIDTH = 720
-    private const val MIN_PDF_PAGE_HEIGHT = 1440
-    private const val PAGE_MARGIN = 48f
-    private const val SECTION_GAP = 24f
-    private const val FOOTER_HEIGHT = 64f
+    private const val MIN_PDF_PAGE_HEIGHT = 1280
+    private const val PAGE_MARGIN = 44f
+    private const val SECTION_GAP = 26f
+    private const val FOOTER_HEIGHT = 136f
 
     fun createShareImage(
         context: Context,
@@ -48,15 +49,17 @@ object GarmentShareExporter {
         val bitmap = context.contentResolver.openInputStream(item.imageUri)?.use(BitmapFactory::decodeStream)
             ?: error("Unable to open garment image")
         return bitmap.use { source ->
+            val logo = context.assets.open(ROBIA_LOGO_ASSET).use(BitmapFactory::decodeStream)
             val document = PdfDocument()
             val pageHeight = calculatePdfPageHeight(source, item)
             val page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, pageHeight, 1).create())
-            drawGarmentCard(page.canvas, source, item, pageHeight)
+            drawGarmentCard(page.canvas, source, logo, item, pageHeight)
             document.finishPage(page)
 
             val file = shareFile(context, item.name, "pdf")
             file.outputStream().use { output -> document.writeTo(output) }
             document.close()
+            logo.recycle()
             contentUriFor(context, file)
         }
     }
@@ -72,60 +75,60 @@ object GarmentShareExporter {
         return normalized.ifBlank { "robia-garment" }
     }
 
-    private fun drawGarmentCard(canvas: Canvas, image: Bitmap, item: GarmentShareItem, pageHeight: Int) {
-        canvas.drawColor(Color.rgb(255, 252, 247))
+    private fun drawGarmentCard(
+        canvas: Canvas,
+        image: Bitmap,
+        logo: Bitmap,
+        item: GarmentShareItem,
+        pageHeight: Int,
+    ) {
+        canvas.drawColor(Color.rgb(250, 249, 247))
 
-        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(224, 209, 185) }
-        val titlePaint = textPaint(size = 32f, color = Color.rgb(35, 30, 25), bold = true)
-        val bodyPaint = textPaint(size = 18f, color = Color.rgb(90, 80, 69))
-        val labelPaint = textPaint(size = 15f, color = Color.rgb(110, 92, 70), bold = true)
-        val chipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(246, 239, 229) }
+        val surfacePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(227, 226, 224)
+            strokeWidth = 1.5f
+        }
+        val titlePaint = textPaint(size = 48f, color = Color.rgb(24, 25, 29), bold = true)
+        val bodyPaint = textPaint(size = 20f, color = Color.rgb(70, 70, 75))
+        val labelPaint = textPaint(size = 13f, color = Color.rgb(70, 70, 75), bold = true).apply { letterSpacing = 0.08f }
+        val gridLabelPaint = textPaint(size = 15f, color = Color.rgb(70, 70, 75))
+        val gridValuePaint = textPaint(size = 25f, color = Color.rgb(24, 25, 29))
 
-        val imageRect = RectF(PAGE_MARGIN, PAGE_MARGIN, PAGE_WIDTH - PAGE_MARGIN, PAGE_MARGIN + imageFrameHeight(image))
-        drawRoundRect(canvas, imageRect, 30f, cardPaint)
-        drawBitmapFitContain(canvas, image, imageRect, 30f)
+        val contentRight = PAGE_WIDTH - PAGE_MARGIN
+        val imageRect = RectF(PAGE_MARGIN, PAGE_MARGIN, contentRight, PAGE_MARGIN + imageFrameHeight(image))
+        drawBitmapFitCover(canvas, image, imageRect, 0f)
 
-        var y = imageRect.bottom + 48f
+        var y = imageRect.bottom + 36f
         if (item.name.isNotBlank()) {
-            y = drawWrappedText(canvas, item.name, PAGE_MARGIN, y, PAGE_WIDTH - PAGE_MARGIN, titlePaint, maxLines = 3) + 14f
+            y = drawWrappedText(canvas, item.name, PAGE_MARGIN, y, contentRight, titlePaint, maxLines = 3, lineHeightMultiplier = 1.05f) + 16f
         }
         if (item.notes.isNotBlank()) {
-            y = drawWrappedText(canvas, item.notes, PAGE_MARGIN, y, PAGE_WIDTH - PAGE_MARGIN, bodyPaint, maxLines = 5) + SECTION_GAP
+            y = drawWrappedText(canvas, item.notes, PAGE_MARGIN, y, contentRight, bodyPaint, maxLines = 5, lineHeightMultiplier = 1.42f) + SECTION_GAP
         }
 
-        for (metadata in item.metadata.filter { it.values.isNotEmpty() }) {
-            y = drawMetadataSection(canvas, metadata, PAGE_MARGIN, y, PAGE_WIDTH - PAGE_MARGIN, chipPaint, bodyPaint, labelPaint)
-            y += SECTION_GAP
-        }
-
+        canvas.drawLine(PAGE_MARGIN, y, contentRight, y, dividerPaint)
+        y += 42f
         canvas.drawText(item.colorSectionLabel.uppercase(Locale.getDefault()), PAGE_MARGIN, y, labelPaint)
-        y += 28f
-        y = drawColorSummary(canvas, item.primaryColor, PAGE_MARGIN, y, item.noColorLabel, bodyPaint, labelPaint)
-        y = drawColorSummary(canvas, item.secondaryColor, PAGE_MARGIN, y + 12f, item.noColorLabel, bodyPaint, labelPaint)
+        y += 26f
+        y = drawColorRow(canvas, item, PAGE_MARGIN, y, contentRight) + 48f
 
-        val footerY = maxOf(y + 54f, pageHeight - 54f)
-        val footerPaint = textPaint(size = 17f, color = Color.rgb(70, 58, 45), bold = true).apply {
-            textAlign = Paint.Align.CENTER
+        val gridMetadata = item.metadata.filter { it.values.isNotEmpty() }.take(4)
+        if (gridMetadata.isNotEmpty()) {
+            y = drawMetadataGrid(canvas, gridMetadata, PAGE_MARGIN, y, contentRight, surfacePaint, gridLabelPaint, gridValuePaint) + 44f
         }
-        val footerText = "Created with Robia"
-        val footerWidth = footerPaint.measureText(footerText) + 56f
-        val footerRect = RectF(
-            PAGE_WIDTH / 2f - footerWidth / 2f,
-            footerY - 28f,
-            PAGE_WIDTH / 2f + footerWidth / 2f,
-            footerY + 12f,
-        )
-        canvas.drawRoundRect(footerRect, 20f, 20f, accentPaint)
-        canvas.drawText(footerText, PAGE_WIDTH / 2f, footerY - 2f, footerPaint)
+
+        canvas.drawLine(PAGE_MARGIN, y, contentRight, y, dividerPaint)
+        val footerTop = maxOf(y + 34f, pageHeight - PAGE_MARGIN - FOOTER_HEIGHT)
+        drawFooter(canvas, logo, footerTop)
     }
 
-    private fun drawBitmapFitContain(canvas: Canvas, bitmap: Bitmap, target: RectF, radius: Float) {
+    private fun drawBitmapFitCover(canvas: Canvas, bitmap: Bitmap, target: RectF, radius: Float) {
         val path = Path().apply { addRoundRect(target, radius, radius, Path.Direction.CW) }
         val save = canvas.save()
         canvas.clipPath(path)
         canvas.drawColor(Color.WHITE)
-        val scale = min(target.width() / bitmap.width, target.height() / bitmap.height)
+        val scale = maxOf(target.width() / bitmap.width, target.height() / bitmap.height)
         val width = bitmap.width * scale
         val height = bitmap.height * scale
         val left = target.left + (target.width() - width) / 2f
@@ -134,89 +137,140 @@ object GarmentShareExporter {
         canvas.restoreToCount(save)
     }
 
-    private fun drawMetadataSection(
+    private fun drawColorRow(
         canvas: Canvas,
-        metadata: GarmentShareMetadata,
+        item: GarmentShareItem,
         left: Float,
         top: Float,
         right: Float,
-        chipPaint: Paint,
-        bodyPaint: Paint,
-        labelPaint: Paint,
     ): Float {
-        canvas.drawText(metadata.label.uppercase(Locale.getDefault()), left, top, labelPaint)
-        return drawChips(canvas, metadata.values, left, top + 26f, right, chipPaint, bodyPaint)
-    }
-
-    private fun drawChips(
-        canvas: Canvas,
-        values: List<String>,
-        left: Float,
-        top: Float,
-        right: Float,
-        chipPaint: Paint,
-        textPaint: Paint,
-    ): Float {
+        val colors = listOf(item.primaryColor) + listOf(item.secondaryColor).filter { it.isAvailable(item.noColorLabel) }
         var x = left
-        var y = top
-        val chipHeight = 34f
-        val visibleValues = if (values.size > 8) values.take(7) + "+${values.size - 7}" else values
-        visibleValues.forEach { value ->
-            val label = value.take(30)
-            val width = min(textPaint.measureText(label) + 28f, right - left)
-            if (x + width > right && x > left) {
-                x = left
-                y += chipHeight + 8f
-            }
-            canvas.drawRoundRect(RectF(x, y, x + width, y + chipHeight), 17f, 17f, chipPaint)
-            canvas.drawText(label, x + 14f, y + 23f, textPaint)
-            x += width + 8f
+        var maxBottom = top
+        colors.forEach { color ->
+            val width = min(236f, right - x)
+            val bottom = drawColorChip(canvas, color, x, top, width, item.noColorLabel)
+            maxBottom = maxOf(maxBottom, bottom)
+            x += width + 22f
         }
-        return y + chipHeight
+        return maxBottom
     }
 
-    private fun drawColorSummary(
+    private fun drawColorChip(
         canvas: Canvas,
         color: GarmentShareColor,
         left: Float,
         top: Float,
+        width: Float,
         noColorLabel: String,
-        bodyPaint: Paint,
-        labelPaint: Paint,
     ): Float {
-        val centerY = top + 24f
-        val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color.hex?.toAndroidColorOrNull() ?: Color.TRANSPARENT }
+        val chipRect = RectF(left, top, left + width, top + 58f)
+        val chipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = Color.rgb(244, 243, 241) }
         val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = Color.rgb(198, 187, 174)
+            this.color = Color.rgb(227, 226, 224)
             style = Paint.Style.STROKE
-            strokeWidth = 2f
+            strokeWidth = 1.5f
         }
-        canvas.drawCircle(left + 22f, centerY, 18f, swatchPaint)
-        canvas.drawCircle(left + 22f, centerY, 18f, outlinePaint)
+        val labelPaint = textPaint(size = 15f, color = Color.rgb(24, 25, 29), bold = true)
+        val rolePaint = textPaint(size = 11f, color = Color.rgb(70, 70, 75))
+        canvas.drawRoundRect(chipRect, 29f, 29f, chipPaint)
+        canvas.drawRoundRect(chipRect, 29f, 29f, outlinePaint)
+
+        val swatchCenterY = top + 29f
+        val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color.hex?.toAndroidColorOrNull() ?: Color.TRANSPARENT }
+        canvas.drawCircle(left + 34f, swatchCenterY, 19f, swatchPaint)
+        canvas.drawCircle(left + 34f, swatchCenterY, 19f, outlinePaint)
         if (color.hex == null) {
-            canvas.drawLine(left + 12f, centerY - 10f, left + 32f, centerY + 10f, outlinePaint)
-            canvas.drawLine(left + 32f, centerY - 10f, left + 12f, centerY + 10f, outlinePaint)
+            canvas.drawLine(left + 22f, swatchCenterY - 12f, left + 46f, swatchCenterY + 12f, outlinePaint)
+            canvas.drawLine(left + 46f, swatchCenterY - 12f, left + 22f, swatchCenterY + 12f, outlinePaint)
         }
-        canvas.drawText(color.role.uppercase(Locale.getDefault()), left + 52f, top + 16f, labelPaint)
-        return drawWrappedText(canvas, color.name.ifBlank { noColorLabel }, left + 52f, top + 40f, PAGE_WIDTH - PAGE_MARGIN, bodyPaint, maxLines = 2)
+        canvas.drawText(color.name.ifBlank { noColorLabel }.take(18), left + 70f, top + 24f, labelPaint)
+        canvas.drawText(color.role, left + 70f, top + 42f, rolePaint)
+        return chipRect.bottom
+    }
+
+    private fun drawMetadataGrid(
+        canvas: Canvas,
+        metadata: List<GarmentShareMetadata>,
+        left: Float,
+        top: Float,
+        right: Float,
+        surfacePaint: Paint,
+        labelPaint: Paint,
+        valuePaint: Paint,
+    ): Float {
+        val gap = 10f
+        val cellWidth = (right - left - gap) / 2f
+        val cellHeight = 154f
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(227, 226, 224)
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f
+        }
+        metadata.forEachIndexed { index, item ->
+            val column = index % 2
+            val row = index / 2
+            val cellLeft = left + column * (cellWidth + gap)
+            val cellTop = top + row * (cellHeight + gap)
+            val rect = RectF(cellLeft, cellTop, cellLeft + cellWidth, cellTop + cellHeight)
+            canvas.drawRoundRect(rect, 12f, 12f, surfacePaint)
+            canvas.drawRoundRect(rect, 12f, 12f, borderPaint)
+            canvas.drawText(item.label, cellLeft + 24f, cellTop + 74f, labelPaint)
+            drawWrappedText(
+                canvas = canvas,
+                text = item.values.joinToString(", "),
+                left = cellLeft + 24f,
+                top = cellTop + 110f,
+                right = rect.right - 22f,
+                paint = valuePaint,
+                maxLines = 2,
+                lineHeightMultiplier = 1.16f,
+            )
+        }
+        val rows = (metadata.size + 1) / 2
+        return top + rows * cellHeight + (rows - 1) * gap
+    }
+
+    private fun drawFooter(canvas: Canvas, logo: Bitmap, top: Float) {
+        val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(244, 243, 241) }
+        val footerRect = RectF(PAGE_MARGIN, top, PAGE_WIDTH - PAGE_MARGIN, top + FOOTER_HEIGHT)
+        canvas.drawRoundRect(footerRect, 0f, 0f, footerPaint)
+
+        val logoSize = 42f
+        val logoLeft = PAGE_WIDTH / 2f - logoSize / 2f
+        val logoTop = top + 30f
+        canvas.drawBitmap(logo, null, RectF(logoLeft, logoTop, logoLeft + logoSize, logoTop + logoSize), Paint(Paint.ANTI_ALIAS_FLAG))
+
+        val sparkPaint = textPaint(size = 20f, color = Color.rgb(98, 94, 87)).apply { textAlign = Paint.Align.CENTER }
+        canvas.drawText("✦", PAGE_WIDTH / 2f - 38f, top + 56f, sparkPaint)
+        canvas.drawText("✦", PAGE_WIDTH / 2f + 38f, top + 56f, sparkPaint)
+
+        val textPaint = textPaint(size = 13f, color = Color.rgb(24, 25, 29), bold = true).apply {
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.12f
+        }
+        canvas.drawText("Created with Robia", PAGE_WIDTH / 2f, top + 104f, textPaint)
     }
 
     private fun calculatePdfPageHeight(image: Bitmap, item: GarmentShareItem): Int {
-        val titlePaint = textPaint(size = 32f, color = Color.rgb(35, 30, 25), bold = true)
-        val bodyPaint = textPaint(size = 18f, color = Color.rgb(90, 80, 69))
+        val titlePaint = textPaint(size = 48f, color = Color.rgb(24, 25, 29), bold = true)
+        val bodyPaint = textPaint(size = 20f, color = Color.rgb(70, 70, 75))
         val contentWidth = PAGE_WIDTH - (PAGE_MARGIN * 2)
 
-        var contentHeight = PAGE_MARGIN + imageFrameHeight(image) + 48f
+        var contentHeight = PAGE_MARGIN + imageFrameHeight(image) + 36f
         if (item.name.isNotBlank()) {
-            contentHeight += measureWrappedTextHeight(item.name, titlePaint, contentWidth, maxLines = 3) + 14f
+            contentHeight += measureWrappedTextHeight(item.name, titlePaint, contentWidth, maxLines = 3, lineHeightMultiplier = 1.05f) + 16f
         }
         if (item.notes.isNotBlank()) {
-            contentHeight += measureWrappedTextHeight(item.notes, bodyPaint, contentWidth, maxLines = 5) + SECTION_GAP
+            contentHeight += measureWrappedTextHeight(item.notes, bodyPaint, contentWidth, maxLines = 5, lineHeightMultiplier = 1.42f) + SECTION_GAP
         }
-        item.metadata.filter { it.values.isNotEmpty() }.forEach { metadata ->
-            contentHeight += 26f + measureChipsHeight(metadata.values, contentWidth, bodyPaint) + SECTION_GAP
+        contentHeight += 1.5f + 42f + 26f + 58f + 48f
+        val gridItems = item.metadata.count { it.values.isNotEmpty() }.coerceAtMost(4)
+        if (gridItems > 0) {
+            val gridRows = (gridItems + 1) / 2
+            contentHeight += gridRows * 154f + (gridRows - 1) * 10f + 44f
         }
-        contentHeight += 28f + 56f + 12f + 56f + FOOTER_HEIGHT + PAGE_MARGIN
+        contentHeight += 1.5f + 34f + FOOTER_HEIGHT + PAGE_MARGIN
 
         return maxOf(MIN_PDF_PAGE_HEIGHT, contentHeight.toInt() + 1)
     }
@@ -224,30 +278,20 @@ object GarmentShareExporter {
     private fun imageFrameHeight(image: Bitmap): Float {
         val contentWidth = PAGE_WIDTH - (PAGE_MARGIN * 2)
         val aspectHeight = contentWidth * image.height / image.width.toFloat()
-        return aspectHeight.coerceIn(520f, 780f)
+        return aspectHeight.coerceIn(contentWidth * 1.04f, contentWidth * 1.24f)
     }
 
-    private fun measureChipsHeight(values: List<String>, availableWidth: Float, textPaint: Paint): Float {
-        var x = 0f
-        var y = 0f
-        val chipHeight = 34f
-        val visibleValues = if (values.size > 8) values.take(7) + "+${values.size - 7}" else values
-        visibleValues.forEach { value ->
-            val label = value.take(30)
-            val width = min(textPaint.measureText(label) + 28f, availableWidth)
-            if (x + width > availableWidth && x > 0f) {
-                x = 0f
-                y += chipHeight + 8f
-            }
-            x += width + 8f
-        }
-        return y + chipHeight
-    }
 
-    private fun measureWrappedTextHeight(text: String, paint: Paint, availableWidth: Float, maxLines: Int): Float {
+    private fun measureWrappedTextHeight(
+        text: String,
+        paint: Paint,
+        availableWidth: Float,
+        maxLines: Int,
+        lineHeightMultiplier: Float = 1.25f,
+    ): Float {
         val words = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
         if (words.isEmpty()) return 0f
-        val lineHeight = paint.textSize * 1.25f
+        val lineHeight = paint.textSize * lineHeightMultiplier
         var line = ""
         var lines = 0
         for (word in words) {
@@ -272,10 +316,11 @@ object GarmentShareExporter {
         right: Float,
         paint: Paint,
         maxLines: Int,
+        lineHeightMultiplier: Float = 1.25f,
     ): Float {
         val words = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
         if (words.isEmpty()) return top
-        val lineHeight = paint.textSize * 1.25f
+        val lineHeight = paint.textSize * lineHeightMultiplier
         var y = top
         var line = ""
         var lines = 0
@@ -298,9 +343,6 @@ object GarmentShareExporter {
         return y + lineHeight
     }
 
-    private fun drawRoundRect(canvas: Canvas, rect: RectF, radius: Float, paint: Paint) {
-        canvas.drawRoundRect(rect, radius, radius, paint)
-    }
 
     private fun textPaint(size: Float, color: Int, bold: Boolean = false) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         this.color = color
@@ -309,6 +351,9 @@ object GarmentShareExporter {
     }
 
     private fun String.toAndroidColorOrNull(): Int? = runCatching { Color.parseColor(this) }.getOrNull()
+
+    private fun GarmentShareColor.isAvailable(noColorLabel: String): Boolean =
+        hex != null || name.isNotBlank() && !name.equals(noColorLabel, ignoreCase = true)
 
     private fun shareFile(context: Context, garmentName: String, extension: String): File {
         val dir = File(context.cacheDir, SHARE_DIRECTORY).apply { mkdirs() }

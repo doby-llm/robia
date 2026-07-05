@@ -3035,9 +3035,8 @@ private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShare
     metadata = listOf(
         GarmentShareMetadata(stringResource(R.string.metadata_category), tags.valuesInCategory("category")),
         GarmentShareMetadata(stringResource(R.string.metadata_season), tags.valuesInCategory("season")),
-        GarmentShareMetadata(stringResource(R.string.metadata_fit), fitValue?.fitLabel()?.let { listOf(it) }.orEmpty()),
-        GarmentShareMetadata(stringResource(R.string.metadata_location), tags.valuesInCategory("location")),
         GarmentShareMetadata(stringResource(R.string.metadata_occasions), tags.valuesInCategory("occasion")),
+        GarmentShareMetadata(stringResource(R.string.metadata_fit), fitValue?.fitLabel()?.let { listOf(it) }.orEmpty()),
     ),
     colorSectionLabel = stringResource(R.string.colors_section),
     primaryColor = GarmentShareColor(
