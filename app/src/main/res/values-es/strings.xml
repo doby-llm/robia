@@ -72,7 +72,8 @@
     <string name="wardrobe_intro">Empieza a crear un catálogo local de ropa, etiquetas y detalles listos para combinar.</string>
     <string name="filters">Filtros</string>
     <string name="active_filters_count">Filtros (%1$d)</string>
-    <string name="all_filters">Todos los filtros</string>
+    <string name="browse_wardrobe_loading">Cargando tu armario…</string>
+    <string name="content_browse_wardrobe_loading">Cargando prendas del armario</string>
     <string name="load_more_items">Cargar más prendas</string>
     <string name="empty_wardrobe_title">Aún no hay prendas</string>
     <string name="empty_wardrobe_body">Añade tu primera prenda para crear un armario digital pulido y fácil de buscar.</string>

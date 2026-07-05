@@ -72,7 +72,8 @@
     <string name="wardrobe_intro">Beginne mit einem lokalen Katalog für Kleidung, Tags und outfitbereite Details.</string>
     <string name="filters">Filter</string>
     <string name="active_filters_count">Filter (%1$d)</string>
-    <string name="all_filters">Alle Filter</string>
+    <string name="browse_wardrobe_loading">Deine Garderobe wird geladen…</string>
+    <string name="content_browse_wardrobe_loading">Garderobenstücke werden geladen</string>
     <string name="load_more_items">Weitere Teile laden</string>
     <string name="empty_wardrobe_title">Noch keine Kleidungsstücke</string>
     <string name="empty_wardrobe_body">Füge dein erstes Teil hinzu, um eine elegante, durchsuchbare digitale Garderobe aufzubauen.</string>

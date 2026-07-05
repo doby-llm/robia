@@ -13,18 +13,44 @@ class RegressionSourceContractTest {
             .substringBefore("@Composable\n@OptIn(ExperimentalFoundationApi::class)")
 
         val filterChipIndex = filterBar.indexOf("FilterChip(")
-        val allFiltersChipIndex = filterBar.indexOf("AssistChip(")
         val dividerIndex = filterBar.indexOf(".height(24.dp)")
         val flexibleSpacerIndex = filterBar.indexOf("Modifier.weight(1f)")
         val syncSpinnerIndex = filterBar.indexOf("CircularProgressIndicator(")
 
+        assertTrue("FilterBar should expose one filter entry point", !filterBar.contains("R.string.all_filters"))
+        assertTrue("FilterBar should not keep the duplicate All Filters AssistChip", !filterBar.contains("AssistChip("))
         assertIncreasing(
             filterChipIndex,
-            allFiltersChipIndex,
             dividerIndex,
             flexibleSpacerIndex,
             syncSpinnerIndex,
         )
+    }
+
+    @Test
+    fun browseWardrobe_waitsForInitialLocalDataBeforeShowingEmptyState() {
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+
+        assertTrue(app.contains("observeActiveItems().collectAsState(initial = null)"))
+        assertTrue(app.contains("val wardrobeItemsLoading = loadedClothingItems == null"))
+        assertTrue(app.contains("wardrobeItemsLoading = wardrobeItemsLoading"))
+
+        val browseScreen = app
+            .substringAfter("private fun BrowseWardrobeScreen(")
+            .substringBefore("@Composable\nprivate fun FilterBar(")
+
+        assertTrue(browseScreen.contains("isInitialLoading: Boolean"))
+        assertTrue(browseScreen.contains("if (isInitialLoading)"))
+        assertTrue(browseScreen.contains("BrowseWardrobeLoadingCard()"))
+        assertTrue(browseScreen.contains("} else if (items.isEmpty())"))
+
+        val loadingCard = app
+            .substringAfter("private fun BrowseWardrobeLoadingCard()")
+            .substringBefore("@Composable\n@OptIn(ExperimentalFoundationApi::class)")
+
+        assertTrue(loadingCard.contains("R.string.browse_wardrobe_loading"))
+        assertTrue(loadingCard.contains("R.string.content_browse_wardrobe_loading"))
+        assertTrue(loadingCard.contains("CircularProgressIndicator("))
     }
 
     @Test

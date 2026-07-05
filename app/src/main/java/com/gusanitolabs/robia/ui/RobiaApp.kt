@@ -325,7 +325,9 @@ fun RobiaApp(
     val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
     val restoreSyncLogText by syncGateway.restoreSyncLogText.collectAsState(initial = "")
     val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
-    val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
+    val loadedClothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = null)
+    val clothingItems = loadedClothingItems.orEmpty()
+    val wardrobeItemsLoading = loadedClothingItems == null
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
@@ -345,6 +347,7 @@ fun RobiaApp(
             restoreSyncLogText = restoreSyncLogText,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
             clothingItems = clothingItems,
+            wardrobeItemsLoading = wardrobeItemsLoading,
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
@@ -531,6 +534,7 @@ private fun RobiaShell(
     restoreSyncLogText: String,
     pendingGarmentSyncCount: Int,
     clothingItems: List<ClothingItem>,
+    wardrobeItemsLoading: Boolean,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
@@ -1044,6 +1048,7 @@ private fun RobiaShell(
             items = filteredItems,
             allItems = items,
             domainItems = clothingItems,
+            wardrobeItemsLoading = wardrobeItemsLoading,
             totalItemCount = items.size,
             filters = browseFilters,
             selectedBrowseItemIds = selectedBrowseItemIds,
@@ -1614,6 +1619,7 @@ private fun RobiaNavHost(
     items: List<UiWardrobeItem>,
     allItems: List<UiWardrobeItem>,
     domainItems: List<ClothingItem>,
+    wardrobeItemsLoading: Boolean,
     totalItemCount: Int,
     filters: BrowseFilterState,
     selectedBrowseItemIds: Set<String>,
@@ -1659,6 +1665,7 @@ private fun RobiaNavHost(
         RobiaRoute.Browse -> BrowseWardrobeScreen(
             innerPadding = innerPadding,
             items = items,
+            isInitialLoading = wardrobeItemsLoading,
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             activeFilterCount = filters.activeFilterCount,
@@ -1768,6 +1775,7 @@ private fun RobiaNavHost(
 private fun BrowseWardrobeScreen(
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
+    isInitialLoading: Boolean,
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
@@ -1799,7 +1807,11 @@ private fun BrowseWardrobeScreen(
                 onFiltersClick = onFiltersClick,
             )
         }
-        if (items.isEmpty()) {
+        if (isInitialLoading) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                BrowseWardrobeLoadingCard()
+            }
+        } else if (items.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 if (hasItemsInWardrobe && hasActiveFilters) {
                     EmptyFiltersCard(onResetFilters = onResetFilters)
@@ -1851,11 +1863,6 @@ private fun FilterBar(
             label = { Text(filterLabel) },
             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
-        AssistChip(
-            onClick = onFiltersClick,
-            label = { Text(stringResource(R.string.all_filters)) },
-            leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-        )
         Spacer(
             modifier = Modifier
                 .height(24.dp)
@@ -1870,6 +1877,32 @@ private fun FilterBar(
                     .size(22.dp)
                     .semantics { contentDescription = syncDescription },
                 strokeWidth = 2.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrowseWardrobeLoadingCard() {
+    val loadingDescription = stringResource(R.string.content_browse_wardrobe_loading)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+                .semantics { contentDescription = loadingDescription },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+            Text(
+                text = stringResource(R.string.browse_wardrobe_loading),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
