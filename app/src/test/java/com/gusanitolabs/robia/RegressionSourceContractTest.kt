@@ -56,6 +56,32 @@ class RegressionSourceContractTest {
         assertTrue(overlay.contains(".widthIn(max = 520.dp)"))
     }
 
+    @Test
+    fun cloudSetupRecommendation_waitsForDurableSettingsBeforeShowing() {
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val settingsRepository = source("app/src/main/java/com/gusanitolabs/robia/data/SettingsRepository.kt")
+
+        assertTrue(app.contains("collectAsState(initial = null)"))
+        assertTrue(app.contains("val settingsLoaded = persistedSettings != null"))
+        assertTrue(app.contains("RobiaSettings(cloudSetupPromptInteracted = true)"))
+
+        assertTrue(settingsRepository.contains("cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false"))
+        assertTrue(settingsRepository.contains("if (status != DriveSyncConnectionStatus.NotConfigured)"))
+        assertTrue(settingsRepository.contains("preferences[cloudSetupPromptInteractedKey] = true"))
+        assertTrue(settingsRepository.contains("override suspend fun markCloudSetupPromptInteracted()"))
+
+        val promptEffect = app
+            .substringAfter("LaunchedEffect(\n        settingsLoaded,")
+            .substringBefore("LaunchedEffect(items)")
+
+        assertTrue(promptEffect.contains("if (settingsLoaded &&"))
+        assertTrue(promptEffect.contains("!settings.cloudSetupPromptInteracted"))
+        assertTrue(promptEffect.contains("settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured"))
+        assertTrue(promptEffect.contains("cloudSetupGuard.isFirstRunRecommendation"))
+        assertTrue(promptEffect.contains("onCloudSetupPromptInteracted()"))
+        assertTrue(promptEffect.contains("CloudSetupDialogMode.RecommendedFirstRun"))
+    }
+
     private fun assertIncreasing(vararg indices: Int) {
         assertTrue("Expected every source marker to be present", indices.all { it >= 0 })
         indices.zipWithNext().forEach { (left, right) ->

@@ -318,7 +318,9 @@ fun RobiaApp(
     syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
     onRequestCloudSetup: () -> Unit = {},
 ) {
-    val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
+    val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
+    val settingsLoaded = persistedSettings != null
+    val settings = persistedSettings ?: RobiaSettings(cloudSetupPromptInteracted = true)
     val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
     val restoreSyncLogText by syncGateway.restoreSyncLogText.collectAsState(initial = "")
     val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
@@ -337,6 +339,7 @@ fun RobiaApp(
         val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
         RobiaShell(
             settings = displaySettings,
+            settingsLoaded = settingsLoaded,
             syncState = displaySyncState,
             restoreSyncLogText = restoreSyncLogText,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
@@ -522,6 +525,7 @@ private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean 
 @Composable
 private fun RobiaShell(
     settings: RobiaSettings,
+    settingsLoaded: Boolean,
     syncState: WardrobeSyncState,
     restoreSyncLogText: String,
     pendingGarmentSyncCount: Int,
@@ -585,11 +589,13 @@ private fun RobiaShell(
     }
 
     LaunchedEffect(
+        settingsLoaded,
         settings.driveSyncConnectionStatus,
         settings.cloudSetupPromptInteracted,
         cloudSetupGuard.isFirstRunRecommendation,
     ) {
-        if (!settings.cloudSetupPromptInteracted &&
+        if (settingsLoaded &&
+            !settings.cloudSetupPromptInteracted &&
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
@@ -3304,6 +3310,7 @@ private fun RobiaAppPreview() {
     RobiaTheme {
         RobiaShell(
             settings = RobiaSettings(),
+            settingsLoaded = true,
             syncState = WardrobeSyncState.notConfigured(),
             restoreSyncLogText = "",
             pendingGarmentSyncCount = 0,
