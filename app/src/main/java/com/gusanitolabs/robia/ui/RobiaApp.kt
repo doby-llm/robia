@@ -145,6 +145,7 @@ import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
+import com.gusanitolabs.robia.media.GarmentShareMetadataIcon
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -3037,10 +3038,26 @@ private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShare
     notes = notes,
     imageUri = Uri.parse(photoUri.orEmpty()),
     metadata = listOf(
-        GarmentShareMetadata(stringResource(R.string.metadata_category), tags.valuesInCategory("category")),
-        GarmentShareMetadata(stringResource(R.string.metadata_season), tags.valuesInCategory("season")),
-        GarmentShareMetadata(stringResource(R.string.metadata_occasions), tags.valuesInCategory("occasion")),
-        GarmentShareMetadata(stringResource(R.string.metadata_fit), fitValue?.fitLabel()?.let { listOf(it) }.orEmpty()),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_category),
+            values = tags.valuesInCategory("category"),
+            icon = GarmentShareMetadataIcon.Category,
+        ),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_season),
+            values = tags.valuesInCategory("season"),
+            icon = GarmentShareMetadataIcon.Season,
+        ),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_occasions),
+            values = tags.valuesInCategory("occasion"),
+            icon = GarmentShareMetadataIcon.Occasion,
+        ),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_fit),
+            values = fitValue?.fitLabel()?.let { listOf(it) }.orEmpty(),
+            icon = GarmentShareMetadataIcon.Fit,
+        ),
     ),
     colorSectionLabel = stringResource(R.string.colors_section),
     primaryColor = GarmentShareColor(

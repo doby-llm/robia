@@ -90,12 +90,19 @@ class RegressionSourceContractTest {
             "ROBIA_LOGO_ASSET = \"robia_logo.png\"",
             "MIN_PDF_PAGE_HEIGHT = 1280",
             "drawBitmapFitCover",
+            "ENABLE_PDF_IMAGE_GRADIENT_OVERLAY = true",
+            "drawImageGradientOverlay",
             "drawColorRow",
             "drawMetadataGrid",
+            "GarmentShareMetadataIcon",
             "Created with Robia",
         ).forEach { marker ->
             assertTrue("Expected garment PDF marker: $marker", exporter.contains(marker))
         }
+
+        assertTrue("PDF fields should wrap/fit instead of drawing ellipses", !exporter.contains("…"))
+        assertTrue("PDF fields should not draw ASCII ellipses", !exporter.contains("..."))
+        assertTrue("Metadata grid values should be allowed to wrap to all lines", exporter.contains("maxLines = Int.MAX_VALUE"))
     }
 
     @Test

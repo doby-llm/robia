@@ -5,10 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.pdf.PdfDocument
 import android.graphics.RectF
+import android.graphics.Shader
 import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
@@ -20,6 +22,7 @@ import kotlin.math.min
 object GarmentShareExporter {
     private const val SHARE_DIRECTORY = "robia_shares"
     private const val ROBIA_LOGO_ASSET = "robia_logo.png"
+    const val ENABLE_PDF_IMAGE_GRADIENT_OVERLAY = true
     private const val PAGE_WIDTH = 720
     private const val MIN_PDF_PAGE_HEIGHT = 1280
     private const val PAGE_MARGIN = 44f
@@ -98,6 +101,9 @@ object GarmentShareExporter {
         val contentRight = PAGE_WIDTH - PAGE_MARGIN
         val imageRect = RectF(PAGE_MARGIN, PAGE_MARGIN, contentRight, PAGE_MARGIN + imageFrameHeight(image))
         drawBitmapFitCover(canvas, image, imageRect, 0f)
+        if (ENABLE_PDF_IMAGE_GRADIENT_OVERLAY) {
+            drawImageGradientOverlay(canvas, imageRect, item.primaryColor.hex?.toAndroidColorOrNull())
+        }
 
         var y = imageRect.bottom + 36f
         if (item.name.isNotBlank()) {
@@ -134,6 +140,40 @@ object GarmentShareExporter {
         val left = target.left + (target.width() - width) / 2f
         val top = target.top + (target.height() - height) / 2f
         canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), Paint(Paint.ANTI_ALIAS_FLAG))
+        canvas.restoreToCount(save)
+    }
+
+    private fun drawImageGradientOverlay(canvas: Canvas, target: RectF, primaryColor: Int?) {
+        val accent = primaryColor ?: Color.rgb(181, 162, 136)
+        val path = Path().apply { addRect(target, Path.Direction.CW) }
+        val save = canvas.save()
+        canvas.clipPath(path)
+
+        val verticalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                target.left,
+                target.top,
+                target.left,
+                target.bottom,
+                intArrayOf(Color.TRANSPARENT, accent.withAlpha(46), Color.argb(92, 250, 249, 247)),
+                floatArrayOf(0f, 0.64f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(target, verticalPaint)
+
+        val sidePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                target.left,
+                target.centerY(),
+                target.right,
+                target.centerY(),
+                intArrayOf(Color.argb(28, 250, 249, 247), Color.TRANSPARENT, accent.withAlpha(24)),
+                floatArrayOf(0f, 0.52f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(target, sidePaint)
         canvas.restoreToCount(save)
     }
 
@@ -184,7 +224,7 @@ object GarmentShareExporter {
             canvas.drawLine(left + 22f, swatchCenterY - 12f, left + 46f, swatchCenterY + 12f, outlinePaint)
             canvas.drawLine(left + 46f, swatchCenterY - 12f, left + 22f, swatchCenterY + 12f, outlinePaint)
         }
-        canvas.drawText(color.name.ifBlank { noColorLabel }.take(18), left + 70f, top + 24f, labelPaint)
+        canvas.drawText(color.name.ifBlank { noColorLabel }.fitSingleLine(labelPaint, width - 86f), left + 70f, top + 24f, labelPaint)
         canvas.drawText(color.role, left + 70f, top + 42f, rolePaint)
         return chipRect.bottom
     }
@@ -201,7 +241,9 @@ object GarmentShareExporter {
     ): Float {
         val gap = 10f
         val cellWidth = (right - left - gap) / 2f
-        val cellHeight = 154f
+        val rowHeights = metadata.chunked(2).map { rowItems ->
+            rowItems.maxOf { metadataCellHeight(it, valuePaint, cellWidth) }
+        }
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(227, 226, 224)
             style = Paint.Style.STROKE
@@ -211,24 +253,116 @@ object GarmentShareExporter {
             val column = index % 2
             val row = index / 2
             val cellLeft = left + column * (cellWidth + gap)
-            val cellTop = top + row * (cellHeight + gap)
-            val rect = RectF(cellLeft, cellTop, cellLeft + cellWidth, cellTop + cellHeight)
+            val cellTop = top + rowHeights.take(row).sum() + row * gap
+            val rect = RectF(cellLeft, cellTop, cellLeft + cellWidth, cellTop + rowHeights[row])
             canvas.drawRoundRect(rect, 12f, 12f, surfacePaint)
             canvas.drawRoundRect(rect, 12f, 12f, borderPaint)
-            canvas.drawText(item.label, cellLeft + 24f, cellTop + 74f, labelPaint)
+            drawMetadataIcon(canvas, item.icon, cellLeft + 24f, cellTop + 24f)
+            canvas.drawText(item.label, cellLeft + 70f, cellTop + 47f, labelPaint)
             drawWrappedText(
                 canvas = canvas,
                 text = item.values.joinToString(", "),
                 left = cellLeft + 24f,
-                top = cellTop + 110f,
+                top = cellTop + 92f,
                 right = rect.right - 22f,
                 paint = valuePaint,
-                maxLines = 2,
+                maxLines = Int.MAX_VALUE,
                 lineHeightMultiplier = 1.16f,
             )
         }
-        val rows = (metadata.size + 1) / 2
-        return top + rows * cellHeight + (rows - 1) * gap
+        return top + rowHeights.sum() + (rowHeights.size - 1) * gap
+    }
+
+    private fun metadataCellHeight(item: GarmentShareMetadata, valuePaint: Paint, cellWidth: Float): Float {
+        val valueTop = 92f
+        val bottomPadding = 26f
+        val valueWidth = cellWidth - 46f
+        val valueHeight = measureWrappedTextHeight(
+            text = item.values.joinToString(", "),
+            paint = valuePaint,
+            availableWidth = valueWidth,
+            maxLines = Int.MAX_VALUE,
+            lineHeightMultiplier = 1.16f,
+        )
+        return maxOf(154f, valueTop + valueHeight + bottomPadding)
+    }
+
+    private fun drawMetadataIcon(canvas: Canvas, icon: GarmentShareMetadataIcon, left: Float, top: Float) {
+        val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(98, 94, 87)
+            style = Paint.Style.STROKE
+            strokeWidth = 3.4f
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(32, 181, 162, 136)
+            style = Paint.Style.FILL
+        }
+        val frame = RectF(left, top, left + 34f, top + 34f)
+        canvas.drawRoundRect(frame, 10f, 10f, fillPaint)
+        when (icon) {
+            GarmentShareMetadataIcon.Category -> drawCategoryIcon(canvas, frame, iconPaint)
+            GarmentShareMetadataIcon.Season -> drawSeasonIcon(canvas, frame, iconPaint)
+            GarmentShareMetadataIcon.Occasion -> drawOccasionIcon(canvas, frame, iconPaint)
+            GarmentShareMetadataIcon.Fit -> drawFitIcon(canvas, frame, iconPaint)
+        }
+    }
+
+    private fun drawCategoryIcon(canvas: Canvas, frame: RectF, paint: Paint) {
+        val cx = frame.centerX()
+        val top = frame.top + 9f
+        val path = Path().apply {
+            moveTo(cx, top)
+            quadTo(cx + 7f, top + 1f, cx + 4f, top + 8f)
+            moveTo(cx, top + 11f)
+            lineTo(frame.left + 9f, frame.bottom - 9f)
+            lineTo(frame.right - 9f, frame.bottom - 9f)
+            lineTo(cx, top + 11f)
+        }
+        canvas.drawPath(path, paint)
+    }
+
+    private fun drawSeasonIcon(canvas: Canvas, frame: RectF, paint: Paint) {
+        val cx = frame.centerX()
+        val cy = frame.centerY()
+        canvas.drawCircle(cx, cy, 5.5f, paint)
+        repeat(8) { index ->
+            val angle = Math.toRadians((index * 45).toDouble())
+            val startX = cx + kotlin.math.cos(angle).toFloat() * 9f
+            val startY = cy + kotlin.math.sin(angle).toFloat() * 9f
+            val endX = cx + kotlin.math.cos(angle).toFloat() * 13f
+            val endY = cy + kotlin.math.sin(angle).toFloat() * 13f
+            canvas.drawLine(startX, startY, endX, endY, paint)
+        }
+    }
+
+    private fun drawOccasionIcon(canvas: Canvas, frame: RectF, paint: Paint) {
+        val cx = frame.centerX()
+        val cy = frame.centerY()
+        val path = Path().apply {
+            moveTo(cx, frame.top + 8f)
+            lineTo(cx + 3f, cy - 3f)
+            lineTo(frame.right - 8f, cy)
+            lineTo(cx + 3f, cy + 3f)
+            lineTo(cx, frame.bottom - 8f)
+            lineTo(cx - 3f, cy + 3f)
+            lineTo(frame.left + 8f, cy)
+            lineTo(cx - 3f, cy - 3f)
+            close()
+        }
+        canvas.drawPath(path, paint)
+        canvas.drawCircle(frame.right - 8f, frame.top + 9f, 1.6f, paint)
+    }
+
+    private fun drawFitIcon(canvas: Canvas, frame: RectF, paint: Paint) {
+        val x = frame.left + 11f
+        canvas.drawLine(x, frame.top + 8f, x, frame.bottom - 8f, paint)
+        canvas.drawLine(x - 4f, frame.top + 8f, x + 4f, frame.top + 8f, paint)
+        canvas.drawLine(x - 4f, frame.bottom - 8f, x + 4f, frame.bottom - 8f, paint)
+        canvas.drawLine(frame.left + 17f, frame.bottom - 10f, frame.right - 8f, frame.top + 9f, paint)
+        canvas.drawLine(frame.right - 8f, frame.top + 9f, frame.right - 8f, frame.top + 16f, paint)
+        canvas.drawLine(frame.right - 8f, frame.top + 9f, frame.right - 15f, frame.top + 9f, paint)
     }
 
     private fun drawFooter(canvas: Canvas, logo: Bitmap, top: Float) {
@@ -265,10 +399,15 @@ object GarmentShareExporter {
             contentHeight += measureWrappedTextHeight(item.notes, bodyPaint, contentWidth, maxLines = 5, lineHeightMultiplier = 1.42f) + SECTION_GAP
         }
         contentHeight += 1.5f + 42f + 26f + 58f + 48f
-        val gridItems = item.metadata.count { it.values.isNotEmpty() }.coerceAtMost(4)
-        if (gridItems > 0) {
-            val gridRows = (gridItems + 1) / 2
-            contentHeight += gridRows * 154f + (gridRows - 1) * 10f + 44f
+        val gridMetadata = item.metadata.filter { it.values.isNotEmpty() }.take(4)
+        if (gridMetadata.isNotEmpty()) {
+            val valuePaint = textPaint(size = 25f, color = Color.rgb(24, 25, 29))
+            val gap = 10f
+            val cellWidth = (contentWidth - gap) / 2f
+            val rowHeights = gridMetadata.chunked(2).map { rowItems ->
+                rowItems.maxOf { metadataCellHeight(it, valuePaint, cellWidth) }
+            }
+            contentHeight += rowHeights.sum() + (rowHeights.size - 1) * gap + 44f
         }
         contentHeight += 1.5f + 34f + FOOTER_HEIGHT + PAGE_MARGIN
 
@@ -288,25 +427,7 @@ object GarmentShareExporter {
         availableWidth: Float,
         maxLines: Int,
         lineHeightMultiplier: Float = 1.25f,
-    ): Float {
-        val words = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
-        if (words.isEmpty()) return 0f
-        val lineHeight = paint.textSize * lineHeightMultiplier
-        var line = ""
-        var lines = 0
-        for (word in words) {
-            val candidate = if (line.isBlank()) word else "$line $word"
-            if (paint.measureText(candidate) <= availableWidth || line.isBlank()) {
-                line = candidate
-            } else {
-                lines++
-                line = word
-                if (lines == maxLines - 1) break
-            }
-        }
-        if (line.isNotBlank() && lines < maxLines) lines++
-        return lineHeight * lines
-    }
+    ): Float = paint.textSize * lineHeightMultiplier * wrappedLines(text, paint, availableWidth, maxLines).size
 
     private fun drawWrappedText(
         canvas: Canvas,
@@ -318,29 +439,32 @@ object GarmentShareExporter {
         maxLines: Int,
         lineHeightMultiplier: Float = 1.25f,
     ): Float {
-        val words = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
-        if (words.isEmpty()) return top
         val lineHeight = paint.textSize * lineHeightMultiplier
         var y = top
+        wrappedLines(text, paint, right - left, maxLines).forEach { line ->
+            canvas.drawText(line, left, y, paint)
+            y += lineHeight
+        }
+        return y
+    }
+
+    private fun wrappedLines(text: String, paint: Paint, availableWidth: Float, maxLines: Int): List<String> {
+        val words = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
+        if (words.isEmpty()) return emptyList()
+        val lines = mutableListOf<String>()
         var line = ""
-        var lines = 0
         for (word in words) {
             val candidate = if (line.isBlank()) word else "$line $word"
-            if (paint.measureText(candidate) <= right - left || line.isBlank()) {
+            if (paint.measureText(candidate) <= availableWidth || line.isBlank()) {
                 line = candidate
             } else {
-                canvas.drawText(line, left, y, paint)
-                y += lineHeight
-                lines++
+                lines += line
+                if (lines.size == maxLines) return lines
                 line = word
-                if (lines == maxLines - 1) break
             }
         }
-        if (line.isNotBlank() && lines < maxLines) {
-            val suffix = if (words.joinToString(" ").length > line.length && lines == maxLines - 1) "…" else ""
-            canvas.drawText(line.take(52) + suffix, left, y, paint)
-        }
-        return y + lineHeight
+        if (line.isNotBlank() && lines.size < maxLines) lines += line
+        return lines
     }
 
 
@@ -351,6 +475,15 @@ object GarmentShareExporter {
     }
 
     private fun String.toAndroidColorOrNull(): Int? = runCatching { Color.parseColor(this) }.getOrNull()
+
+    private fun Int.withAlpha(alpha: Int): Int = Color.argb(alpha, Color.red(this), Color.green(this), Color.blue(this))
+
+    private fun String.fitSingleLine(paint: Paint, availableWidth: Float): String {
+        if (paint.measureText(this) <= availableWidth) return this
+        var end = length
+        while (end > 1 && paint.measureText(substring(0, end)) > availableWidth) end--
+        return substring(0, end).trimEnd()
+    }
 
     private fun GarmentShareColor.isAvailable(noColorLabel: String): Boolean =
         hex != null || name.isNotBlank() && !name.equals(noColorLabel, ignoreCase = true)
@@ -387,7 +520,15 @@ data class GarmentShareItem(
 data class GarmentShareMetadata(
     val label: String,
     val values: List<String>,
+    val icon: GarmentShareMetadataIcon,
 )
+
+enum class GarmentShareMetadataIcon {
+    Category,
+    Season,
+    Occasion,
+    Fit,
+}
 
 data class GarmentShareColor(
     val role: String,

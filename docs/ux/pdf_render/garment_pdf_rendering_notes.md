@@ -10,8 +10,10 @@ Intentional differences from the web reference:
 - The web app header and bottom navigation are omitted from the PDF.
 - The Fabric & Care/material section is omitted per task requirements.
 - The footer uses bundled `app/src/main/assets/robia_logo.png` plus spark glyphs and `Created with Robia`.
+- The clothing image gradient overlay is controlled by `GarmentShareExporter.ENABLE_PDF_IMAGE_GRADIENT_OVERLAY` and defaults to `true`.
 
 Page/rendering shape:
 - Width: 720px.
 - Minimum height: 1280px (phone-like 9:16 canvas), expanding only when long garment content needs more space.
 - Offline assets: no network fonts, CSS, or images are required at export time.
+- The 2x2 metadata grid uses native canvas vector icons and expands row height so multi-selected values wrap without ellipses.
