@@ -11,7 +11,10 @@ interface WardrobeRepository {
     fun observeItem(id: String): Flow<ClothingItem?>
     fun observePendingGarmentSyncCount(): Flow<Int>
     fun observeGarmentSyncAttentionCount(): Flow<Int>
+    fun observePendingMetadataSyncCount(): Flow<Int>
+    fun observeMetadataSyncAttentionCount(): Flow<Int>
     suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWork>
+    suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork>
     suspend fun upsertItem(item: ClothingItem)
     suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)
@@ -20,9 +23,19 @@ interface WardrobeRepository {
     suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean
     suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String? = null): Boolean
     suspend fun markGarmentSyncAuthBlocked(id: String, message: String? = null): Boolean
+    suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean
+    suspend fun markMetadataSynced(work: PendingMetadataSyncWork, syncedAtEpochMillis: Long): Boolean
+    suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWork, message: String? = null): Boolean
+    suspend fun markMetadataSyncAuthBlocked(work: PendingMetadataSyncWork, message: String? = null): Boolean
 }
 
 data class PendingGarmentSyncWork(
+    val id: String,
+    val revision: Long,
+)
+
+data class PendingMetadataSyncWork(
+    val entityType: String,
     val id: String,
     val revision: Long,
 )

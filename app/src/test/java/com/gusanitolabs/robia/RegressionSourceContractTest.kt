@@ -70,6 +70,34 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun metadataSync_hasDurablePendingWorkAndTombstoneWinsRestore() {
+        val entities = source("app/src/main/java/com/gusanitolabs/robia/data/local/Entities.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+
+        assertTrue(entities.contains("data class PendingMetadataSyncWorkEntity"))
+        assertTrue(dao.contains("observePendingMetadataSyncCount"))
+        assertTrue(dao.contains("pendingMetadataSyncWork"))
+        assertTrue(dao.contains("category_id IN ('category', 'season', 'occasion', 'location')"))
+
+        assertTrue(repository.contains("queuedForSync()"))
+        assertTrue(repository.contains("syncTombstone(entityType = \"main_color\""))
+        assertTrue(repository.contains("syncTombstone(entityType = \"garment_tag\""))
+
+        assertTrue(snapshotRepository.contains("revision = syncRevision"))
+        assertTrue(snapshotRepository.contains(">= category.revision"))
+        assertTrue(snapshotRepository.contains(">= tag.revision"))
+        assertTrue(snapshotRepository.contains(">= color.revision"))
+
+        assertTrue(processor.contains("observePendingMetadataSyncCount()"))
+        assertTrue(processor.contains("pendingMetadataSyncWork()"))
+        assertTrue(processor.contains("markMetadataSynced"))
+        assertTrue(processor.contains(">= color.revision"))
+    }
+
+    @Test
     fun restoreProgressOverlay_gatesDiagnosticsToDeveloperModeAndStaysCentered() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val overlay = app

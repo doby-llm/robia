@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
@@ -12,6 +13,7 @@ import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
 import com.gusanitolabs.robia.data.local.MainColorEntity
 import com.gusanitolabs.robia.data.local.PendingGarmentSyncWorkEntity
+import com.gusanitolabs.robia.data.local.PendingMetadataSyncWorkEntity
 import com.gusanitolabs.robia.data.local.SyncTombstoneDao
 import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
@@ -33,8 +35,15 @@ class LocalWardrobeRepository(
 
     override fun observeGarmentSyncAttentionCount(): Flow<Int> = wardrobeDao.observeGarmentSyncAttentionCount()
 
+    override fun observePendingMetadataSyncCount(): Flow<Int> = wardrobeDao.observePendingMetadataSyncCount()
+
+    override fun observeMetadataSyncAttentionCount(): Flow<Int> = wardrobeDao.observeMetadataSyncAttentionCount()
+
     override suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWork> =
         wardrobeDao.pendingGarmentSyncWork().map(PendingGarmentSyncWorkEntity::toDomain)
+
+    override suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork> =
+        wardrobeDao.pendingMetadataSyncWork().map(PendingMetadataSyncWorkEntity::toDomain)
 
     override suspend fun upsertItem(item: ClothingItem) {
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
@@ -77,6 +86,18 @@ class LocalWardrobeRepository(
 
     override suspend fun markGarmentSyncAuthBlocked(id: String, message: String?): Boolean =
         wardrobeDao.markGarmentSyncAuthBlocked(id, message) > 0
+
+    override suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean =
+        wardrobeDao.markMetadataSyncing(work.toEntity())
+
+    override suspend fun markMetadataSynced(work: PendingMetadataSyncWork, syncedAtEpochMillis: Long): Boolean =
+        wardrobeDao.markMetadataSynced(work.toEntity(), syncedAtEpochMillis)
+
+    override suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWork, message: String?): Boolean =
+        wardrobeDao.markMetadataSyncFailedRetryable(work.toEntity(), message)
+
+    override suspend fun markMetadataSyncAuthBlocked(work: PendingMetadataSyncWork, message: String?): Boolean =
+        wardrobeDao.markMetadataSyncAuthBlocked(work.toEntity(), message)
 }
 
 class LocalTagRepository(
@@ -95,15 +116,15 @@ class LocalTagRepository(
         tagDao.observeMainColors().map { colors -> colors.map(MainColorEntity::toDomain) }
 
     override suspend fun upsertCategory(category: TagCategory) {
-        tagDao.upsertCategory(category.toEntity())
+        tagDao.upsertCategory(category.toEntity().queuedForSync())
     }
 
     override suspend fun upsertTag(tag: GarmentTag) {
-        tagDao.upsertTag(tag.toEntity())
+        tagDao.upsertTag(tag.toEntity().queuedForSync())
     }
 
     override suspend fun upsertMainColor(color: MainColor) {
-        tagDao.upsertMainColor(color.toEntity())
+        tagDao.upsertMainColor(color.toEntity().queuedForSync())
     }
 
     override suspend fun applyMainColorChange(
@@ -112,7 +133,7 @@ class LocalTagRepository(
         updatedItems: List<ClothingItem>,
     ) {
         tagDao.applyMainColorChange(
-            upsertColors = upsertColors.map(MainColor::toEntity),
+            upsertColors = upsertColors.map { color -> color.toEntity().queuedForSync() },
             deleteColorIds = deleteColorIds,
             updatedItems = updatedItems.map(ClothingItem::toEntity),
             tagIdsByItemId = updatedItems.associate { item -> item.id to item.tags.map(GarmentTag::id) },
@@ -136,16 +157,16 @@ class LocalTagRepository(
     override suspend fun restoreDefaultTags(categoryId: String) {
         DefaultTags.categories
             .firstOrNull { category -> category.id == categoryId }
-            ?.let { category -> tagDao.upsertCategory(category.toEntity()) }
+            ?.let { category -> tagDao.upsertCategory(category.toEntity().queuedForSync()) }
         tagDao.upsertTags(
             DefaultTags.tags
                 .filter { tag -> tag.categoryId == categoryId }
-                .map(GarmentTag::toEntity),
+                .map { tag -> tag.toEntity().queuedForSync() },
         )
     }
 
     override suspend fun resetMainColorsToDefaults() {
-        tagDao.replaceMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
+        tagDao.replaceMainColors(DefaultTags.mainColors.map { color -> color.toEntity().queuedForSync() })
     }
 
     override suspend fun seedDefaultsIfNeeded() {
@@ -158,6 +179,18 @@ class LocalTagRepository(
 }
 
 private fun PendingGarmentSyncWorkEntity.toDomain(): PendingGarmentSyncWork = PendingGarmentSyncWork(
+    id = id,
+    revision = revision,
+)
+
+private fun PendingMetadataSyncWorkEntity.toDomain(): PendingMetadataSyncWork = PendingMetadataSyncWork(
+    entityType = entityType,
+    id = id,
+    revision = revision,
+)
+
+private fun PendingMetadataSyncWork.toEntity(): PendingMetadataSyncWorkEntity = PendingMetadataSyncWorkEntity(
+    entityType = entityType,
     id = id,
     revision = revision,
 )
@@ -227,6 +260,21 @@ private fun GarmentTagEntity.toDomain(): GarmentTag = GarmentTag(id, categoryId,
 private fun GarmentTag.toEntity(): GarmentTagEntity = GarmentTagEntity(id, categoryId, name, sortOrder, isSystem)
 private fun MainColorEntity.toDomain(): MainColor = MainColor(id, name, hex, sortOrder, isDefault)
 private fun MainColor.toEntity(): MainColorEntity = MainColorEntity(id, name, hex, sortOrder, isDefault)
+
+private fun TagCategoryEntity.queuedForSync(): TagCategoryEntity {
+    val revision = System.currentTimeMillis()
+    return copy(syncStatus = GarmentSyncStatus.Queued, syncRevision = revision, syncDirtyAtEpochMillis = revision, syncFailureMessage = null)
+}
+
+private fun GarmentTagEntity.queuedForSync(): GarmentTagEntity {
+    val revision = System.currentTimeMillis()
+    return copy(syncStatus = GarmentSyncStatus.Queued, syncRevision = revision, syncDirtyAtEpochMillis = revision, syncFailureMessage = null)
+}
+
+private fun MainColorEntity.queuedForSync(): MainColorEntity {
+    val revision = System.currentTimeMillis()
+    return copy(syncStatus = GarmentSyncStatus.Queued, syncRevision = revision, syncDirtyAtEpochMillis = revision, syncFailureMessage = null)
+}
 
 private fun syncTombstone(
     entityType: String,

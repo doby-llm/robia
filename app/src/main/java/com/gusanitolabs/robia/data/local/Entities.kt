@@ -49,6 +49,11 @@ data class TagCategoryEntity(
     val name: String,
     @ColumnInfo(name = "sort_order") val sortOrder: Int,
     @ColumnInfo(name = "is_system") val isSystem: Boolean,
+    @ColumnInfo(name = "sync_status") val syncStatus: GarmentSyncStatus = GarmentSyncStatus.Synced,
+    @ColumnInfo(name = "sync_revision") val syncRevision: Long = 0L,
+    @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
 )
 
 @Entity(
@@ -69,6 +74,11 @@ data class GarmentTagEntity(
     val name: String,
     @ColumnInfo(name = "sort_order") val sortOrder: Int,
     @ColumnInfo(name = "is_system") val isSystem: Boolean,
+    @ColumnInfo(name = "sync_status") val syncStatus: GarmentSyncStatus = GarmentSyncStatus.Synced,
+    @ColumnInfo(name = "sync_revision") val syncRevision: Long = 0L,
+    @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
 )
 
 @Entity(tableName = "main_colors")
@@ -78,6 +88,11 @@ data class MainColorEntity(
     val hex: String,
     @ColumnInfo(name = "sort_order") val sortOrder: Int,
     @ColumnInfo(name = "is_default") val isDefault: Boolean,
+    @ColumnInfo(name = "sync_status") val syncStatus: GarmentSyncStatus = GarmentSyncStatus.Synced,
+    @ColumnInfo(name = "sync_revision") val syncRevision: Long = 0L,
+    @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
 )
 
 @Entity(
@@ -90,6 +105,10 @@ data class SyncTombstoneEntity(
     @ColumnInfo(name = "entity_id") val entityId: String,
     @ColumnInfo(name = "deleted_at_epoch_millis") val deletedAtEpochMillis: Long,
     val revision: Long = 0L,
+    @ColumnInfo(name = "sync_status") val syncStatus: GarmentSyncStatus = GarmentSyncStatus.Queued,
+    @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = revision,
+    @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
 )
 
 @Entity(
@@ -131,6 +150,12 @@ data class ClothingItemWithTags(
 )
 
 data class PendingGarmentSyncWorkEntity(
+    val id: String,
+    val revision: Long,
+)
+
+data class PendingMetadataSyncWorkEntity(
+    val entityType: String,
     val id: String,
     val revision: Long,
 )

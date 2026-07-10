@@ -10,6 +10,7 @@ import com.gusanitolabs.robia.core.model.GarmentSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.MainColorSyncRecord
 import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
 import com.gusanitolabs.robia.core.model.TagCategory
@@ -20,6 +21,7 @@ import com.gusanitolabs.robia.core.model.WardrobeSnapshotMetadata
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 import com.gusanitolabs.robia.data.PendingGarmentSyncWork
+import com.gusanitolabs.robia.data.PendingMetadataSyncWork
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
 import kotlinx.coroutines.CoroutineDispatcher
@@ -73,14 +75,23 @@ class WardrobeSyncOutboxProcessor(
                 settingsRepository.settings,
                 wardrobeRepository.observePendingGarmentSyncCount(),
                 wardrobeRepository.observeGarmentSyncAttentionCount(),
+                wardrobeRepository.observePendingMetadataSyncCount(),
+                wardrobeRepository.observeMetadataSyncAttentionCount(),
                 isProcessing,
                 needsPhotoRestoreAttention,
-            ) { settings, pendingCount, attentionCount, processing, photoAttention ->
+            ) { values ->
+                val settings = values[0] as RobiaSettings
+                val pendingCount = values[1] as Int
+                val attentionCount = values[2] as Int
+                val metadataPendingCount = values[3] as Int
+                val metadataAttentionCount = values[4] as Int
+                val processing = values[5] as Boolean
+                val photoAttention = values[6] as Boolean
                 restoreSyncLogRepository.setEnabled(settings.developerModeEnabled)
                 WardrobeSyncStateInputs(
                     connectionStatus = settings.driveSyncConnectionStatus,
-                    pendingOperationCount = pendingCount,
-                    attentionOperationCount = attentionCount,
+                    pendingOperationCount = pendingCount + metadataPendingCount,
+                    attentionOperationCount = attentionCount + metadataAttentionCount,
                     isProcessing = processing,
                     needsPhotoRestoreAttention = photoAttention,
                 )
@@ -179,13 +190,17 @@ class WardrobeSyncOutboxProcessor(
             }
 
             val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
-            if (pendingWork.isEmpty() && !forceSnapshot && !forceImport) return@withLock
+            val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
+            if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !forceSnapshot && !forceImport) return@withLock
 
             isProcessing.value = true
             val lockedWork = pendingWork.filter { work ->
                 wardrobeRepository.markGarmentSyncing(work.id, work.revision)
             }
-            if (lockedWork.isEmpty() && !forceSnapshot && !forceImport) {
+            val lockedMetadataWork = pendingMetadataWork.filter { work ->
+                wardrobeRepository.markMetadataSyncing(work)
+            }
+            if (lockedWork.isEmpty() && lockedMetadataWork.isEmpty() && !forceSnapshot && !forceImport) {
                 isProcessing.value = false
                 return@withLock
             }
@@ -206,19 +221,19 @@ class WardrobeSyncOutboxProcessor(
                 when (result) {
                     is SyncCycleResult.Success -> {
                         needsPhotoRestoreAttention.value = result.guardedPhotoCount > 0
-                        markSynced(lockedWork)
+                        markSynced(lockedWork, lockedMetadataWork)
                     }
                     SyncCycleResult.NoBackup -> {
                         needsPhotoRestoreAttention.value = false
-                        markSynced(lockedWork)
+                        markSynced(lockedWork, lockedMetadataWork)
                     }
                     is SyncCycleResult.Blocked -> {
                         keepTerminalProgress = true
-                        markBlocked(lockedWork, result.reason)
+                        markBlocked(lockedWork, lockedMetadataWork, result.reason)
                     }
                     is SyncCycleResult.Failure -> {
                         keepTerminalProgress = true
-                        markFailedRetryable(lockedWork)
+                        markFailedRetryable(lockedWork, lockedMetadataWork)
                     }
                 }
             } finally {
@@ -399,16 +414,21 @@ class WardrobeSyncOutboxProcessor(
         operation.affectedGarmentIds().forEach { id ->
             wardrobeRepository.markGarmentSyncAuthBlocked(id)
         }
+        if (operation.affectedGarmentIds().isEmpty()) {
+            wardrobeRepository.pendingMetadataSyncWork().forEach { work -> wardrobeRepository.markMetadataSyncAuthBlocked(work) }
+        }
     }
 
     private suspend fun markBlockedForCurrentSetupState(connectionStatus: DriveSyncConnectionStatus) {
         val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
+        val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
         when (connectionStatus) {
-            DriveSyncConnectionStatus.Disconnected -> pendingWork.forEach { work ->
-                wardrobeRepository.markGarmentSyncAuthBlocked(work.id)
+            DriveSyncConnectionStatus.Disconnected -> {
+                pendingWork.forEach { work -> wardrobeRepository.markGarmentSyncAuthBlocked(work.id) }
+                pendingMetadataWork.forEach { work -> wardrobeRepository.markMetadataSyncAuthBlocked(work) }
             }
             DriveSyncConnectionStatus.Disabled,
-            DriveSyncConnectionStatus.NotConfigured -> markFailedRetryable(pendingWork)
+            DriveSyncConnectionStatus.NotConfigured -> markFailedRetryable(pendingWork, pendingMetadataWork)
             DriveSyncConnectionStatus.Connected,
             DriveSyncConnectionStatus.Syncing,
             DriveSyncConnectionStatus.NeedsAttention -> Unit
@@ -420,27 +440,40 @@ class WardrobeSyncOutboxProcessor(
         operation.affectedGarmentIds().forEach { id ->
             workById[id]?.let { work -> wardrobeRepository.markGarmentSyncFailedRetryable(work.id, work.revision) }
         }
-    }
-
-    private suspend fun markSynced(work: List<PendingGarmentSyncWork>) {
-        val now = System.currentTimeMillis()
-        work.forEach { item -> wardrobeRepository.markGarmentSynced(item.id, item.revision, now) }
-    }
-
-    private suspend fun markBlocked(work: List<PendingGarmentSyncWork>, reason: DriveSyncDisabledReason) {
-        when (reason) {
-            DriveSyncDisabledReason.UserNotConnected,
-            DriveSyncDisabledReason.AccountBindingConflict -> work.forEach { item ->
-                wardrobeRepository.markGarmentSyncAuthBlocked(item.id)
-            }
-            DriveSyncDisabledReason.GoogleCloudSetupRequired,
-            DriveSyncDisabledReason.OAuthClientMissing,
-            DriveSyncDisabledReason.UnsafeLocalState -> markFailedRetryable(work)
+        if (operation.affectedGarmentIds().isEmpty()) {
+            wardrobeRepository.pendingMetadataSyncWork().forEach { work -> wardrobeRepository.markMetadataSyncFailedRetryable(work) }
         }
     }
 
-    private suspend fun markFailedRetryable(work: List<PendingGarmentSyncWork>) {
+    private suspend fun markSynced(work: List<PendingGarmentSyncWork>, metadataWork: List<PendingMetadataSyncWork>) {
+        val now = System.currentTimeMillis()
+        work.forEach { item -> wardrobeRepository.markGarmentSynced(item.id, item.revision, now) }
+        metadataWork.forEach { item -> wardrobeRepository.markMetadataSynced(item, now) }
+    }
+
+    private suspend fun markBlocked(
+        work: List<PendingGarmentSyncWork>,
+        metadataWork: List<PendingMetadataSyncWork>,
+        reason: DriveSyncDisabledReason,
+    ) {
+        when (reason) {
+            DriveSyncDisabledReason.UserNotConnected,
+            DriveSyncDisabledReason.AccountBindingConflict -> {
+                work.forEach { item -> wardrobeRepository.markGarmentSyncAuthBlocked(item.id) }
+                metadataWork.forEach { item -> wardrobeRepository.markMetadataSyncAuthBlocked(item) }
+            }
+            DriveSyncDisabledReason.GoogleCloudSetupRequired,
+            DriveSyncDisabledReason.OAuthClientMissing,
+            DriveSyncDisabledReason.UnsafeLocalState -> markFailedRetryable(work, metadataWork)
+        }
+    }
+
+    private suspend fun markFailedRetryable(
+        work: List<PendingGarmentSyncWork>,
+        metadataWork: List<PendingMetadataSyncWork> = emptyList(),
+    ) {
         work.forEach { item -> wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision) }
+        metadataWork.forEach { item -> wardrobeRepository.markMetadataSyncFailedRetryable(item) }
     }
 
     private fun DriveSyncConnectionStatus.toWardrobeSyncState(
@@ -789,17 +822,17 @@ private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnap
         local.taxonomies.categories + remote.taxonomies.categories,
         TagCategorySyncRecord::id,
         TagCategorySyncRecord::revision,
-    ).filterNot { category -> (tombstoneByCategoryId[category.id]?.revision ?: Long.MIN_VALUE) > category.revision }
+    ).filterNot { category -> (tombstoneByCategoryId[category.id]?.revision ?: Long.MIN_VALUE) >= category.revision }
     val activeCategoryIds = mergedCategories.map(TagCategorySyncRecord::id).toSet()
     val mergedTags = mergeByKey(local.taxonomies.tags + remote.taxonomies.tags, TagSyncRecord::id, TagSyncRecord::revision)
-        .filterNot { tag -> (tombstoneByTagId[tag.id]?.revision ?: Long.MIN_VALUE) > tag.revision }
+        .filterNot { tag -> (tombstoneByTagId[tag.id]?.revision ?: Long.MIN_VALUE) >= tag.revision }
         .filter { tag -> tag.categoryId in activeCategoryIds }
     val activeTagIds = mergedTags.map(TagSyncRecord::id).toSet()
     val mergedMainColors = mergeByKey(
         local.taxonomies.mainColors + remote.taxonomies.mainColors,
         MainColorSyncRecord::id,
         MainColorSyncRecord::revision,
-    ).filterNot { color -> (tombstoneByMainColorId[color.id]?.revision ?: Long.MIN_VALUE) > color.revision }
+    ).filterNot { color -> (tombstoneByMainColorId[color.id]?.revision ?: Long.MIN_VALUE) >= color.revision }
     val activeMainColorIds = mergedMainColors.map(MainColorSyncRecord::id).toSet()
     val mergedMetadata = WardrobeSnapshotMetadata(
         generatedAtEpochMillis = System.currentTimeMillis(),

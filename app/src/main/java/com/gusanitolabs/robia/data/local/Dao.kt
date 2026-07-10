@@ -32,8 +32,41 @@ interface WardrobeDao {
     @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')")
     fun observeGarmentSyncAttentionCount(): Flow<Int>
 
-    @Query("SELECT id, sync_revision AS revision FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing') ORDER BY sync_dirty_at_epoch_millis, updated_at_epoch_millis, id")
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM tag_categories WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM garment_tags WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM main_colors WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM sync_tombstones WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked'))
+        """,
+    )
+    fun observePendingMetadataSyncCount(): Flow<Int>
+
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM tag_categories WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM garment_tags WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM main_colors WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM sync_tombstones WHERE sync_status IN ('FailedRetryable', 'AuthBlocked'))
+        """,
+    )
+    fun observeMetadataSyncAttentionCount(): Flow<Int>
+
+    @Query("SELECT id, sync_revision AS revision FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked') ORDER BY sync_dirty_at_epoch_millis, updated_at_epoch_millis, id")
     suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWorkEntity>
+
+    @Query(
+        """
+        SELECT 'tag_category' AS entityType, id, sync_revision AS revision FROM tag_categories WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
+        UNION ALL SELECT 'garment_tag' AS entityType, id, sync_revision AS revision FROM garment_tags WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
+        UNION ALL SELECT 'main_color' AS entityType, id, sync_revision AS revision FROM main_colors WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
+        UNION ALL SELECT entity_type AS entityType, id, revision FROM sync_tombstones WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
+        ORDER BY revision, entityType, id
+        """,
+    )
+    suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWorkEntity>
 
     @Query("UPDATE clothing_items SET sync_status = 'Syncing' WHERE id = :itemId AND sync_revision = :revision")
     suspend fun markGarmentSyncing(itemId: String, revision: Long): Int
@@ -46,6 +79,89 @@ interface WardrobeDao {
 
     @Query("UPDATE clothing_items SET sync_status = 'AuthBlocked', sync_failure_message = :message WHERE id = :itemId")
     suspend fun markGarmentSyncAuthBlocked(itemId: String, message: String?): Int
+
+    @Transaction
+    suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity): Boolean =
+        updateMetadataSyncStatus(work, GarmentSyncStatus.Syncing) > 0
+
+    @Transaction
+    suspend fun markMetadataSynced(work: PendingMetadataSyncWorkEntity, syncedAtEpochMillis: Long): Boolean =
+        updateMetadataSyncStatus(
+            work = work,
+            status = GarmentSyncStatus.Synced,
+            syncedAtEpochMillis = syncedAtEpochMillis,
+            clearDirty = true,
+        ) > 0
+
+    @Transaction
+    suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWorkEntity, message: String?): Boolean =
+        updateMetadataSyncStatus(work, GarmentSyncStatus.FailedRetryable, message = message) > 0
+
+    @Transaction
+    suspend fun markMetadataSyncAuthBlocked(work: PendingMetadataSyncWorkEntity, message: String?): Boolean =
+        updateMetadataSyncStatus(work, GarmentSyncStatus.AuthBlocked, message = message, matchRevision = false) > 0
+
+    private suspend fun updateMetadataSyncStatus(
+        work: PendingMetadataSyncWorkEntity,
+        status: GarmentSyncStatus,
+        syncedAtEpochMillis: Long? = null,
+        clearDirty: Boolean = false,
+        message: String? = null,
+        matchRevision: Boolean = true,
+    ): Int = when (work.entityType) {
+        "tag_category", "category" -> updateTagCategorySyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+        "garment_tag", "tag" -> updateGarmentTagSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+        "main_color", "palette_color", "color" -> updateMainColorSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+        else -> updateTombstoneSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+    }
+
+    @Query(
+        """
+        UPDATE tag_categories
+        SET sync_status = :status,
+            last_synced_at_epoch_millis = COALESCE(:syncedAtEpochMillis, last_synced_at_epoch_millis),
+            sync_dirty_at_epoch_millis = CASE WHEN :clearDirty THEN NULL ELSE sync_dirty_at_epoch_millis END,
+            sync_failure_message = :message
+        WHERE id = :id AND (:matchRevision = 0 OR sync_revision = :revision)
+        """,
+    )
+    suspend fun updateTagCategorySyncStatus(id: String, revision: Long, status: GarmentSyncStatus, syncedAtEpochMillis: Long?, clearDirty: Boolean, message: String?, matchRevision: Boolean): Int
+
+    @Query(
+        """
+        UPDATE garment_tags
+        SET sync_status = :status,
+            last_synced_at_epoch_millis = COALESCE(:syncedAtEpochMillis, last_synced_at_epoch_millis),
+            sync_dirty_at_epoch_millis = CASE WHEN :clearDirty THEN NULL ELSE sync_dirty_at_epoch_millis END,
+            sync_failure_message = :message
+        WHERE id = :id AND (:matchRevision = 0 OR sync_revision = :revision)
+        """,
+    )
+    suspend fun updateGarmentTagSyncStatus(id: String, revision: Long, status: GarmentSyncStatus, syncedAtEpochMillis: Long?, clearDirty: Boolean, message: String?, matchRevision: Boolean): Int
+
+    @Query(
+        """
+        UPDATE main_colors
+        SET sync_status = :status,
+            last_synced_at_epoch_millis = COALESCE(:syncedAtEpochMillis, last_synced_at_epoch_millis),
+            sync_dirty_at_epoch_millis = CASE WHEN :clearDirty THEN NULL ELSE sync_dirty_at_epoch_millis END,
+            sync_failure_message = :message
+        WHERE id = :id AND (:matchRevision = 0 OR sync_revision = :revision)
+        """,
+    )
+    suspend fun updateMainColorSyncStatus(id: String, revision: Long, status: GarmentSyncStatus, syncedAtEpochMillis: Long?, clearDirty: Boolean, message: String?, matchRevision: Boolean): Int
+
+    @Query(
+        """
+        UPDATE sync_tombstones
+        SET sync_status = :status,
+            last_synced_at_epoch_millis = COALESCE(:syncedAtEpochMillis, last_synced_at_epoch_millis),
+            sync_dirty_at_epoch_millis = CASE WHEN :clearDirty THEN NULL ELSE sync_dirty_at_epoch_millis END,
+            sync_failure_message = :message
+        WHERE id = :id AND (:matchRevision = 0 OR revision = :revision)
+        """,
+    )
+    suspend fun updateTombstoneSyncStatus(id: String, revision: Long, status: GarmentSyncStatus, syncedAtEpochMillis: Long?, clearDirty: Boolean, message: String?, matchRevision: Boolean): Int
 
     @Upsert
     suspend fun upsertItem(item: ClothingItemEntity)
@@ -158,7 +274,7 @@ interface TagDao {
         """
         DELETE FROM garment_tags
         WHERE id = :id
-            AND (is_system = 0 OR category_id IN ('category', 'season', 'occasion'))
+            AND (is_system = 0 OR category_id IN ('category', 'season', 'occasion', 'location'))
         """,
     )
     suspend fun deleteEditableTag(id: String): Int

@@ -45,8 +45,12 @@ class LocalWardrobeSyncSnapshotRepository(
         val colors = tagDao.getMainColorsForSync()
         val tombstones = syncTombstoneDao.getAllForSync()
         val itemUpdatedAtById = items.associate { item -> item.id to item.syncRevision }
+        val taxonomyRevisions = categories.map(TagCategoryEntity::syncRevision) +
+            tags.map(GarmentTagEntity::syncRevision) +
+            colors.map(MainColorEntity::syncRevision)
         val snapshotRevision = maxOf(
             itemUpdatedAtById.values.maxOrNull() ?: 0L,
+            taxonomyRevisions.maxOrNull() ?: 0L,
             tombstones.maxOfOrNull(SyncTombstoneEntity::revision) ?: 0L,
             generatedAtEpochMillis,
         )
@@ -126,6 +130,8 @@ private fun TagCategoryEntity.toSyncRecord(): TagCategorySyncRecord = TagCategor
     name = name,
     sortOrder = sortOrder,
     isSystem = isSystem,
+    revision = syncRevision,
+    updatedAtEpochMillis = syncRevision,
 )
 
 private fun GarmentTagEntity.toSyncRecord(): TagSyncRecord = TagSyncRecord(
@@ -134,6 +140,8 @@ private fun GarmentTagEntity.toSyncRecord(): TagSyncRecord = TagSyncRecord(
     name = name,
     sortOrder = sortOrder,
     isSystem = isSystem,
+    revision = syncRevision,
+    updatedAtEpochMillis = syncRevision,
 )
 
 private fun MainColorEntity.toSyncRecord(): MainColorSyncRecord = MainColorSyncRecord(
@@ -142,6 +150,8 @@ private fun MainColorEntity.toSyncRecord(): MainColorSyncRecord = MainColorSyncR
     hex = hex,
     sortOrder = sortOrder,
     isDefault = isDefault,
+    revision = syncRevision,
+    updatedAtEpochMillis = syncRevision,
 )
 
 private fun ClothingItemEntity.toGarmentRecord(): GarmentSyncRecord = GarmentSyncRecord(
@@ -210,6 +220,10 @@ private fun TagCategorySyncRecord.toEntity(): TagCategoryEntity = TagCategoryEnt
     name = name,
     sortOrder = sortOrder,
     isSystem = isSystem,
+    syncStatus = GarmentSyncStatus.Synced,
+    syncRevision = revision,
+    syncDirtyAtEpochMillis = null,
+    lastSyncedAtEpochMillis = System.currentTimeMillis(),
 )
 
 private fun TagSyncRecord.toEntity(): GarmentTagEntity = GarmentTagEntity(
@@ -218,6 +232,10 @@ private fun TagSyncRecord.toEntity(): GarmentTagEntity = GarmentTagEntity(
     name = name,
     sortOrder = sortOrder,
     isSystem = isSystem,
+    syncStatus = GarmentSyncStatus.Synced,
+    syncRevision = revision,
+    syncDirtyAtEpochMillis = null,
+    lastSyncedAtEpochMillis = System.currentTimeMillis(),
 )
 
 private fun MainColorSyncRecord.toEntity(): MainColorEntity = MainColorEntity(
@@ -226,6 +244,10 @@ private fun MainColorSyncRecord.toEntity(): MainColorEntity = MainColorEntity(
     hex = hex,
     sortOrder = sortOrder,
     isDefault = isDefault,
+    syncStatus = GarmentSyncStatus.Synced,
+    syncRevision = revision,
+    syncDirtyAtEpochMillis = null,
+    lastSyncedAtEpochMillis = System.currentTimeMillis(),
 )
 
 private fun GarmentSyncRecord.toEntity(
@@ -270,6 +292,9 @@ private fun SyncTombstoneRecord.toEntity(): SyncTombstoneEntity = SyncTombstoneE
     entityId = entityId,
     deletedAtEpochMillis = deletedAtEpochMillis,
     revision = revision,
+    syncStatus = GarmentSyncStatus.Synced,
+    syncDirtyAtEpochMillis = null,
+    lastSyncedAtEpochMillis = System.currentTimeMillis(),
 )
 
 private fun WardrobeSyncSnapshot.withoutTombstonedTaxonomy(): WardrobeSyncSnapshot {
@@ -284,14 +309,14 @@ private fun WardrobeSyncSnapshot.withoutTombstonedTaxonomy(): WardrobeSyncSnapsh
         .associateBy(SyncTombstoneRecord::entityId)
 
     val activeCategories = taxonomies.categories
-        .filterNot { category -> (tombstoneByCategoryId[category.id]?.revision ?: Long.MIN_VALUE) > category.revision }
+        .filterNot { category -> (tombstoneByCategoryId[category.id]?.revision ?: Long.MIN_VALUE) >= category.revision }
     val activeCategoryIds = activeCategories.map(TagCategorySyncRecord::id).toSet()
     val activeTags = taxonomies.tags
-        .filterNot { tag -> (tombstoneByTagId[tag.id]?.revision ?: Long.MIN_VALUE) > tag.revision }
+        .filterNot { tag -> (tombstoneByTagId[tag.id]?.revision ?: Long.MIN_VALUE) >= tag.revision }
         .filter { tag -> tag.categoryId in activeCategoryIds }
     val activeTagIds = activeTags.map(TagSyncRecord::id).toSet()
     val activeMainColors = taxonomies.mainColors
-        .filterNot { color -> (tombstoneByMainColorId[color.id]?.revision ?: Long.MIN_VALUE) > color.revision }
+        .filterNot { color -> (tombstoneByMainColorId[color.id]?.revision ?: Long.MIN_VALUE) >= color.revision }
     val activeMainColorIds = activeMainColors.map(MainColorSyncRecord::id).toSet()
 
     return copy(
