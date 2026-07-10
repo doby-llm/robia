@@ -28,6 +28,7 @@ object GarmentShareExporter {
     private const val PAGE_MARGIN = 44f
     private const val SECTION_GAP = 26f
     private const val FOOTER_HEIGHT = 136f
+    private const val COLOR_CARD_HEIGHT = 104f
 
     fun createShareImage(
         context: Context,
@@ -100,7 +101,7 @@ object GarmentShareExporter {
 
         val contentRight = PAGE_WIDTH - PAGE_MARGIN
         val imageRect = RectF(PAGE_MARGIN, PAGE_MARGIN, contentRight, PAGE_MARGIN + imageFrameHeight(image))
-        drawBitmapFitCover(canvas, image, imageRect, 0f)
+        drawBitmapFitContain(canvas, image, imageRect, 0f)
         if (ENABLE_PDF_IMAGE_GRADIENT_OVERLAY) {
             drawImageGradientOverlay(canvas, imageRect, item.primaryColor.hex?.toAndroidColorOrNull())
         }
@@ -129,12 +130,12 @@ object GarmentShareExporter {
         drawFooter(canvas, logo, footerTop)
     }
 
-    private fun drawBitmapFitCover(canvas: Canvas, bitmap: Bitmap, target: RectF, radius: Float) {
+    private fun drawBitmapFitContain(canvas: Canvas, bitmap: Bitmap, target: RectF, radius: Float) {
         val path = Path().apply { addRoundRect(target, radius, radius, Path.Direction.CW) }
         val save = canvas.save()
         canvas.clipPath(path)
-        canvas.drawColor(Color.WHITE)
-        val scale = maxOf(target.width() / bitmap.width, target.height() / bitmap.height)
+        canvas.drawColor(Color.rgb(250, 249, 247))
+        val scale = min(target.width() / bitmap.width, target.height() / bitmap.height)
         val width = bitmap.width * scale
         val height = bitmap.height * scale
         val left = target.left + (target.width() - width) / 2f
@@ -188,10 +189,10 @@ object GarmentShareExporter {
         var x = left
         var maxBottom = top
         colors.forEach { color ->
-            val width = min(236f, right - x)
+            val width = min(306f, right - x)
             val bottom = drawColorChip(canvas, color, x, top, width, item.noColorLabel)
             maxBottom = maxOf(maxBottom, bottom)
-            x += width + 22f
+            x += width + 20f
         }
         return maxBottom
     }
@@ -204,28 +205,30 @@ object GarmentShareExporter {
         width: Float,
         noColorLabel: String,
     ): Float {
-        val chipRect = RectF(left, top, left + width, top + 58f)
-        val chipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = Color.rgb(244, 243, 241) }
+        val chipRect = RectF(left, top, left + width, top + COLOR_CARD_HEIGHT)
+        val chipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = Color.WHITE }
         val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = Color.rgb(227, 226, 224)
             style = Paint.Style.STROKE
             strokeWidth = 1.5f
         }
-        val labelPaint = textPaint(size = 15f, color = Color.rgb(24, 25, 29), bold = true)
-        val rolePaint = textPaint(size = 11f, color = Color.rgb(70, 70, 75))
-        canvas.drawRoundRect(chipRect, 29f, 29f, chipPaint)
-        canvas.drawRoundRect(chipRect, 29f, 29f, outlinePaint)
+        val labelPaint = textPaint(size = 24f, color = Color.rgb(24, 25, 29))
+        val rolePaint = textPaint(size = 13f, color = Color.rgb(70, 70, 75), bold = true).apply { letterSpacing = 0.08f }
+        canvas.drawRoundRect(chipRect, 14f, 14f, chipPaint)
+        canvas.drawRoundRect(chipRect, 14f, 14f, outlinePaint)
 
-        val swatchCenterY = top + 29f
+        val swatchCenterY = top + COLOR_CARD_HEIGHT / 2f
+        val swatchCenterX = left + 48f
         val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color.hex?.toAndroidColorOrNull() ?: Color.TRANSPARENT }
-        canvas.drawCircle(left + 34f, swatchCenterY, 19f, swatchPaint)
-        canvas.drawCircle(left + 34f, swatchCenterY, 19f, outlinePaint)
+        canvas.drawCircle(swatchCenterX, swatchCenterY, 29f, swatchPaint)
+        canvas.drawCircle(swatchCenterX, swatchCenterY, 29f, outlinePaint)
         if (color.hex == null) {
-            canvas.drawLine(left + 22f, swatchCenterY - 12f, left + 46f, swatchCenterY + 12f, outlinePaint)
-            canvas.drawLine(left + 46f, swatchCenterY - 12f, left + 22f, swatchCenterY + 12f, outlinePaint)
+            canvas.drawLine(swatchCenterX - 17f, swatchCenterY - 17f, swatchCenterX + 17f, swatchCenterY + 17f, outlinePaint)
+            canvas.drawLine(swatchCenterX + 17f, swatchCenterY - 17f, swatchCenterX - 17f, swatchCenterY + 17f, outlinePaint)
         }
-        canvas.drawText(color.name.ifBlank { noColorLabel }.fitSingleLine(labelPaint, width - 86f), left + 70f, top + 24f, labelPaint)
-        canvas.drawText(color.role, left + 70f, top + 42f, rolePaint)
+        val textLeft = left + 94f
+        canvas.drawText(color.role.uppercase(Locale.getDefault()), textLeft, top + 34f, rolePaint)
+        canvas.drawText(color.name.ifBlank { noColorLabel }.fitSingleLine(labelPaint, width - 116f), textLeft, top + 72f, labelPaint)
         return chipRect.bottom
     }
 
@@ -398,7 +401,7 @@ object GarmentShareExporter {
         if (item.notes.isNotBlank()) {
             contentHeight += measureWrappedTextHeight(item.notes, bodyPaint, contentWidth, maxLines = 5, lineHeightMultiplier = 1.42f) + SECTION_GAP
         }
-        contentHeight += 1.5f + 42f + 26f + 58f + 48f
+        contentHeight += 1.5f + 42f + 26f + COLOR_CARD_HEIGHT + 48f
         val gridMetadata = item.metadata.filter { it.values.isNotEmpty() }.take(4)
         if (gridMetadata.isNotEmpty()) {
             val valuePaint = textPaint(size = 25f, color = Color.rgb(24, 25, 29))
