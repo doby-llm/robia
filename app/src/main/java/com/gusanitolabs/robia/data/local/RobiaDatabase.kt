@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncTombstoneEntity::class,
         ClothingItemTagCrossRef::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -45,6 +45,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     .build()
                     .also { instance = it }
@@ -187,6 +188,33 @@ abstract class RobiaDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
             }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                addMetadataSyncColumns(database, "tag_categories")
+                addMetadataSyncColumns(database, "garment_tags")
+                addMetadataSyncColumns(database, "main_colors")
+                database.execSQL("ALTER TABLE sync_tombstones ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Queued'")
+                database.execSQL("ALTER TABLE sync_tombstones ADD COLUMN sync_dirty_at_epoch_millis INTEGER")
+                database.execSQL("ALTER TABLE sync_tombstones ADD COLUMN last_synced_at_epoch_millis INTEGER")
+                database.execSQL("ALTER TABLE sync_tombstones ADD COLUMN sync_failure_message TEXT")
+                database.execSQL(
+                    """
+                    UPDATE sync_tombstones
+                    SET sync_dirty_at_epoch_millis = revision
+                    WHERE sync_dirty_at_epoch_millis IS NULL
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        private fun addMetadataSyncColumns(database: SupportSQLiteDatabase, tableName: String) {
+            database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced'")
+            database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_dirty_at_epoch_millis INTEGER")
+            database.execSQL("ALTER TABLE $tableName ADD COLUMN last_synced_at_epoch_millis INTEGER")
+            database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_failure_message TEXT")
         }
     }
 }

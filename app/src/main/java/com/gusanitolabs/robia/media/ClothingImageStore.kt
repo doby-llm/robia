@@ -3,14 +3,18 @@ package com.gusanitolabs.robia.media
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import androidx.core.content.FileProvider
 import com.gusanitolabs.robia.core.color.GarmentColorAnalyzer
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.MainColor
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 
 object ClothingImageStore {
@@ -30,6 +34,77 @@ object ClothingImageStore {
         context.contentResolver.openInputStream(sourceUri)?.use { input ->
             imageFile.outputStream().use(input::copyTo)
         } ?: error("Unable to open selected image")
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            imageFile,
+        )
+    }
+
+    fun readImageBlob(context: Context, imageUri: Uri): ImageBlob? {
+        val bytes = context.contentResolver.openInputStream(imageUri)?.use { input -> input.readBytes() } ?: return null
+        return ImageBlob(
+            bytes = bytes,
+            mimeType = context.contentResolver.getType(imageUri),
+            contentHash = bytes.sha256Hex(),
+            byteMagic = bytes.magicHex(),
+        )
+    }
+
+    /**
+     * Re-encodes a user/source image into a Robia-owned Drive-safe bitmap format before upload.
+     *
+     * Gallery providers can hand us HEIC or misleadingly-named bytes. Drive snapshots must only
+     * reference blobs that Robia can decode again on restore, so this method decodes first, encodes to
+     * JPEG for opaque photos or PNG when alpha must be preserved, and verifies the encoded bytes.
+     */
+    fun readCanonicalDriveImageBlob(context: Context, imageUri: Uri): ImageBlob? {
+        val sourceBytes = context.contentResolver.openInputStream(imageUri)?.use { input -> input.readBytes() } ?: return null
+        val sourceMimeType = context.contentResolver.getType(imageUri)
+        val bitmap = decodeBitmap(context, imageUri) ?: error(
+            "Source garment image is not decodable before Drive upload " +
+                "mime=${sourceMimeType ?: "unknown"} magic=${sourceBytes.magicHex()} byteSize=${sourceBytes.size}",
+        )
+        return bitmap.useForColors { source ->
+            val hasAlpha = source.hasAlpha()
+            val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+            val mimeType = if (hasAlpha) "image/png" else "image/jpeg"
+            val quality = if (hasAlpha) 100 else DRIVE_JPEG_QUALITY
+            val canonicalBytes = ByteArrayOutputStream().use { output ->
+                check(source.compress(format, quality, output)) { "Unable to encode Drive-safe garment image." }
+                output.toByteArray()
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(canonicalBytes, 0, canonicalBytes.size, bounds)
+            check(bounds.outWidth > 0 && bounds.outHeight > 0) {
+                "Drive-safe garment image failed post-encode decode verification."
+            }
+            ImageBlob(
+                bytes = canonicalBytes,
+                mimeType = mimeType,
+                contentHash = canonicalBytes.sha256Hex(),
+                byteMagic = canonicalBytes.magicHex(),
+                decodedWidth = bounds.outWidth,
+                decodedHeight = bounds.outHeight,
+                sourceMimeType = sourceMimeType,
+                sourceByteMagic = sourceBytes.magicHex(),
+                sourceByteSize = sourceBytes.size.toLong(),
+            )
+        }
+    }
+
+    fun writeRestoredImageBlob(
+        context: Context,
+        bytes: ByteArray,
+        blobPath: String,
+        mimeType: String?,
+    ): Uri {
+        val imageFile = createImageFile(
+            context = context,
+            prefix = "drive-${blobPath.substringAfterLast('/').substringBeforeLast('.').ifBlank { "photo" }}",
+            extension = mimeType.toImageExtension() ?: blobPath.substringAfterLast('.', "jpg"),
+        )
+        imageFile.outputStream().use { output -> output.write(bytes) }
         return FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -73,13 +148,18 @@ object ClothingImageStore {
     }
 
     fun readImageAspectRatio(context: Context, imageUri: Uri): Float? {
+        val (width, height) = readImageDimensions(context, imageUri) ?: return null
+        return width.toFloat() / height.toFloat()
+    }
+
+    fun readImageDimensions(context: Context, imageUri: Uri): Pair<Int, Int>? {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(imageUri)?.use { input ->
             BitmapFactory.decodeStream(input, null, options)
         } ?: return null
         val width = options.outWidth
         val height = options.outHeight
-        return if (width > 0 && height > 0) width.toFloat() / height.toFloat() else null
+        return if (width > 0 && height > 0) width to height else null
     }
 
     fun estimateCentralLuminance(context: Context, imageUri: Uri): Float? {
@@ -156,6 +236,16 @@ object ClothingImageStore {
         val imageDir = File(picturesDir, IMAGE_DIRECTORY).apply { mkdirs() }
         return File(imageDir, "$prefix-${UUID.randomUUID()}.$extension")
     }
+
+    private fun decodeBitmap(context: Context, imageUri: Uri): Bitmap? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, imageUri)) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        } else {
+            context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream)
+        }
+    }.getOrNull()
 
     private inline fun <T> Bitmap.useForColors(block: (Bitmap) -> T): T = try {
         block(this)
@@ -299,12 +389,41 @@ object ClothingImageStore {
             left == 0 && top == 0 && width == bitmapWidth && height == bitmapHeight
     }
 
+    private const val DRIVE_JPEG_QUALITY = 92
     private const val TRANSPARENT_CROP_ALPHA_THRESHOLD = 24
     private const val LUMINANCE_MAX_DECODE_SIZE = 192
     private const val LUMINANCE_TARGET_SAMPLE_GRID = 48
     private const val MIN_CROP_CONTENT_SIZE = 16
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f
+}
+
+data class ImageBlob(
+    val bytes: ByteArray,
+    val mimeType: String?,
+    val contentHash: String,
+    val byteMagic: String = bytes.magicHex(),
+    val decodedWidth: Int? = null,
+    val decodedHeight: Int? = null,
+    val sourceMimeType: String? = null,
+    val sourceByteMagic: String? = null,
+    val sourceByteSize: Long? = null,
+) {
+    val byteSize: Long = bytes.size.toLong()
+}
+
+private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
+    .digest(this)
+    .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+fun ByteArray.magicHex(maxBytes: Int = 12): String =
+    take(maxBytes.coerceAtLeast(0)).joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+private fun String?.toImageExtension(): String? = when (this?.lowercase()) {
+    "image/jpeg", "image/jpg" -> "jpg"
+    "image/png" -> "png"
+    "image/webp" -> "webp"
+    else -> null
 }
 
 data class PaletteColorDiagnostics(

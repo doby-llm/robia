@@ -7,8 +7,6 @@ import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import kotlin.math.roundToInt
 
@@ -22,71 +20,20 @@ object QuickEditImageProcessor {
         if (!adjustments.hasColorAdjustment) return sourceUri
         val source = decodeBitmap(context, sourceUri) ?: return sourceUri
         return source.useForQuickEdit { bitmap ->
-            val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-            try {
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    colorFilter = ColorMatrixColorFilter(adjustments.colorMatrix())
-                }
-                Canvas(output).drawBitmap(bitmap, 0f, 0f, paint)
-                ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit")
-            } finally {
-                output.recycle()
-            }
+            writeAdjustedBitmap(context, bitmap, adjustments, prefix = "quick-edit")
         }
     }
 
-    fun eraseCircle(
+    /**
+     * Builds the dialog preview from the same draft state that Save consumes.
+     *
+     * The preview is intentionally persisted as a cached processed Uri so the Compose layer can keep
+     * using a lightweight ImageView while preview jobs are cancelled and generation-guarded upstream.
+     */
+    fun renderDraftPreview(
         context: Context,
-        sourceUri: Uri,
-        point: NormalizedImagePoint,
-        radiusRatio: Float = DEFAULT_ERASER_RADIUS_RATIO,
-    ): Uri {
-        val source = decodeBitmap(context, sourceUri) ?: return sourceUri
-        return source.useForQuickEdit { bitmap ->
-            val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-            try {
-                val radius = maxOf(output.width, output.height) * radiusRatio.coerceIn(0.02f, 0.2f)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-                }
-                Canvas(output).drawCircle(
-                    point.x.coerceIn(0f, 1f) * output.width,
-                    point.y.coerceIn(0f, 1f) * output.height,
-                    radius,
-                    paint,
-                )
-                ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit-erased")
-            } finally {
-                output.recycle()
-            }
-        }
-    }
-
-    fun eraseSegmentMask(
-        context: Context,
-        sourceUri: Uri,
-        segment: InteractiveSegmentResult,
-    ): Uri {
-        val mask = segment.mask ?: return eraseCircle(context, sourceUri, segment.point)
-        val source = decodeBitmap(context, sourceUri) ?: return sourceUri
-        return source.useForQuickEdit { bitmap ->
-            val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-            try {
-                for (y in 0 until output.height) {
-                    val maskY = (y * mask.height / output.height).coerceIn(0, mask.height - 1)
-                    for (x in 0 until output.width) {
-                        val maskX = (x * mask.width / output.width).coerceIn(0, mask.width - 1)
-                        if (mask.isSelected(maskX, maskY)) {
-                            output.setPixel(x, y, output.getPixel(x, y) and 0x00FFFFFF)
-                        }
-                    }
-                }
-                ClothingImageStore.writeProcessedBitmap(context, output, prefix = "quick-edit-erased")
-            } finally {
-                output.recycle()
-            }
-        }
-    }
+        draft: QuickEditDraftState,
+    ): Uri = applyAdjustments(context, draft.sourceUri, draft.adjustments)
 
     fun estimateCenterLuminance(context: Context, sourceUri: Uri): Float? {
         val bitmap = decodeBitmap(context, sourceUri) ?: return null
@@ -116,6 +63,24 @@ object QuickEditImageProcessor {
                 y += step
             }
             if (count == 0) null else (total / (count * 255.0)).toFloat()
+        }
+    }
+
+    private fun writeAdjustedBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        adjustments: QuickEditAdjustments,
+        prefix: String,
+    ): Uri {
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        return try {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                colorFilter = ColorMatrixColorFilter(adjustments.colorMatrix())
+            }
+            Canvas(output).drawBitmap(bitmap, 0f, 0f, paint)
+            ClothingImageStore.writeProcessedBitmap(context, output, prefix = prefix)
+        } finally {
+            output.recycle()
         }
     }
 
@@ -157,7 +122,6 @@ object QuickEditImageProcessor {
 
     private const val MAX_BRIGHTNESS_OFFSET = 110f
     private const val MAX_TEMPERATURE_OFFSET = 46f
-    private const val DEFAULT_ERASER_RADIUS_RATIO = 0.065f
     private const val OPAQUE_SAMPLE_ALPHA = 64
 }
 
@@ -168,59 +132,9 @@ data class QuickEditAdjustments(
     val hasColorAdjustment: Boolean = brightness != 0f || temperature != 0f
 }
 
-data class NormalizedImagePoint(
-    val x: Float,
-    val y: Float,
+/** Draft state for the live Quick Edit preview and the full-resolution Save path. */
+data class QuickEditDraftState(
+    val sourceUri: Uri,
+    val adjustments: QuickEditAdjustments = QuickEditAdjustments(),
+    val previewGenerationId: Long = 0L,
 )
-
-interface InteractiveGarmentSegmenter {
-    val isAvailable: Boolean
-    suspend fun highlightSegment(context: Context, imageUri: Uri, point: NormalizedImagePoint): InteractiveSegmentResult
-    suspend fun eraseSegment(context: Context, imageUri: Uri, segment: InteractiveSegmentResult): Uri
-}
-
-data class InteractiveSegmentResult(
-    val point: NormalizedImagePoint,
-    val mask: InteractiveSegmentMask? = null,
-)
-
-data class InteractiveSegmentMask(
-    val width: Int,
-    val height: Int,
-    val alpha: ByteArray,
-) {
-    fun isSelected(x: Int, y: Int): Boolean {
-        if (x !in 0 until width || y !in 0 until height) return false
-        return alpha[y * width + x].toInt() and 0xFF >= MASK_SELECTED_ALPHA
-    }
-
-    override fun equals(other: Any?): Boolean =
-        other is InteractiveSegmentMask &&
-            width == other.width &&
-            height == other.height &&
-            alpha.contentEquals(other.alpha)
-
-    override fun hashCode(): Int =
-        31 * (31 * width + height) + alpha.contentHashCode()
-
-    private companion object {
-        const val MASK_SELECTED_ALPHA = 96
-    }
-}
-
-/** MediaPipe Interactive Segmenter is not bundled yet; this keeps the UI non-blocking. */
-class UnavailableInteractiveGarmentSegmenter : InteractiveGarmentSegmenter {
-    override val isAvailable: Boolean = false
-
-    override suspend fun highlightSegment(
-        context: Context,
-        imageUri: Uri,
-        point: NormalizedImagePoint,
-    ): InteractiveSegmentResult = InteractiveSegmentResult(point)
-
-    override suspend fun eraseSegment(
-        context: Context,
-        imageUri: Uri,
-        segment: InteractiveSegmentResult,
-    ): Uri = imageUri
-}

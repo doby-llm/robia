@@ -88,14 +88,15 @@ data class DriveManifest(
 object DriveFolderNaming {
     private val unsafePathCharacters = Regex("[^A-Za-z0-9._-]")
 
+    fun photoBlobPrefix(itemUid: String): String = "photos/${safeSegment(itemUid.ifBlank { "unknown" })}/"
+
     fun photoBlobPath(itemUid: String, localUri: String? = null): String {
-        val safeItemUid = safeSegment(itemUid.ifBlank { "unknown" })
         val photoKey = localUri
             ?.substringAfterLast('/')
             ?.takeIf { segment -> segment.isNotBlank() }
             ?: "original"
         val safePhotoKey = safeSegment(photoKey)
-        return "photos/$safeItemUid/$safePhotoKey"
+        return "${photoBlobPrefix(itemUid)}$safePhotoKey"
     }
 
     private fun safeSegment(value: String): String = value.trim().replace(unsafePathCharacters, "_")

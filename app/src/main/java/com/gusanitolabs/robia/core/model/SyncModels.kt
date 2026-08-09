@@ -166,6 +166,20 @@ data class GarmentPhotoRecord(
     val byteSize: Long? = null,
     val revision: Long = 0L,
     val updatedAtEpochMillis: Long = 0L,
+    /** Local private-storage URI materialized from a Drive blob during restore. Not serialized to Drive. */
+    val restoredLocalUri: String? = null,
+    /** Local-only guarded-restore reason when Drive metadata restored but the photo blob did not. */
+    val restoreFailureCategory: String? = null,
+    /** Local-only sanitized guarded-restore detail; never serialized back to Drive. */
+    val restoreFailureMessage: String? = null,
+    /** Local-only bounded photo header fingerprint for restore/upload diagnostics. */
+    val byteMagic: String? = null,
+    /** Local-only decoded width from Drive restore/upload verification. */
+    val decodedWidth: Int? = null,
+    /** Local-only decoded height from Drive restore/upload verification. */
+    val decodedHeight: Int? = null,
+    /** Local-only bounded Developer Mode event lines for per-photo restore/upload diagnostics. */
+    val restoreDiagnosticEvents: List<String> = emptyList(),
 )
 
 data class SyncTombstoneRecord(

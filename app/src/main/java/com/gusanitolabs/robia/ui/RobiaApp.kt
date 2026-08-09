@@ -14,11 +14,15 @@ import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +40,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -78,7 +84,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -107,12 +112,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -136,9 +145,11 @@ import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
+import com.gusanitolabs.robia.media.GarmentShareMetadataIcon
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
+import com.gusanitolabs.robia.sync.MISSING_RESTORED_PHOTO_MESSAGE
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -187,6 +198,10 @@ private sealed interface RobiaRoute {
 
     data object LanguageSettings : RobiaRoute {
         override val titleRes = R.string.language
+    }
+
+    data object DeveloperSyncLog : RobiaRoute {
+        override val titleRes = R.string.restore_sync_log_title
     }
 
     data object AdvancedFilters : RobiaRoute {
@@ -304,9 +319,15 @@ fun RobiaApp(
     syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
     onRequestCloudSetup: () -> Unit = {},
 ) {
-    val settings by settingsRepository.settings.collectAsState(initial = RobiaSettings())
+    val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
+    val settingsLoaded = persistedSettings != null
+    val settings = persistedSettings ?: RobiaSettings(cloudSetupPromptInteracted = true)
     val syncState by syncGateway.state.collectAsState(initial = WardrobeSyncState.notConfigured())
-    val clothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = emptyList())
+    val restoreSyncLogText by syncGateway.restoreSyncLogText.collectAsState(initial = "")
+    val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
+    val loadedClothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = null)
+    val clothingItems = loadedClothingItems.orEmpty()
+    val wardrobeItemsLoading = loadedClothingItems == null
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
@@ -318,12 +339,15 @@ fun RobiaApp(
 
     LocalizedRobiaContent(settings.languagePreference) {
         RobiaTheme {
-        val displaySettings = settings.copy(driveSyncConnectionStatus = syncState.connectionStatus)
+        val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
         RobiaShell(
             settings = displaySettings,
-            syncState = syncState,
+            settingsLoaded = settingsLoaded,
+            syncState = displaySyncState,
+            restoreSyncLogText = restoreSyncLogText,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
             clothingItems = clothingItems,
+            wardrobeItemsLoading = wardrobeItemsLoading,
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
@@ -340,6 +364,15 @@ fun RobiaApp(
                 scope.launch { settingsRepository.markCloudSetupPromptInteracted() }
             },
             onRequestCloudSetup = onRequestCloudSetup,
+            onRequestCloudManualSync = {
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
+            },
+            onRequestCloudRestoreRetry = {
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
+            },
+            onClearRestoreSyncLog = {
+                scope.launch { syncGateway.clearRestoreSyncLog() }
+            },
             onSaveItem = { item ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -414,6 +447,22 @@ fun RobiaApp(
     }
 }
 
+private fun WardrobeSyncState.reconcileWithSettings(
+    settingsConnectionStatus: DriveSyncConnectionStatus,
+): WardrobeSyncState = if (
+    connectionStatus == DriveSyncConnectionStatus.NotConfigured &&
+    settingsConnectionStatus != DriveSyncConnectionStatus.NotConfigured
+) {
+    copy(connectionStatus = settingsConnectionStatus)
+} else {
+    this
+}
+
+private val WardrobeSyncState.hasVisibleSyncActivity: Boolean
+    get() = pendingOperationCount > 0 ||
+        connectionStatus == DriveSyncConnectionStatus.Syncing ||
+        restoreProgress?.status == CloudRestoreStatus.Running
+
 @Composable
 private fun LocalizedRobiaContent(
     languagePreference: LanguagePreference,
@@ -480,9 +529,12 @@ private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean 
 @Composable
 private fun RobiaShell(
     settings: RobiaSettings,
+    settingsLoaded: Boolean,
     syncState: WardrobeSyncState,
+    restoreSyncLogText: String,
     pendingGarmentSyncCount: Int,
     clothingItems: List<ClothingItem>,
+    wardrobeItemsLoading: Boolean,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
@@ -491,6 +543,9 @@ private fun RobiaShell(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
+    onRequestCloudManualSync: () -> Unit = {},
+    onRequestCloudRestoreRetry: () -> Unit = {},
+    onClearRestoreSyncLog: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
@@ -539,11 +594,13 @@ private fun RobiaShell(
     }
 
     LaunchedEffect(
+        settingsLoaded,
         settings.driveSyncConnectionStatus,
         settings.cloudSetupPromptInteracted,
         cloudSetupGuard.isFirstRunRecommendation,
     ) {
-        if (!settings.cloudSetupPromptInteracted &&
+        if (settingsLoaded &&
+            !settings.cloudSetupPromptInteracted &&
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
             cloudSetupGuard.isFirstRunRecommendation
         ) {
@@ -734,10 +791,13 @@ private fun RobiaShell(
     }
 
     fun requestCloudSetup() {
-        if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
+        if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
+            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
+        ) {
+            onRequestCloudManualSync()
+            Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
+        } else if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
             Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
-        } else if (cloudSetupGuard.hasUnsafeLocalState) {
-            cloudSetupDialogMode = CloudSetupDialogMode.LateEnableBlocked
         } else {
             onRequestCloudSetup()
         }
@@ -947,6 +1007,10 @@ private fun RobiaShell(
                                     requestCloudSetup()
                                     settingsExpanded = false
                                 },
+                                onRestoreSyncLogClick = {
+                                    pushRoute(RobiaRoute.DeveloperSyncLog)
+                                    settingsExpanded = false
+                                },
                             )
                         }
                     }
@@ -962,6 +1026,7 @@ private fun RobiaShell(
         bottomBar = {
             if (currentRoute != RobiaRoute.ItemDetail &&
                 currentRoute != RobiaRoute.AdvancedFilters &&
+                currentRoute != RobiaRoute.DeveloperSyncLog &&
                 currentRoute != RobiaRoute.BatchAddClothing &&
                 currentRoute != RobiaRoute.BatchEditClothing &&
                 currentRoute != RobiaRoute.ColorReview
@@ -983,6 +1048,7 @@ private fun RobiaShell(
             items = filteredItems,
             allItems = items,
             domainItems = clothingItems,
+            wardrobeItemsLoading = wardrobeItemsLoading,
             totalItemCount = items.size,
             filters = browseFilters,
             selectedBrowseItemIds = selectedBrowseItemIds,
@@ -995,6 +1061,8 @@ private fun RobiaShell(
             mainColors = mainColors,
             colorReviewChangeSet = activeColorReviewChangeSet,
             developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
+            restoreSyncLogText = restoreSyncLogText,
+            syncState = syncState,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
@@ -1049,10 +1117,15 @@ private fun RobiaShell(
                 replaceRoute(RobiaRoute.Browse)
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
+            onClearRestoreSyncLog = onClearRestoreSyncLog,
         )
     }
     restoreProgress?.let { progress ->
-        CloudRestoreProgressOverlay(progress = progress)
+        CloudRestoreProgressOverlay(
+            progress = progress,
+            developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
+            onRetry = onRequestCloudRestoreRetry,
+        )
     }
     }
 }
@@ -1071,6 +1144,7 @@ private fun SettingsMenu(
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
     onCloudSetupClick: () -> Unit,
+    onRestoreSyncLogClick: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -1113,6 +1187,21 @@ private fun SettingsMenu(
                 },
                 onClick = { onDeveloperModeEnabledChange(!developerModeEnabled) },
             )
+            if (developerModeEnabled) {
+                DropdownMenuItem(
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(stringResource(R.string.restore_sync_log_title))
+                            Text(
+                                text = stringResource(R.string.restore_sync_log_summary),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
+                    onClick = onRestoreSyncLogClick,
+                )
+            }
             Divider()
         }
         DropdownMenuItem(
@@ -1258,8 +1347,25 @@ private fun CloudSetupDialog(
 }
 
 @Composable
-private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
+private fun CloudRestoreProgressOverlay(
+    progress: CloudRestoreProgress,
+    developerModeEnabled: Boolean,
+    onRetry: () -> Unit,
+) {
     val statusText = cloudRestoreStatusText(progress)
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val diagnostics = progress.diagnostics.takeIf { developerModeEnabled }
+    val diagnosticsText = diagnostics?.toCopyText().orEmpty()
+    val diagnosticsCopiedMessage = stringResource(R.string.cloud_restore_diagnostics_copied)
+    var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
+        mutableStateOf(progress.status != CloudRestoreStatus.Running)
+    }
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.progressFraction?.coerceIn(0f, 1f) ?: 0f,
+        animationSpec = tween(durationMillis = 450),
+        label = "cloudRestoreProgress",
+    )
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -1268,54 +1374,183 @@ private fun CloudRestoreProgressOverlay(progress: CloudRestoreProgress) {
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = stringResource(R.string.cloud_restore_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            progress.progressFraction?.let { fraction ->
-                LinearProgressIndicator(
-                    progress = { fraction.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } ?: CircularProgressIndicator()
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = stringResource(progress.phase.labelRes),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.cloud_restore_remaining, progress.remainingWork, progress.totalWork),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (progress.status == CloudRestoreStatus.Running) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            progress.message?.takeIf(String::isNotBlank)?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.cloud_restore_title),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        progress.progressFraction?.let { fraction ->
+                            CloudRestoreProgressBar(
+                                progress = animatedProgress.coerceAtMost(fraction.coerceIn(0f, 1f)),
+                            )
+                        } ?: CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = stringResource(progress.phase.labelRes),
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = stringResource(R.string.cloud_restore_remaining, progress.remainingWork, progress.totalWork),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (progress.status == CloudRestoreStatus.Running) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        progress.message?.takeIf(String::isNotBlank)?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                        if (progress.status != CloudRestoreStatus.Running) {
+                            Button(
+                                onClick = onRetry,
+                                modifier = Modifier.padding(top = 16.dp),
+                            ) {
+                                Text(stringResource(R.string.cloud_restore_retry))
+                            }
+                        }
+                    }
+                }
+                if (diagnostics != null) {
+                    CloudRestoreDiagnosticsPanel(
+                        diagnosticsText = diagnosticsText,
+                        expanded = showDiagnostics,
+                        onToggleExpanded = { showDiagnostics = !showDiagnostics },
+                        onCopy = {
+                            clipboardManager.setText(AnnotatedString(diagnosticsText))
+                            Toast.makeText(context, diagnosticsCopiedMessage, Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CloudRestoreDiagnosticsPanel(
+    diagnosticsText: String,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val diagnosticsContentDescription = stringResource(R.string.cloud_restore_diagnostics_content_description)
+    val copyContentDescription = stringResource(R.string.cloud_restore_diagnostics_copy_content_description)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.cloud_restore_diagnostics_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(onClick = onToggleExpanded) {
+                    Text(
+                        stringResource(
+                            if (expanded) {
+                                R.string.cloud_restore_diagnostics_hide
+                            } else {
+                                R.string.cloud_restore_diagnostics_show
+                            },
+                        ),
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.cloud_restore_diagnostics_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (expanded) {
+                SelectionContainer {
+                    Text(
+                        text = diagnosticsText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = diagnosticsContentDescription },
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onCopy,
+                modifier = Modifier.semantics {
+                    contentDescription = copyContentDescription
+                },
+            ) {
+                Text(stringResource(R.string.cloud_restore_diagnostics_copy))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudRestoreProgressBar(progress: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(8.dp)
+                .background(MaterialTheme.colorScheme.primary),
+        )
     }
 }
 
@@ -1335,6 +1570,7 @@ private val CloudRestorePhase.labelRes: Int
         CloudRestorePhase.Downloading -> R.string.cloud_restore_phase_downloading
         CloudRestorePhase.Validating -> R.string.cloud_restore_phase_validating
         CloudRestorePhase.Applying -> R.string.cloud_restore_phase_applying
+        CloudRestorePhase.Uploading -> R.string.cloud_restore_phase_uploading
         CloudRestorePhase.RollingBack -> R.string.cloud_restore_phase_rolling_back
         CloudRestorePhase.Complete -> R.string.cloud_restore_phase_complete
     }
@@ -1383,6 +1619,7 @@ private fun RobiaNavHost(
     items: List<UiWardrobeItem>,
     allItems: List<UiWardrobeItem>,
     domainItems: List<ClothingItem>,
+    wardrobeItemsLoading: Boolean,
     totalItemCount: Int,
     filters: BrowseFilterState,
     selectedBrowseItemIds: Set<String>,
@@ -1395,6 +1632,8 @@ private fun RobiaNavHost(
     mainColors: List<MainColor>,
     colorReviewChangeSet: ColorPaletteChangeSet?,
     developerModeEnabled: Boolean,
+    restoreSyncLogText: String,
+    syncState: WardrobeSyncState,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -1420,14 +1659,17 @@ private fun RobiaNavHost(
     onCommitColorReview: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
+    onClearRestoreSyncLog: () -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
             innerPadding = innerPadding,
             items = items,
+            isInitialLoading = wardrobeItemsLoading,
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             activeFilterCount = filters.activeFilterCount,
+            showSyncActivity = syncState.hasVisibleSyncActivity,
             selectedItemIds = selectedBrowseItemIds,
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
@@ -1510,6 +1752,11 @@ private fun RobiaNavHost(
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
+        RobiaRoute.DeveloperSyncLog -> DeveloperRestoreSyncLogScreen(
+            innerPadding = innerPadding,
+            logText = restoreSyncLogText,
+            onClear = onClearRestoreSyncLog,
+        )
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
             innerPadding = innerPadding,
             filters = filters,
@@ -1528,9 +1775,11 @@ private fun RobiaNavHost(
 private fun BrowseWardrobeScreen(
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
+    isInitialLoading: Boolean,
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    showSyncActivity: Boolean,
     selectedItemIds: Set<String>,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
@@ -1554,10 +1803,15 @@ private fun BrowseWardrobeScreen(
             FilterBar(
                 hasActiveFilters = hasActiveFilters,
                 activeFilterCount = activeFilterCount,
+                showSyncActivity = showSyncActivity,
                 onFiltersClick = onFiltersClick,
             )
         }
-        if (items.isEmpty()) {
+        if (isInitialLoading) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                BrowseWardrobeLoadingCard()
+            }
+        } else if (items.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 if (hasItemsInWardrobe && hasActiveFilters) {
                     EmptyFiltersCard(onResetFilters = onResetFilters)
@@ -1589,6 +1843,7 @@ private fun BrowseWardrobeScreen(
 private fun FilterBar(
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    showSyncActivity: Boolean,
     onFiltersClick: () -> Unit,
 ) {
     val filterLabel = if (hasActiveFilters) {
@@ -1608,17 +1863,48 @@ private fun FilterBar(
             label = { Text(filterLabel) },
             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
         )
-        AssistChip(
-            onClick = onFiltersClick,
-            label = { Text(stringResource(R.string.all_filters)) },
-            leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-        )
         Spacer(
             modifier = Modifier
                 .height(24.dp)
                 .width(1.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant),
         )
+        Spacer(modifier = Modifier.weight(1f))
+        if (showSyncActivity) {
+            val syncDescription = stringResource(R.string.content_cloud_sync_active)
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(22.dp)
+                    .semantics { contentDescription = syncDescription },
+                strokeWidth = 2.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrowseWardrobeLoadingCard() {
+    val loadingDescription = stringResource(R.string.content_browse_wardrobe_loading)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+                .semantics { contentDescription = loadingDescription },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+            Text(
+                text = stringResource(R.string.browse_wardrobe_loading),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -1789,8 +2075,11 @@ private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus)
     GarmentSyncStatus.Queued -> stringResource(R.string.garment_sync_queued)
     GarmentSyncStatus.Syncing -> stringResource(R.string.garment_sync_syncing)
     GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
-    GarmentSyncStatus.FailedRetryable -> syncFailureMessage?.takeIf(String::isNotBlank)
-        ?: stringResource(R.string.garment_sync_failed_retryable)
+    GarmentSyncStatus.FailedRetryable -> when {
+        hasMissingRestoredPhoto -> stringResource(R.string.cloud_restore_photo_missing_message)
+        else -> syncFailureMessage?.takeIf(String::isNotBlank)
+            ?: stringResource(R.string.garment_sync_failed_retryable)
+    }
     GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
 }
 
@@ -1855,24 +2144,44 @@ private fun GarmentPhotoPlaceholder(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(MaterialTheme.shapes.large)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large),
-                contentAlignment = Alignment.Center,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(12.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Style,
-                    contentDescription = null,
-                    tint = swatchColor,
-                    modifier = Modifier.size(56.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Style,
+                        contentDescription = null,
+                        tint = swatchColor,
+                        modifier = Modifier.size(56.dp),
+                    )
+                }
+                if (item.hasMissingRestoredPhoto) {
+                    Text(
+                        text = stringResource(R.string.cloud_restore_photo_missing_message),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
+    get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE ||
+        syncFailureMessage?.startsWith("Foto no restaurada desde Drive.") == true
 
 @Composable
 private fun TonalTag(text: String) {
@@ -2731,6 +3040,25 @@ private fun Context.launchShareChooser(
     }.getOrDefault(false)
 }
 
+private fun Context.launchTextShareChooser(
+    text: String,
+    chooserTitle: String,
+): Boolean {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    val chooserIntent = Intent.createChooser(shareIntent, chooserTitle)
+    val activity = findActivity()
+    if (activity == null) {
+        chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    return runCatching {
+        (activity ?: this).startActivity(chooserIntent)
+        true
+    }.getOrDefault(false)
+}
+
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
@@ -2743,11 +3071,26 @@ private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShare
     notes = notes,
     imageUri = Uri.parse(photoUri.orEmpty()),
     metadata = listOf(
-        GarmentShareMetadata(stringResource(R.string.metadata_category), tags.valuesInCategory("category")),
-        GarmentShareMetadata(stringResource(R.string.metadata_season), tags.valuesInCategory("season")),
-        GarmentShareMetadata(stringResource(R.string.metadata_fit), fitValue?.fitLabel()?.let { listOf(it) }.orEmpty()),
-        GarmentShareMetadata(stringResource(R.string.metadata_location), tags.valuesInCategory("location")),
-        GarmentShareMetadata(stringResource(R.string.metadata_occasions), tags.valuesInCategory("occasion")),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_category),
+            values = tags.valuesInCategory("category"),
+            icon = GarmentShareMetadataIcon.Category,
+        ),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_season),
+            values = tags.valuesInCategory("season"),
+            icon = GarmentShareMetadataIcon.Season,
+        ),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_occasions),
+            values = tags.valuesInCategory("occasion"),
+            icon = GarmentShareMetadataIcon.Occasion,
+        ),
+        GarmentShareMetadata(
+            label = stringResource(R.string.metadata_fit),
+            values = fitValue?.fitLabel()?.let { listOf(it) }.orEmpty(),
+            icon = GarmentShareMetadataIcon.Fit,
+        ),
     ),
     colorSectionLabel = stringResource(R.string.colors_section),
     primaryColor = GarmentShareColor(
@@ -2783,6 +3126,82 @@ private fun List<UiTag>.valuesInCategory(categoryId: String): List<String> =
 
 private fun String.toComposeColor(): Color? = normalizedHexOrNull()?.let { normalized ->
     Color(android.graphics.Color.parseColor("#$normalized"))
+}
+
+@Composable
+private fun DeveloperRestoreSyncLogScreen(
+    innerPadding: PaddingValues,
+    logText: String,
+    onClear: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val copiedMessage = stringResource(R.string.restore_sync_log_copied)
+    val noShareAppMessage = stringResource(R.string.share_no_app_error)
+    val chooserTitle = stringResource(R.string.restore_sync_log_export)
+    val effectiveLogText = logText.takeIf { it.isNotBlank() } ?: stringResource(R.string.restore_sync_log_empty)
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.restore_sync_log_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.restore_sync_log_help),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(effectiveLogText))
+                        Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = logText.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.restore_sync_log_copy))
+                }
+                OutlinedButton(
+                    onClick = {
+                        val launched = context.launchTextShareChooser(effectiveLogText, chooserTitle)
+                        if (!launched) Toast.makeText(context, noShareAppMessage, Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = logText.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.restore_sync_log_export))
+                }
+                TextButton(onClick = onClear, enabled = logText.isNotBlank()) {
+                    Text(stringResource(R.string.restore_sync_log_clear))
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                SelectionContainer {
+                    Text(
+                        text = effectiveLogText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2944,9 +3363,12 @@ private fun RobiaAppPreview() {
     RobiaTheme {
         RobiaShell(
             settings = RobiaSettings(),
+            settingsLoaded = true,
             syncState = WardrobeSyncState.notConfigured(),
+            restoreSyncLogText = "",
             pendingGarmentSyncCount = 0,
             clothingItems = emptyList(),
+            wardrobeItemsLoading = false,
             tagCategories = emptyList(),
             availableTags = emptyList(),
             mainColors = emptyList(),

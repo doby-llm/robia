@@ -7,13 +7,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -34,7 +35,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoFixOff
 import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -62,11 +62,9 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,10 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -93,8 +88,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
@@ -111,24 +104,19 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
 import com.gusanitolabs.robia.media.EditorPhotoState
-import com.gusanitolabs.robia.media.InteractiveGarmentSegmenter
-import com.gusanitolabs.robia.media.InteractiveSegmentMask
-import com.gusanitolabs.robia.media.InteractiveSegmentResult
-import com.gusanitolabs.robia.media.NormalizedImagePoint
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
+import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
-import com.gusanitolabs.robia.media.createInteractiveGarmentSegmenter
 import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.Closeable
 import java.util.Locale
 import java.util.UUID
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -149,10 +137,6 @@ fun AddEditClothingScreen(
 ) {
     val context = LocalContext.current
     val backgroundRemover = remember { PhotoBackgroundRemover() }
-    val quickEditSegmenter = remember(context) { createInteractiveGarmentSegmenter(context) }
-    DisposableEffect(quickEditSegmenter) {
-        onDispose { (quickEditSegmenter as? Closeable)?.close() }
-    }
     val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     val latestMainColors by rememberUpdatedState(mainColors)
     val latestAvailableTags by rememberUpdatedState(availableTags)
@@ -178,6 +162,13 @@ fun AddEditClothingScreen(
     var additionalInfoSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
     var showQuickEdit by rememberSaveable { mutableStateOf(false) }
     var quickEditStatus by rememberSaveable { mutableStateOf<String?>(null) }
+    var photoAnalysisGeneration by rememberSaveable { mutableStateOf(0L) }
+    var modelOwnedTagIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var userOverriddenTagCategories by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var modelPrimaryColorGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var modelSecondaryColorGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var userPrimaryColorOverrideGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var userSecondaryColorOverrideGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var photoProcessingToken by remember { mutableStateOf(0) }
     var nextPhotoInputId by remember { mutableStateOf(0L) }
     var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
@@ -191,23 +182,83 @@ fun AddEditClothingScreen(
     val primaryLabel = remember(primaryRawColor) { ColorLabelResolver.fromRawValue(primaryRawColor) }
     val secondaryLabel = remember(secondaryRawColor) { ColorLabelResolver.fromRawValue(secondaryRawColor) }
 
-    fun applyExtractedColors(colors: List<PaletteColorMatch>) {
-        val primaryColorId = colors.getOrNull(0)?.color?.id
-        if (primaryColorId != null) {
-            selectedPrimaryColorId = primaryColorId
+    fun beginPhotoAnalysisGeneration(availableTagsSnapshot: List<GarmentTag>): Long {
+        val nextGeneration = photoAnalysisGeneration + 1
+        photoAnalysisGeneration = nextGeneration
+        val tagsById = availableTagsSnapshot.associateBy(GarmentTag::id)
+        val modelOwnedIds = modelOwnedTagIds.toSet()
+        selectedTagIds = selectedTagIds.filterNot { tagId ->
+            tagId in modelOwnedIds && tagsById[tagId]?.categoryId in MODEL_PREDICTED_CATEGORIES
         }
-        selectedSecondaryColorId = colors
-            .drop(1)
-            .firstOrNull { match ->
-                match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId
+        modelOwnedTagIds = emptyList()
+        userOverriddenTagCategories = emptyList()
+        if (modelPrimaryColorGeneration != null) {
+            selectedPrimaryColorId = null
+        }
+        if (modelSecondaryColorGeneration != null) {
+            selectedSecondaryColorId = null
+        }
+        modelPrimaryColorGeneration = null
+        modelSecondaryColorGeneration = null
+        userPrimaryColorOverrideGeneration = null
+        userSecondaryColorOverrideGeneration = null
+        return nextGeneration
+    }
+
+    fun applyExtractedColors(generation: Long, colors: List<PaletteColorMatch>) {
+        val primaryColorId = colors.getOrNull(0)?.color?.id
+        if (userPrimaryColorOverrideGeneration != generation) {
+            selectedPrimaryColorId = primaryColorId
+            modelPrimaryColorGeneration = primaryColorId?.let { generation }
+        }
+        if (userSecondaryColorOverrideGeneration != generation) {
+            selectedSecondaryColorId = colors
+                .drop(1)
+                .firstOrNull { match ->
+                    match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId
+                }
+                ?.color
+                ?.id
+            modelSecondaryColorGeneration = selectedSecondaryColorId?.let { generation }
+        }
+    }
+
+    fun applyPredictedTags(predictedTagIds: Set<String>, availableTagsSnapshot: List<GarmentTag>): PredictedTagReconciliation {
+        val result = reconcilePredictedAdditionalInfoTags(
+            currentTagIds = selectedTagIds,
+            currentModelOwnedTagIds = modelOwnedTagIds,
+            predictedTagIds = predictedTagIds,
+            availableTags = availableTagsSnapshot,
+            userOverriddenCategories = userOverriddenTagCategories,
+        )
+        selectedTagIds = result.selectedTagIds
+        modelOwnedTagIds = result.modelOwnedTagIds
+        return result
+    }
+
+    fun updateUserSelectedTagIds(newTagIds: List<String>) {
+        val tagsById = latestAvailableTags.associateBy(GarmentTag::id)
+        val oldIds = selectedTagIds.toSet()
+        val newIds = newTagIds.toSet()
+        val touchedCategories = (oldIds + newIds)
+            .mapNotNull { tagId -> tagsById[tagId]?.categoryId }
+            .filter { categoryId -> categoryId in MODEL_PREDICTED_CATEGORIES }
+            .filter { categoryId ->
+                oldIds.filter { tagsById[it]?.categoryId == categoryId }.toSet() !=
+                    newIds.filter { tagsById[it]?.categoryId == categoryId }.toSet()
             }
-            ?.color
-            ?.id
+            .toSet()
+        selectedTagIds = newTagIds
+        if (touchedCategories.isNotEmpty()) {
+            userOverriddenTagCategories = (userOverriddenTagCategories + touchedCategories).distinct()
+            modelOwnedTagIds = modelOwnedTagIds.filterNot { tagId -> tagsById[tagId]?.categoryId in touchedCategories }
+        }
     }
 
     fun queuePhotoForProcessing(uriString: String, sourceStatus: String) {
         val inputId = ++nextPhotoInputId
         photoProcessingToken += 1 // Immediately invalidate any older in-flight pipeline.
+        val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
         originalPhotoUri = uriString
         photoUri = uriString
         editorPhotoState = EditorPhotoState(
@@ -233,6 +284,8 @@ fun AddEditClothingScreen(
             "source=$sourceStatus",
             "uri=$uriString",
             "event=$inputId",
+            "analysisGeneration=$generation",
+            "cleared stale model-owned tags/colors for new image content",
         )
         pendingPhotoInput = PendingPhotoInput(
             id = inputId,
@@ -243,7 +296,7 @@ fun AddEditClothingScreen(
 
     suspend fun processSelectedPhoto(inputId: Long, uriString: String, sourceStatus: String) {
         val token = ++photoProcessingToken
-        val tagIdsBeforeProcessing = selectedTagIds.toSet()
+        val generation = photoAnalysisGeneration
         originalPhotoUri = uriString
         photoUri = uriString
         editorPhotoState = EditorPhotoState(
@@ -272,6 +325,7 @@ fun AddEditClothingScreen(
             "Pipeline event: $inputId",
             "Palette colors available at start: ${latestMainColors.size}",
             "Tags available at start: ${latestAvailableTags.size}",
+            "Analysis generation: $generation",
         )
 
         fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
@@ -372,7 +426,7 @@ fun AddEditClothingScreen(
                 }
                 if (token != photoProcessingToken) return
                 if (extracted.isNotEmpty()) {
-                    applyExtractedColors(extracted)
+                    applyExtractedColors(generation, extracted)
                 }
 
                 photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
@@ -408,16 +462,14 @@ fun AddEditClothingScreen(
                 addDetectionDebugLines(diagnostics, detectionResult)
                 if (token != photoProcessingToken) return
                 detectionResult?.prediction?.let { prediction ->
-                    if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
-                        selectedTagIds = mergePredictedAdditionalInfoTags(
-                            currentTagIds = selectedTagIds,
-                            predictedTagIds = prediction.selectedTagIds,
-                            availableTags = tagsForDetection,
-                        )
-                    } else {
-                        addLine("Predicted tags not merged because user changed tag selection during processing")
+                    val tagResult = applyPredictedTags(
+                        predictedTagIds = prediction.selectedTagIds,
+                        availableTagsSnapshot = tagsForDetection,
+                    )
+                    if (tagResult.skippedCategories.isNotEmpty()) {
+                        addLine("Preserved user-overridden tag categories: ${tagResult.skippedCategories.sorted().joinToString()}")
                     }
-                }
+                } ?: addLine("No additional-info prediction for generation $generation; model-owned tags remain cleared")
         } catch (throwable: CancellationException) {
             addLine("Pipeline cancelled because a newer photo input superseded this one")
             throw throwable
@@ -450,13 +502,14 @@ fun AddEditClothingScreen(
 
     suspend fun reprocessEditedPhoto(editedUri: Uri) {
         val token = ++photoProcessingToken
-        val tagIdsBeforeProcessing = selectedTagIds.toSet()
+        val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
         val startedAt = SystemClock.elapsedRealtime()
         val diagnostics = mutableListOf(
             "Quick Edit save started",
             "Edited URI: $editedUri",
             "Palette colors available at start: ${latestMainColors.size}",
             "Tags available at start: ${latestAvailableTags.size}",
+            "Analysis generation: $generation",
         )
 
         fun elapsed(): Long = SystemClock.elapsedRealtime() - startedAt
@@ -506,7 +559,7 @@ fun AddEditClothingScreen(
                 addLine("Color extraction failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
             }
             if (token != photoProcessingToken) return
-            if (extracted.isNotEmpty()) applyExtractedColors(extracted)
+            if (extracted.isNotEmpty()) applyExtractedColors(generation, extracted)
 
             photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
             val tagsForDetection = latestAvailableTags
@@ -521,16 +574,14 @@ fun AddEditClothingScreen(
             addDetectionDebugLines(diagnostics, detectionResult)
             if (token != photoProcessingToken) return
             detectionResult?.prediction?.let { prediction ->
-                if (selectedTagIds.toSet() == tagIdsBeforeProcessing) {
-                    selectedTagIds = mergePredictedAdditionalInfoTags(
-                        currentTagIds = selectedTagIds,
-                        predictedTagIds = prediction.selectedTagIds,
-                        availableTags = tagsForDetection,
-                    )
-                } else {
-                    addLine("Predicted tags not merged because user changed tag selection during Quick Edit re-analysis")
+                val tagResult = applyPredictedTags(
+                    predictedTagIds = prediction.selectedTagIds,
+                    availableTagsSnapshot = tagsForDetection,
+                )
+                if (tagResult.skippedCategories.isNotEmpty()) {
+                    addLine("Preserved user-overridden tag categories: ${tagResult.skippedCategories.sorted().joinToString()}")
                 }
-            }
+            } ?: addLine("No Quick Edit additional-info prediction for generation $generation; model-owned tags remain cleared")
             captureStatus = PhotoStatus.QuickEdited
             quickEditStatus = context.getString(R.string.quick_edit_saved_status)
         } catch (throwable: CancellationException) {
@@ -578,6 +629,12 @@ fun AddEditClothingScreen(
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
+        modelOwnedTagIds = emptyList()
+        userOverriddenTagCategories = emptyList()
+        modelPrimaryColorGeneration = null
+        modelSecondaryColorGeneration = null
+        userPrimaryColorOverrideGeneration = null
+        userSecondaryColorOverrideGeneration = null
         captureStatus = initialPhotoReviewState?.captureStatus.orEmpty()
         photoRetrySource = initialPhotoReviewState?.let { reviewState ->
             PendingPhotoInput(
@@ -655,27 +712,17 @@ fun AddEditClothingScreen(
         QuickEditDialog(
             photoUri = canonicalPhotoUri.orEmpty(),
             beforePhotoUri = quickEditBaseUri,
-            segmenter = quickEditSegmenter,
             photoAspectRatio = photoAspectRatio,
             onDismiss = { showQuickEdit = false },
-            onSave = { adjustments, eraseSegment ->
-                val currentPhotoUri = Uri.parse(canonicalPhotoUri.orEmpty())
+            onSave = { draft ->
+                val currentPhotoUri = draft.sourceUri
                 coroutineScope.launch {
                     showQuickEdit = false
                     isPhotoProcessing = true
                     photoProcessingStage = PhotoProcessingStage.ApplyingQuickEdit
                     val editedResult = runCatching {
                         withContext(Dispatchers.IO) {
-                            val adjustedUri = QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, adjustments)
-                            if (eraseSegment != null) {
-                                quickEditSegmenter.eraseSegment(
-                                    context,
-                                    adjustedUri,
-                                    eraseSegment,
-                                )
-                            } else {
-                                adjustedUri
-                            }
+                            QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, draft.adjustments)
                         }
                     }
                     editedResult.fold(
@@ -738,8 +785,12 @@ fun AddEditClothingScreen(
             onColorSelected = { color ->
                 if (target == ColorPickerTarget.Primary) {
                     selectedPrimaryColorId = color?.id
+                    modelPrimaryColorGeneration = null
+                    userPrimaryColorOverrideGeneration = photoAnalysisGeneration
                 } else {
                     selectedSecondaryColorId = color?.id
+                    modelSecondaryColorGeneration = null
+                    userSecondaryColorOverrideGeneration = photoAnalysisGeneration
                 }
                 colorPickerTarget = null
             },
@@ -848,7 +899,7 @@ fun AddEditClothingScreen(
                 availableTags = availableTags,
                 selectedTagIds = selectedTagIds,
                 fitValue = fitValue,
-                onSelectedTagIdsChange = { selectedTagIds = it },
+                onSelectedTagIdsChange = { updateUserSelectedTagIds(it) },
                 onFitValueChange = { fitValue = it },
             )
         }
@@ -1772,84 +1823,92 @@ private fun PhotoPreview(
 private fun QuickEditDialog(
     photoUri: String,
     beforePhotoUri: String,
-    segmenter: InteractiveGarmentSegmenter,
     photoAspectRatio: Float?,
     onDismiss: () -> Unit,
-    onSave: (QuickEditAdjustments, InteractiveSegmentResult?) -> Unit,
+    onSave: (QuickEditDraftState) -> Unit,
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     var brightness by rememberSaveable { mutableStateOf(0f) }
     var temperature by rememberSaveable { mutableStateOf(0f) }
     var selectedTool by rememberSaveable { mutableStateOf(QuickEditTool.Brightness) }
-    var pendingSegment by remember { mutableStateOf<InteractiveSegmentResult?>(null) }
-    var committedSegment by remember { mutableStateOf<InteractiveSegmentResult?>(null) }
-    var isSegmenting by remember { mutableStateOf(false) }
-    var segmentError by rememberSaveable { mutableStateOf<String?>(null) }
     var showBefore by remember { mutableStateOf(false) }
-    val segmenterAvailable = segmenter.isAvailable
-    val previewUri = if (showBefore) beforePhotoUri else photoUri
+    var draftPreviewUri by remember(photoUri) { mutableStateOf(photoUri) }
+    var renderedPreviewDraft by remember(photoUri) { mutableStateOf<QuickEditDraftState?>(null) }
+    var previewGenerationId by remember(photoUri) { mutableStateOf(0L) }
+    var previewRendering by remember { mutableStateOf(false) }
+    var showPreviewLoading by remember { mutableStateOf(false) }
+    val sourcePhotoUri = remember(photoUri) { Uri.parse(photoUri) }
+    val currentDraft = remember(
+        sourcePhotoUri,
+        brightness,
+        temperature,
+        previewGenerationId,
+    ) {
+        QuickEditDraftState(
+            sourceUri = sourcePhotoUri,
+            adjustments = QuickEditAdjustments(brightness, temperature),
+            previewGenerationId = previewGenerationId,
+        )
+    }
+    val previewUri = if (showBefore) beforePhotoUri else draftPreviewUri
+    val saveableDraft = renderedPreviewDraft?.takeIf { renderedDraft ->
+        // Save must consume the exact draft generation that produced the visible preview.
+        renderedDraft == currentDraft && !previewRendering
+    }
+
+    LaunchedEffect(photoUri, brightness, temperature) {
+        val generationId = previewGenerationId + 1
+        previewGenerationId = generationId
+        previewRendering = true
+        renderedPreviewDraft = null
+        val draft = QuickEditDraftState(
+            sourceUri = sourcePhotoUri,
+            adjustments = QuickEditAdjustments(brightness, temperature),
+            previewGenerationId = generationId,
+        )
+        val renderedUri = withContext(Dispatchers.IO) {
+            QuickEditImageProcessor.renderDraftPreview(context, draft)
+        }
+        if (generationId == previewGenerationId) {
+            draftPreviewUri = renderedUri.toString()
+            renderedPreviewDraft = draft
+            previewRendering = false
+        }
+    }
+
+    LaunchedEffect(previewRendering) {
+        if (previewRendering) {
+            delay(180)
+            showPreviewLoading = previewRendering
+        } else {
+            showPreviewLoading = false
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = {
-            if (pendingSegment != null) {
-                pendingSegment = null
-                segmentError = null
-            } else {
-                onDismiss()
-            }
-        },
+        onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.quick_edit_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(3f / 4f)
+                        .aspectRatio(photoAspectRatio ?: 3f / 4f)
                         .clip(MaterialTheme.shapes.large)
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .pointerInput(selectedTool, segmenterAvailable, photoAspectRatio, photoUri, isSegmenting) {
-                            detectTapGestures(
-                                onPress = {
-                                    if (selectedTool != QuickEditTool.Eraser) {
-                                        showBefore = true
-                                        tryAwaitRelease()
-                                        showBefore = false
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                showBefore = true
+                                try {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.none { it.pressed }) break
                                     }
-                                },
-                                onTap = { offset: Offset ->
-                                    if (selectedTool == QuickEditTool.Eraser && segmenterAvailable && !isSegmenting) {
-                                        val imagePoint = mapFitCenterTapToImagePoint(
-                                            offset = offset,
-                                            containerWidth = size.width,
-                                            containerHeight = size.height,
-                                            imageAspectRatio = photoAspectRatio,
-                                        )
-                                        if (imagePoint == null) {
-                                            segmentError = context.getString(R.string.quick_edit_select_segment_first)
-                                            pendingSegment = null
-                                        } else {
-                                            isSegmenting = true
-                                            segmentError = null
-                                            pendingSegment = null
-                                            coroutineScope.launch {
-                                                val result = runCatching {
-                                                    withContext(Dispatchers.IO) {
-                                                        segmenter.highlightSegment(context, Uri.parse(photoUri), imagePoint)
-                                                    }
-                                                }
-                                                pendingSegment = result.getOrNull()?.takeIf { it.mask != null }
-                                                segmentError = when {
-                                                    result.isFailure -> context.getString(R.string.quick_edit_eraser_unavailable)
-                                                    pendingSegment == null -> context.getString(R.string.quick_edit_no_segment_found)
-                                                    else -> null
-                                                }
-                                                isSegmenting = false
-                                            }
-                                        }
-                                    }
-                                },
-                            )
+                                } finally {
+                                    showBefore = false
+                                }
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1864,13 +1923,24 @@ private fun QuickEditDialog(
                         update = { imageView -> imageView.setImageURI(Uri.parse(previewUri)) },
                         modifier = Modifier.fillMaxSize(),
                     )
-                    val highlightSegment = pendingSegment ?: committedSegment
-                    highlightSegment?.takeIf { selectedTool == QuickEditTool.Eraser }?.let { segment ->
-                        SegmentMaskOverlay(
-                            segment = segment,
-                            imageAspectRatio = photoAspectRatio,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                    if (showPreviewLoading && !showBefore) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(12.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.46f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                            Text(
+                                text = stringResource(R.string.quick_edit_preview_loading),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
                     }
                     Text(
                         text = if (showBefore) stringResource(R.string.quick_edit_before_label) else stringResource(R.string.quick_edit_hold_compare_hint),
@@ -1902,18 +1972,11 @@ private fun QuickEditDialog(
                         selected = selectedTool == QuickEditTool.Temperature,
                         onClick = { selectedTool = QuickEditTool.Temperature },
                     )
-                    QuickEditToolIconButton(
-                        icon = Icons.Rounded.AutoFixOff,
-                        label = stringResource(R.string.quick_edit_erase_segment_content_description),
-                        selected = selectedTool == QuickEditTool.Eraser,
-                        onClick = { selectedTool = QuickEditTool.Eraser },
-                    )
                 }
 
                 val selectedToolLabel = when (selectedTool) {
                     QuickEditTool.Brightness -> stringResource(R.string.quick_edit_brightness)
                     QuickEditTool.Temperature -> stringResource(R.string.quick_edit_temperature)
-                    QuickEditTool.Eraser -> stringResource(R.string.quick_edit_eraser)
                 }
                 Text(
                     text = stringResource(R.string.quick_edit_selected_tool_label, selectedToolLabel),
@@ -1931,168 +1994,64 @@ private fun QuickEditDialog(
                 when (selectedTool) {
                     QuickEditTool.Brightness -> {
                         Text(stringResource(R.string.quick_edit_brightness_hint), style = MaterialTheme.typography.bodySmall)
-                        Slider(value = brightness, onValueChange = { brightness = it }, valueRange = -1f..1f)
-                        OutlinedButton(
-                            onClick = { brightness = 0f },
-                            modifier = Modifier.align(Alignment.CenterHorizontally),
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.quick_edit_brightness_reset))
-                        }
+                        QuickEditBrightnessSlider(
+                            value = brightness,
+                            onValueChange = { brightness = it },
+                        )
                     }
                     QuickEditTool.Temperature -> {
                         Text(stringResource(R.string.quick_edit_temperature_hint), style = MaterialTheme.typography.bodySmall)
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cooler, -1f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_cool, -0.5f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_neutral, 0f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warm, 0.5f, temperature) { temperature = it }
-                            QuickEditTemperaturePreset(R.string.quick_edit_temperature_warmer, 1f, temperature) { temperature = it }
-                        }
-                    }
-                    QuickEditTool.Eraser -> {
-                        Text(
-                            text = when {
-                                isSegmenting -> stringResource(R.string.quick_edit_loading_segmenter)
-                                !segmenterAvailable -> stringResource(R.string.quick_edit_eraser_unavailable)
-                                committedSegment != null -> stringResource(R.string.quick_edit_segment_committed)
-                                pendingSegment != null -> stringResource(R.string.quick_edit_segment_pending)
-                                else -> stringResource(R.string.quick_edit_eraser_hint)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (segmenterAvailable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                        )
-                        segmentError?.let { message ->
-                            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            OutlinedButton(
-                                enabled = pendingSegment != null && !isSegmenting,
-                                onClick = {
-                                    committedSegment = pendingSegment
-                                    pendingSegment = null
-                                    segmentError = null
-                                },
-                            ) { Text(stringResource(R.string.quick_edit_erase_segment)) }
-                            TextButton(
-                                enabled = pendingSegment != null || committedSegment != null,
-                                onClick = {
-                                    pendingSegment = null
-                                    committedSegment = null
-                                    segmentError = null
-                                },
-                            ) { Text(stringResource(R.string.undo)) }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_cooler,
+                                value = -1f,
+                                selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_cool,
+                                value = -0.5f,
+                                selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_neutral,
+                                value = 0f,
+                                selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_warm,
+                                value = 0.5f,
+                                selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
+                            ) { temperature = it }
+                            QuickEditTemperaturePreset(
+                                labelRes = R.string.quick_edit_temperature_warmer,
+                                value = 1f,
+                                selectedValue = temperature,
+                                modifier = Modifier.weight(1f),
+                            ) { temperature = it }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(QuickEditAdjustments(brightness, temperature), committedSegment) }) {
+            Button(
+                enabled = saveableDraft != null,
+                onClick = { saveableDraft?.let(onSave) },
+            ) {
                 Text(stringResource(R.string.save_item))
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = {
-                    if (pendingSegment != null) {
-                        pendingSegment = null
-                        segmentError = null
-                    } else {
-                        onDismiss()
-                    }
-                },
-            ) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
-    )
-}
-
-@Composable
-private fun SegmentMaskOverlay(
-    segment: InteractiveSegmentResult,
-    imageAspectRatio: Float?,
-    modifier: Modifier = Modifier,
-) {
-    val mask = segment.mask
-    val overlay = remember(mask) { mask?.toOverlayImageBitmap() }
-    if (overlay != null) {
-        Canvas(modifier = modifier) {
-            val rect = fitCenterRect(size.width, size.height, imageAspectRatio)
-            drawImage(
-                image = overlay,
-                dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
-                dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
-            )
-        }
-    } else {
-        Canvas(modifier = modifier) {
-            val rect = fitCenterRect(size.width, size.height, imageAspectRatio)
-            drawCircle(
-                color = Color.Red.copy(alpha = 0.28f),
-                radius = minOf(rect.width, rect.height) * 0.08f,
-                center = Offset(rect.left + segment.point.x * rect.width, rect.top + segment.point.y * rect.height),
-            )
-        }
-    }
-}
-
-private fun InteractiveSegmentMask.toOverlayImageBitmap(): ImageBitmap {
-    val pixels = IntArray(width * height)
-    for (index in pixels.indices) {
-        val alphaValue = (alpha[index].toInt() and 0xFF).coerceIn(0, 255)
-        pixels[index] = (alphaValue shl 24) or 0x00FF1744
-    }
-    return android.graphics.Bitmap.createBitmap(pixels, width, height, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
-}
-
-private fun mapFitCenterTapToImagePoint(
-    offset: Offset,
-    containerWidth: Int,
-    containerHeight: Int,
-    imageAspectRatio: Float?,
-): NormalizedImagePoint? {
-    val rect = fitCenterRect(containerWidth.toFloat(), containerHeight.toFloat(), imageAspectRatio)
-    if (offset.x < rect.left || offset.x > rect.right || offset.y < rect.top || offset.y > rect.bottom) return null
-    return NormalizedImagePoint(
-        x = ((offset.x - rect.left) / rect.width).coerceIn(0f, 1f),
-        y = ((offset.y - rect.top) / rect.height).coerceIn(0f, 1f),
-    )
-}
-
-private data class FitCenterRect(
-    val left: Float,
-    val top: Float,
-    val width: Float,
-    val height: Float,
-) {
-    val right: Float = left + width
-    val bottom: Float = top + height
-}
-
-private fun fitCenterRect(containerWidth: Float, containerHeight: Float, imageAspectRatio: Float?): FitCenterRect {
-    val safeWidth = containerWidth.coerceAtLeast(1f)
-    val safeHeight = containerHeight.coerceAtLeast(1f)
-    val aspectRatio = imageAspectRatio?.takeIf { it > 0f } ?: (safeWidth / safeHeight)
-    val containerAspectRatio = safeWidth / safeHeight
-    val (contentWidth, contentHeight) = if (aspectRatio > containerAspectRatio) {
-        safeWidth to safeWidth / aspectRatio
-    } else {
-        safeHeight * aspectRatio to safeHeight
-    }
-    return FitCenterRect(
-        left = (safeWidth - contentWidth) / 2f,
-        top = (safeHeight - contentHeight) / 2f,
-        width = contentWidth,
-        height = contentHeight,
     )
 }
 
@@ -2129,34 +2088,127 @@ private fun QuickEditToolIconButton(
 }
 
 @Composable
+private fun QuickEditBrightnessSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+) {
+    val normalizedValue = ((value.coerceIn(-1f, 1f) + 1f) / 2f).coerceIn(0f, 1f)
+    val sliderContentDescription = stringResource(R.string.quick_edit_brightness_content_description)
+    val thumbSize = 24.dp
+
+    fun updateValue(pointerX: Float, width: Int) {
+        if (width <= 0) return
+        val normalized = (pointerX / width).coerceIn(0f, 1f)
+        onValueChange((normalized * 2f) - 1f)
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .semantics { contentDescription = sliderContentDescription }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    updateValue(down.position.x, size.width)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressedChange = event.changes.firstOrNull { change -> change.pressed } ?: break
+                        updateValue(pressedChange.position.x, size.width)
+                    }
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(normalizedValue)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Box(
+            modifier = Modifier
+                .padding(start = (maxWidth - thumbSize) * normalizedValue)
+                .size(thumbSize)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .border(2.dp, MaterialTheme.colorScheme.surfaceContainerLowest, CircleShape),
+        )
+    }
+}
+
+@Composable
 private fun QuickEditTemperaturePreset(
     labelRes: Int,
     value: Float,
     selectedValue: Float,
+    modifier: Modifier = Modifier,
     onSelected: (Float) -> Unit,
 ) {
     val selected = selectedValue == value
     val label = stringResource(labelRes)
-    val contentDescription = stringResource(R.string.quick_edit_temperature_preset_content_description, label)
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val selectedStatus = stringResource(
+        if (selected) R.string.quick_edit_temperature_selected else R.string.quick_edit_temperature_not_selected,
+    )
+    val contentDescription = stringResource(
+        R.string.quick_edit_temperature_preset_content_description,
+        label,
+        selectedStatus,
+    )
+    val swatchColor = when (value) {
+        -1f -> Color(0xFF0B4FB3)
+        -0.5f -> Color(0xFF5FA8FF)
+        0f -> MaterialTheme.colorScheme.surfaceContainerHigh
+        0.5f -> Color(0xFFFFB36B)
+        else -> Color(0xFFE56A1F)
+    }
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { onSelected(value) }
+            .semantics {
+                this.contentDescription = contentDescription
+                this.selected = selected
+            }
+            .padding(2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(44.dp)
                 .clip(CircleShape)
-                .background(if (value < 0f) Color(0xFFB9D8FF) else if (value > 0f) Color(0xFFFFC58C) else MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                .clickable { onSelected(value) }
-                .semantics {
-                    this.contentDescription = contentDescription
-                    this.selected = selected
-                },
+                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(swatchColor)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
             if (selected) {
-                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                )
             }
         }
-        Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -2366,7 +2418,7 @@ private fun GarmentTag.localizedLabel(): String = localizedTagLabel()
 
 private enum class ColorPickerTarget { Primary, Secondary }
 
-private enum class QuickEditTool { Brightness, Temperature, Eraser }
+private enum class QuickEditTool { Brightness, Temperature }
 
 private data class PendingPhotoInput(
     val id: Long,
@@ -2382,19 +2434,52 @@ private enum class PhotoProcessingStage(val labelRes: Int) {
     ApplyingQuickEdit(R.string.processing_stage_applying_quick_edit),
 }
 
-private fun mergePredictedAdditionalInfoTags(
+private data class PredictedTagReconciliation(
+    val selectedTagIds: List<String>,
+    val modelOwnedTagIds: List<String>,
+    val skippedCategories: Set<String>,
+)
+
+private fun reconcilePredictedAdditionalInfoTags(
     currentTagIds: List<String>,
+    currentModelOwnedTagIds: List<String>,
     predictedTagIds: Set<String>,
     availableTags: List<GarmentTag>,
-): List<String> {
-    if (predictedTagIds.isEmpty()) return currentTagIds
+    userOverriddenCategories: List<String>,
+): PredictedTagReconciliation {
     val tagsById = availableTags.associateBy(GarmentTag::id)
-    val hasCurrentCategory = currentTagIds.any { tagId -> tagsById[tagId]?.categoryId == "category" }
-    val inferredTagIds = predictedTagIds.filter { tagId ->
-        val categoryId = tagsById[tagId]?.categoryId ?: return@filter false
-        categoryId in MODEL_PREDICTED_CATEGORIES && (categoryId != "category" || !hasCurrentCategory)
+    val userOverridden = userOverriddenCategories.toSet()
+    val predictedByCategory = MODEL_PREDICTED_CATEGORIES.associateWith { categoryId ->
+        predictedTagIds.filter { tagId -> tagsById[tagId]?.categoryId == categoryId }
     }
-    return (currentTagIds + inferredTagIds).distinct()
+    val categoriesWithPredictions = predictedByCategory
+        .filterValues { tagIds -> tagIds.isNotEmpty() }
+        .keys
+    val replacedCategories = MODEL_PREDICTED_CATEGORIES - userOverridden
+    val modelOwnedIds = currentModelOwnedTagIds.toSet()
+    val selected = currentTagIds.filterNot { tagId ->
+        val categoryId = tagsById[tagId]?.categoryId
+        categoryId in replacedCategories && (categoryId == "category" || tagId in modelOwnedIds)
+    }.toMutableList()
+    val nextModelOwned = currentModelOwnedTagIds.filterNot { tagId ->
+        tagsById[tagId]?.categoryId in replacedCategories
+    }.toMutableList()
+
+    categoriesWithPredictions.forEach { categoryId ->
+        if (categoryId in userOverridden) return@forEach
+        // A new photo generation owns only the detector output for category/season/occasion.
+        // Previous model-owned selections are removed first, so trousers -> shirt cannot keep trousers.
+        predictedByCategory.getValue(categoryId).forEach { tagId ->
+            if (tagId !in selected) selected += tagId
+            if (tagId !in nextModelOwned) nextModelOwned += tagId
+        }
+    }
+
+    return PredictedTagReconciliation(
+        selectedTagIds = selected.distinct(),
+        modelOwnedTagIds = nextModelOwned.distinct(),
+        skippedCategories = categoriesWithPredictions.intersect(userOverridden),
+    )
 }
 
 private val MODEL_PREDICTED_CATEGORIES = setOf("category", "season", "occasion")
