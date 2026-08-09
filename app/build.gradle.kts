@@ -15,6 +15,34 @@ val hasRobiaCiDebugSigning = listOf(
     robiaDebugKeyAlias,
     robiaDebugKeyPassword,
 ).all { !it.isNullOrBlank() }
+
+val releaseSigningEnvironment = mapOf(
+    "ANDROID_KEYSTORE_PATH" to System.getenv("ANDROID_KEYSTORE_PATH"),
+    "ANDROID_KEYSTORE_PASSWORD" to System.getenv("ANDROID_KEYSTORE_PASSWORD"),
+    "ANDROID_KEY_ALIAS" to System.getenv("ANDROID_KEY_ALIAS"),
+    "ANDROID_KEY_PASSWORD" to System.getenv("ANDROID_KEY_PASSWORD"),
+)
+val missingReleaseSigningEnvironment = releaseSigningEnvironment
+    .filterValues { it.isNullOrBlank() }
+    .keys
+val hasReleaseSigning = missingReleaseSigningEnvironment.isEmpty()
+val requestedTasks = gradle.startParameter.taskNames.map { it.lowercase() }
+val isReleaseBuildRequested = requestedTasks.any { taskName ->
+    taskName.contains("release") && (
+        taskName.contains("assemble") ||
+            taskName.contains("bundle") ||
+            taskName.contains("publish") ||
+            taskName.contains("install") ||
+            taskName.contains("package") ||
+            taskName == "release"
+    )
+}
+if (isReleaseBuildRequested && !hasReleaseSigning) {
+    throw GradleException(
+        "Release signing is required for release builds. Missing environment variable(s): " +
+            missingReleaseSigningEnvironment.joinToString(", "),
+    )
+}
 android {
     namespace = "com.gusanitolabs.robia"
     compileSdk = 35
@@ -40,6 +68,14 @@ android {
                 keyPassword = robiaDebugKeyPassword!!
             }
         }
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PATH")!!)
+                storePassword = releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PASSWORD")!!
+                keyAlias = releaseSigningEnvironment.getValue("ANDROID_KEY_ALIAS")!!
+                keyPassword = releaseSigningEnvironment.getValue("ANDROID_KEY_PASSWORD")!!
+            }
+        }
     }
 
     buildTypes {
@@ -50,6 +86,9 @@ android {
         }
 
         release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
