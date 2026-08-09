@@ -198,6 +198,22 @@ class RegressionSourceContractTest {
         )
     }
 
+    @Test
+    fun androidPlatformBackup_isDisabledForDriveOnlyOptInPolicy() {
+        val manifest = source("app/src/main/AndroidManifest.xml")
+        val drivePlan = source("docs/google_drive_sync_setup_plan.md")
+
+        assertTrue(manifest.contains("android:allowBackup=\"false\""))
+        assertTrue(!manifest.contains("android:dataExtractionRules"))
+        assertTrue(!manifest.contains("android:fullBackupContent"))
+        assertTrue(manifest.contains("Google Drive-only and explicit opt-in inside the app"))
+        assertTrue(manifest.contains("Disable Android Auto Backup and device transfer"))
+
+        assertTrue(drivePlan.contains("Google Drive-only and opt-in"))
+        assertTrue(drivePlan.contains("Android Auto Backup and Android device-to-device transfer must not copy"))
+        assertTrue(drivePlan.contains("Do not re-enable Android platform backup rules"))
+    }
+
     private fun assertIncreasing(vararg indices: Int) {
         assertTrue("Expected every source marker to be present", indices.all { it >= 0 })
         indices.zipWithNext().forEach { (left, right) ->

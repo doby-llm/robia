@@ -140,7 +140,7 @@ Suggested `manifest.json` shape:
 
 ## 3. Sync policy decisions
 
-Robia should be local-first, then sync when Google is connected.
+Robia should be local-first, then sync only after the user explicitly chooses to connect Google Drive. Robia wardrobe backup is Google Drive-only and opt-in: Android Auto Backup and Android device-to-device transfer must not copy app-private wardrobe databases, images, preferences, restore/sync logs, or any other Robia app data. The Android manifest therefore disables platform backup with `android:allowBackup="false"` and intentionally does not reference `fullBackupContent` or `dataExtractionRules` resources. Do not re-enable Android platform backup rules as a fallback for missing Drive setup; a phone migration should require the user to sign in and restore through the Robia Drive flow.
 
 ### Two-way merge
 
