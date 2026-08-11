@@ -34,6 +34,7 @@
     <string name="cloud_restore_status_offline">Se perdió la conexión. Reintenta la restauración antes de añadir cambios locales.</string>
     <string name="cloud_restore_status_failed">La restauración falló. Los datos locales no se modificaron.</string>
     <string name="cloud_restore_status_rolled_back">La restauración falló y se revirtió. Tu armario local anterior está intacto.</string>
+    <string name="cloud_restore_status_completed_with_attention">La restauración se completó, pero algunas fotos necesitan tu atención antes de reintentarlas.</string>
     <string name="cloud_restore_retry">Reintentar restauración</string>
     <string name="cloud_restore_photo_missing_message">Algunas imágenes no se pudieron restaurar desde Drive. Robia mantendrá tu armario seguro y lo reintentará en la próxima sincronización.</string>
     <string name="cloud_restore_diagnostics_title">Diagnóstico de restauración</string>

@@ -459,8 +459,7 @@ private fun WardrobeSyncState.reconcileWithSettings(
 }
 
 private val WardrobeSyncState.hasVisibleSyncActivity: Boolean
-    get() = pendingOperationCount > 0 ||
-        connectionStatus == DriveSyncConnectionStatus.Syncing ||
+    get() = connectionStatus == DriveSyncConnectionStatus.Syncing ||
         restoreProgress?.status == CloudRestoreStatus.Running
 
 @Composable
@@ -1561,6 +1560,7 @@ private fun cloudRestoreStatusText(progress: CloudRestoreProgress): String = str
         CloudRestoreStatus.Offline -> R.string.cloud_restore_status_offline
         CloudRestoreStatus.Failed -> R.string.cloud_restore_status_failed
         CloudRestoreStatus.RolledBack -> R.string.cloud_restore_status_rolled_back
+        CloudRestoreStatus.CompletedWithAttention -> R.string.cloud_restore_status_completed_with_attention
     },
 )
 
@@ -2020,7 +2020,7 @@ private fun GarmentCloudStatusBadge(
         contentColor = item.garmentCloudStatusTint(),
         modifier = modifier.semantics { contentDescription = label },
     ) {
-        if (item.syncStatus == GarmentSyncStatus.Syncing) {
+        if (item.syncStatus == GarmentSyncStatus.Running) {
             CircularProgressIndicator(
                 modifier = Modifier
                     .padding(7.dp)
@@ -2055,7 +2055,7 @@ private fun GarmentCloudStatusRow(item: UiWardrobeItem) {
             }
         },
         leadingContent = {
-            if (item.syncStatus == GarmentSyncStatus.Syncing) {
+            if (item.syncStatus == GarmentSyncStatus.Running) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             } else {
                 Icon(
@@ -2073,13 +2073,14 @@ private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus)
     GarmentSyncStatus.LocalOnly -> stringResource(R.string.garment_sync_saved_device)
     GarmentSyncStatus.Dirty -> stringResource(R.string.garment_sync_waiting)
     GarmentSyncStatus.Queued -> stringResource(R.string.garment_sync_queued)
-    GarmentSyncStatus.Syncing -> stringResource(R.string.garment_sync_syncing)
+    GarmentSyncStatus.Running -> stringResource(R.string.garment_sync_syncing)
     GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
     GarmentSyncStatus.FailedRetryable -> when {
         hasMissingRestoredPhoto -> stringResource(R.string.cloud_restore_photo_missing_message)
         else -> syncFailureMessage?.takeIf(String::isNotBlank)
             ?: stringResource(R.string.garment_sync_failed_retryable)
     }
+    GarmentSyncStatus.NeedsUserAction -> stringResource(R.string.garment_sync_failed_retryable)
     GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
 }
 
@@ -2091,19 +2092,21 @@ private fun UiWardrobeItem.garmentCloudStatusIcon(): ImageVector = when (syncSta
     GarmentSyncStatus.AuthBlocked -> Icons.Rounded.CloudOff
     GarmentSyncStatus.Dirty,
     GarmentSyncStatus.Queued,
-    GarmentSyncStatus.Syncing -> Icons.Rounded.CloudUpload
+    GarmentSyncStatus.Running -> Icons.Rounded.CloudUpload
     GarmentSyncStatus.Synced -> Icons.Rounded.CloudDone
-    GarmentSyncStatus.FailedRetryable -> Icons.Rounded.Error
+    GarmentSyncStatus.FailedRetryable,
+    GarmentSyncStatus.NeedsUserAction -> Icons.Rounded.Error
 }
 
 @Composable
 private fun UiWardrobeItem.garmentCloudStatusTint(): Color = when (syncStatus) {
     GarmentSyncStatus.Synced -> MaterialTheme.colorScheme.primary
     GarmentSyncStatus.FailedRetryable,
+    GarmentSyncStatus.NeedsUserAction,
     GarmentSyncStatus.AuthBlocked -> MaterialTheme.colorScheme.error
     GarmentSyncStatus.Dirty,
     GarmentSyncStatus.Queued,
-    GarmentSyncStatus.Syncing -> MaterialTheme.colorScheme.tertiary
+    GarmentSyncStatus.Running -> MaterialTheme.colorScheme.tertiary
     GarmentSyncStatus.LocalOnly -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
@@ -3287,7 +3290,8 @@ private fun GarmentSyncStatus.resolveForConnection(
 ): GarmentSyncStatus = when {
     this == GarmentSyncStatus.Synced -> GarmentSyncStatus.Synced
     this == GarmentSyncStatus.FailedRetryable -> GarmentSyncStatus.FailedRetryable
-    this == GarmentSyncStatus.Syncing -> GarmentSyncStatus.Syncing
+    this == GarmentSyncStatus.NeedsUserAction -> GarmentSyncStatus.NeedsUserAction
+    this == GarmentSyncStatus.Running -> GarmentSyncStatus.Running
     driveSyncConnectionStatus == DriveSyncConnectionStatus.Disconnected -> GarmentSyncStatus.AuthBlocked
     driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured ||
         driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled -> when (this) {
@@ -3304,9 +3308,10 @@ private val GarmentSyncStatus.itemStatusLabelRes: Int
         GarmentSyncStatus.LocalOnly -> R.string.garment_sync_saved_device
         GarmentSyncStatus.Dirty -> R.string.garment_sync_waiting
         GarmentSyncStatus.Queued -> R.string.garment_sync_queued
-        GarmentSyncStatus.Syncing -> R.string.garment_sync_syncing
+        GarmentSyncStatus.Running -> R.string.garment_sync_syncing
         GarmentSyncStatus.Synced -> R.string.garment_sync_synced
         GarmentSyncStatus.FailedRetryable -> R.string.garment_sync_failed_retryable
+        GarmentSyncStatus.NeedsUserAction -> R.string.garment_sync_failed_retryable
         GarmentSyncStatus.AuthBlocked -> R.string.garment_sync_auth_blocked
     }
 

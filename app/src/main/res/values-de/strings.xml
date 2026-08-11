@@ -34,6 +34,7 @@
     <string name="cloud_restore_status_offline">Verbindung verloren. Wiederhole die Wiederherstellung, bevor du lokale Änderungen hinzufügst.</string>
     <string name="cloud_restore_status_failed">Wiederherstellung fehlgeschlagen. Lokale Daten wurden nicht geändert.</string>
     <string name="cloud_restore_status_rolled_back">Wiederherstellung fehlgeschlagen und zurückgesetzt. Deine vorherige lokale Garderobe ist intakt.</string>
+    <string name="cloud_restore_status_completed_with_attention">Die Wiederherstellung ist abgeschlossen, aber einige Fotos benötigen vor einem erneuten Versuch deine Aufmerksamkeit.</string>
     <string name="cloud_restore_retry">Wiederherstellung wiederholen</string>
     <string name="cloud_restore_photo_missing_message">Einige Bilder konnten nicht aus Drive wiederhergestellt werden. Robia hält deine Garderobe sicher und versucht es bei der nächsten Cloud-Synchronisierung erneut.</string>
     <string name="cloud_restore_diagnostics_title">Wiederherstellungsdiagnose</string>

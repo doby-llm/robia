@@ -278,7 +278,8 @@ private fun GarmentSyncRecord.toEntity(
         isArchived = isArchived,
         createdAtEpochMillis = createdAtEpochMillis,
         updatedAtEpochMillis = updatedAtEpochMillis,
-        syncStatus = if (photoRestoreIssue == null) GarmentSyncStatus.Synced else GarmentSyncStatus.FailedRetryable,
+        // A guarded remote photo requires the user to explicitly retry it.
+        syncStatus = if (photoRestoreIssue == null) GarmentSyncStatus.Synced else GarmentSyncStatus.NeedsUserAction,
         syncRevision = revision,
         syncDirtyAtEpochMillis = null,
         lastSyncedAtEpochMillis = System.currentTimeMillis(),

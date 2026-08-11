@@ -98,6 +98,38 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun syncOutbox_distinguishesRunnableWorkFromAttentionAndRecoversStaleRunningWork() {
+        val syncModels = source("app/src/main/java/com/gusanitolabs/robia/core/model/SyncModels.kt")
+        val entities = source("app/src/main/java/com/gusanitolabs/robia/data/local/Entities.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val database = source("app/src/main/java/com/gusanitolabs/robia/data/local/RobiaDatabase.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+
+        assertTrue(syncModels.contains("Running,"))
+        assertTrue(syncModels.contains("NeedsUserAction,"))
+        assertTrue(entities.contains("retry_attempt_count"))
+        assertTrue(entities.contains("retry_after_epoch_millis"))
+        assertTrue(entities.contains("sync_started_at_epoch_millis"))
+        assertTrue(database.contains("MIGRATION_10_11"))
+        assertTrue(database.contains("SET sync_status = 'Running'"))
+        assertTrue(dao.contains("retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now"))
+        assertTrue(dao.contains("sync_status = 'NeedsUserAction'"))
+        assertTrue(dao.contains("recoverStaleRunningSyncWork"))
+        assertTrue(processor.contains("recoverStaleRunningSyncWork"))
+        assertTrue(processor.contains("MAX_RETRY_ATTEMPTS"))
+        assertTrue(processor.contains("CloudRestoreStatus.CompletedWithAttention"))
+        assertTrue(snapshotRepository.contains("GarmentSyncStatus.NeedsUserAction"))
+
+        val visibleActivity = app
+            .substringAfter("private val WardrobeSyncState.hasVisibleSyncActivity: Boolean")
+            .substringBefore("@Composable\nprivate fun LocalizedRobiaContent")
+        assertTrue(visibleActivity.contains("connectionStatus == DriveSyncConnectionStatus.Syncing"))
+        assertTrue(!visibleActivity.contains("pendingOperationCount > 0"))
+    }
+
+    @Test
     fun restoreProgressOverlay_gatesDiagnosticsToDeveloperModeAndStaysCentered() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val overlay = app
