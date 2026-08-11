@@ -274,8 +274,12 @@
     <string name="batch_status_needs_review">Needs review</string>
     <string name="batch_status_ready">Ready</string>
     <string name="batch_status_failed">Failed</string>
+    <string name="batch_status_interrupted">Interrupted</string>
+    <string name="batch_retry">Retry</string>
     <string name="batch_helper_processing">Processing %1$d items…</string>
     <string name="batch_helper_failed">Resolve %1$d failed items.</string>
+    <string name="batch_helper_interrupted">Retry or discard %1$d interrupted items.</string>
+    <string name="batch_interrupted_message">Processing was interrupted. Retry this item manually.</string>
     <string name="batch_helper_needs_review">Review %1$d original-photo items before saving.</string>
     <string name="batch_original_fallback_message">Photo cleanup failed. Original photo kept — open to retry or keep it.</string>
     <string name="batch_helper_empty">Choose multiple gallery photos to start a batch.</string>

@@ -274,8 +274,12 @@
     <string name="batch_status_needs_review">Requiere revisión</string>
     <string name="batch_status_ready">Lista</string>
     <string name="batch_status_failed">Falló</string>
+    <string name="batch_status_interrupted">Interrumpida</string>
+    <string name="batch_retry">Reintentar</string>
     <string name="batch_helper_processing">Procesando %1$d prendas…</string>
     <string name="batch_helper_failed">Resuelve %1$d prendas fallidas.</string>
+    <string name="batch_helper_interrupted">Reintenta o descarta %1$d prendas interrumpidas.</string>
+    <string name="batch_interrupted_message">El procesamiento se interrumpió. Reintenta esta prenda manualmente.</string>
     <string name="batch_helper_needs_review">Revisa %1$d prendas con foto original antes de guardar.</string>
     <string name="batch_original_fallback_message">Falló el retoque de foto. Se conservó la foto original: abre la prenda para reintentar o conservarla.</string>
     <string name="batch_helper_empty">Elige varias fotos de galería para iniciar un lote.</string>

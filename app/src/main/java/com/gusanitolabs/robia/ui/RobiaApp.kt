@@ -146,6 +146,8 @@ import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
 import com.gusanitolabs.robia.media.GarmentShareMetadataIcon
+import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -567,6 +569,12 @@ private fun RobiaShell(
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     val batchDrafts = remember { mutableStateListOf<BatchDraftItem>() }
+    val batchProcessingScope = rememberCoroutineScope()
+    val batchProcessingCoordinator = remember(batchProcessingScope) {
+        BatchProcessingCoordinator(batchProcessingScope)
+    }
+    val batchBackgroundRemover = remember { PhotoBackgroundRemover() }
+    val batchAdditionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
@@ -666,21 +674,62 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.Browse)
     }
 
+    fun updateBatchDraft(updated: BatchDraftItem) {
+        val index = batchDrafts.indexOfFirst { draft -> draft.id == updated.id }
+        if (index >= 0) batchDrafts[index] = updated
+    }
+
+    fun processQueuedBatchDrafts() {
+        batchProcessingCoordinator.processQueued(
+            drafts = { batchDrafts.toList() },
+            processDraft = { draft ->
+                processBatchDraft(
+                    draft = draft,
+                    context = context,
+                    backgroundRemover = batchBackgroundRemover,
+                    additionalInfoDetector = batchAdditionalInfoDetector,
+                    mainColors = mainColors,
+                    availableTags = availableTags,
+                    onDraftUpdated = ::updateBatchDraft,
+                )
+            },
+            onInterrupted = { draft ->
+                val current = batchDrafts.firstOrNull { it.id == draft.id }
+                if (current?.status == BatchDraftStatus.Processing) {
+                    updateBatchDraft(
+                        current.copy(
+                            status = BatchDraftStatus.Interrupted,
+                            errorMessage = context.getString(R.string.batch_interrupted_message),
+                        ),
+                    )
+                }
+            },
+        )
+    }
+
     fun startBatchAdd(photoUris: List<String>) {
+        batchProcessingCoordinator.cancel()
         batchDrafts.clear()
         photoUris.forEachIndexed { index, uri ->
             batchDrafts += BatchDraftItem(orderIndex = index, originalPhotoUri = uri)
         }
         selectedBatchDraftId = null
         replaceRoute(RobiaRoute.BatchAddClothing)
+        processQueuedBatchDrafts()
     }
 
-    fun updateBatchDraft(updated: BatchDraftItem) {
-        val index = batchDrafts.indexOfFirst { draft -> draft.id == updated.id }
-        if (index >= 0) batchDrafts[index] = updated
+    fun retryBatchDraft(draft: BatchDraftItem) {
+        updateBatchDraft(draft.copy(status = BatchDraftStatus.Queued, errorMessage = null))
+        processQueuedBatchDrafts()
+    }
+
+    fun discardBatchDraft(draft: BatchDraftItem) {
+        batchDrafts.removeAll { it.id == draft.id }
+        if (selectedBatchDraftId == draft.id) selectedBatchDraftId = null
     }
 
     fun cancelBatchAdd() {
+        batchProcessingCoordinator.cancel()
         batchDrafts.clear()
         selectedBatchDraftId = null
         showBatchDiscardDialog = false
@@ -1083,16 +1132,18 @@ private fun RobiaShell(
             },
             onDeleteItem = { item -> deleteItemsAndReturnToBrowse(setOf(item.id)) },
             onBatchPhotosSelected = ::startBatchAdd,
-            onDraftUpdated = ::updateBatchDraft,
             onDraftSelected = { draft ->
                 selectedBatchDraftId = draft.id
                 pushRoute(RobiaRoute.BatchEditClothing)
             },
+            onRetryBatchDraft = ::retryBatchDraft,
+            onDiscardBatchDraft = ::discardBatchDraft,
             onSaveBatch = { batchItems ->
                 onSaveItems(batchItems)
-                batchDrafts.clear()
+                val savedIds = batchItems.map(ClothingItem::id).toSet()
+                batchDrafts.removeAll { it.id in savedIds }
                 selectedBatchDraftId = null
-                replaceRoute(RobiaRoute.Browse)
+                if (batchDrafts.isEmpty()) replaceRoute(RobiaRoute.Browse)
             },
             onCancelBatch = {
                 cancelBatchAdd()
@@ -1643,8 +1694,9 @@ private fun RobiaNavHost(
     onSaveItem: (ClothingItem) -> Unit,
     onDeleteItem: (ClothingItem) -> Unit,
     onBatchPhotosSelected: (List<String>) -> Unit,
-    onDraftUpdated: (BatchDraftItem) -> Unit,
     onDraftSelected: (BatchDraftItem) -> Unit,
+    onRetryBatchDraft: (BatchDraftItem) -> Unit,
+    onDiscardBatchDraft: (BatchDraftItem) -> Unit,
     onSaveBatch: (List<ClothingItem>) -> Unit,
     onCancelBatch: () -> Unit,
     onSaveBatchDraft: (ClothingItem) -> Unit,
@@ -1715,8 +1767,9 @@ private fun RobiaNavHost(
             drafts = batchDrafts,
             availableTags = availableTags,
             mainColors = mainColors,
-            onDraftUpdated = onDraftUpdated,
             onDraftSelected = onDraftSelected,
+            onRetryDraft = onRetryBatchDraft,
+            onDiscardDraft = onDiscardBatchDraft,
             onSaveBatch = onSaveBatch,
             onCancelBatch = onCancelBatch,
         )
@@ -1739,8 +1792,9 @@ private fun RobiaNavHost(
             drafts = batchDrafts,
             availableTags = availableTags,
             mainColors = mainColors,
-            onDraftUpdated = onDraftUpdated,
             onDraftSelected = onDraftSelected,
+            onRetryDraft = onRetryBatchDraft,
+            onDiscardDraft = onDiscardBatchDraft,
             onSaveBatch = onSaveBatch,
             onCancelBatch = onCancelBatch,
         )

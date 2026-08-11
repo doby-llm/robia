@@ -42,11 +42,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -102,6 +100,7 @@ internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
     NeedsReview(R.string.batch_status_needs_review),
     Ready(R.string.batch_status_ready),
     Failed(R.string.batch_status_failed),
+    Interrupted(R.string.batch_status_interrupted),
 }
 
 @Composable
@@ -110,17 +109,12 @@ internal fun BatchAddClothingScreen(
     drafts: List<BatchDraftItem>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
-    onDraftUpdated: (BatchDraftItem) -> Unit,
     onDraftSelected: (BatchDraftItem) -> Unit,
+    onRetryDraft: (BatchDraftItem) -> Unit,
+    onDiscardDraft: (BatchDraftItem) -> Unit,
     onSaveBatch: (List<ClothingItem>) -> Unit,
     onCancelBatch: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val backgroundRemover = remember { PhotoBackgroundRemover() }
-    val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
-    val latestDrafts by rememberUpdatedState(drafts)
-    val latestMainColors by rememberUpdatedState(mainColors)
-    val latestAvailableTags by rememberUpdatedState(availableTags)
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
     fun requestCancel() {
@@ -133,20 +127,6 @@ internal fun BatchAddClothingScreen(
 
     BackHandler { requestCancel() }
 
-    LaunchedEffect(drafts.map(BatchDraftItem::id)) {
-        while (true) {
-            val next = latestDrafts.firstOrNull { it.status == BatchDraftStatus.Queued } ?: break
-            processBatchDraft(
-                draft = next,
-                context = context,
-                backgroundRemover = backgroundRemover,
-                additionalInfoDetector = additionalInfoDetector,
-                mainColors = latestMainColors,
-                availableTags = latestAvailableTags,
-                onDraftUpdated = onDraftUpdated,
-            )
-        }
-    }
 
     if (showDiscardDialog) {
         AlertDialog(
@@ -167,15 +147,18 @@ internal fun BatchAddClothingScreen(
         )
     }
 
-    val processedCount = drafts.count { it.status != BatchDraftStatus.Queued && it.status != BatchDraftStatus.Processing }
+    val processedCount = drafts.count { it.status.isTerminal }
     val processingCount = drafts.count { it.status == BatchDraftStatus.Queued || it.status == BatchDraftStatus.Processing }
     val needsReviewCount = drafts.count { it.status == BatchDraftStatus.NeedsReview }
     val failedCount = drafts.count { it.status == BatchDraftStatus.Failed }
+    val interruptedCount = drafts.count { it.status == BatchDraftStatus.Interrupted }
     val progress = if (drafts.isEmpty()) 0f else processedCount.toFloat() / drafts.size.toFloat()
-    val canSave = drafts.isNotEmpty() && drafts.all { it.status == BatchDraftStatus.Ready }
+    val savableDrafts = drafts.filter { it.status.isSavable }
+    val canSave = savableDrafts.isNotEmpty()
     val saveHelper = when {
         processingCount > 0 -> stringResource(R.string.batch_helper_processing, processingCount)
         needsReviewCount > 0 -> stringResource(R.string.batch_helper_needs_review, needsReviewCount)
+        interruptedCount > 0 -> stringResource(R.string.batch_helper_interrupted, interruptedCount)
         failedCount > 0 -> stringResource(R.string.batch_helper_failed, failedCount)
         drafts.isEmpty() -> stringResource(R.string.batch_helper_empty)
         else -> stringResource(R.string.batch_helper_ready, drafts.size)
@@ -206,6 +189,8 @@ internal fun BatchAddClothingScreen(
                     draft = draft,
                     position = draft.orderIndex + 1,
                     totalCount = drafts.size,
+                    onRetry = { onRetryDraft(draft) },
+                    onDiscard = { onDiscardDraft(draft) },
                     onClick = {
                         if (draft.status.isSelectable) {
                             onDraftSelected(draft)
@@ -231,7 +216,7 @@ internal fun BatchAddClothingScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Button(
-                    onClick = { onSaveBatch(drafts.map { it.toClothingItem(availableTags, mainColors) }) },
+                    onClick = { onSaveBatch(savableDrafts.map { it.toClothingItem(availableTags, mainColors) }) },
                     enabled = canSave,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -310,6 +295,8 @@ private fun BatchDraftTile(
     position: Int,
     totalCount: Int,
     onClick: () -> Unit,
+    onRetry: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
     val status = stringResource(draft.status.labelRes)
     val tileDescription = stringResource(R.string.batch_tile_content_description, position, totalCount, status)
@@ -354,6 +341,12 @@ private fun BatchDraftTile(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (draft.status.isRetryable) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onRetry) { Text(stringResource(R.string.batch_retry)) }
+                    TextButton(onClick = onDiscard) { Text(stringResource(R.string.discard_changes)) }
+                }
+            }
         }
     }
 }
@@ -422,13 +415,13 @@ private fun BatchStatusBadge(
 ) {
     val containerColor = when (status) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.primaryContainer
-        BatchDraftStatus.Failed -> MaterialTheme.colorScheme.errorContainer
+        BatchDraftStatus.Failed, BatchDraftStatus.Interrupted -> MaterialTheme.colorScheme.errorContainer
         BatchDraftStatus.NeedsReview -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     }
     val contentColor = when (status) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.onPrimaryContainer
-        BatchDraftStatus.Failed -> MaterialTheme.colorScheme.onErrorContainer
+        BatchDraftStatus.Failed, BatchDraftStatus.Interrupted -> MaterialTheme.colorScheme.onErrorContainer
         BatchDraftStatus.NeedsReview -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -445,7 +438,7 @@ private fun BatchStatusBadge(
         ) {
             when (status) {
                 BatchDraftStatus.Ready -> Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-                BatchDraftStatus.Failed -> Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(14.dp))
+                BatchDraftStatus.Failed, BatchDraftStatus.Interrupted -> Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(14.dp))
                 BatchDraftStatus.NeedsReview -> Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(14.dp))
                 else -> Unit
             }
@@ -458,7 +451,7 @@ private fun BatchStatusBadge(
     }
 }
 
-private suspend fun processBatchDraft(
+internal suspend fun processBatchDraft(
     draft: BatchDraftItem,
     context: android.content.Context,
     backgroundRemover: PhotoBackgroundRemover,
@@ -512,6 +505,12 @@ private suspend fun processBatchDraft(
             ),
         )
     } catch (throwable: CancellationException) {
+        onDraftUpdated(
+            draft.copy(
+                status = BatchDraftStatus.Interrupted,
+                errorMessage = context.getString(R.string.batch_interrupted_message),
+            ),
+        )
         throw throwable
     } catch (throwable: Exception) {
         onDraftUpdated(
@@ -524,7 +523,16 @@ private suspend fun processBatchDraft(
 }
 
 private val BatchDraftStatus.isSelectable: Boolean
-    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview || this == BatchDraftStatus.Failed
+    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview || isRetryable
+
+private val BatchDraftStatus.isRetryable: Boolean
+    get() = this == BatchDraftStatus.Failed || this == BatchDraftStatus.Interrupted
+
+private val BatchDraftStatus.isSavable: Boolean
+    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview
+
+private val BatchDraftStatus.isTerminal: Boolean
+    get() = this != BatchDraftStatus.Queued && this != BatchDraftStatus.Processing
 
 internal fun BatchDraftItem.toClothingItem(
     availableTags: List<GarmentTag>,
