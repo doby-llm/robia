@@ -31,6 +31,8 @@ import kotlinx.coroutines.launch
 
 private val Context.settingsDataStore by preferencesDataStore(name = "robia_settings")
 private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
+private const val EXTRA_PERFORMANCE_FIXTURE_URIS = "com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS"
+private const val EXTRA_PERFORMANCE_BATCH = "com.gusanitolabs.robia.PERFORMANCE_BATCH"
 
 class MainActivity : ComponentActivity() {
     private lateinit var authorizationClient: AuthorizationClient
@@ -83,9 +85,15 @@ class MainActivity : ComponentActivity() {
                 tagRepository = tagRepository,
                 syncGateway = syncGateway,
                 onRequestCloudSetup = ::requestGoogleDriveAuthorization,
+                performanceFixtureUris = performanceFixtureUris(),
+                performanceBatch = intent.getBooleanExtra(EXTRA_PERFORMANCE_BATCH, false),
             )
         }
     }
+
+    /** Debug-only CI seam; release builds cannot populate synthetic benchmark data. */
+    private fun performanceFixtureUris(): List<String> =
+        if (BuildConfig.DEBUG) intent.getStringArrayListExtra(EXTRA_PERFORMANCE_FIXTURE_URIS).orEmpty() else emptyList()
 
     private fun requestGoogleDriveAuthorization() {
         lifecycleScope.launch { settingsRepository.markCloudSetupPromptInteracted() }
