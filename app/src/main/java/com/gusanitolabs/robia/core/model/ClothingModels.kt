@@ -18,7 +18,25 @@ data class ClothingItem(
     val syncDirtyAtEpochMillis: Long? = null,
     val lastSyncedAtEpochMillis: Long? = null,
     val syncFailureMessage: String? = null,
+    val retryAttemptCount: Int = 0,
+    val retryAfterEpochMillis: Long? = null,
+    val photoRestoreGuarded: Boolean = false,
+    val photoRestoreRetryDeadlineEpochMillis: Long? = null,
 )
+
+internal fun isGuardedPhotoRetryEligible(
+    photoRestoreGuarded: Boolean,
+    syncStatus: GarmentSyncStatus,
+    retryAttemptCount: Int,
+    retryAfterEpochMillis: Long?,
+    photoRestoreRetryDeadlineEpochMillis: Long?,
+    now: Long,
+): Boolean =
+    photoRestoreGuarded &&
+        (syncStatus == GarmentSyncStatus.NeedsUserAction || syncStatus == GarmentSyncStatus.Queued) &&
+        retryAttemptCount < 3 &&
+        retryAfterEpochMillis?.let { it <= now } == true &&
+        photoRestoreRetryDeadlineEpochMillis?.let { it >= now } == true
 
 data class ClothingColorMetrics(
     val primaryRawValue: String? = null,

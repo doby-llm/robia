@@ -1,7 +1,10 @@
 package com.gusanitolabs.robia
 
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
+import com.gusanitolabs.robia.core.model.isGuardedPhotoRetryEligible
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -158,6 +161,60 @@ class RegressionSourceContractTest {
         assertTrue(app.contains("R.string.content_cloud_restore_retry_photo"))
         assertTrue(strings.contains("name=\"cloud_restore_retry_photo\""))
         assertTrue(strings.contains("name=\"content_cloud_restore_retry_photo\""))
+    }
+
+    @Test
+    fun restoredPhotoRetry_disablesTerminalGuardedPhotoRecoveryInsteadOfNoOp() {
+        val clothingModel = source("app/src/main/java/com/gusanitolabs/robia/core/model/ClothingModels.kt")
+        val localRepositories = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val strings = source("app/src/main/res/values/strings.xml")
+        val retryEligibility = app
+            .substringAfter("private fun UiWardrobeItem.isRestoredPhotoRetryEligible")
+            .substringBefore("@Composable\nprivate fun TonalTag")
+        val retryButton = app
+            .substringAfter("if (item.hasMissingRestoredPhoto)")
+            .substringBefore("item.notes.takeIf")
+
+        assertTrue(clothingModel.contains("val retryAttemptCount: Int = 0"))
+        assertTrue(clothingModel.contains("val photoRestoreRetryDeadlineEpochMillis: Long? = null"))
+        assertTrue(localRepositories.contains("photoRestoreGuarded = item.photoRestoreGuarded"))
+        assertTrue(localRepositories.contains("photoRestoreRetryDeadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis"))
+        assertTrue(retryEligibility.contains("isGuardedPhotoRetryEligible("))
+        assertTrue(retryButton.contains("enabled = retryRestoredPhotoEligible"))
+        assertTrue(retryButton.contains("content_cloud_restore_retry_photo_unavailable"))
+        assertTrue(strings.contains("name=\"content_cloud_restore_retry_photo_unavailable\""))
+
+        assertTrue(
+            isGuardedPhotoRetryEligible(
+                photoRestoreGuarded = true,
+                syncStatus = GarmentSyncStatus.NeedsUserAction,
+                retryAttemptCount = 2,
+                retryAfterEpochMillis = 1_000L,
+                photoRestoreRetryDeadlineEpochMillis = 3_000L,
+                now = 2_000L,
+            ),
+        )
+        assertFalse(
+            isGuardedPhotoRetryEligible(
+                photoRestoreGuarded = true,
+                syncStatus = GarmentSyncStatus.NeedsUserAction,
+                retryAttemptCount = 3,
+                retryAfterEpochMillis = 1_000L,
+                photoRestoreRetryDeadlineEpochMillis = 3_000L,
+                now = 2_000L,
+            ),
+        )
+        assertFalse(
+            isGuardedPhotoRetryEligible(
+                photoRestoreGuarded = true,
+                syncStatus = GarmentSyncStatus.NeedsUserAction,
+                retryAttemptCount = 2,
+                retryAfterEpochMillis = 1_000L,
+                photoRestoreRetryDeadlineEpochMillis = 1_999L,
+                now = 2_000L,
+            ),
+        )
     }
 
     @Test

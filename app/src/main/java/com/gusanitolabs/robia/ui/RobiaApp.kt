@@ -138,6 +138,7 @@ import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.core.model.isGuardedPhotoRetryEligible
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
@@ -238,6 +239,10 @@ private data class UiWardrobeItem(
     val syncDirtyAtEpochMillis: Long?,
     val lastSyncedAtEpochMillis: Long?,
     val syncFailureMessage: String?,
+    val retryAttemptCount: Int,
+    val retryAfterEpochMillis: Long?,
+    val photoRestoreGuarded: Boolean,
+    val photoRestoreRetryDeadlineEpochMillis: Long?,
 )
 
 private data class UiTag(
@@ -2194,6 +2199,17 @@ private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
         syncFailureMessage?.startsWith(MISSING_RESTORED_PHOTO_MESSAGE) == true ||
         syncFailureMessage?.startsWith("Foto no restaurada desde Drive.") == true
 
+private fun UiWardrobeItem.isRestoredPhotoRetryEligible(now: Long = System.currentTimeMillis()): Boolean =
+    hasMissingRestoredPhoto &&
+        isGuardedPhotoRetryEligible(
+            photoRestoreGuarded = photoRestoreGuarded,
+            syncStatus = syncStatus,
+            retryAttemptCount = retryAttemptCount,
+            retryAfterEpochMillis = retryAfterEpochMillis,
+            photoRestoreRetryDeadlineEpochMillis = photoRestoreRetryDeadlineEpochMillis,
+            now = now,
+        )
+
 @Composable
 private fun TonalTag(text: String) {
     Surface(
@@ -2224,6 +2240,8 @@ private fun ItemDetailScreen(
     val pdfShareErrorMessage = stringResource(R.string.pdf_share_error)
     val noShareAppMessage = stringResource(R.string.share_no_app_error)
     val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
+    val retryPhotoUnavailableContentDescription = stringResource(R.string.content_cloud_restore_retry_photo_unavailable)
+    val retryRestoredPhotoEligible = item.isRestoredPhotoRetryEligible()
     val pdfShareItem = item.toGarmentShareItem()
 
     LazyColumn(
@@ -2287,8 +2305,13 @@ private fun ItemDetailScreen(
             item {
                 Button(
                     onClick = { onRetryRestoredPhoto(item.id) },
+                    enabled = retryRestoredPhotoEligible,
                     modifier = Modifier.fillMaxWidth().semantics {
-                        contentDescription = retryPhotoContentDescription
+                        contentDescription = if (retryRestoredPhotoEligible) {
+                            retryPhotoContentDescription
+                        } else {
+                            retryPhotoUnavailableContentDescription
+                        }
                     },
                 ) {
                     Icon(Icons.Rounded.Refresh, contentDescription = null)
@@ -3306,6 +3329,10 @@ private fun List<ClothingItem>.toUiWardrobeItems(
         syncDirtyAtEpochMillis = item.syncDirtyAtEpochMillis,
         lastSyncedAtEpochMillis = item.lastSyncedAtEpochMillis,
         syncFailureMessage = item.syncFailureMessage,
+        retryAttemptCount = item.retryAttemptCount,
+        retryAfterEpochMillis = item.retryAfterEpochMillis,
+        photoRestoreGuarded = item.photoRestoreGuarded,
+        photoRestoreRetryDeadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis,
     )
 }
 

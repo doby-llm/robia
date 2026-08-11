@@ -236,6 +236,10 @@ private fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
     syncDirtyAtEpochMillis = item.syncDirtyAtEpochMillis,
     lastSyncedAtEpochMillis = item.lastSyncedAtEpochMillis,
     syncFailureMessage = item.syncFailureMessage,
+    retryAttemptCount = item.retryAttemptCount,
+    retryAfterEpochMillis = item.retryAfterEpochMillis,
+    photoRestoreGuarded = item.photoRestoreGuarded,
+    photoRestoreRetryDeadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis,
 )
 
 private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
@@ -265,6 +269,10 @@ private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     syncDirtyAtEpochMillis = syncDirtyAtEpochMillis,
     lastSyncedAtEpochMillis = lastSyncedAtEpochMillis,
     syncFailureMessage = syncFailureMessage,
+    retryAttemptCount = retryAttemptCount,
+    retryAfterEpochMillis = retryAfterEpochMillis,
+    photoRestoreGuarded = photoRestoreGuarded,
+    photoRestoreRetryDeadlineEpochMillis = photoRestoreRetryDeadlineEpochMillis,
 )
 
 private fun TagCategoryEntity.toDomain(): TagCategory = TagCategory(id, name, sortOrder, isSystem)
