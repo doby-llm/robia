@@ -31,6 +31,7 @@
     <string name="cloud_restore_title">Garderobe aus der Cloud wiederherstellen</string>
     <string name="cloud_restore_remaining">%1$d von %2$d Schritten verbleiben</string>
     <string name="cloud_restore_status_running">Lass Robia geöffnet. Lokale Änderungen sind gesperrt, bis die Wiederherstellung abgeschlossen ist.</string>
+    <string name="cloud_restore_status_interrupted">Die Wiederherstellung wurde unterbrochen. Wiederhole sie, wenn du bereit bist.</string>
     <string name="cloud_restore_status_offline">Verbindung verloren. Wiederhole die Wiederherstellung, bevor du lokale Änderungen hinzufügst.</string>
     <string name="cloud_restore_status_failed">Wiederherstellung fehlgeschlagen. Lokale Daten wurden nicht geändert.</string>
     <string name="cloud_restore_status_rolled_back">Wiederherstellung fehlgeschlagen und zurückgesetzt. Deine vorherige lokale Garderobe ist intakt.</string>

@@ -71,6 +71,12 @@ interface WardrobeDao {
     )
     suspend fun pendingMetadataSyncWork(now: Long = System.currentTimeMillis()): List<PendingMetadataSyncWorkEntity>
 
+    @Query("SELECT MIN(retry_after_epoch_millis) FROM (SELECT retry_after_epoch_millis FROM clothing_items WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM tag_categories WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM garment_tags WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM main_colors WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM sync_tombstones WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL)")
+    suspend fun nextRunnableSyncRetryEpochMillis(): Long?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM sync_tombstones WHERE entity_type IN ('garment', 'clothing_item', 'item') AND sync_status != 'Synced')")
+    suspend fun hasPendingCloudDeletion(): Boolean
+
     @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision")
     suspend fun markGarmentSyncing(itemId: String, revision: Long, startedAtEpochMillis: Long): Int
 

@@ -47,6 +47,10 @@ class LocalWardrobeRepository(
     override suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork> =
         wardrobeDao.pendingMetadataSyncWork().map(PendingMetadataSyncWorkEntity::toDomain)
 
+    override suspend fun nextRunnableSyncRetryEpochMillis(): Long? = wardrobeDao.nextRunnableSyncRetryEpochMillis()
+
+    override suspend fun hasPendingCloudDeletion(): Boolean = wardrobeDao.hasPendingCloudDeletion()
+
     override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int =
         wardrobeDao.recoverStaleRunningSyncWork(staleBeforeEpochMillis)
 

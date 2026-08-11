@@ -168,6 +168,7 @@ enum class CloudRestorePhase {
 
 enum class CloudRestoreStatus {
     Running,
+    Interrupted,
     Offline,
     Failed,
     RolledBack,

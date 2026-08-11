@@ -31,6 +31,7 @@
     <string name="cloud_restore_title">Restoring wardrobe from cloud</string>
     <string name="cloud_restore_remaining">%1$d of %2$d steps remaining</string>
     <string name="cloud_restore_status_running">Keep Robia open. Local changes are locked until restore finishes.</string>
+    <string name="cloud_restore_status_interrupted">Restore was interrupted. Retry when you are ready.</string>
     <string name="cloud_restore_status_offline">Connection lost. Retry restore before adding local changes.</string>
     <string name="cloud_restore_status_failed">Restore failed. Local data was not changed.</string>
     <string name="cloud_restore_status_rolled_back">Restore failed and was rolled back. Your previous local wardrobe is intact.</string>
