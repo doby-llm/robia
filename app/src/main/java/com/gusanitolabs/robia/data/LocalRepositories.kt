@@ -90,6 +90,12 @@ class LocalWardrobeRepository(
     override suspend fun markGarmentSyncAuthBlocked(id: String, message: String?): Boolean =
         wardrobeDao.markGarmentSyncAuthBlocked(id, message) > 0
 
+    override suspend fun markGarmentPhotoRestoreRetrying(id: String, startedAtEpochMillis: Long, now: Long): Boolean =
+        wardrobeDao.markGarmentPhotoRestoreRetrying(id, startedAtEpochMillis, now) > 0
+
+    override suspend fun markGarmentPhotoRestoreFailed(id: String, message: String, now: Long): Boolean =
+        wardrobeDao.markGarmentPhotoRestoreFailed(id, message, now) > 0
+
     override suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean =
         wardrobeDao.markMetadataSyncing(work.toEntity())
 

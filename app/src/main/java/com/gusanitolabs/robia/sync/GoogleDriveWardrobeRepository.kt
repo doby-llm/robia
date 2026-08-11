@@ -64,6 +64,28 @@ class GoogleDriveWardrobeRepository(
         }
     }
 
+    override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> = withAccessToken { accessToken ->
+        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
+            is DriveApiResult.Success -> {
+                val snapshot = snapshotResult.value.sortedDeterministically()
+                val photo = snapshot.photos.singleOrNull { it.garmentId == garmentId }
+                    ?: return@withAccessToken DriveSyncResult.Failure(
+                        IllegalStateException("No remote photo exists for garment $garmentId."),
+                    )
+                when (val hydrated = hydratePhotoBlobs(accessToken, snapshot.copy(photos = listOf(photo)))) {
+                    is DriveSyncResult.Success -> DriveSyncResult.Success(hydrated.value.photos.single())
+                    is DriveSyncResult.Blocked -> hydrated
+                    is DriveSyncResult.Failure -> hydrated
+                }
+            }
+            is DriveApiResult.NotFound -> DriveSyncResult.Failure(
+                IllegalStateException("No remote snapshot exists for garment $garmentId."),
+            )
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+        }
+    }
+
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> =
         withAccessToken { accessToken ->
             val deterministicSnapshot = when (val result = uploadPhotoBlobs(accessToken, snapshot.sortedDeterministically())) {
@@ -132,7 +154,7 @@ class GoogleDriveWardrobeRepository(
                     ),
                 )
             val fetchStartedEvents = photo.restoreFetchStartedEvents(description = garmentNameById[photo.garmentId])
-            when (val blobResult = api.fetchBlob(accessToken, blobPath)) {
+            when (val blobResult = fetchPhotoBlob(accessToken, photo, blobPath)) {
                 is DriveApiResult.Success -> {
                     val bytes = blobResult.value.bytes
                     val fetchEvents = fetchStartedEvents + blobResult.value.restoreFetchResultEvents(photo)
@@ -222,6 +244,33 @@ class GoogleDriveWardrobeRepository(
             }
         }
         return DriveSyncResult.Success(snapshot.copy(photos = hydratedPhotos).sortedDeterministically())
+    }
+
+    /** Exact paths are authoritative; legacy paths are only safe when one candidate exists. */
+    private fun fetchPhotoBlob(
+        accessToken: String,
+        photo: GarmentPhotoRecord,
+        exactBlobPath: String,
+    ): DriveApiResult<DriveBlob> {
+        val photoBlobPrefix = DriveFolderNaming.photoBlobPrefix(photo.garmentId)
+        return when (val exactResult = api.fetchBlob(accessToken, exactBlobPath)) {
+            is DriveApiResult.NotFound -> when (
+                val candidates = api.listBlobPathsWithPrefix(accessToken, photoBlobPrefix)
+            ) {
+                is DriveApiResult.Success -> {
+                    val legacyPhotoRestoreCandidate = candidates.value
+                        .filter { path -> path.startsWith(photoBlobPrefix) }
+                        .distinct()
+                        .singleOrNull()
+                    // exact_blob_not_found: ambiguous candidates deliberately stay in terminal attention.
+                    legacyPhotoRestoreCandidate?.let { candidate -> api.fetchBlob(accessToken, candidate) } ?: exactResult
+                }
+                is DriveApiResult.NotFound -> exactResult
+                is DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
+                is DriveApiResult.Failure -> DriveApiResult.Failure(candidates.throwable)
+            }
+            else -> exactResult
+        }
     }
 
     private fun GarmentPhotoRecord.guardedRestore(

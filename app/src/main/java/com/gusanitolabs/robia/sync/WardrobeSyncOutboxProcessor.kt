@@ -138,10 +138,13 @@ class WardrobeSyncOutboxProcessor(
             when (settingsRepository.settings.first().driveSyncConnectionStatus) {
                 DriveSyncConnectionStatus.Connected,
                 DriveSyncConnectionStatus.Syncing,
-                DriveSyncConnectionStatus.NeedsAttention -> processPendingGarments(
-                    forceSnapshot = operation.affectedGarmentIds().isEmpty(),
-                    forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
-                )
+                DriveSyncConnectionStatus.NeedsAttention -> when (operation) {
+                    is WardrobeSyncOperation.RetryRestoredPhoto -> retryRestoredPhoto(operation.garmentId)
+                    else -> processPendingGarments(
+                        forceSnapshot = operation.affectedGarmentIds().isEmpty(),
+                        forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
+                    )
+                }
                 DriveSyncConnectionStatus.Disconnected -> markOperationAuthBlocked(operation)
                 DriveSyncConnectionStatus.Disabled,
                 DriveSyncConnectionStatus.NotConfigured -> markOperationSetupRequired(operation)
@@ -151,6 +154,35 @@ class WardrobeSyncOutboxProcessor(
 
     override suspend fun clearRestoreSyncLog() {
         withContext(dispatcher) { restoreSyncLogRepository.clear() }
+    }
+
+    /** Does not toggle global processing/progress: only the selected garment becomes Running. */
+    private suspend fun retryRestoredPhoto(garmentId: String) {
+        mutex.withLock {
+            if (settingsRepository.settings.first().driveSyncConnectionStatus !in setOf(
+                    DriveSyncConnectionStatus.Connected,
+                    DriveSyncConnectionStatus.NeedsAttention,
+                )
+            ) return@withLock
+            if (!wardrobeRepository.markGarmentPhotoRestoreRetrying(garmentId)) return@withLock
+
+            when (val result = driveRepository.retryRestoredPhoto(garmentId)) {
+                is DriveSyncResult.Success -> if (!snapshotRepository.applyRestoredPhoto(result.value)) {
+                    wardrobeRepository.markGarmentPhotoRestoreFailed(
+                        garmentId,
+                        "$MISSING_RESTORED_PHOTO_MESSAGE Drive photo download completed but could not be saved locally.",
+                    )
+                }
+                is DriveSyncResult.Blocked -> wardrobeRepository.markGarmentPhotoRestoreFailed(
+                    garmentId,
+                    "$MISSING_RESTORED_PHOTO_MESSAGE ${result.message}",
+                )
+                is DriveSyncResult.Failure -> wardrobeRepository.markGarmentPhotoRestoreFailed(
+                    garmentId,
+                    "$MISSING_RESTORED_PHOTO_MESSAGE ${result.throwable.message ?: "Drive photo download failed."}",
+                )
+            }
+        }
     }
 
     private suspend fun restoreFreshInstallOnceIfNeeded() {
@@ -514,6 +546,7 @@ class WardrobeSyncOutboxProcessor(
         is WardrobeSyncOperation.UpsertPalette,
         is WardrobeSyncOperation.ExportFullSnapshot,
         is WardrobeSyncOperation.ImportFullSnapshot,
+        is WardrobeSyncOperation.RetryRestoredPhoto,
         is WardrobeSyncOperation.UpsertTaxonomy,
         is WardrobeSyncOperation.RecordTombstones -> emptySet()
     }

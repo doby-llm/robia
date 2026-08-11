@@ -118,6 +118,16 @@ class LocalWardrobeSyncSnapshotRepository(
             guardedPhotoCount = deterministicSnapshot.photos.count { photo -> photo.restorableLocalUri() == null },
         )
     }
+
+    /** Persists only the successfully rehydrated image; garment metadata remains untouched. */
+    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord): Boolean {
+        val restoredUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: return false
+        return wardrobeDao.applyRestoredPhoto(
+            itemId = photo.garmentId,
+            photoUri = restoredUri,
+            syncedAtEpochMillis = System.currentTimeMillis(),
+        ) > 0
+    }
 }
 
 data class ImportSnapshotResult(
