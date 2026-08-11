@@ -36,6 +36,8 @@
     <string name="cloud_restore_status_rolled_back">Restore failed and was rolled back. Your previous local wardrobe is intact.</string>
     <string name="cloud_restore_status_completed_with_attention">Restore completed, but some photos need your attention before retrying.</string>
     <string name="cloud_restore_retry">Retry restore</string>
+    <string name="cloud_restore_retry_photo">Retry photo download</string>
+    <string name="content_cloud_restore_retry_photo">Retry this garment’s Drive photo download</string>
     <string name="cloud_restore_photo_missing_message">Some images could not be restored from Drive. Robia will keep your wardrobe safe and retry during the next cloud sync.</string>
     <string name="cloud_restore_diagnostics_title">Restore diagnostics</string>
     <string name="cloud_restore_diagnostics_summary">Copy these safe technical details and send them to Doby if restore keeps failing. Robia stores backups in Drive app data, which is hidden from the Drive web UI.</string>
