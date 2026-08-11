@@ -35,6 +35,8 @@ class LocalWardrobeRepository(
 
     override fun observeGarmentSyncAttentionCount(): Flow<Int> = wardrobeDao.observeGarmentSyncAttentionCount()
 
+    override fun observeGuardedPhotoRestoreCount(): Flow<Int> = wardrobeDao.observeGuardedPhotoRestoreCount()
+
     override fun observePendingMetadataSyncCount(): Flow<Int> = wardrobeDao.observePendingMetadataSyncCount()
 
     override fun observeMetadataSyncAttentionCount(): Flow<Int> = wardrobeDao.observeMetadataSyncAttentionCount()
@@ -90,8 +92,10 @@ class LocalWardrobeRepository(
     override suspend fun markGarmentSyncAuthBlocked(id: String, message: String?): Boolean =
         wardrobeDao.markGarmentSyncAuthBlocked(id, message) > 0
 
-    override suspend fun markGarmentPhotoRestoreRetrying(id: String, startedAtEpochMillis: Long, now: Long): Boolean =
-        wardrobeDao.markGarmentPhotoRestoreRetrying(id, startedAtEpochMillis, now) > 0
+    override suspend fun claimGarmentPhotoRestoreRetry(id: String, startedAtEpochMillis: Long, now: Long): Long? {
+        val revision = wardrobeDao.eligibleGarmentPhotoRestoreRetryRevision(id, now) ?: return null
+        return revision.takeIf { wardrobeDao.markGarmentPhotoRestoreRetrying(id, revision, startedAtEpochMillis, now) > 0 }
+    }
 
     override suspend fun markGarmentPhotoRestoreFailed(id: String, message: String, now: Long): Boolean =
         wardrobeDao.markGarmentPhotoRestoreFailed(id, message, now) > 0

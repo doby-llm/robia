@@ -142,7 +142,7 @@ class RegressionSourceContractTest {
         val strings = source("app/src/main/res/values/strings.xml")
 
         assertTrue(gateway.contains("data class RetryRestoredPhoto"))
-        assertTrue(retryHandler.contains("markGarmentPhotoRestoreRetrying(garmentId)"))
+        assertTrue(retryHandler.contains("claimGarmentPhotoRestoreRetry(garmentId)"))
         assertTrue(retryHandler.contains("driveRepository.retryRestoredPhoto(garmentId)"))
         assertTrue(!retryHandler.contains("processPendingGarments("))
         assertTrue(!retryHandler.contains("restoreProgress.value"))
@@ -158,6 +158,25 @@ class RegressionSourceContractTest {
         assertTrue(app.contains("R.string.content_cloud_restore_retry_photo"))
         assertTrue(strings.contains("name=\"cloud_restore_retry_photo\""))
         assertTrue(strings.contains("name=\"content_cloud_restore_retry_photo\""))
+    }
+
+    @Test
+    fun guardedPhotoRetry_staysOutOfNormalUploadAndCannotOverwriteNewerEdits() {
+        val entities = source("app/src/main/java/com/gusanitolabs/robia/data/local/Entities.kt")
+        val database = source("app/src/main/java/com/gusanitolabs/robia/data/local/RobiaDatabase.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+
+        assertTrue(entities.contains("photo_restore_guarded"))
+        assertTrue(entities.contains("photo_restore_retry_deadline_epoch_millis"))
+        assertTrue(database.contains("MIGRATION_11_12"))
+        assertTrue(dao.contains("sync_status = 'NeedsUserAction'"))
+        assertTrue(dao.contains("photo_restore_retry_deadline_epoch_millis >= :now"))
+        assertTrue(dao.contains("sync_revision = :revision"))
+        assertTrue(snapshotRepository.contains("hasGuardedPhotoRestoreIssues"))
+        assertTrue(processor.contains("!hasGuardedPhotoRestoreIssues.value"))
+        assertTrue(processor.contains("SyncCycleResult.Attention"))
     }
 
     @Test
