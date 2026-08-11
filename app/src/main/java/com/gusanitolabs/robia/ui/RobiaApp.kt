@@ -1562,6 +1562,7 @@ private fun CloudRestoreProgressBar(progress: Float) {
 private fun cloudRestoreStatusText(progress: CloudRestoreProgress): String = stringResource(
     when (progress.status) {
         CloudRestoreStatus.Running -> R.string.cloud_restore_status_running
+        CloudRestoreStatus.Interrupted -> R.string.cloud_restore_status_interrupted
         CloudRestoreStatus.Offline -> R.string.cloud_restore_status_offline
         CloudRestoreStatus.Failed -> R.string.cloud_restore_status_failed
         CloudRestoreStatus.RolledBack -> R.string.cloud_restore_status_rolled_back

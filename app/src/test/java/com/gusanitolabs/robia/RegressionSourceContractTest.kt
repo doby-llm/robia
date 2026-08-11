@@ -130,6 +130,29 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun driveSync_deadlinesAndCancellationAlwaysReleaseClaimedWorkForManualBoundedRetry() {
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/WardrobeRepository.kt")
+
+        assertTrue(processor.contains("withTimeout(SYNC_OPERATION_TIMEOUT_MILLIS)"))
+        assertTrue(processor.contains("withContext(NonCancellable)"))
+        assertTrue(processor.contains("markFailedRetryable(lockedWork, lockedMetadataWork, timeoutMessage)"))
+        assertTrue(processor.contains("scheduleRetryWakeUp"))
+        assertTrue(processor.contains("delay((retryAt - System.currentTimeMillis()).coerceAtLeast(0L))"))
+        assertTrue(processor.contains("hasPendingCloudDeletion()"))
+        assertTrue(processor.contains("CLOUD_DELETION_PENDING_MESSAGE"))
+        assertTrue(driveRepository.contains("withTimeout(AUTHORIZATION_TIMEOUT_MILLIS)"))
+        assertTrue(driveRepository.contains("withDrivePhaseDeadline"))
+        assertTrue(repository.contains("suspend fun hasPendingCloudDeletion(): Boolean"))
+        assertTrue(repository.contains("suspend fun nextRunnableSyncRetryEpochMillis(): Long?"))
+        assertTrue(dao.contains("hasPendingCloudDeletion"))
+        assertTrue(dao.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
+        assertTrue(dao.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+    }
+
+    @Test
     fun guardedDrivePhotos_areRecoverablePerGarmentWithoutRestartingRestore() {
         val gateway = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncGateway.kt")
         val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")

@@ -21,7 +21,9 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImageBlob
 import com.gusanitolabs.robia.media.magicHex
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -112,11 +114,13 @@ class GoogleDriveWardrobeRepository(
         operation: suspend (accessToken: String) -> DriveSyncResult<T>,
     ): DriveSyncResult<T> {
         val authorizationResult = runCatching {
-            authorizationClient.authorize(
-                AuthorizationRequest.builder()
-                    .setRequestedScopes(listOf(driveScope))
-                    .build(),
-            ).await()
+            withTimeout(AUTHORIZATION_TIMEOUT_MILLIS) {
+                authorizationClient.authorize(
+                    AuthorizationRequest.builder()
+                        .setRequestedScopes(listOf(driveScope))
+                        .build(),
+                ).await()
+            }
         }.getOrElse { throwable ->
             return DriveSyncResult.Failure(throwable)
         }
@@ -133,7 +137,15 @@ class GoogleDriveWardrobeRepository(
             return authBlocked()
         }
 
-        return operation(accessToken)
+        return withDrivePhaseDeadline { operation(accessToken) }
+    }
+
+    private suspend fun <T> withDrivePhaseDeadline(
+        operation: suspend () -> DriveSyncResult<T>,
+    ): DriveSyncResult<T> = try {
+        withTimeout(DRIVE_PHASE_TIMEOUT_MILLIS) { operation() }
+    } catch (timeout: TimeoutCancellationException) {
+        DriveSyncResult.Failure(java.net.SocketTimeoutException("Drive operation timed out."))
     }
 
     private fun hydratePhotoBlobs(
@@ -691,6 +703,8 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
 
 
     private companion object {
+        const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L
+        const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L
         const val SNAPSHOT_FILE_NAME = "wardrobe_snapshot.json"
         const val SNAPSHOT_MIME_TYPE = "application/vnd.gusanitolabs.robia.wardrobe-snapshot+json"
         const val PHOTO_BLOB_MIME_TYPE = "application/octet-stream"
