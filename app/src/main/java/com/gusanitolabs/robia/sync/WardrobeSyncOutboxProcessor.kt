@@ -71,6 +71,7 @@ class WardrobeSyncOutboxProcessor(
 
     init {
         scope.launch(dispatcher) {
+            wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
             combine(
                 settingsRepository.settings,
                 wardrobeRepository.observePendingGarmentSyncCount(),
@@ -195,7 +196,7 @@ class WardrobeSyncOutboxProcessor(
 
             isProcessing.value = true
             val lockedWork = pendingWork.filter { work ->
-                wardrobeRepository.markGarmentSyncing(work.id, work.revision)
+                wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())
             }
             val lockedMetadataWork = pendingMetadataWork.filter { work ->
                 wardrobeRepository.markMetadataSyncing(work)
@@ -354,6 +355,7 @@ class WardrobeSyncOutboxProcessor(
             restoreProgress.value = diagnostics.progress(
                 phase = CloudRestorePhase.Complete,
                 completedWork = RESTORE_TOTAL_STEPS,
+                status = CloudRestoreStatus.CompletedWithAttention,
             )
             return SyncCycleResult.Success(importResult.guardedPhotoCount)
         }
@@ -531,6 +533,9 @@ private data class WardrobeSyncStateInputs(
     val isProcessing: Boolean,
     val needsPhotoRestoreAttention: Boolean,
 )
+
+private const val MAX_RETRY_ATTEMPTS = 3
+private const val STALE_RUNNING_TIMEOUT_MILLIS = 15 * 60 * 1000L
 
 private class RestoreDiagnosticsTracker(
     private val attempt: Int,

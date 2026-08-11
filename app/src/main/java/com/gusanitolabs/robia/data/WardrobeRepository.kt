@@ -15,13 +15,14 @@ interface WardrobeRepository {
     fun observeMetadataSyncAttentionCount(): Flow<Int>
     suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWork>
     suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork>
+    suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int
     suspend fun upsertItem(item: ClothingItem)
     suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)
     suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long)
-    suspend fun markGarmentSyncing(id: String, revision: Long): Boolean
+    suspend fun markGarmentSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Boolean
     suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean
-    suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String? = null): Boolean
+    suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String? = null, now: Long = System.currentTimeMillis()): Boolean
     suspend fun markGarmentSyncAuthBlocked(id: String, message: String? = null): Boolean
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean
     suspend fun markMetadataSynced(work: PendingMetadataSyncWork, syncedAtEpochMillis: Long): Boolean

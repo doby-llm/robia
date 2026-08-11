@@ -45,6 +45,9 @@ class LocalWardrobeRepository(
     override suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork> =
         wardrobeDao.pendingMetadataSyncWork().map(PendingMetadataSyncWorkEntity::toDomain)
 
+    override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int =
+        wardrobeDao.recoverStaleRunningSyncWork(staleBeforeEpochMillis)
+
     override suspend fun upsertItem(item: ClothingItem) {
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
     }
@@ -75,14 +78,14 @@ class LocalWardrobeRepository(
         )
     }
 
-    override suspend fun markGarmentSyncing(id: String, revision: Long): Boolean =
-        wardrobeDao.markGarmentSyncing(id, revision) > 0
+    override suspend fun markGarmentSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Boolean =
+        wardrobeDao.markGarmentSyncing(id, revision, startedAtEpochMillis) > 0
 
     override suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean =
         wardrobeDao.markGarmentSynced(id, revision, syncedAtEpochMillis) > 0
 
-    override suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String?): Boolean =
-        wardrobeDao.markGarmentSyncFailedRetryable(id, revision, message) > 0
+    override suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String?, now: Long): Boolean =
+        wardrobeDao.markGarmentSyncFailedRetryable(id, revision, message, now) > 0
 
     override suspend fun markGarmentSyncAuthBlocked(id: String, message: String?): Boolean =
         wardrobeDao.markGarmentSyncAuthBlocked(id, message) > 0

@@ -171,6 +171,7 @@ enum class CloudRestoreStatus {
     Offline,
     Failed,
     RolledBack,
+    CompletedWithAttention,
 }
 
 sealed interface WardrobeSyncOperation {
