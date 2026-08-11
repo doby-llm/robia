@@ -2223,6 +2223,7 @@ private fun ItemDetailScreen(
     val imageShareErrorMessage = stringResource(R.string.image_share_error)
     val pdfShareErrorMessage = stringResource(R.string.pdf_share_error)
     val noShareAppMessage = stringResource(R.string.share_no_app_error)
+    val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
     val pdfShareItem = item.toGarmentShareItem()
 
     LazyColumn(
@@ -2282,7 +2283,6 @@ private fun ItemDetailScreen(
             )
         }
         item { GarmentCloudStatusRow(item) }
-        val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
         if (item.hasMissingRestoredPhoto) {
             item {
                 Button(

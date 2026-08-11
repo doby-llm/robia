@@ -167,10 +167,16 @@ class RegressionSourceContractTest {
         val retryButton = app
             .substringAfter("if (item.hasMissingRestoredPhoto)")
             .substringBefore("item.notes.takeIf")
+        val itemDetailScreen = app
+            .substringAfter("private fun ItemDetailScreen(")
+            .substringBefore("@Composable\nprivate fun DetailMediaCard(")
 
         assertTrue(driveRepository.contains("?.let { photo -> DriveSyncResult.Success(photo) }"))
         assertTrue(!driveRepository.contains("DriveSyncResult::Success"))
         assertTrue(app.contains("val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)"))
+        assertTrue(
+            itemDetailScreen.indexOf("val retryPhotoContentDescription") < itemDetailScreen.indexOf("LazyColumn("),
+        )
         assertTrue(retryButton.contains("contentDescription = retryPhotoContentDescription"))
         assertTrue(retryButton.contains("Text(stringResource(R.string.cloud_restore_retry_photo))"))
     }
