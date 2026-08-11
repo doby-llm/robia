@@ -32,6 +32,9 @@ interface WardrobeDao {
     @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction', 'AuthBlocked')")
     fun observeGarmentSyncAttentionCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE photo_restore_guarded = 1")
+    fun observeGuardedPhotoRestoreCount(): Flow<Int>
+
     @Query(
         """
         SELECT
@@ -79,7 +82,7 @@ interface WardrobeDao {
             recoverStaleMainColorSyncWork(staleBeforeEpochMillis) +
             recoverStaleTombstoneSyncWork(staleBeforeEpochMillis)
 
-    @Query("UPDATE clothing_items SET sync_status = 'FailedRetryable', retry_after_epoch_millis = 0, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    @Query("UPDATE clothing_items SET sync_status = CASE WHEN photo_restore_guarded = 1 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_after_epoch_millis = 0, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleGarmentSyncWork(staleBeforeEpochMillis: Long): Int
 
     @Query("UPDATE tag_categories SET sync_status = 'FailedRetryable', retry_after_epoch_millis = 0, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
@@ -103,14 +106,17 @@ interface WardrobeDao {
     @Query("UPDATE clothing_items SET sync_status = 'AuthBlocked', sync_failure_message = :message WHERE id = :itemId")
     suspend fun markGarmentSyncAuthBlocked(itemId: String, message: String?): Int
 
-    @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_status IN ('NeedsUserAction', 'FailedRetryable') AND retry_attempt_count < 3 AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now)")
-    suspend fun markGarmentPhotoRestoreRetrying(itemId: String, startedAtEpochMillis: Long, now: Long): Int
+    @Query("SELECT sync_revision FROM clothing_items WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND retry_after_epoch_millis <= :now AND photo_restore_retry_deadline_epoch_millis >= :now")
+    suspend fun eligibleGarmentPhotoRestoreRetryRevision(itemId: String, now: Long): Long?
 
-    @Query("UPDATE clothing_items SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId")
+    @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND retry_after_epoch_millis <= :now AND photo_restore_retry_deadline_epoch_millis >= :now")
+    suspend fun markGarmentPhotoRestoreRetrying(itemId: String, revision: Long, startedAtEpochMillis: Long, now: Long): Int
+
+    @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status = 'Running'")
     suspend fun markGarmentPhotoRestoreFailed(itemId: String, message: String, now: Long): Int
 
-    @Query("UPDATE clothing_items SET photo_uri = :photoUri, sync_status = 'Synced', sync_failure_message = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, last_synced_at_epoch_millis = :syncedAtEpochMillis WHERE id = :itemId")
-    suspend fun applyRestoredPhoto(itemId: String, photoUri: String, syncedAtEpochMillis: Long): Int
+    @Query("UPDATE clothing_items SET photo_uri = :photoUri, sync_status = CASE WHEN sync_dirty_at_epoch_millis IS NULL THEN 'Synced' ELSE 'Queued' END, sync_failure_message = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, photo_restore_guarded = 0, photo_restore_retry_deadline_epoch_millis = NULL, last_synced_at_epoch_millis = :syncedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status = 'Running'")
+    suspend fun applyRestoredPhoto(itemId: String, photoUri: String, revision: Long, syncedAtEpochMillis: Long): Int
 
     @Transaction
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity): Boolean =
@@ -232,9 +238,12 @@ interface WardrobeDao {
         upsertSyncTombstones(tombstones)
     }
 
+    @Query("SELECT photo_restore_guarded AS guarded, photo_restore_retry_deadline_epoch_millis AS deadlineEpochMillis FROM clothing_items WHERE id = :itemId")
+    suspend fun guardedPhotoRestoreState(itemId: String): GuardedPhotoRestoreState?
+
     @Transaction
     suspend fun upsertItemWithTags(item: ClothingItemEntity, tagIds: List<String>) {
-        upsertItem(item.queuedForSync())
+        upsertItem(item.queuedForSync(guardedPhotoRestoreState(item.id)))
         clearTags(item.id)
         val activeTagIds: Set<String> = if (tagIds.isEmpty()) emptySet() else existingTagIds(tagIds).toSet()
         insertTagRefs(
@@ -379,12 +388,16 @@ interface SyncTombstoneDao {
     suspend fun upsert(tombstone: SyncTombstoneEntity)
 }
 
-private fun ClothingItemEntity.queuedForSync(): ClothingItemEntity {
+private fun ClothingItemEntity.queuedForSync(guardedPhotoRestoreState: GuardedPhotoRestoreState? = null): ClothingItemEntity {
     val revision = updatedAtEpochMillis.coerceAtLeast(System.currentTimeMillis())
     return copy(
         syncStatus = GarmentSyncStatus.Queued,
         syncRevision = revision,
         syncDirtyAtEpochMillis = revision,
         syncFailureMessage = null,
+        photoRestoreGuarded = guardedPhotoRestoreState?.guarded == true,
+        photoRestoreRetryDeadlineEpochMillis = guardedPhotoRestoreState?.deadlineEpochMillis,
     )
 }
+
+data class GuardedPhotoRestoreState(val guarded: Boolean, val deadlineEpochMillis: Long?)

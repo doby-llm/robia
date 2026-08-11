@@ -59,7 +59,7 @@ class WardrobeSyncOutboxProcessor(
 ) : WardrobeSyncGateway {
     private val mutex = Mutex()
     private val isProcessing = MutableStateFlow(false)
-    private val needsPhotoRestoreAttention = MutableStateFlow(false)
+    private val hasGuardedPhotoRestoreIssues = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
     private var scheduledWorkJob: Job? = null
@@ -71,6 +71,11 @@ class WardrobeSyncOutboxProcessor(
 
     init {
         scope.launch(dispatcher) {
+            wardrobeRepository.observeGuardedPhotoRestoreCount().collect { count ->
+                hasGuardedPhotoRestoreIssues.value = count > 0
+            }
+        }
+        scope.launch(dispatcher) {
             wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
             combine(
                 settingsRepository.settings,
@@ -79,7 +84,7 @@ class WardrobeSyncOutboxProcessor(
                 wardrobeRepository.observePendingMetadataSyncCount(),
                 wardrobeRepository.observeMetadataSyncAttentionCount(),
                 isProcessing,
-                needsPhotoRestoreAttention,
+                hasGuardedPhotoRestoreIssues,
             ) { values ->
                 val settings = values[0] as RobiaSettings
                 val pendingCount = values[1] as Int
@@ -116,7 +121,8 @@ class WardrobeSyncOutboxProcessor(
             (nextState.connectionStatus == DriveSyncConnectionStatus.Connected ||
                 nextState.connectionStatus == DriveSyncConnectionStatus.NeedsAttention) &&
                 nextState.pendingOperationCount > 0 &&
-                !isProcessing.value -> launchSyncWork { processPendingGarments() }
+                !isProcessing.value &&
+                !hasGuardedPhotoRestoreIssues.value -> launchSyncWork { processPendingGarments() }
 
             nextState.connectionStatus == DriveSyncConnectionStatus.Connected &&
                 nextState.pendingOperationCount == 0 &&
@@ -164,10 +170,10 @@ class WardrobeSyncOutboxProcessor(
                     DriveSyncConnectionStatus.NeedsAttention,
                 )
             ) return@withLock
-            if (!wardrobeRepository.markGarmentPhotoRestoreRetrying(garmentId)) return@withLock
+            val retryRevision = wardrobeRepository.claimGarmentPhotoRestoreRetry(garmentId) ?: return@withLock
 
             when (val result = driveRepository.retryRestoredPhoto(garmentId)) {
-                is DriveSyncResult.Success -> if (!snapshotRepository.applyRestoredPhoto(result.value)) {
+                is DriveSyncResult.Success -> if (!snapshotRepository.applyRestoredPhoto(result.value, retryRevision)) {
                     wardrobeRepository.markGarmentPhotoRestoreFailed(
                         garmentId,
                         "$MISSING_RESTORED_PHOTO_MESSAGE Drive photo download completed but could not be saved locally.",
@@ -225,6 +231,9 @@ class WardrobeSyncOutboxProcessor(
             val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
             val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
             if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !forceSnapshot && !forceImport) return@withLock
+            // Never lock ordinary outbox work into Running while a guarded remote photo protects the
+            // current Drive snapshot. Its targeted retry is the only work allowed to resolve that guard.
+            if (hasGuardedPhotoRestoreIssues.value && !forceImport) return@withLock
 
             isProcessing.value = true
             val lockedWork = pendingWork.filter { work ->
@@ -252,14 +261,9 @@ class WardrobeSyncOutboxProcessor(
                     SyncDirection.SkipEmptyLocalUpload -> SyncCycleResult.NoBackup
                 }
                 when (result) {
-                    is SyncCycleResult.Success -> {
-                        needsPhotoRestoreAttention.value = result.guardedPhotoCount > 0
-                        markSynced(lockedWork, lockedMetadataWork)
-                    }
-                    SyncCycleResult.NoBackup -> {
-                        needsPhotoRestoreAttention.value = false
-                        markSynced(lockedWork, lockedMetadataWork)
-                    }
+                    is SyncCycleResult.Success -> markSynced(lockedWork, lockedMetadataWork)
+                    SyncCycleResult.Attention -> markFailedRetryable(lockedWork, lockedMetadataWork)
+                    SyncCycleResult.NoBackup -> markSynced(lockedWork, lockedMetadataWork)
                     is SyncCycleResult.Blocked -> {
                         keepTerminalProgress = true
                         markBlocked(lockedWork, lockedMetadataWork, result.reason)
@@ -279,6 +283,9 @@ class WardrobeSyncOutboxProcessor(
     }
 
     private suspend fun syncUploadLocalSnapshot(localSnapshot: WardrobeSyncSnapshot): SyncCycleResult {
+        // A missing restored blob must not be converted into a permanent Drive deletion by a later
+        // normal sync. Leave ordinary work pending until its targeted recovery reaches a terminal success.
+        if (snapshotRepository.hasGuardedPhotoRestoreIssues()) return SyncCycleResult.Attention
         // Local edits own the snapshot once the phone has user data; do not fetch stale Drive data here.
         return when (driveRepository.upsertSnapshot(localSnapshot.sortedDeterministically())) {
             is DriveSyncResult.Success -> SyncCycleResult.Success(guardedPhotoCount = 0)
@@ -554,6 +561,7 @@ class WardrobeSyncOutboxProcessor(
 
 private sealed interface SyncCycleResult {
     data class Success(val guardedPhotoCount: Int) : SyncCycleResult
+    data object Attention : SyncCycleResult
     data object NoBackup : SyncCycleResult
     data class Blocked(val reason: DriveSyncDisabledReason) : SyncCycleResult
     data object Failure : SyncCycleResult

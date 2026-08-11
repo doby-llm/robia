@@ -31,6 +31,8 @@ data class ClothingItemEntity(
     @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
     @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "photo_restore_guarded") val photoRestoreGuarded: Boolean = false,
+    @ColumnInfo(name = "photo_restore_retry_deadline_epoch_millis") val photoRestoreRetryDeadlineEpochMillis: Long? = null,
 )
 
 data class ColorMetricsEntity(

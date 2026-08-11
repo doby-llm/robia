@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import androidx.room.withTransaction
+import kotlinx.coroutines.flow.first
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentColorRole
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
@@ -120,14 +121,17 @@ class LocalWardrobeSyncSnapshotRepository(
     }
 
     /** Persists only the successfully rehydrated image; garment metadata remains untouched. */
-    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord): Boolean {
+    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): Boolean {
         val restoredUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: return false
         return wardrobeDao.applyRestoredPhoto(
             itemId = photo.garmentId,
             photoUri = restoredUri,
+            revision = expectedRevision,
             syncedAtEpochMillis = System.currentTimeMillis(),
         ) > 0
     }
+
+    suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
 }
 
 data class ImportSnapshotResult(
@@ -288,14 +292,20 @@ private fun GarmentSyncRecord.toEntity(
         isArchived = isArchived,
         createdAtEpochMillis = createdAtEpochMillis,
         updatedAtEpochMillis = updatedAtEpochMillis,
-        // A guarded remote photo requires the user to explicitly retry it.
+        // A guarded remote photo requires the user to explicitly retry it and must not be omitted
+        // from a later local snapshot upload while that recovery remains unresolved.
         syncStatus = if (photoRestoreIssue == null) GarmentSyncStatus.Synced else GarmentSyncStatus.NeedsUserAction,
         syncRevision = revision,
         syncDirtyAtEpochMillis = null,
         lastSyncedAtEpochMillis = System.currentTimeMillis(),
         syncFailureMessage = photoRestoreIssue?.userVisibleMessage,
+        photoRestoreGuarded = photoRestoreIssue != null,
+        retryAfterEpochMillis = photoRestoreIssue?.let { System.currentTimeMillis() },
+        photoRestoreRetryDeadlineEpochMillis = photoRestoreIssue?.let { System.currentTimeMillis() + PHOTO_RESTORE_RETRY_WINDOW_MILLIS },
     )
 }
+
+private const val PHOTO_RESTORE_RETRY_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
 
 private fun SyncTombstoneRecord.toEntity(): SyncTombstoneEntity = SyncTombstoneEntity(
     id = "$entityType:$entityId",
