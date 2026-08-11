@@ -213,6 +213,13 @@ sealed interface WardrobeSyncOperation {
         override val createdAtEpochMillis: Long = System.currentTimeMillis(),
     ) : WardrobeSyncOperation
 
+    /** Manual, bounded recovery of one guarded Drive photo; it must not restart full restore. */
+    data class RetryRestoredPhoto(
+        val garmentId: String,
+        override val localOperationId: String = operationId("photo_restore_retry", garmentId),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
     data class UpsertGarments(
         val touchedGarmentIds: Set<String>,
         override val localOperationId: String = operationId("garments_upsert", touchedGarmentIds.sorted().joinToString("_")),

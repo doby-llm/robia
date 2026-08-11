@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.DriveSyncTarget
+import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 
@@ -18,6 +19,8 @@ interface DriveWardrobeRepository {
 
     suspend fun fetchManifest(): DriveSyncResult<DriveManifest>
     suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot>
+    /** Fetches and hydrates exactly one remote photo without reapplying the full snapshot. */
+    suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord>
     suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest>
 }
 
@@ -27,6 +30,7 @@ class NotConfiguredDriveWardrobeRepository(
 ) : DriveWardrobeRepository {
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
+    override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> = notConfigured()
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> = notConfigured()
 
     private fun <T> notConfigured(): DriveSyncResult<T> =
@@ -44,6 +48,11 @@ class InMemoryDriveWardrobeRepository(
 
     override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> =
         DriveSyncResult.Success(snapshot.sortedDeterministically())
+
+    override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> =
+        snapshot.photos.firstOrNull { it.garmentId == garmentId }
+            ?.let(DriveSyncResult::Success)
+            ?: DriveSyncResult.Failure(IllegalStateException("No remote photo exists for garment $garmentId."))
 
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> {
         val deterministicSnapshot = snapshot.sortedDeterministically()

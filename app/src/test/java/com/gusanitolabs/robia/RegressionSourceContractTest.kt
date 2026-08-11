@@ -130,6 +130,37 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun guardedDrivePhotos_areRecoverablePerGarmentWithoutRestartingRestore() {
+        val gateway = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncGateway.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val retryHandler = processor
+            .substringAfter("private suspend fun retryRestoredPhoto(garmentId: String)")
+            .substringBefore("private suspend fun restoreFreshInstallOnceIfNeeded()")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val strings = source("app/src/main/res/values/strings.xml")
+
+        assertTrue(gateway.contains("data class RetryRestoredPhoto"))
+        assertTrue(retryHandler.contains("markGarmentPhotoRestoreRetrying(garmentId)"))
+        assertTrue(retryHandler.contains("driveRepository.retryRestoredPhoto(garmentId)"))
+        assertTrue(!retryHandler.contains("processPendingGarments("))
+        assertTrue(!retryHandler.contains("restoreProgress.value"))
+        assertTrue(dao.contains("retry_attempt_count < 3"))
+        assertTrue(dao.contains("retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now"))
+        assertTrue(processor.contains("CloudRestoreStatus.CompletedWithAttention"))
+        assertTrue(driveRepository.contains("listBlobPathsWithPrefix"))
+        assertTrue(driveRepository.contains("filter { path -> path.startsWith(photoBlobPrefix) }"))
+        assertTrue(driveRepository.contains("legacyPhotoRestoreCandidate"))
+        assertTrue(driveRepository.contains("exact_blob_not_found"))
+        assertTrue(app.contains("onRetryRestoredPhoto"))
+        assertTrue(app.contains("R.string.cloud_restore_retry_photo"))
+        assertTrue(app.contains("R.string.content_cloud_restore_retry_photo"))
+        assertTrue(strings.contains("name=\"cloud_restore_retry_photo\""))
+        assertTrue(strings.contains("name=\"content_cloud_restore_retry_photo\""))
+    }
+
+    @Test
     fun restoreProgressOverlay_gatesDiagnosticsToDeveloperModeAndStaysCentered() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val overlay = app

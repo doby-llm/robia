@@ -370,6 +370,9 @@ fun RobiaApp(
             onRequestCloudRestoreRetry = {
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
             },
+            onRetryRestoredPhoto = { garmentId ->
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.RetryRestoredPhoto(garmentId)) }
+            },
             onClearRestoreSyncLog = {
                 scope.launch { syncGateway.clearRestoreSyncLog() }
             },
@@ -544,6 +547,7 @@ private fun RobiaShell(
     onRequestCloudSetup: () -> Unit,
     onRequestCloudManualSync: () -> Unit = {},
     onRequestCloudRestoreRetry: () -> Unit = {},
+    onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
@@ -1117,6 +1121,7 @@ private fun RobiaShell(
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
             onClearRestoreSyncLog = onClearRestoreSyncLog,
+            onRetryRestoredPhoto = onRetryRestoredPhoto,
         )
     }
     restoreProgress?.let { progress ->
@@ -1660,6 +1665,7 @@ private fun RobiaNavHost(
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
     onClearRestoreSyncLog: () -> Unit,
+    onRetryRestoredPhoto: (String) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -1749,6 +1755,7 @@ private fun RobiaNavHost(
                 innerPadding = innerPadding,
                 item = item,
                 onEditClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
+                onRetryRestoredPhoto = onRetryRestoredPhoto,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
@@ -2184,6 +2191,7 @@ private fun GarmentPhotoPlaceholder(
 
 private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
     get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE ||
+        syncFailureMessage?.startsWith(MISSING_RESTORED_PHOTO_MESSAGE) == true ||
         syncFailureMessage?.startsWith("Foto no restaurada desde Drive.") == true
 
 @Composable
@@ -2207,6 +2215,7 @@ private fun ItemDetailScreen(
     innerPadding: PaddingValues,
     item: UiWardrobeItem,
     onEditClick: () -> Unit,
+    onRetryRestoredPhoto: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -2273,6 +2282,20 @@ private fun ItemDetailScreen(
             )
         }
         item { GarmentCloudStatusRow(item) }
+        if (item.hasMissingRestoredPhoto) {
+            item {
+                Button(
+                    onClick = { onRetryRestoredPhoto(item.id) },
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        contentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
+                    },
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.cloud_restore_retry_photo))
+                }
+            }
+        }
         item.notes.takeIf { it.isNotBlank() }?.let { description ->
             item {
                 Text(
