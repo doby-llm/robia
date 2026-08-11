@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.BuildConfig
+
 import android.app.Activity
 import android.content.ClipData
 import android.content.Context
@@ -318,6 +320,8 @@ fun RobiaApp(
     tagRepository: TagRepository,
     syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
     onRequestCloudSetup: () -> Unit = {},
+    performanceFixtureUris: List<String> = emptyList(),
+    performanceBatch: Boolean = false,
 ) {
     val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
     val settingsLoaded = persistedSettings != null
@@ -326,8 +330,21 @@ fun RobiaApp(
     val restoreSyncLogText by syncGateway.restoreSyncLogText.collectAsState(initial = "")
     val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
     val loadedClothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = null)
-    val clothingItems = loadedClothingItems.orEmpty()
-    val wardrobeItemsLoading = loadedClothingItems == null
+    val performanceFixtureMode = BuildConfig.DEBUG && performanceFixtureUris.isNotEmpty()
+    val clothingItems = if (performanceFixtureMode) {
+        performanceFixtureUris.mapIndexed { index, uri ->
+            ClothingItem(
+                id = "performance-fixture-$index",
+                name = "Synthetic fixture ${index + 1}",
+                photoUri = uri,
+                createdAtEpochMillis = 0L,
+                updatedAtEpochMillis = 0L,
+            )
+        }
+    } else {
+        loadedClothingItems.orEmpty()
+    }
+    val wardrobeItemsLoading = !performanceFixtureMode && loadedClothingItems == null
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
@@ -442,6 +459,7 @@ fun RobiaApp(
                     updatedItems.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
                 }
             },
+            initialPerformanceBatchFixtureUris = if (performanceFixtureMode && performanceBatch) performanceFixtureUris else emptyList(),
         )
         }
     }
@@ -556,8 +574,13 @@ private fun RobiaShell(
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
+    initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
-    val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
+    val routeStack = remember(initialPerformanceBatchFixtureUris) {
+        mutableStateListOf(
+            if (initialPerformanceBatchFixtureUris.isEmpty()) RobiaRoute.Browse else RobiaRoute.BatchAddClothing,
+        )
+    }
     val currentRoute = routeStack.last()
     var settingsExpanded by remember { mutableStateOf(false) }
     val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
@@ -566,7 +589,13 @@ private fun RobiaShell(
     val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
-    val batchDrafts = remember { mutableStateListOf<BatchDraftItem>() }
+    val batchDrafts = remember(initialPerformanceBatchFixtureUris) {
+        mutableStateListOf<BatchDraftItem>().apply {
+            initialPerformanceBatchFixtureUris.forEachIndexed { index, uri ->
+                add(BatchDraftItem(orderIndex = index, originalPhotoUri = uri))
+            }
+        }
+    }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
