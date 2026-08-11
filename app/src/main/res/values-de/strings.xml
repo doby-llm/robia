@@ -278,8 +278,12 @@
     <string name="batch_status_needs_review">Prüfung nötig</string>
     <string name="batch_status_ready">Bereit</string>
     <string name="batch_status_failed">Fehler</string>
+    <string name="batch_status_interrupted">Unterbrochen</string>
+    <string name="batch_retry">Wiederholen</string>
     <string name="batch_helper_processing">%1$d Teile werden verarbeitet…</string>
     <string name="batch_helper_failed">Behebe %1$d fehlgeschlagene Teile.</string>
+    <string name="batch_helper_interrupted">Wiederhole oder verwerfe %1$d unterbrochene Teile.</string>
+    <string name="batch_interrupted_message">Die Verarbeitung wurde unterbrochen. Wiederhole dieses Teil manuell.</string>
     <string name="batch_helper_needs_review">Prüfe %1$d Teile mit Originalfoto vor dem Speichern.</string>
     <string name="batch_original_fallback_message">Fotooptimierung fehlgeschlagen. Originalfoto beibehalten – öffne das Teil, um es erneut zu versuchen oder zu behalten.</string>
     <string name="batch_helper_empty">Wähle mehrere Galeriefotos, um einen Batch zu starten.</string>

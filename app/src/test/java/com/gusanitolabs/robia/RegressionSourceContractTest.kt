@@ -7,6 +7,30 @@ import java.nio.file.Path
 
 class RegressionSourceContractTest {
     @Test
+    fun batchCancellation_terminalizesTheCurrentItemForManualRetry() {
+        val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
+        val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+
+        assertTrue(coordinator.contains("onInterrupted(next)"))
+        assertTrue(batchScreen.contains("BatchDraftStatus.Interrupted"))
+        assertTrue(batchScreen.contains("catch (throwable: CancellationException)"))
+        assertTrue(batchScreen.contains("status = BatchDraftStatus.Interrupted"))
+    }
+
+    @Test
+    fun batchCoordinator_processesAll60QueuedItemsSeriallyToTerminalStates() {
+        val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+
+        assertTrue(coordinator.contains("processingJob?.isActive == true"))
+        assertTrue(coordinator.contains("while (true)"))
+        assertTrue(coordinator.contains("firstOrNull { it.status == BatchDraftStatus.Queued }"))
+        assertTrue(app.contains("BatchProcessingCoordinator(batchProcessingScope)"))
+        assertTrue(batchScreen.contains("private val BatchDraftStatus.isTerminal"))
+    }
+
+    @Test
     fun browseFilterBar_keepsDividerWithLeftFilterGroupBeforeSyncSpinner() {
         val filterBar = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
             .substringAfter("private fun FilterBar(")
