@@ -128,7 +128,14 @@ interface WardrobeDao {
 
     @Transaction
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity): Boolean =
-        updateMetadataSyncStatus(work, GarmentSyncStatus.Running) > 0
+        markMetadataSyncing(work, System.currentTimeMillis()) > 0
+
+    private suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity, startedAtEpochMillis: Long): Int = when (work.entityType) {
+        "tag_category", "category" -> markTagCategorySyncing(work.id, work.revision, startedAtEpochMillis)
+        "garment_tag", "tag" -> markGarmentTagSyncing(work.id, work.revision, startedAtEpochMillis)
+        "main_color", "palette_color", "color" -> markMainColorSyncing(work.id, work.revision, startedAtEpochMillis)
+        else -> markTombstoneSyncing(work.id, work.revision, startedAtEpochMillis)
+    }
 
     @Transaction
     suspend fun markMetadataSynced(work: PendingMetadataSyncWorkEntity, syncedAtEpochMillis: Long): Boolean =
@@ -173,6 +180,18 @@ interface WardrobeDao {
         "main_color", "palette_color", "color" -> updateMainColorSyncFailedRetryable(work.id, work.revision, message, now)
         else -> updateTombstoneSyncFailedRetryable(work.id, work.revision, message, now)
     }
+
+    @Query("UPDATE tag_categories SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
+    suspend fun markTagCategorySyncing(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE garment_tags SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
+    suspend fun markGarmentTagSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE main_colors SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
+    suspend fun markMainColorSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE sync_tombstones SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND revision = :revision")
+    suspend fun markTombstoneSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Int
 
     @Query("UPDATE tag_categories SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :id AND sync_revision = :revision")
     suspend fun updateTagCategorySyncFailedRetryable(id: String, revision: Long, message: String?, now: Long): Int
