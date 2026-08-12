@@ -160,11 +160,18 @@ class RegressionSourceContractTest {
         assertTrue(repository.contains("markMetadataSyncFailedRetryable(work.toEntity(), message)"))
         assertTrue(dao.contains("val now = System.currentTimeMillis()"))
         assertTrue(dao.contains("updateMetadataSyncFailedRetryable(work, message, now) > 0"))
-        assertTrue(dao.contains("markMetadataSyncing(work, System.currentTimeMillis()) > 0"))
+        assertTrue(dao.contains("claimMetadataSync(work, System.currentTimeMillis()) > 0"))
 
-        listOf("TagCategory", "GarmentTag", "MainColor", "Tombstone").forEach { entity ->
-            val claimQuery = queryBeforeMethod(dao, "suspend fun mark${entity}Syncing")
+        listOf(
+            "TagCategory" to "sync_revision = :revision",
+            "GarmentTag" to "sync_revision = :revision",
+            "MainColor" to "sync_revision = :revision",
+            "Tombstone" to "revision = :revision",
+        ).forEach { (entity, revisionPredicate) ->
+            val claimQuery = queryBeforeMethod(dao, "suspend fun claim${entity}MetadataSync")
+            assertTrue(claimQuery.contains("sync_status = 'Running'"))
             assertTrue(claimQuery.contains("sync_started_at_epoch_millis = :startedAtEpochMillis"))
+            assertTrue(claimQuery.contains(revisionPredicate))
 
             val query = queryBeforeMethod(dao, "suspend fun update${entity}SyncFailedRetryable")
             assertTrue(query.contains("CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
