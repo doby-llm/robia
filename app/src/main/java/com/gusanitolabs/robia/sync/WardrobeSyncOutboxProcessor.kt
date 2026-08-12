@@ -592,9 +592,10 @@ class WardrobeSyncOutboxProcessor(
     private suspend fun markFailedRetryable(
         work: List<PendingGarmentSyncWork>,
         metadataWork: List<PendingMetadataSyncWork> = emptyList(),
+        message: String? = null,
     ) {
-        work.forEach { item -> wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision) }
-        metadataWork.forEach { item -> wardrobeRepository.markMetadataSyncFailedRetryable(item) }
+        work.forEach { item -> wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision, message) }
+        metadataWork.forEach { item -> wardrobeRepository.markMetadataSyncFailedRetryable(item, message) }
     }
 
     private fun DriveSyncConnectionStatus.toWardrobeSyncState(

@@ -150,6 +150,21 @@ class RegressionSourceContractTest {
         assertTrue(dao.contains("hasPendingCloudDeletion"))
         assertTrue(dao.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
         assertTrue(dao.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+
+        val retryableFailureMarker = processor
+            .substringAfter("private suspend fun markFailedRetryable(")
+            .substringBefore("private fun DriveSyncConnectionStatus.toWardrobeSyncState")
+        assertTrue(retryableFailureMarker.contains("message: String? = null"))
+        assertTrue(
+            retryableFailureMarker.contains(
+                "wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision, message)",
+            ),
+        )
+        assertTrue(
+            retryableFailureMarker.contains(
+                "wardrobeRepository.markMetadataSyncFailedRetryable(item, message)",
+            ),
+        )
     }
 
     @Test
