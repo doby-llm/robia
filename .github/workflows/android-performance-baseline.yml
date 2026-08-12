@@ -15,10 +15,16 @@ permissions:
 jobs:
   emulator-baseline:
     name: Comparative emulator baseline
-    runs-on: ubuntu-latest
+    # macOS GitHub-hosted runners provide reliable hardware acceleration for
+    # Android Emulator. The previous Linux runner booted API 35 without KVM and
+    # timed out; this job intentionally remains a remote comparative emulator
+    # baseline, not a physical-device benchmark.
+    runs-on: macos-13
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Check performance baseline workflow contract
+        run: python3 scripts/check_android_performance_baseline_workflow_static.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -29,6 +35,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Prepare failure artifact directory
+        run: mkdir -p performance-artifacts
       - name: Generate synthetic fixtures
         run: |
           python -m pip install --disable-pip-version-check Pillow==10.4.0
@@ -48,6 +56,15 @@ jobs:
             # POSIX shell options and timing primitives while retaining -e/-u.
             set -eu
             mkdir -p performance-artifacts
+            record_capture_failure() {
+              status=$?
+              if [ "$status" -ne 0 ]; then
+                printf 'capture step failed with exit status %s\n' "$status" > performance-artifacts/capture-failure.txt
+                adb devices > performance-artifacts/adb-devices.txt 2>&1 || true
+                adb logcat -d -v threadtime > performance-artifacts/logcat.txt 2>&1 || true
+              fi
+            }
+            trap record_capture_failure EXIT
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell mkdir -p /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images
             adb push performance-fixtures/. /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images
@@ -72,6 +89,7 @@ jobs:
             cp performance-fixtures/manifest.json performance-artifacts/fixture-manifest.json
             python scripts/summarize_performance_baseline.py --input performance-artifacts --output performance-artifacts/report.md
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: robia-emulator-performance-baseline
           path: performance-artifacts
