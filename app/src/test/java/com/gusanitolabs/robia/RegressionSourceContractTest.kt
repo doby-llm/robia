@@ -153,6 +153,48 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun metadataAndTombstoneFailuresPersistBoundedRetryAttempts() {
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
+
+        assertTrue(repository.contains("markMetadataSyncFailedRetryable(work.toEntity(), message)"))
+        assertTrue(dao.contains("val now = System.currentTimeMillis()"))
+        assertTrue(dao.contains("updateMetadataSyncFailedRetryable(work, message, now) > 0"))
+
+        listOf("TagCategory", "GarmentTag", "MainColor", "Tombstone").forEach { entity ->
+            val query = queryBeforeMethod(dao, "suspend fun update${entity}SyncFailedRetryable")
+            assertTrue(query.contains("CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
+            assertTrue(query.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
+            assertTrue(query.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+            assertTrue(query.contains("sync_started_at_epoch_millis = NULL"))
+            assertTrue(query.contains("sync_failure_message = :message"))
+        }
+    }
+
+    @Test
+    fun metadataAndTombstoneStaleRunningRecoveryUsesDurableRetryPolicy() {
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val recovery = dao.substringAfter("suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int")
+            .substringBefore("@Query(\"UPDATE clothing_items")
+
+        assertTrue(recovery.contains("val now = System.currentTimeMillis()"))
+        assertTrue(recovery.contains("recoverStaleTagCategorySyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleMainColorSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleTombstoneSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(!recovery.contains("retry_after_epoch_millis = 0"))
+
+        listOf("TagCategory", "GarmentTag", "MainColor", "Tombstone").forEach { entity ->
+            val query = queryBeforeMethod(dao, "suspend fun recoverStale${entity}SyncWork")
+            assertTrue(query.contains("CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
+            assertTrue(query.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
+            assertTrue(query.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+            assertTrue(query.contains("COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis"))
+            assertTrue(!query.contains("retry_after_epoch_millis = 0"))
+        }
+    }
+
+    @Test
     fun guardedDrivePhotos_areRecoverablePerGarmentWithoutRestartingRestore() {
         val gateway = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncGateway.kt")
         val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
@@ -338,4 +380,7 @@ class RegressionSourceContractTest {
         )
         return Files.readString(candidates.first(Files::exists))
     }
+
+    private fun queryBeforeMethod(source: String, methodNeedle: String): String =
+        source.substringBefore(methodNeedle).substringAfterLast("@Query")
 }
