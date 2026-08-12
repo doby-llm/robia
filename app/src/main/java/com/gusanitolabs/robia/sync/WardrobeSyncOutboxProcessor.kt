@@ -179,7 +179,14 @@ class WardrobeSyncOutboxProcessor(
             ) return@withLock
             // A durable Drive-side garment deletion must win over any restored-photo retry.
             if (wardrobeRepository.hasPendingCloudDeletion()) {
-                restoreSyncLogRepository.append(RestoreSyncLogEvent(message = CLOUD_DELETION_PENDING_MESSAGE))
+                restoreSyncLogRepository.append(
+                    RestoreSyncLogEvent(
+                        correlationId = UUID.randomUUID().toString(),
+                        phase = null,
+                        status = null,
+                        message = CLOUD_DELETION_PENDING_MESSAGE,
+                    ),
+                )
                 return@withLock
             }
             val retryRevision = wardrobeRepository.claimGarmentPhotoRestoreRetry(garmentId) ?: return@withLock
