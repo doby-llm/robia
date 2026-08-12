@@ -145,6 +145,10 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("CLOUD_DELETION_PENDING_MESSAGE"))
         assertTrue(driveRepository.contains("withTimeout(AUTHORIZATION_TIMEOUT_MILLIS)"))
         assertTrue(driveRepository.contains("withDrivePhaseDeadline"))
+        val repositoryBeforeHttpApi = driveRepository.substringBefore("private class HttpDriveSnapshotApi")
+        assertTrue(repositoryBeforeHttpApi.contains("const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L"))
+        assertTrue(repositoryBeforeHttpApi.contains("const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L"))
+        assertTrue(!repositoryBeforeHttpApi.contains("private class HttpDriveSnapshotApi"))
         assertTrue(repository.contains("suspend fun hasPendingCloudDeletion(): Boolean"))
         assertTrue(repository.contains("suspend fun nextRunnableSyncRetryEpochMillis(): Long?"))
         assertTrue(dao.contains("hasPendingCloudDeletion"))
@@ -165,6 +169,13 @@ class RegressionSourceContractTest {
                 "wardrobeRepository.markMetadataSyncFailedRetryable(item, message)",
             ),
         )
+
+        val deletionGuard = processor
+            .substringAfter("if (wardrobeRepository.hasPendingCloudDeletion())")
+            .substringBefore("val retryRevision")
+        assertTrue(deletionGuard.contains("correlationId = UUID.randomUUID().toString()"))
+        assertTrue(deletionGuard.contains("phase = null"))
+        assertTrue(deletionGuard.contains("status = null"))
     }
 
     @Test

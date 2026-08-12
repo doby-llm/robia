@@ -148,6 +148,11 @@ class GoogleDriveWardrobeRepository(
         DriveSyncResult.Failure(java.net.SocketTimeoutException("Drive operation timed out."))
     }
 
+    private companion object {
+        const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L
+        const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L
+    }
+
     private fun hydratePhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
@@ -703,8 +708,6 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
 
 
     private companion object {
-        const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L
-        const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L
         const val SNAPSHOT_FILE_NAME = "wardrobe_snapshot.json"
         const val SNAPSHOT_MIME_TYPE = "application/vnd.gusanitolabs.robia.wardrobe-snapshot+json"
         const val PHOTO_BLOB_MIME_TYPE = "application/octet-stream"
