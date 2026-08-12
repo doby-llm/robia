@@ -168,9 +168,11 @@ enum class CloudRestorePhase {
 
 enum class CloudRestoreStatus {
     Running,
+    Interrupted,
     Offline,
     Failed,
     RolledBack,
+    CompletedWithAttention,
 }
 
 sealed interface WardrobeSyncOperation {
@@ -209,6 +211,13 @@ sealed interface WardrobeSyncOperation {
     data class ImportFullSnapshot(
         val sourceRevision: Long,
         override val localOperationId: String = operationId("snapshot_import", sourceRevision.toString()),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    /** Manual, bounded recovery of one guarded Drive photo; it must not restart full restore. */
+    data class RetryRestoredPhoto(
+        val garmentId: String,
+        override val localOperationId: String = operationId("photo_restore_retry", garmentId),
         override val createdAtEpochMillis: Long = System.currentTimeMillis(),
     ) : WardrobeSyncOperation
 

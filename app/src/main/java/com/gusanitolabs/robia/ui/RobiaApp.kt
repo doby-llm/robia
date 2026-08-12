@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.BuildConfig
+
 import android.app.Activity
 import android.content.ClipData
 import android.content.Context
@@ -146,6 +148,8 @@ import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
 import com.gusanitolabs.robia.media.GarmentShareMetadataIcon
+import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -318,6 +322,8 @@ fun RobiaApp(
     tagRepository: TagRepository,
     syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
     onRequestCloudSetup: () -> Unit = {},
+    performanceFixtureUris: List<String> = emptyList(),
+    performanceBatch: Boolean = false,
 ) {
     val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
     val settingsLoaded = persistedSettings != null
@@ -326,8 +332,21 @@ fun RobiaApp(
     val restoreSyncLogText by syncGateway.restoreSyncLogText.collectAsState(initial = "")
     val displaySyncState = syncState.reconcileWithSettings(settings.driveSyncConnectionStatus)
     val loadedClothingItems by wardrobeRepository.observeActiveItems().collectAsState(initial = null)
-    val clothingItems = loadedClothingItems.orEmpty()
-    val wardrobeItemsLoading = loadedClothingItems == null
+    val performanceFixtureMode = BuildConfig.DEBUG && performanceFixtureUris.isNotEmpty()
+    val clothingItems = if (performanceFixtureMode) {
+        performanceFixtureUris.mapIndexed { index, uri ->
+            ClothingItem(
+                id = "performance-fixture-$index",
+                name = "Synthetic fixture ${index + 1}",
+                photoUri = uri,
+                createdAtEpochMillis = 0L,
+                updatedAtEpochMillis = 0L,
+            )
+        }
+    } else {
+        loadedClothingItems.orEmpty()
+    }
+    val wardrobeItemsLoading = !performanceFixtureMode && loadedClothingItems == null
     val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
@@ -369,6 +388,9 @@ fun RobiaApp(
             },
             onRequestCloudRestoreRetry = {
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
+            },
+            onRetryRestoredPhoto = { garmentId ->
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.RetryRestoredPhoto(garmentId)) }
             },
             onClearRestoreSyncLog = {
                 scope.launch { syncGateway.clearRestoreSyncLog() }
@@ -442,6 +464,7 @@ fun RobiaApp(
                     updatedItems.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
                 }
             },
+            initialPerformanceBatchFixtureUris = if (performanceFixtureMode && performanceBatch) performanceFixtureUris else emptyList(),
         )
         }
     }
@@ -459,8 +482,7 @@ private fun WardrobeSyncState.reconcileWithSettings(
 }
 
 private val WardrobeSyncState.hasVisibleSyncActivity: Boolean
-    get() = pendingOperationCount > 0 ||
-        connectionStatus == DriveSyncConnectionStatus.Syncing ||
+    get() = connectionStatus == DriveSyncConnectionStatus.Syncing ||
         restoreProgress?.status == CloudRestoreStatus.Running
 
 @Composable
@@ -545,6 +567,7 @@ private fun RobiaShell(
     onRequestCloudSetup: () -> Unit,
     onRequestCloudManualSync: () -> Unit = {},
     onRequestCloudRestoreRetry: () -> Unit = {},
+    onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
     onSaveItems: (List<ClothingItem>) -> Unit,
@@ -556,8 +579,13 @@ private fun RobiaShell(
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
+    initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
-    val routeStack = remember { mutableStateListOf<RobiaRoute>(RobiaRoute.Browse) }
+    val routeStack = remember(initialPerformanceBatchFixtureUris) {
+        mutableStateListOf(
+            if (initialPerformanceBatchFixtureUris.isEmpty()) RobiaRoute.Browse else RobiaRoute.BatchAddClothing,
+        )
+    }
     val currentRoute = routeStack.last()
     var settingsExpanded by remember { mutableStateOf(false) }
     val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
@@ -566,7 +594,19 @@ private fun RobiaShell(
     val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
-    val batchDrafts = remember { mutableStateListOf<BatchDraftItem>() }
+    val batchDrafts = remember(initialPerformanceBatchFixtureUris) {
+        mutableStateListOf<BatchDraftItem>().apply {
+            initialPerformanceBatchFixtureUris.forEachIndexed { index, uri ->
+                add(BatchDraftItem(orderIndex = index, originalPhotoUri = uri))
+            }
+        }
+    }
+    val batchProcessingScope = rememberCoroutineScope()
+    val batchProcessingCoordinator = remember(batchProcessingScope) {
+        BatchProcessingCoordinator(batchProcessingScope)
+    }
+    val batchBackgroundRemover = remember { PhotoBackgroundRemover() }
+    val batchAdditionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
@@ -666,21 +706,62 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.Browse)
     }
 
+    fun updateBatchDraft(updated: BatchDraftItem) {
+        val index = batchDrafts.indexOfFirst { draft -> draft.id == updated.id }
+        if (index >= 0) batchDrafts[index] = updated
+    }
+
+    fun processQueuedBatchDrafts() {
+        batchProcessingCoordinator.processQueued(
+            drafts = { batchDrafts.toList() },
+            processDraft = { draft ->
+                processBatchDraft(
+                    draft = draft,
+                    context = context,
+                    backgroundRemover = batchBackgroundRemover,
+                    additionalInfoDetector = batchAdditionalInfoDetector,
+                    mainColors = mainColors,
+                    availableTags = availableTags,
+                    onDraftUpdated = ::updateBatchDraft,
+                )
+            },
+            onInterrupted = { draft ->
+                val current = batchDrafts.firstOrNull { it.id == draft.id }
+                if (current?.status == BatchDraftStatus.Processing) {
+                    updateBatchDraft(
+                        current.copy(
+                            status = BatchDraftStatus.Interrupted,
+                            errorMessage = context.getString(R.string.batch_interrupted_message),
+                        ),
+                    )
+                }
+            },
+        )
+    }
+
     fun startBatchAdd(photoUris: List<String>) {
+        batchProcessingCoordinator.cancel()
         batchDrafts.clear()
         photoUris.forEachIndexed { index, uri ->
             batchDrafts += BatchDraftItem(orderIndex = index, originalPhotoUri = uri)
         }
         selectedBatchDraftId = null
         replaceRoute(RobiaRoute.BatchAddClothing)
+        processQueuedBatchDrafts()
     }
 
-    fun updateBatchDraft(updated: BatchDraftItem) {
-        val index = batchDrafts.indexOfFirst { draft -> draft.id == updated.id }
-        if (index >= 0) batchDrafts[index] = updated
+    fun retryBatchDraft(draft: BatchDraftItem) {
+        updateBatchDraft(draft.copy(status = BatchDraftStatus.Queued, errorMessage = null))
+        processQueuedBatchDrafts()
+    }
+
+    fun discardBatchDraft(draft: BatchDraftItem) {
+        batchDrafts.removeAll { it.id == draft.id }
+        if (selectedBatchDraftId == draft.id) selectedBatchDraftId = null
     }
 
     fun cancelBatchAdd() {
+        batchProcessingCoordinator.cancel()
         batchDrafts.clear()
         selectedBatchDraftId = null
         showBatchDiscardDialog = false
@@ -1083,16 +1164,18 @@ private fun RobiaShell(
             },
             onDeleteItem = { item -> deleteItemsAndReturnToBrowse(setOf(item.id)) },
             onBatchPhotosSelected = ::startBatchAdd,
-            onDraftUpdated = ::updateBatchDraft,
             onDraftSelected = { draft ->
                 selectedBatchDraftId = draft.id
                 pushRoute(RobiaRoute.BatchEditClothing)
             },
+            onRetryBatchDraft = ::retryBatchDraft,
+            onDiscardBatchDraft = ::discardBatchDraft,
             onSaveBatch = { batchItems ->
                 onSaveItems(batchItems)
-                batchDrafts.clear()
+                val savedIds = batchItems.map(ClothingItem::id).toSet()
+                batchDrafts.removeAll { it.id in savedIds }
                 selectedBatchDraftId = null
-                replaceRoute(RobiaRoute.Browse)
+                if (batchDrafts.isEmpty()) replaceRoute(RobiaRoute.Browse)
             },
             onCancelBatch = {
                 cancelBatchAdd()
@@ -1118,6 +1201,7 @@ private fun RobiaShell(
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
             onClearRestoreSyncLog = onClearRestoreSyncLog,
+            onRetryRestoredPhoto = onRetryRestoredPhoto,
         )
     }
     restoreProgress?.let { progress ->
@@ -1558,9 +1642,11 @@ private fun CloudRestoreProgressBar(progress: Float) {
 private fun cloudRestoreStatusText(progress: CloudRestoreProgress): String = stringResource(
     when (progress.status) {
         CloudRestoreStatus.Running -> R.string.cloud_restore_status_running
+        CloudRestoreStatus.Interrupted -> R.string.cloud_restore_status_interrupted
         CloudRestoreStatus.Offline -> R.string.cloud_restore_status_offline
         CloudRestoreStatus.Failed -> R.string.cloud_restore_status_failed
         CloudRestoreStatus.RolledBack -> R.string.cloud_restore_status_rolled_back
+        CloudRestoreStatus.CompletedWithAttention -> R.string.cloud_restore_status_completed_with_attention
     },
 )
 
@@ -1643,8 +1729,9 @@ private fun RobiaNavHost(
     onSaveItem: (ClothingItem) -> Unit,
     onDeleteItem: (ClothingItem) -> Unit,
     onBatchPhotosSelected: (List<String>) -> Unit,
-    onDraftUpdated: (BatchDraftItem) -> Unit,
     onDraftSelected: (BatchDraftItem) -> Unit,
+    onRetryBatchDraft: (BatchDraftItem) -> Unit,
+    onDiscardBatchDraft: (BatchDraftItem) -> Unit,
     onSaveBatch: (List<ClothingItem>) -> Unit,
     onCancelBatch: () -> Unit,
     onSaveBatchDraft: (ClothingItem) -> Unit,
@@ -1660,6 +1747,7 @@ private fun RobiaNavHost(
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
     onClearRestoreSyncLog: () -> Unit,
+    onRetryRestoredPhoto: (String) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -1715,8 +1803,9 @@ private fun RobiaNavHost(
             drafts = batchDrafts,
             availableTags = availableTags,
             mainColors = mainColors,
-            onDraftUpdated = onDraftUpdated,
             onDraftSelected = onDraftSelected,
+            onRetryDraft = onRetryBatchDraft,
+            onDiscardDraft = onDiscardBatchDraft,
             onSaveBatch = onSaveBatch,
             onCancelBatch = onCancelBatch,
         )
@@ -1739,8 +1828,9 @@ private fun RobiaNavHost(
             drafts = batchDrafts,
             availableTags = availableTags,
             mainColors = mainColors,
-            onDraftUpdated = onDraftUpdated,
             onDraftSelected = onDraftSelected,
+            onRetryDraft = onRetryBatchDraft,
+            onDiscardDraft = onDiscardBatchDraft,
             onSaveBatch = onSaveBatch,
             onCancelBatch = onCancelBatch,
         )
@@ -1749,6 +1839,7 @@ private fun RobiaNavHost(
                 innerPadding = innerPadding,
                 item = item,
                 onEditClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
+                onRetryRestoredPhoto = onRetryRestoredPhoto,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
@@ -2020,7 +2111,7 @@ private fun GarmentCloudStatusBadge(
         contentColor = item.garmentCloudStatusTint(),
         modifier = modifier.semantics { contentDescription = label },
     ) {
-        if (item.syncStatus == GarmentSyncStatus.Syncing) {
+        if (item.syncStatus == GarmentSyncStatus.Running) {
             CircularProgressIndicator(
                 modifier = Modifier
                     .padding(7.dp)
@@ -2055,7 +2146,7 @@ private fun GarmentCloudStatusRow(item: UiWardrobeItem) {
             }
         },
         leadingContent = {
-            if (item.syncStatus == GarmentSyncStatus.Syncing) {
+            if (item.syncStatus == GarmentSyncStatus.Running) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             } else {
                 Icon(
@@ -2073,13 +2164,14 @@ private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus)
     GarmentSyncStatus.LocalOnly -> stringResource(R.string.garment_sync_saved_device)
     GarmentSyncStatus.Dirty -> stringResource(R.string.garment_sync_waiting)
     GarmentSyncStatus.Queued -> stringResource(R.string.garment_sync_queued)
-    GarmentSyncStatus.Syncing -> stringResource(R.string.garment_sync_syncing)
+    GarmentSyncStatus.Running -> stringResource(R.string.garment_sync_syncing)
     GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
     GarmentSyncStatus.FailedRetryable -> when {
         hasMissingRestoredPhoto -> stringResource(R.string.cloud_restore_photo_missing_message)
         else -> syncFailureMessage?.takeIf(String::isNotBlank)
             ?: stringResource(R.string.garment_sync_failed_retryable)
     }
+    GarmentSyncStatus.NeedsUserAction -> stringResource(R.string.garment_sync_failed_retryable)
     GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
 }
 
@@ -2091,19 +2183,21 @@ private fun UiWardrobeItem.garmentCloudStatusIcon(): ImageVector = when (syncSta
     GarmentSyncStatus.AuthBlocked -> Icons.Rounded.CloudOff
     GarmentSyncStatus.Dirty,
     GarmentSyncStatus.Queued,
-    GarmentSyncStatus.Syncing -> Icons.Rounded.CloudUpload
+    GarmentSyncStatus.Running -> Icons.Rounded.CloudUpload
     GarmentSyncStatus.Synced -> Icons.Rounded.CloudDone
-    GarmentSyncStatus.FailedRetryable -> Icons.Rounded.Error
+    GarmentSyncStatus.FailedRetryable,
+    GarmentSyncStatus.NeedsUserAction -> Icons.Rounded.Error
 }
 
 @Composable
 private fun UiWardrobeItem.garmentCloudStatusTint(): Color = when (syncStatus) {
     GarmentSyncStatus.Synced -> MaterialTheme.colorScheme.primary
     GarmentSyncStatus.FailedRetryable,
+    GarmentSyncStatus.NeedsUserAction,
     GarmentSyncStatus.AuthBlocked -> MaterialTheme.colorScheme.error
     GarmentSyncStatus.Dirty,
     GarmentSyncStatus.Queued,
-    GarmentSyncStatus.Syncing -> MaterialTheme.colorScheme.tertiary
+    GarmentSyncStatus.Running -> MaterialTheme.colorScheme.tertiary
     GarmentSyncStatus.LocalOnly -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
@@ -2181,6 +2275,7 @@ private fun GarmentPhotoPlaceholder(
 
 private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
     get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE ||
+        syncFailureMessage?.startsWith(MISSING_RESTORED_PHOTO_MESSAGE) == true ||
         syncFailureMessage?.startsWith("Foto no restaurada desde Drive.") == true
 
 @Composable
@@ -2204,6 +2299,7 @@ private fun ItemDetailScreen(
     innerPadding: PaddingValues,
     item: UiWardrobeItem,
     onEditClick: () -> Unit,
+    onRetryRestoredPhoto: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -2211,6 +2307,7 @@ private fun ItemDetailScreen(
     val imageShareErrorMessage = stringResource(R.string.image_share_error)
     val pdfShareErrorMessage = stringResource(R.string.pdf_share_error)
     val noShareAppMessage = stringResource(R.string.share_no_app_error)
+    val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
     val pdfShareItem = item.toGarmentShareItem()
 
     LazyColumn(
@@ -2270,6 +2367,20 @@ private fun ItemDetailScreen(
             )
         }
         item { GarmentCloudStatusRow(item) }
+        if (item.hasMissingRestoredPhoto) {
+            item {
+                Button(
+                    onClick = { onRetryRestoredPhoto(item.id) },
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        contentDescription = retryPhotoContentDescription
+                    },
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.cloud_restore_retry_photo))
+                }
+            }
+        }
         item.notes.takeIf { it.isNotBlank() }?.let { description ->
             item {
                 Text(
@@ -3287,7 +3398,8 @@ private fun GarmentSyncStatus.resolveForConnection(
 ): GarmentSyncStatus = when {
     this == GarmentSyncStatus.Synced -> GarmentSyncStatus.Synced
     this == GarmentSyncStatus.FailedRetryable -> GarmentSyncStatus.FailedRetryable
-    this == GarmentSyncStatus.Syncing -> GarmentSyncStatus.Syncing
+    this == GarmentSyncStatus.NeedsUserAction -> GarmentSyncStatus.NeedsUserAction
+    this == GarmentSyncStatus.Running -> GarmentSyncStatus.Running
     driveSyncConnectionStatus == DriveSyncConnectionStatus.Disconnected -> GarmentSyncStatus.AuthBlocked
     driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured ||
         driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled -> when (this) {
@@ -3304,9 +3416,10 @@ private val GarmentSyncStatus.itemStatusLabelRes: Int
         GarmentSyncStatus.LocalOnly -> R.string.garment_sync_saved_device
         GarmentSyncStatus.Dirty -> R.string.garment_sync_waiting
         GarmentSyncStatus.Queued -> R.string.garment_sync_queued
-        GarmentSyncStatus.Syncing -> R.string.garment_sync_syncing
+        GarmentSyncStatus.Running -> R.string.garment_sync_syncing
         GarmentSyncStatus.Synced -> R.string.garment_sync_synced
         GarmentSyncStatus.FailedRetryable -> R.string.garment_sync_failed_retryable
+        GarmentSyncStatus.NeedsUserAction -> R.string.garment_sync_failed_retryable
         GarmentSyncStatus.AuthBlocked -> R.string.garment_sync_auth_blocked
     }
 

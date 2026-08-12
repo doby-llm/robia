@@ -31,10 +31,14 @@
     <string name="cloud_restore_title">Restoring wardrobe from cloud</string>
     <string name="cloud_restore_remaining">%1$d of %2$d steps remaining</string>
     <string name="cloud_restore_status_running">Keep Robia open. Local changes are locked until restore finishes.</string>
+    <string name="cloud_restore_status_interrupted">Restore was interrupted. Retry when you are ready.</string>
     <string name="cloud_restore_status_offline">Connection lost. Retry restore before adding local changes.</string>
     <string name="cloud_restore_status_failed">Restore failed. Local data was not changed.</string>
     <string name="cloud_restore_status_rolled_back">Restore failed and was rolled back. Your previous local wardrobe is intact.</string>
+    <string name="cloud_restore_status_completed_with_attention">Restore completed, but some photos need your attention before retrying.</string>
     <string name="cloud_restore_retry">Retry restore</string>
+    <string name="cloud_restore_retry_photo">Retry photo download</string>
+    <string name="content_cloud_restore_retry_photo">Retry this garment’s Drive photo download</string>
     <string name="cloud_restore_photo_missing_message">Some images could not be restored from Drive. Robia will keep your wardrobe safe and retry during the next cloud sync.</string>
     <string name="cloud_restore_diagnostics_title">Restore diagnostics</string>
     <string name="cloud_restore_diagnostics_summary">Copy these safe technical details and send them to Doby if restore keeps failing. Robia stores backups in Drive app data, which is hidden from the Drive web UI.</string>
@@ -274,8 +278,12 @@
     <string name="batch_status_needs_review">Needs review</string>
     <string name="batch_status_ready">Ready</string>
     <string name="batch_status_failed">Failed</string>
+    <string name="batch_status_interrupted">Interrupted</string>
+    <string name="batch_retry">Retry</string>
     <string name="batch_helper_processing">Processing %1$d items…</string>
     <string name="batch_helper_failed">Resolve %1$d failed items.</string>
+    <string name="batch_helper_interrupted">Retry or discard %1$d interrupted items.</string>
+    <string name="batch_interrupted_message">Processing was interrupted. Retry this item manually.</string>
     <string name="batch_helper_needs_review">Review %1$d original-photo items before saving.</string>
     <string name="batch_original_fallback_message">Photo cleanup failed. Original photo kept — open to retry or keep it.</string>
     <string name="batch_helper_empty">Choose multiple gallery photos to start a batch.</string>

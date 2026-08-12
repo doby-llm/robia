@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncTombstoneEntity::class,
         ClothingItemTagCrossRef::class,
     ],
-    version = 10,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -46,6 +46,8 @@ abstract class RobiaDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9,
                         MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
                     )
                     .build()
                     .also { instance = it }
@@ -206,6 +208,25 @@ abstract class RobiaDatabase : RoomDatabase() {
                     WHERE sync_dirty_at_epoch_millis IS NULL
                     """.trimIndent(),
                 )
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                listOf("clothing_items", "tag_categories", "garment_tags", "main_colors", "sync_tombstones").forEach { tableName ->
+                    database.execSQL("ALTER TABLE $tableName ADD COLUMN retry_attempt_count INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE $tableName ADD COLUMN retry_after_epoch_millis INTEGER")
+                    database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_started_at_epoch_millis INTEGER")
+                    // A process that upgrades cannot still own the legacy in-progress row.
+                    database.execSQL("UPDATE $tableName SET sync_status = 'Running', sync_started_at_epoch_millis = 0 WHERE sync_status = 'Syncing'")
+                }
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE clothing_items ADD COLUMN photo_restore_guarded INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE clothing_items ADD COLUMN photo_restore_retry_deadline_epoch_millis INTEGER")
             }
         }
 

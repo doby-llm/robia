@@ -7,6 +7,30 @@ import java.nio.file.Path
 
 class RegressionSourceContractTest {
     @Test
+    fun batchCancellation_terminalizesTheCurrentItemForManualRetry() {
+        val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
+        val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+
+        assertTrue(coordinator.contains("onInterrupted(next)"))
+        assertTrue(batchScreen.contains("BatchDraftStatus.Interrupted"))
+        assertTrue(batchScreen.contains("catch (throwable: CancellationException)"))
+        assertTrue(batchScreen.contains("status = BatchDraftStatus.Interrupted"))
+    }
+
+    @Test
+    fun batchCoordinator_processesAll60QueuedItemsSeriallyToTerminalStates() {
+        val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+
+        assertTrue(coordinator.contains("processingJob?.isActive == true"))
+        assertTrue(coordinator.contains("while (true)"))
+        assertTrue(coordinator.contains("firstOrNull { it.status == BatchDraftStatus.Queued }"))
+        assertTrue(app.contains("BatchProcessingCoordinator(batchProcessingScope)"))
+        assertTrue(batchScreen.contains("private val BatchDraftStatus.isTerminal"))
+    }
+
+    @Test
     fun browseFilterBar_keepsDividerWithLeftFilterGroupBeforeSyncSpinner() {
         val filterBar = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
             .substringAfter("private fun FilterBar(")
@@ -32,7 +56,7 @@ class RegressionSourceContractTest {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
 
         assertTrue(app.contains("observeActiveItems().collectAsState(initial = null)"))
-        assertTrue(app.contains("val wardrobeItemsLoading = loadedClothingItems == null"))
+        assertTrue(app.contains("val wardrobeItemsLoading = !performanceFixtureMode && loadedClothingItems == null"))
         assertTrue(app.contains("wardrobeItemsLoading = wardrobeItemsLoading"))
 
         val browseScreen = app
@@ -95,6 +119,211 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("pendingMetadataSyncWork()"))
         assertTrue(processor.contains("markMetadataSynced"))
         assertTrue(processor.contains(">= color.revision"))
+    }
+
+    @Test
+    fun syncOutbox_distinguishesRunnableWorkFromAttentionAndRecoversStaleRunningWork() {
+        val syncModels = source("app/src/main/java/com/gusanitolabs/robia/core/model/SyncModels.kt")
+        val entities = source("app/src/main/java/com/gusanitolabs/robia/data/local/Entities.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val database = source("app/src/main/java/com/gusanitolabs/robia/data/local/RobiaDatabase.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+
+        assertTrue(syncModels.contains("Running,"))
+        assertTrue(syncModels.contains("NeedsUserAction,"))
+        assertTrue(entities.contains("retry_attempt_count"))
+        assertTrue(entities.contains("retry_after_epoch_millis"))
+        assertTrue(entities.contains("sync_started_at_epoch_millis"))
+        assertTrue(database.contains("MIGRATION_10_11"))
+        assertTrue(database.contains("SET sync_status = 'Running'"))
+        assertTrue(dao.contains("retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now"))
+        assertTrue(dao.contains("sync_status = 'NeedsUserAction'"))
+        assertTrue(dao.contains("recoverStaleRunningSyncWork"))
+        assertTrue(processor.contains("recoverStaleRunningSyncWork"))
+        assertTrue(processor.contains("MAX_RETRY_ATTEMPTS"))
+        assertTrue(processor.contains("CloudRestoreStatus.CompletedWithAttention"))
+        assertTrue(snapshotRepository.contains("GarmentSyncStatus.NeedsUserAction"))
+
+        val visibleActivity = app
+            .substringAfter("private val WardrobeSyncState.hasVisibleSyncActivity: Boolean")
+            .substringBefore("@Composable\nprivate fun LocalizedRobiaContent")
+        assertTrue(visibleActivity.contains("connectionStatus == DriveSyncConnectionStatus.Syncing"))
+        assertTrue(!visibleActivity.contains("pendingOperationCount > 0"))
+    }
+
+    @Test
+    fun driveSync_deadlinesAndCancellationAlwaysReleaseClaimedWorkForManualBoundedRetry() {
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/WardrobeRepository.kt")
+
+        assertTrue(processor.contains("withTimeout(SYNC_OPERATION_TIMEOUT_MILLIS)"))
+        assertTrue(processor.contains("withContext(NonCancellable)"))
+        assertTrue(processor.contains("markFailedRetryable(lockedWork, lockedMetadataWork, timeoutMessage)"))
+        assertTrue(processor.contains("scheduleRetryWakeUp"))
+        assertTrue(processor.contains("delay((retryAt - System.currentTimeMillis()).coerceAtLeast(0L))"))
+        assertTrue(processor.contains("hasPendingCloudDeletion()"))
+        assertTrue(processor.contains("CLOUD_DELETION_PENDING_MESSAGE"))
+        assertTrue(driveRepository.contains("withTimeout(AUTHORIZATION_TIMEOUT_MILLIS)"))
+        assertTrue(driveRepository.contains("withDrivePhaseDeadline"))
+        val repositoryBeforeHttpApi = driveRepository.substringBefore("private class HttpDriveSnapshotApi")
+        assertTrue(repositoryBeforeHttpApi.contains("const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L"))
+        assertTrue(repositoryBeforeHttpApi.contains("const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L"))
+        assertTrue(!repositoryBeforeHttpApi.contains("private class HttpDriveSnapshotApi"))
+        assertTrue(repository.contains("suspend fun hasPendingCloudDeletion(): Boolean"))
+        assertTrue(repository.contains("suspend fun nextRunnableSyncRetryEpochMillis(): Long?"))
+        assertTrue(dao.contains("hasPendingCloudDeletion"))
+        assertTrue(dao.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
+        assertTrue(dao.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+
+        val retryableFailureMarker = processor
+            .substringAfter("private suspend fun markFailedRetryable(")
+            .substringBefore("private fun DriveSyncConnectionStatus.toWardrobeSyncState")
+        assertTrue(retryableFailureMarker.contains("message: String? = null"))
+        assertTrue(
+            retryableFailureMarker.contains(
+                "wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision, message)",
+            ),
+        )
+        assertTrue(
+            retryableFailureMarker.contains(
+                "wardrobeRepository.markMetadataSyncFailedRetryable(item, message)",
+            ),
+        )
+
+        val deletionGuard = processor
+            .substringAfter("if (wardrobeRepository.hasPendingCloudDeletion())")
+            .substringBefore("val retryRevision")
+        assertTrue(deletionGuard.contains("correlationId = UUID.randomUUID().toString()"))
+        assertTrue(deletionGuard.contains("phase = null"))
+        assertTrue(deletionGuard.contains("status = null"))
+    }
+
+    @Test
+    fun metadataAndTombstoneFailuresPersistBoundedRetryAttempts() {
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
+
+        assertTrue(repository.contains("markMetadataSyncFailedRetryable(work.toEntity(), message)"))
+        assertTrue(dao.contains("val now = System.currentTimeMillis()"))
+        assertTrue(dao.contains("updateMetadataSyncFailedRetryable(work, message, now) > 0"))
+        assertTrue(dao.contains("claimMetadataSync(work, System.currentTimeMillis()) > 0"))
+
+        listOf(
+            "TagCategory" to "sync_revision = :revision",
+            "GarmentTag" to "sync_revision = :revision",
+            "MainColor" to "sync_revision = :revision",
+            "Tombstone" to "revision = :revision",
+        ).forEach { (entity, revisionPredicate) ->
+            val claimQuery = queryBeforeMethod(dao, "suspend fun claim${entity}MetadataSync")
+            assertTrue(claimQuery.contains("sync_status = 'Running'"))
+            assertTrue(claimQuery.contains("sync_started_at_epoch_millis = :startedAtEpochMillis"))
+            assertTrue(claimQuery.contains(revisionPredicate))
+
+            val query = queryBeforeMethod(dao, "suspend fun update${entity}SyncFailedRetryable")
+            assertTrue(query.contains("CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
+            assertTrue(query.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
+            assertTrue(query.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+            assertTrue(query.contains("sync_started_at_epoch_millis = NULL"))
+            assertTrue(query.contains("sync_failure_message = :message"))
+        }
+    }
+
+    @Test
+    fun metadataAndTombstoneStaleRunningRecoveryUsesDurableRetryPolicy() {
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val recovery = dao.substringAfter("suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int")
+            .substringBefore("@Query(\"UPDATE clothing_items")
+
+        assertTrue(recovery.contains("val now = System.currentTimeMillis()"))
+        assertTrue(recovery.contains("recoverStaleTagCategorySyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleMainColorSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleTombstoneSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(!recovery.contains("retry_after_epoch_millis = 0"))
+
+        listOf("TagCategory", "GarmentTag", "MainColor", "Tombstone").forEach { entity ->
+            val query = queryBeforeMethod(dao, "suspend fun recoverStale${entity}SyncWork")
+            assertTrue(query.contains("CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
+            assertTrue(query.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
+            assertTrue(query.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+            assertTrue(query.contains("COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis"))
+            assertTrue(!query.contains("retry_after_epoch_millis = 0"))
+        }
+    }
+
+    @Test
+    fun guardedDrivePhotos_areRecoverablePerGarmentWithoutRestartingRestore() {
+        val gateway = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncGateway.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val retryHandler = processor
+            .substringAfter("private suspend fun retryRestoredPhoto(garmentId: String)")
+            .substringBefore("private suspend fun restoreFreshInstallOnceIfNeeded()")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val strings = source("app/src/main/res/values/strings.xml")
+
+        assertTrue(gateway.contains("data class RetryRestoredPhoto"))
+        assertTrue(retryHandler.contains("claimGarmentPhotoRestoreRetry(garmentId)"))
+        assertTrue(retryHandler.contains("driveRepository.retryRestoredPhoto(garmentId)"))
+        assertTrue(!retryHandler.contains("processPendingGarments("))
+        assertTrue(!retryHandler.contains("restoreProgress.value"))
+        assertTrue(dao.contains("retry_attempt_count < 3"))
+        assertTrue(dao.contains("retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now"))
+        assertTrue(processor.contains("CloudRestoreStatus.CompletedWithAttention"))
+        assertTrue(driveRepository.contains("listBlobPathsWithPrefix"))
+        assertTrue(driveRepository.contains("filter { path -> path.startsWith(photoBlobPrefix) }"))
+        assertTrue(driveRepository.contains("legacyPhotoRestoreCandidate"))
+        assertTrue(driveRepository.contains("exact_blob_not_found"))
+        assertTrue(app.contains("onRetryRestoredPhoto"))
+        assertTrue(app.contains("R.string.cloud_restore_retry_photo"))
+        assertTrue(app.contains("R.string.content_cloud_restore_retry_photo"))
+        assertTrue(strings.contains("name=\"cloud_restore_retry_photo\""))
+        assertTrue(strings.contains("name=\"content_cloud_restore_retry_photo\""))
+    }
+
+    @Test
+    fun guardedPhotoRetry_staysOutOfNormalUploadAndCannotOverwriteNewerEdits() {
+        val entities = source("app/src/main/java/com/gusanitolabs/robia/data/local/Entities.kt")
+        val database = source("app/src/main/java/com/gusanitolabs/robia/data/local/RobiaDatabase.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+
+        assertTrue(entities.contains("photo_restore_guarded"))
+        assertTrue(entities.contains("photo_restore_retry_deadline_epoch_millis"))
+        assertTrue(database.contains("MIGRATION_11_12"))
+        assertTrue(dao.contains("sync_status = 'NeedsUserAction'"))
+        assertTrue(dao.contains("photo_restore_retry_deadline_epoch_millis >= :now"))
+        assertTrue(dao.contains("sync_revision = :revision"))
+        assertTrue(snapshotRepository.contains("hasGuardedPhotoRestoreIssues"))
+        assertTrue(processor.contains("!hasGuardedPhotoRestoreIssues.value"))
+        assertTrue(processor.contains("SyncCycleResult.Attention"))
+    }
+
+    @Test
+    fun restoredPhotoRetry_compilesGenericSuccessAndUsesComposableAccessibilityText() {
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/DriveWardrobeRepository.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val retryButton = app
+            .substringAfter("if (item.hasMissingRestoredPhoto)")
+            .substringBefore("item.notes.takeIf")
+        val itemDetailScreen = app
+            .substringAfter("private fun ItemDetailScreen(")
+            .substringBefore("@Composable\nprivate fun DetailMediaCard(")
+
+        assertTrue(driveRepository.contains("?.let { photo -> DriveSyncResult.Success(photo) }"))
+        assertTrue(!driveRepository.contains("DriveSyncResult::Success"))
+        assertTrue(app.contains("val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)"))
+        assertTrue(
+            itemDetailScreen.indexOf("val retryPhotoContentDescription") < itemDetailScreen.indexOf("LazyColumn("),
+        )
+        assertTrue(retryButton.contains("contentDescription = retryPhotoContentDescription"))
+        assertTrue(retryButton.contains("Text(stringResource(R.string.cloud_restore_retry_photo))"))
     }
 
     @Test
@@ -228,4 +457,7 @@ class RegressionSourceContractTest {
         )
         return Files.readString(candidates.first(Files::exists))
     }
+
+    private fun queryBeforeMethod(source: String, methodNeedle: String): String =
+        source.substringBefore(methodNeedle).substringAfterLast("@Query")
 }

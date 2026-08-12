@@ -23,9 +23,12 @@ enum class GarmentSyncStatus {
     LocalOnly,
     Dirty,
     Queued,
-    Syncing,
+    /** Claimed by a live processor. Stale rows are recovered deterministically. */
+    Running,
     Synced,
     FailedRetryable,
+    /** The bounded retry budget is exhausted or the user must resolve the failure. */
+    NeedsUserAction,
     AuthBlocked,
 }
 

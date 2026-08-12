@@ -28,6 +28,11 @@ data class ClothingItemEntity(
     @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
     @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
+    @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
+    @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
+    @ColumnInfo(name = "photo_restore_guarded") val photoRestoreGuarded: Boolean = false,
+    @ColumnInfo(name = "photo_restore_retry_deadline_epoch_millis") val photoRestoreRetryDeadlineEpochMillis: Long? = null,
 )
 
 data class ColorMetricsEntity(
@@ -54,6 +59,9 @@ data class TagCategoryEntity(
     @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
     @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
+    @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
+    @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
 )
 
 @Entity(
@@ -79,6 +87,9 @@ data class GarmentTagEntity(
     @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
     @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
+    @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
+    @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
 )
 
 @Entity(tableName = "main_colors")
@@ -93,6 +104,9 @@ data class MainColorEntity(
     @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = null,
     @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
+    @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
+    @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
 )
 
 @Entity(
@@ -109,24 +123,17 @@ data class SyncTombstoneEntity(
     @ColumnInfo(name = "sync_dirty_at_epoch_millis") val syncDirtyAtEpochMillis: Long? = revision,
     @ColumnInfo(name = "last_synced_at_epoch_millis") val lastSyncedAtEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_failure_message") val syncFailureMessage: String? = null,
+    @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
+    @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
+    @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
 )
 
 @Entity(
     tableName = "clothing_item_tags",
     primaryKeys = ["clothing_item_id", "tag_id"],
     foreignKeys = [
-        ForeignKey(
-            entity = ClothingItemEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["clothing_item_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = GarmentTagEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["tag_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
+        ForeignKey(entity = ClothingItemEntity::class, parentColumns = ["id"], childColumns = ["clothing_item_id"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = GarmentTagEntity::class, parentColumns = ["id"], childColumns = ["tag_id"], onDelete = ForeignKey.CASCADE),
     ],
     indices = [Index("tag_id")],
 )
@@ -137,25 +144,9 @@ data class ClothingItemTagCrossRef(
 
 data class ClothingItemWithTags(
     @Embedded val item: ClothingItemEntity,
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "id",
-        associateBy = Junction(
-            value = ClothingItemTagCrossRef::class,
-            parentColumn = "clothing_item_id",
-            entityColumn = "tag_id",
-        ),
-    )
+    @Relation(parentColumn = "id", entityColumn = "id", associateBy = Junction(value = ClothingItemTagCrossRef::class, parentColumn = "clothing_item_id", entityColumn = "tag_id"))
     val tags: List<GarmentTagEntity>,
 )
 
-data class PendingGarmentSyncWorkEntity(
-    val id: String,
-    val revision: Long,
-)
-
-data class PendingMetadataSyncWorkEntity(
-    val entityType: String,
-    val id: String,
-    val revision: Long,
-)
+data class PendingGarmentSyncWorkEntity(val id: String, val revision: Long)
+data class PendingMetadataSyncWorkEntity(val entityType: String, val id: String, val revision: Long)

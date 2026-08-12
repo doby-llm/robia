@@ -26,63 +26,116 @@ interface WardrobeDao {
     @Query("SELECT * FROM clothing_item_tags ORDER BY clothing_item_id, tag_id")
     suspend fun getItemTagRefsForSync(): List<ClothingItemTagCrossRef>
 
-    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')")
-    fun observePendingGarmentSyncCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))")
+    fun observePendingGarmentSyncCount(now: Long = System.currentTimeMillis()): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')")
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction', 'AuthBlocked')")
     fun observeGarmentSyncAttentionCount(): Flow<Int>
 
-    @Query(
-        """
-        SELECT
-            (SELECT COUNT(*) FROM tag_categories WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')) +
-            (SELECT COUNT(*) FROM garment_tags WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')) +
-            (SELECT COUNT(*) FROM main_colors WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')) +
-            (SELECT COUNT(*) FROM sync_tombstones WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked'))
-        """,
-    )
-    fun observePendingMetadataSyncCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE photo_restore_guarded = 1")
+    fun observeGuardedPhotoRestoreCount(): Flow<Int>
 
     @Query(
         """
         SELECT
-            (SELECT COUNT(*) FROM tag_categories WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')) +
-            (SELECT COUNT(*) FROM garment_tags WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')) +
-            (SELECT COUNT(*) FROM main_colors WHERE sync_status IN ('FailedRetryable', 'AuthBlocked')) +
-            (SELECT COUNT(*) FROM sync_tombstones WHERE sync_status IN ('FailedRetryable', 'AuthBlocked'))
+            (SELECT COUNT(*) FROM tag_categories WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))) +
+            (SELECT COUNT(*) FROM garment_tags WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))) +
+            (SELECT COUNT(*) FROM main_colors WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))) +
+            (SELECT COUNT(*) FROM sync_tombstones WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now)))
+        """,
+    )
+    fun observePendingMetadataSyncCount(now: Long = System.currentTimeMillis()): Flow<Int>
+
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM tag_categories WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM garment_tags WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM main_colors WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction', 'AuthBlocked')) +
+            (SELECT COUNT(*) FROM sync_tombstones WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction', 'AuthBlocked'))
         """,
     )
     fun observeMetadataSyncAttentionCount(): Flow<Int>
 
-    @Query("SELECT id, sync_revision AS revision FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked') ORDER BY sync_dirty_at_epoch_millis, updated_at_epoch_millis, id")
-    suspend fun pendingGarmentSyncWork(): List<PendingGarmentSyncWorkEntity>
+    @Query("SELECT id, sync_revision AS revision FROM clothing_items WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now)) ORDER BY sync_dirty_at_epoch_millis, updated_at_epoch_millis, id")
+    suspend fun pendingGarmentSyncWork(now: Long = System.currentTimeMillis()): List<PendingGarmentSyncWorkEntity>
 
     @Query(
         """
-        SELECT 'tag_category' AS entityType, id, sync_revision AS revision FROM tag_categories WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
-        UNION ALL SELECT 'garment_tag' AS entityType, id, sync_revision AS revision FROM garment_tags WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
-        UNION ALL SELECT 'main_color' AS entityType, id, sync_revision AS revision FROM main_colors WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
-        UNION ALL SELECT entity_type AS entityType, id, revision FROM sync_tombstones WHERE sync_status IN ('Dirty', 'Queued', 'Syncing', 'FailedRetryable', 'AuthBlocked')
+        SELECT 'tag_category' AS entityType, id, sync_revision AS revision FROM tag_categories WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))
+        UNION ALL SELECT 'garment_tag' AS entityType, id, sync_revision AS revision FROM garment_tags WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))
+        UNION ALL SELECT 'main_color' AS entityType, id, sync_revision AS revision FROM main_colors WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))
+        UNION ALL SELECT entity_type AS entityType, id, revision FROM sync_tombstones WHERE sync_status IN ('Dirty', 'Queued') OR (sync_status = 'FailedRetryable' AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now))
         ORDER BY revision, entityType, id
         """,
     )
-    suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWorkEntity>
+    suspend fun pendingMetadataSyncWork(now: Long = System.currentTimeMillis()): List<PendingMetadataSyncWorkEntity>
 
-    @Query("UPDATE clothing_items SET sync_status = 'Syncing' WHERE id = :itemId AND sync_revision = :revision")
-    suspend fun markGarmentSyncing(itemId: String, revision: Long): Int
+    @Query("SELECT MIN(retry_after_epoch_millis) FROM (SELECT retry_after_epoch_millis FROM clothing_items WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM tag_categories WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM garment_tags WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM main_colors WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL UNION ALL SELECT retry_after_epoch_millis FROM sync_tombstones WHERE sync_status = 'FailedRetryable' AND retry_after_epoch_millis IS NOT NULL)")
+    suspend fun nextRunnableSyncRetryEpochMillis(): Long?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM sync_tombstones WHERE entity_type IN ('garment', 'clothing_item', 'item') AND sync_status != 'Synced')")
+    suspend fun hasPendingCloudDeletion(): Boolean
+
+    @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision")
+    suspend fun markGarmentSyncing(itemId: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Transaction
+    suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int {
+        val now = System.currentTimeMillis()
+        return recoverStaleGarmentSyncWork(staleBeforeEpochMillis) +
+            recoverStaleTagCategorySyncWork(staleBeforeEpochMillis, now) +
+            recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis, now) +
+            recoverStaleMainColorSyncWork(staleBeforeEpochMillis, now) +
+            recoverStaleTombstoneSyncWork(staleBeforeEpochMillis, now)
+    }
+
+    @Query("UPDATE clothing_items SET sync_status = CASE WHEN photo_restore_guarded = 1 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_after_epoch_millis = 0, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleGarmentSyncWork(staleBeforeEpochMillis: Long): Int
+
+    @Query("UPDATE tag_categories SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleTagCategorySyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+
+    @Query("UPDATE garment_tags SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+
+    @Query("UPDATE main_colors SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleMainColorSyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+
+    @Query("UPDATE sync_tombstones SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleTombstoneSyncWork(staleBeforeEpochMillis: Long, now: Long): Int
 
     @Query("UPDATE clothing_items SET sync_status = 'Synced', last_synced_at_epoch_millis = :syncedAtEpochMillis, sync_dirty_at_epoch_millis = NULL, sync_failure_message = NULL WHERE id = :itemId AND sync_revision = :revision")
     suspend fun markGarmentSynced(itemId: String, revision: Long, syncedAtEpochMillis: Long): Int
 
-    @Query("UPDATE clothing_items SET sync_status = 'FailedRetryable', sync_failure_message = :message WHERE id = :itemId AND sync_revision = :revision")
-    suspend fun markGarmentSyncFailedRetryable(itemId: String, revision: Long, message: String?): Int
+    @Query("UPDATE clothing_items SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId AND sync_revision = :revision")
+    suspend fun markGarmentSyncFailedRetryable(itemId: String, revision: Long, message: String?, now: Long): Int
 
     @Query("UPDATE clothing_items SET sync_status = 'AuthBlocked', sync_failure_message = :message WHERE id = :itemId")
     suspend fun markGarmentSyncAuthBlocked(itemId: String, message: String?): Int
 
+    @Query("SELECT sync_revision FROM clothing_items WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND retry_after_epoch_millis <= :now AND photo_restore_retry_deadline_epoch_millis >= :now")
+    suspend fun eligibleGarmentPhotoRestoreRetryRevision(itemId: String, now: Long): Long?
+
+    @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND retry_after_epoch_millis <= :now AND photo_restore_retry_deadline_epoch_millis >= :now")
+    suspend fun markGarmentPhotoRestoreRetrying(itemId: String, revision: Long, startedAtEpochMillis: Long, now: Long): Int
+
+    @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status = 'Running'")
+    suspend fun markGarmentPhotoRestoreFailed(itemId: String, message: String, now: Long): Int
+
+    @Query("UPDATE clothing_items SET photo_uri = :photoUri, sync_status = CASE WHEN sync_dirty_at_epoch_millis IS NULL THEN 'Synced' ELSE 'Queued' END, sync_failure_message = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, photo_restore_guarded = 0, photo_restore_retry_deadline_epoch_millis = NULL, last_synced_at_epoch_millis = :syncedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status = 'Running'")
+    suspend fun applyRestoredPhoto(itemId: String, photoUri: String, revision: Long, syncedAtEpochMillis: Long): Int
+
     @Transaction
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity): Boolean =
-        updateMetadataSyncStatus(work, GarmentSyncStatus.Syncing) > 0
+        claimMetadataSync(work, System.currentTimeMillis()) > 0
+
+    private suspend fun claimMetadataSync(work: PendingMetadataSyncWorkEntity, startedAtEpochMillis: Long): Int = when (work.entityType) {
+        "tag_category", "category" -> claimTagCategoryMetadataSync(work.id, work.revision, startedAtEpochMillis)
+        "garment_tag", "tag" -> claimGarmentTagMetadataSync(work.id, work.revision, startedAtEpochMillis)
+        "main_color", "palette_color", "color" -> claimMainColorMetadataSync(work.id, work.revision, startedAtEpochMillis)
+        else -> claimTombstoneMetadataSync(work.id, work.revision, startedAtEpochMillis)
+    }
 
     @Transaction
     suspend fun markMetadataSynced(work: PendingMetadataSyncWorkEntity, syncedAtEpochMillis: Long): Boolean =
@@ -94,8 +147,10 @@ interface WardrobeDao {
         ) > 0
 
     @Transaction
-    suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWorkEntity, message: String?): Boolean =
-        updateMetadataSyncStatus(work, GarmentSyncStatus.FailedRetryable, message = message) > 0
+    suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWorkEntity, message: String?): Boolean {
+        val now = System.currentTimeMillis()
+        return updateMetadataSyncFailedRetryable(work, message, now) > 0
+    }
 
     @Transaction
     suspend fun markMetadataSyncAuthBlocked(work: PendingMetadataSyncWorkEntity, message: String?): Boolean =
@@ -114,6 +169,41 @@ interface WardrobeDao {
         "main_color", "palette_color", "color" -> updateMainColorSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
         else -> updateTombstoneSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
     }
+
+    private suspend fun updateMetadataSyncFailedRetryable(
+        work: PendingMetadataSyncWorkEntity,
+        message: String?,
+        now: Long,
+    ): Int = when (work.entityType) {
+        "tag_category", "category" -> updateTagCategorySyncFailedRetryable(work.id, work.revision, message, now)
+        "garment_tag", "tag" -> updateGarmentTagSyncFailedRetryable(work.id, work.revision, message, now)
+        "main_color", "palette_color", "color" -> updateMainColorSyncFailedRetryable(work.id, work.revision, message, now)
+        else -> updateTombstoneSyncFailedRetryable(work.id, work.revision, message, now)
+    }
+
+    @Query("UPDATE tag_categories SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
+    suspend fun claimTagCategoryMetadataSync(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE garment_tags SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
+    suspend fun claimGarmentTagMetadataSync(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE main_colors SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
+    suspend fun claimMainColorMetadataSync(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE sync_tombstones SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND revision = :revision")
+    suspend fun claimTombstoneMetadataSync(id: String, revision: Long, startedAtEpochMillis: Long): Int
+
+    @Query("UPDATE tag_categories SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :id AND sync_revision = :revision")
+    suspend fun updateTagCategorySyncFailedRetryable(id: String, revision: Long, message: String?, now: Long): Int
+
+    @Query("UPDATE garment_tags SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :id AND sync_revision = :revision")
+    suspend fun updateGarmentTagSyncFailedRetryable(id: String, revision: Long, message: String?, now: Long): Int
+
+    @Query("UPDATE main_colors SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :id AND sync_revision = :revision")
+    suspend fun updateMainColorSyncFailedRetryable(id: String, revision: Long, message: String?, now: Long): Int
+
+    @Query("UPDATE sync_tombstones SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :id AND revision = :revision")
+    suspend fun updateTombstoneSyncFailedRetryable(id: String, revision: Long, message: String?, now: Long): Int
 
     @Query(
         """
@@ -200,9 +290,12 @@ interface WardrobeDao {
         upsertSyncTombstones(tombstones)
     }
 
+    @Query("SELECT photo_restore_guarded AS guarded, photo_restore_retry_deadline_epoch_millis AS deadlineEpochMillis FROM clothing_items WHERE id = :itemId")
+    suspend fun guardedPhotoRestoreState(itemId: String): GuardedPhotoRestoreState?
+
     @Transaction
     suspend fun upsertItemWithTags(item: ClothingItemEntity, tagIds: List<String>) {
-        upsertItem(item.queuedForSync())
+        upsertItem(item.queuedForSync(guardedPhotoRestoreState(item.id)))
         clearTags(item.id)
         val activeTagIds: Set<String> = if (tagIds.isEmpty()) emptySet() else existingTagIds(tagIds).toSet()
         insertTagRefs(
@@ -347,12 +440,16 @@ interface SyncTombstoneDao {
     suspend fun upsert(tombstone: SyncTombstoneEntity)
 }
 
-private fun ClothingItemEntity.queuedForSync(): ClothingItemEntity {
+private fun ClothingItemEntity.queuedForSync(guardedPhotoRestoreState: GuardedPhotoRestoreState? = null): ClothingItemEntity {
     val revision = updatedAtEpochMillis.coerceAtLeast(System.currentTimeMillis())
     return copy(
         syncStatus = GarmentSyncStatus.Queued,
         syncRevision = revision,
         syncDirtyAtEpochMillis = revision,
         syncFailureMessage = null,
+        photoRestoreGuarded = guardedPhotoRestoreState?.guarded == true,
+        photoRestoreRetryDeadlineEpochMillis = guardedPhotoRestoreState?.deadlineEpochMillis,
     )
 }
+
+data class GuardedPhotoRestoreState(val guarded: Boolean, val deadlineEpochMillis: Long?)

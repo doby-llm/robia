@@ -31,10 +31,14 @@
     <string name="cloud_restore_title">Restaurando armario desde la nube</string>
     <string name="cloud_restore_remaining">Quedan %1$d de %2$d pasos</string>
     <string name="cloud_restore_status_running">Mantén Robia abierta. Los cambios locales están bloqueados hasta que termine la restauración.</string>
+    <string name="cloud_restore_status_interrupted">La restauración se interrumpió. Reintenta cuando estés listo.</string>
     <string name="cloud_restore_status_offline">Se perdió la conexión. Reintenta la restauración antes de añadir cambios locales.</string>
     <string name="cloud_restore_status_failed">La restauración falló. Los datos locales no se modificaron.</string>
     <string name="cloud_restore_status_rolled_back">La restauración falló y se revirtió. Tu armario local anterior está intacto.</string>
+    <string name="cloud_restore_status_completed_with_attention">La restauración se completó, pero algunas fotos necesitan tu atención antes de reintentarlas.</string>
     <string name="cloud_restore_retry">Reintentar restauración</string>
+    <string name="cloud_restore_retry_photo">Reintentar descarga de foto</string>
+    <string name="content_cloud_restore_retry_photo">Reintentar la descarga de la foto de Drive de esta prenda</string>
     <string name="cloud_restore_photo_missing_message">Algunas imágenes no se pudieron restaurar desde Drive. Robia mantendrá tu armario seguro y lo reintentará en la próxima sincronización.</string>
     <string name="cloud_restore_diagnostics_title">Diagnóstico de restauración</string>
     <string name="cloud_restore_diagnostics_summary">Copia estos detalles técnicos seguros y envíaselos a Doby si la restauración sigue fallando. Robia guarda las copias en datos de app de Drive, ocultos en la web de Drive.</string>
@@ -274,8 +278,12 @@
     <string name="batch_status_needs_review">Requiere revisión</string>
     <string name="batch_status_ready">Lista</string>
     <string name="batch_status_failed">Falló</string>
+    <string name="batch_status_interrupted">Interrumpida</string>
+    <string name="batch_retry">Reintentar</string>
     <string name="batch_helper_processing">Procesando %1$d prendas…</string>
     <string name="batch_helper_failed">Resuelve %1$d prendas fallidas.</string>
+    <string name="batch_helper_interrupted">Reintenta o descarta %1$d prendas interrumpidas.</string>
+    <string name="batch_interrupted_message">El procesamiento se interrumpió. Reintenta esta prenda manualmente.</string>
     <string name="batch_helper_needs_review">Revisa %1$d prendas con foto original antes de guardar.</string>
     <string name="batch_original_fallback_message">Falló el retoque de foto. Se conservó la foto original: abre la prenda para reintentar o conservarla.</string>
     <string name="batch_helper_empty">Elige varias fotos de galería para iniciar un lote.</string>
