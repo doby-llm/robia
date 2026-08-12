@@ -56,7 +56,7 @@ class RegressionSourceContractTest {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
 
         assertTrue(app.contains("observeActiveItems().collectAsState(initial = null)"))
-        assertTrue(app.contains("val wardrobeItemsLoading = loadedClothingItems == null"))
+        assertTrue(app.contains("val wardrobeItemsLoading = !performanceFixtureMode && loadedClothingItems == null"))
         assertTrue(app.contains("wardrobeItemsLoading = wardrobeItemsLoading"))
 
         val browseScreen = app
