@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.sync
 
 import android.util.Log
 import com.gusanitolabs.robia.core.model.DefaultTags
+import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
@@ -148,6 +149,10 @@ class WardrobeSyncOutboxProcessor(
 
     override suspend fun enqueue(operation: WardrobeSyncOperation) {
         withContext(dispatcher) {
+            if (operation is WardrobeSyncOperation.DeleteCloudBackup) {
+                deleteCloudBackup()
+                return@withContext
+            }
             when (settingsRepository.settings.first().driveSyncConnectionStatus) {
                 DriveSyncConnectionStatus.Connected,
                 DriveSyncConnectionStatus.Syncing,
@@ -167,6 +172,23 @@ class WardrobeSyncOutboxProcessor(
 
     override suspend fun clearRestoreSyncLog() {
         withContext(dispatcher) { restoreSyncLogRepository.clear() }
+    }
+
+    private suspend fun deleteCloudBackup() = mutex.withLock {
+        // Persist the safety boundary before any network I/O. Normal upload/restore shares this mutex.
+        settingsRepository.pauseSyncForDriveBackupDeletion()
+        when (val result = driveRepository.deleteBackup()) {
+            is DriveSyncResult.Success -> {
+                if (result.value.remainingFileCount == 0) {
+                    settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.Complete)
+                } else {
+                    settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.Failed)
+                }
+            }
+            is DriveSyncResult.Blocked, is DriveSyncResult.Failure ->
+                settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.Failed)
+        }
+        // Disabled intentionally remains until the user explicitly chooses Backup again.
     }
 
     /** Does not toggle global processing/progress: only the selected garment becomes Running. */
@@ -643,7 +665,8 @@ class WardrobeSyncOutboxProcessor(
         is WardrobeSyncOperation.ImportFullSnapshot,
         is WardrobeSyncOperation.RetryRestoredPhoto,
         is WardrobeSyncOperation.UpsertTaxonomy,
-        is WardrobeSyncOperation.RecordTombstones -> emptySet()
+        is WardrobeSyncOperation.RecordTombstones,
+        is WardrobeSyncOperation.DeleteCloudBackup -> emptySet()
     }
 }
 

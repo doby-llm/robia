@@ -366,6 +366,34 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun driveBackupDeletion_isDurableScopedAndRequiresExplicitReenable() {
+        val models = source("app/src/main/java/com/gusanitolabs/robia/core/model/SyncModels.kt")
+        val settings = source("app/src/main/java/com/gusanitolabs/robia/data/SettingsRepository.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/DriveWardrobeRepository.kt")
+        val googleDriveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val strings = source("app/src/main/res/values/strings.xml")
+
+        assertTrue(models.contains("enum class DriveBackupDeletionState"))
+        assertTrue(settings.contains("pauseSyncForDriveBackupDeletion"))
+        assertTrue(driveRepository.contains("suspend fun deleteBackup"))
+        assertTrue(googleDriveRepository.contains("listBackupFiles"))
+        assertTrue(googleDriveRepository.contains("spaces=appDataFolder"))
+        assertTrue(googleDriveRepository.contains("MAX_BACKUP_DELETE_FILES"))
+        assertTrue(googleDriveRepository.contains("relist"))
+        assertTrue(processor.contains("remainingFileCount"))
+        assertTrue(processor.contains("pauseSyncForDriveBackupDeletion()"))
+        assertTrue(processor.contains("mutex.withLock"))
+        assertTrue(processor.contains("DriveSyncConnectionStatus.Disabled"))
+        assertTrue(processor.contains("DeleteCloudBackup"))
+        assertTrue(app.contains("setDriveBackupDeletionState(com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None)"))
+        assertTrue(app.contains("R.string.drive_backup_delete_menu"))
+        assertTrue(strings.contains("Delete backup from Google Drive"))
+        assertTrue(strings.contains("The clothes on this device will not be deleted."))
+    }
+
+    @Test
     fun garmentPdfExport_usesMobileReferenceLayoutAndBundledBrandAsset() {
         val exporter = source("app/src/main/java/com/gusanitolabs/robia/media/GarmentShareExporter.kt")
 

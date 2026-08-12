@@ -19,6 +19,9 @@
     <string name="cloud_setup_configured_summary">Tap to view the current Drive status</string>
     <string name="cloud_setup_configured_status">Google Drive setup is configured. Full sync management is coming soon.</string>
     <string name="cloud_sync_started">Checking Google Drive before uploading local changes…</string>
+    <string name="drive_backup_delete_menu">Delete backup from Google Drive</string>
+    <string name="drive_backup_delete_title">Delete backup from Google Drive?</string>
+    <string name="drive_backup_delete_body">This permanently deletes Robia’s Google Drive backup. The clothes on this device will not be deleted.</string>
     <string name="cloud_setup_prompt_title">Set up cloud backup now?</string>
     <string name="cloud_setup_prompt_body">Robia recommends enabling Google Drive before you add garments. This keeps the first cloud copy clean and avoids unsafe merge decisions later.</string>
     <string name="cloud_setup_configure_when_available">Set up</string>

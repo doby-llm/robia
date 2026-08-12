@@ -384,10 +384,18 @@ fun RobiaApp(
             },
             onRequestCloudSetup = onRequestCloudSetup,
             onRequestCloudManualSync = {
-                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
+                scope.launch {
+                    // Explicit Backup again is the only path that re-enables sync after deletion.
+                    settingsRepository.setDriveBackupDeletionState(com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None)
+                    settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Connected)
+                    syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot())
+                }
             },
             onRequestCloudRestoreRetry = {
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
+            },
+            onRequestCloudBackupDeletion = {
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.DeleteCloudBackup()) }
             },
             onRetryRestoredPhoto = { garmentId ->
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.RetryRestoredPhoto(garmentId)) }
@@ -567,6 +575,7 @@ private fun RobiaShell(
     onRequestCloudSetup: () -> Unit,
     onRequestCloudManualSync: () -> Unit = {},
     onRequestCloudRestoreRetry: () -> Unit = {},
+    onRequestCloudBackupDeletion: () -> Unit = {},
     onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
@@ -615,6 +624,7 @@ private fun RobiaShell(
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
+    var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
     val items = clothingItems.toUiWardrobeItems(syncState)
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
@@ -877,6 +887,9 @@ private fun RobiaShell(
         ) {
             onRequestCloudManualSync()
             Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
+        } else if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled) {
+            onRequestCloudManualSync()
+            Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
         } else if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
             Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
         } else {
@@ -918,6 +931,23 @@ private fun RobiaShell(
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
+            },
+        )
+    }
+
+    if (showBackupDeletionConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showBackupDeletionConfirmation = false },
+            title = { Text(stringResource(R.string.drive_backup_delete_title)) },
+            text = { Text(stringResource(R.string.drive_backup_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBackupDeletionConfirmation = false
+                    onRequestCloudBackupDeletion()
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDeletionConfirmation = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -1088,6 +1118,10 @@ private fun RobiaShell(
                                     requestCloudSetup()
                                     settingsExpanded = false
                                 },
+                                onDeleteBackupClick = {
+                                    showBackupDeletionConfirmation = true
+                                    settingsExpanded = false
+                                },
                                 onRestoreSyncLogClick = {
                                     pushRoute(RobiaRoute.DeveloperSyncLog)
                                     settingsExpanded = false
@@ -1228,6 +1262,7 @@ private fun SettingsMenu(
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
     onCloudSetupClick: () -> Unit,
+    onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
 ) {
     DropdownMenu(
@@ -1287,6 +1322,15 @@ private fun SettingsMenu(
                 )
             }
             Divider()
+        }
+        if (driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
+            driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.drive_backup_delete_menu)) },
+                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                onClick = onDeleteBackupClick,
+            )
         }
         DropdownMenuItem(
             text = {

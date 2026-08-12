@@ -10,6 +10,14 @@ enum class DriveSyncConnectionStatus {
     NeedsAttention,
 }
 
+/** Deletion remains separate from authorization and never affects local wardrobe data. */
+enum class DriveBackupDeletionState {
+    None,
+    Deleting,
+    Complete,
+    Failed,
+}
+
 enum class DriveSyncDisabledReason {
     GoogleCloudSetupRequired,
     OAuthClientMissing,
