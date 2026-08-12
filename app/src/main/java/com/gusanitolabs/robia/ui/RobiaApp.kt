@@ -1118,6 +1118,7 @@ private fun RobiaShell(
                                     requestCloudSetup()
                                     settingsExpanded = false
                                 },
+                                driveBackupDeletionState = settings.driveBackupDeletionState,
                                 onDeleteBackupClick = {
                                     showBackupDeletionConfirmation = true
                                     settingsExpanded = false
@@ -1262,6 +1263,7 @@ private fun SettingsMenu(
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
     onCloudSetupClick: () -> Unit,
+    driveBackupDeletionState: com.gusanitolabs.robia.core.model.DriveBackupDeletionState,
     onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
 ) {
@@ -1335,7 +1337,17 @@ private fun SettingsMenu(
         DropdownMenuItem(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(stringResource(R.string.data_sync_google_drive))
+                    Text(
+                        stringResource(
+                            if (driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete ||
+                                driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention
+                            ) {
+                                R.string.drive_backup_again
+                            } else {
+                                R.string.data_sync_google_drive
+                            },
+                        ),
+                    )
                     Text(
                         text = stringResource(driveSyncConnectionStatus.statusLabelRes),
                         style = MaterialTheme.typography.labelMedium,
@@ -1350,6 +1362,13 @@ private fun SettingsMenu(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (driveBackupDeletionState != com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None) {
+                        Text(
+                            text = stringResource(driveBackupDeletionState.statusRes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             },
             leadingIcon = { Icon(driveSyncConnectionStatus.settingsIcon, contentDescription = null) },
@@ -1713,6 +1732,14 @@ private val DriveSyncConnectionStatus.statusLabelRes: Int
         DriveSyncConnectionStatus.Connected -> R.string.drive_sync_status_connected
         DriveSyncConnectionStatus.Syncing -> R.string.drive_sync_status_syncing
         DriveSyncConnectionStatus.NeedsAttention -> R.string.drive_sync_status_needs_attention
+    }
+
+private val com.gusanitolabs.robia.core.model.DriveBackupDeletionState.statusRes: Int
+    get() = when (this) {
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None -> R.string.drive_backup_deletion_status_none
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Deleting -> R.string.drive_backup_deletion_status_deleting
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete -> R.string.drive_backup_deletion_status_complete
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention -> R.string.drive_backup_deletion_status_attention
     }
 
 private val LanguagePreference.labelRes: Int

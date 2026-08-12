@@ -177,16 +177,27 @@ class WardrobeSyncOutboxProcessor(
     private suspend fun deleteCloudBackup() = mutex.withLock {
         // Persist the safety boundary before any network I/O. Normal upload/restore shares this mutex.
         settingsRepository.pauseSyncForDriveBackupDeletion()
-        when (val result = driveRepository.deleteBackup()) {
-            is DriveSyncResult.Success -> {
-                if (result.value.remainingFileCount == 0) {
-                    settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.Complete)
-                } else {
-                    settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.Failed)
+        try {
+            val terminalState = when (val result = driveRepository.deleteBackup()) {
+                is DriveSyncResult.Success -> {
+                    if (result.value.remainingFileCount == 0) {
+                        DriveBackupDeletionState.Complete
+                    } else {
+                        DriveBackupDeletionState.NeedsAttention
+                    }
                 }
+                is DriveSyncResult.Blocked, is DriveSyncResult.Failure -> DriveBackupDeletionState.NeedsAttention
             }
-            is DriveSyncResult.Blocked, is DriveSyncResult.Failure ->
-                settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.Failed)
+            // The terminal result must survive cancellation after remote I/O has finished.
+            withContext(NonCancellable) {
+                settingsRepository.setDriveBackupDeletionState(terminalState)
+            }
+        } catch (cancellation: CancellationException) {
+            // Keep sync paused and make interruption visible rather than resuming ambiguously.
+            withContext(NonCancellable) {
+                settingsRepository.setDriveBackupDeletionState(DriveBackupDeletionState.NeedsAttention)
+            }
+            throw cancellation
         }
         // Disabled intentionally remains until the user explicitly chooses Backup again.
     }

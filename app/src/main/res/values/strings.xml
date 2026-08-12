@@ -22,6 +22,11 @@
     <string name="drive_backup_delete_menu">Delete backup from Google Drive</string>
     <string name="drive_backup_delete_title">Delete backup from Google Drive?</string>
     <string name="drive_backup_delete_body">This permanently deletes Robia’s Google Drive backup. The clothes on this device will not be deleted.</string>
+    <string name="drive_backup_again">Backup again</string>
+    <string name="drive_backup_deletion_status_none">No backup deletion is in progress.</string>
+    <string name="drive_backup_deletion_status_deleting">Deleting Google Drive backup</string>
+    <string name="drive_backup_deletion_status_complete">Backup deleted</string>
+    <string name="drive_backup_deletion_status_attention">Backup deletion needs attention. Sync remains paused.</string>
     <string name="cloud_setup_prompt_title">Set up cloud backup now?</string>
     <string name="cloud_setup_prompt_body">Robia recommends enabling Google Drive before you add garments. This keeps the first cloud copy clean and avoids unsafe merge decisions later.</string>
     <string name="cloud_setup_configure_when_available">Set up</string>

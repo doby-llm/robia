@@ -15,7 +15,8 @@ enum class DriveBackupDeletionState {
     None,
     Deleting,
     Complete,
-    Failed,
+    /** Remote deletion did not reach an empty inventory and requires an explicit user decision. */
+    NeedsAttention,
 }
 
 enum class DriveSyncDisabledReason {

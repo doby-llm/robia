@@ -394,6 +394,32 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun driveBackupDeletion_handlesTerminalOutcomesAndInterruptionsWithoutResumingSync() {
+        val models = source("app/src/main/java/com/gusanitolabs/robia/core/model/SyncModels.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val strings = source("app/src/main/res/values/strings.xml")
+
+        assertTrue(models.contains("Deleting"))
+        assertTrue(models.contains("Complete"))
+        assertTrue(models.contains("NeedsAttention"))
+        assertTrue(processor.contains("remainingFileCount == 0"))
+        assertTrue(processor.contains("catch (cancellation: CancellationException)"))
+        assertTrue(processor.contains("withContext(NonCancellable)"))
+        assertTrue(processor.contains("DriveBackupDeletionState.NeedsAttention"))
+        assertTrue(processor.contains("throw cancellation"))
+        assertTrue(processor.contains("mutex.withLock"))
+        assertTrue(app.contains("settings.driveBackupDeletionState"))
+        assertTrue(app.contains("drive_backup_deletion_status_deleting"))
+        assertTrue(app.contains("drive_backup_deletion_status_complete"))
+        assertTrue(app.contains("drive_backup_deletion_status_attention"))
+        assertTrue(app.contains("drive_backup_again"))
+        assertTrue(strings.contains("Deleting Google Drive backup"))
+        assertTrue(strings.contains("Backup deleted"))
+        assertTrue(strings.contains("Backup deletion needs attention"))
+    }
+
+    @Test
     fun garmentPdfExport_usesMobileReferenceLayoutAndBundledBrandAsset() {
         val exporter = source("app/src/main/java/com/gusanitolabs/robia/media/GarmentShareExporter.kt")
 
