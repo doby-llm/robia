@@ -208,6 +208,11 @@ sealed interface WardrobeSyncOperation {
         override val createdAtEpochMillis: Long = System.currentTimeMillis(),
     ) : WardrobeSyncOperation
 
+    data class DeleteCloudBackup(
+        override val localOperationId: String = operationId("backup_delete", "all"),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
     data class ImportFullSnapshot(
         val sourceRevision: Long,
         override val localOperationId: String = operationId("snapshot_import", sourceRevision.toString()),

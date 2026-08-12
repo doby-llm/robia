@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
@@ -17,6 +18,9 @@ interface SettingsRepository {
     suspend fun setDeveloperModeUnlocked(unlocked: Boolean)
     suspend fun setDeveloperModeEnabled(enabled: Boolean)
     suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus)
+    suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState)
+    /** Atomically persists deletion intent and pauses sync before remote I/O. */
+    suspend fun pauseSyncForDriveBackupDeletion()
     suspend fun markCloudSetupPromptInteracted()
     suspend fun markDriveFreshInstallRestoreAttempted()
 }
@@ -33,17 +37,14 @@ class DataStoreSettingsRepository(
             driveSyncConnectionStatus = preferences[driveSyncConnectionStatusKey].toDriveSyncConnectionStatus(),
             cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false,
             driveFreshInstallRestoreAttempted = preferences[driveFreshInstallRestoreAttemptedKey] ?: false,
+            driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
         )
     }
 
     override suspend fun setLanguagePreference(languagePreference: LanguagePreference) {
         dataStore.edit { preferences ->
             val storageValue = languagePreference.storageValue
-            if (storageValue == null) {
-                preferences.remove(languageKey)
-            } else {
-                preferences[languageKey] = storageValue
-            }
+            if (storageValue == null) preferences.remove(languageKey) else preferences[languageKey] = storageValue
         }
     }
 
@@ -64,22 +65,28 @@ class DataStoreSettingsRepository(
     override suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus) {
         dataStore.edit { preferences ->
             preferences[driveSyncConnectionStatusKey] = status.name
-            if (status != DriveSyncConnectionStatus.NotConfigured) {
-                preferences[cloudSetupPromptInteractedKey] = true
-            }
+            if (status != DriveSyncConnectionStatus.NotConfigured) preferences[cloudSetupPromptInteractedKey] = true
         }
     }
 
-    override suspend fun markCloudSetupPromptInteracted() {
+    override suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState) {
+        dataStore.edit { preferences -> preferences[driveBackupDeletionStateKey] = state.name }
+    }
+
+    override suspend fun pauseSyncForDriveBackupDeletion() {
         dataStore.edit { preferences ->
+            preferences[driveBackupDeletionStateKey] = DriveBackupDeletionState.Deleting.name
+            preferences[driveSyncConnectionStatusKey] = DriveSyncConnectionStatus.Disabled.name
             preferences[cloudSetupPromptInteractedKey] = true
         }
     }
 
+    override suspend fun markCloudSetupPromptInteracted() {
+        dataStore.edit { preferences -> preferences[cloudSetupPromptInteractedKey] = true }
+    }
+
     override suspend fun markDriveFreshInstallRestoreAttempted() {
-        dataStore.edit { preferences ->
-            preferences[driveFreshInstallRestoreAttemptedKey] = true
-        }
+        dataStore.edit { preferences -> preferences[driveFreshInstallRestoreAttemptedKey] = true }
     }
 
     private fun String?.toLanguagePreference(): LanguagePreference =
@@ -88,6 +95,9 @@ class DataStoreSettingsRepository(
     private fun String?.toDriveSyncConnectionStatus(): DriveSyncConnectionStatus =
         DriveSyncConnectionStatus.entries.firstOrNull { it.name == this } ?: DriveSyncConnectionStatus.NotConfigured
 
+    private fun String?.toDriveBackupDeletionState(): DriveBackupDeletionState =
+        DriveBackupDeletionState.entries.firstOrNull { it.name == this } ?: DriveBackupDeletionState.None
+
     private companion object {
         val languageKey = stringPreferencesKey("language")
         val developerModeUnlockedKey = booleanPreferencesKey("developer_mode_unlocked")
@@ -95,5 +105,6 @@ class DataStoreSettingsRepository(
         val driveSyncConnectionStatusKey = stringPreferencesKey("drive_sync_connection_status")
         val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
         val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
+        val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
     }
 }

@@ -7,21 +7,16 @@ import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 
 /**
- * Credential-free contract for a future Google Drive adapter.
- *
- * Implementations must not assume OAuth is available. Until Google Cloud and OAuth setup
- * are complete, production code should provide [NotConfiguredDriveWardrobeRepository].
- * The adapter must bind to the user-authorized Google account and default to Drive
- * appDataFolder storage; no service-account or generic app-account data stores.
+ * Credential-free Drive contract. All cloud data is scoped to the authorized user's appDataFolder.
  */
 interface DriveWardrobeRepository {
     val target: DriveSyncTarget
-
     suspend fun fetchManifest(): DriveSyncResult<DriveManifest>
     suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot>
-    /** Fetches and hydrates exactly one remote photo without reapplying the full snapshot. */
     suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord>
     suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest>
+    /** Deletes only Robia's remote appDataFolder backup; it never changes local clothes. */
+    suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult>
 }
 
 class NotConfiguredDriveWardrobeRepository(
@@ -32,12 +27,13 @@ class NotConfiguredDriveWardrobeRepository(
     override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
     override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> = notConfigured()
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> = notConfigured()
+    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = notConfigured()
 
     private fun <T> notConfigured(): DriveSyncResult<T> =
         DriveSyncResult.Blocked(reason, "Google Drive sync is not configured yet.")
 }
 
-/** Small deterministic fake for JVM tests and future merge-policy tests. */
+/** Small deterministic fake for JVM tests and merge-policy tests. */
 class InMemoryDriveWardrobeRepository(
     private var snapshot: WardrobeSyncSnapshot = WardrobeSyncSnapshot(),
     override val target: DriveSyncTarget = DriveSyncTarget(),
@@ -45,10 +41,8 @@ class InMemoryDriveWardrobeRepository(
     private var manifest: DriveManifest = DriveManifest.fromSnapshot(snapshot)
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = DriveSyncResult.Success(manifest)
-
     override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> =
         DriveSyncResult.Success(snapshot.sortedDeterministically())
-
     override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> =
         snapshot.photos.firstOrNull { it.garmentId == garmentId }
             ?.let { photo -> DriveSyncResult.Success(photo) }
@@ -60,14 +54,17 @@ class InMemoryDriveWardrobeRepository(
         manifest = DriveManifest.fromSnapshot(deterministicSnapshot)
         return DriveSyncResult.Success(manifest)
     }
+
+    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> {
+        snapshot = WardrobeSyncSnapshot()
+        manifest = DriveManifest.fromSnapshot(snapshot)
+        return DriveSyncResult.Success(DriveBackupDeletionResult())
+    }
 }
 
 sealed interface DriveSyncResult<out T> {
     data class Success<T>(val value: T) : DriveSyncResult<T>
-    data class Blocked(
-        val reason: DriveSyncDisabledReason,
-        val message: String,
-    ) : DriveSyncResult<Nothing>
+    data class Blocked(val reason: DriveSyncDisabledReason, val message: String) : DriveSyncResult<Nothing>
     data class Failure(val throwable: Throwable) : DriveSyncResult<Nothing>
 }
 
@@ -94,19 +91,18 @@ data class DriveManifest(
     }
 }
 
+data class DriveBackupDeletionResult(
+    val deletedFileCount: Int = 0,
+    val remainingFileCount: Int = 0,
+    val failureMessage: String? = null,
+)
+
 object DriveFolderNaming {
     private val unsafePathCharacters = Regex("[^A-Za-z0-9._-]")
-
     fun photoBlobPrefix(itemUid: String): String = "photos/${safeSegment(itemUid.ifBlank { "unknown" })}/"
-
     fun photoBlobPath(itemUid: String, localUri: String? = null): String {
-        val photoKey = localUri
-            ?.substringAfterLast('/')
-            ?.takeIf { segment -> segment.isNotBlank() }
-            ?: "original"
-        val safePhotoKey = safeSegment(photoKey)
-        return "${photoBlobPrefix(itemUid)}$safePhotoKey"
+        val photoKey = localUri?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "original"
+        return "${photoBlobPrefix(itemUid)}${safeSegment(photoKey)}"
     }
-
     private fun safeSegment(value: String): String = value.trim().replace(unsafePathCharacters, "_")
 }

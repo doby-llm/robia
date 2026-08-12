@@ -19,6 +19,14 @@
     <string name="cloud_setup_configured_summary">Tippe, um den aktuellen Drive-Status zu sehen</string>
     <string name="cloud_setup_configured_status">Google Drive ist eingerichtet. Die vollständige Synchronisierungsverwaltung kommt später.</string>
     <string name="cloud_sync_started">Google Drive wird geprüft, bevor lokale Änderungen hochgeladen werden…</string>
+    <string name="drive_backup_delete_menu">Google-Drive-Sicherung löschen</string>
+    <string name="drive_backup_delete_title">Google-Drive-Sicherung löschen?</string>
+    <string name="drive_backup_delete_body">Dadurch wird die Robia-Sicherung in Google Drive dauerhaft gelöscht. Die Kleidung auf diesem Gerät wird nicht gelöscht.</string>
+    <string name="drive_backup_again">Erneut sichern</string>
+    <string name="drive_backup_deletion_status_none">Es wird keine Sicherung gelöscht.</string>
+    <string name="drive_backup_deletion_status_deleting">Google-Drive-Sicherung wird gelöscht</string>
+    <string name="drive_backup_deletion_status_complete">Sicherung gelöscht</string>
+    <string name="drive_backup_deletion_status_attention">Die Sicherungslöschung erfordert Aufmerksamkeit. Die Synchronisierung bleibt pausiert.</string>
     <string name="cloud_setup_prompt_title">Cloud-Sicherung jetzt einrichten?</string>
     <string name="cloud_setup_prompt_body">Robia empfiehlt, Google Drive zu aktivieren, bevor du Kleidungsstücke hinzufügst. So bleibt die erste Cloud-Kopie sauber und unsichere Zusammenführungen werden später vermieden.</string>
     <string name="cloud_setup_configure_when_available">Einrichten</string>

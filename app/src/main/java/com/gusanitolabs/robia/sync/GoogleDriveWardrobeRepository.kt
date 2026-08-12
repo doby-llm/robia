@@ -110,6 +110,37 @@ class GoogleDriveWardrobeRepository(
             }
         }
 
+    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = withAccessToken { accessToken ->
+        when (val listed = api.listBackupFiles(accessToken)) {
+            is DriveApiResult.Success -> {
+                if (listed.value.size >= MAX_BACKUP_DELETE_FILES) {
+                    return@withAccessToken DriveSyncResult.Failure(
+                        IllegalStateException("Drive backup contains more files than the safe deletion limit."),
+                    )
+                }
+                listed.value.forEach { file ->
+                    when (val deleted = api.deleteFile(accessToken, file.id)) {
+                        is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
+                        is DriveApiResult.Unauthorized -> return@withAccessToken authBlocked()
+                        is DriveApiResult.Failure -> return@withAccessToken DriveSyncResult.Failure(deleted.throwable)
+                    }
+                }
+                // Relist after idempotent DELETEs; a backup is deleted only once inventory is empty.
+                when (val relist = api.listBackupFiles(accessToken)) {
+                    is DriveApiResult.Success -> DriveSyncResult.Success(
+                        DriveBackupDeletionResult(listed.value.size, relist.value.size),
+                    )
+                    is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveBackupDeletionResult(listed.value.size))
+                    is DriveApiResult.Unauthorized -> authBlocked()
+                    is DriveApiResult.Failure -> DriveSyncResult.Failure(relist.throwable)
+                }
+            }
+            is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveBackupDeletionResult())
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.Failure -> DriveSyncResult.Failure(listed.throwable)
+        }
+    }
+
     private suspend fun <T> withAccessToken(
         operation: suspend (accessToken: String) -> DriveSyncResult<T>,
     ): DriveSyncResult<T> {
@@ -417,6 +448,8 @@ interface DriveSnapshotApi {
     fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>>
     fun upsertBlob(accessToken: String, blobPath: String, bytes: ByteArray, mimeType: String?): DriveApiResult<Unit>
     fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit>
+    fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
+    fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit>
     suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot>
 }
 
@@ -441,6 +474,9 @@ sealed interface DriveApiResult<out T> {
     data object Unauthorized : DriveApiResult<Nothing>
     data class Failure(val throwable: Throwable) : DriveApiResult<Nothing>
 }
+
+// A full 1,000-item page is treated as overflow, so deletion never traverses unbounded inventory.
+private const val MAX_BACKUP_DELETE_FILES = 1_000
 
 private class HttpDriveSnapshotApi : DriveSnapshotApi {
     override suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot> {
@@ -548,6 +584,23 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             accessToken = accessToken,
         ) { DriveApiResult.Success(Unit) }
     }
+
+    override fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>> = request(
+        method = "GET",
+        url = "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime,mimeType,size)&pageSize=$MAX_BACKUP_DELETE_FILES",
+        accessToken = accessToken,
+    ) { body ->
+        val files = JSONObject(body).optJSONArray("files") ?: JSONArray()
+        DriveApiResult.Success((0 until files.length()).mapNotNull { index ->
+            files.optJSONObject(index)?.optString("id")?.takeIf(String::isNotBlank)?.let { id -> DriveFileMetadata(id = id) }
+        })
+    }
+
+    override fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit> = request(
+        method = "DELETE",
+        url = "https://www.googleapis.com/drive/v3/files/$fileId",
+        accessToken = accessToken,
+    ) { DriveApiResult.Success(Unit) }
 
     private fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
 

@@ -19,6 +19,14 @@
     <string name="cloud_setup_configured_summary">Toca para ver el estado actual de Drive</string>
     <string name="cloud_setup_configured_status">La configuración de Google Drive está lista. La gestión completa de sincronización llegará próximamente.</string>
     <string name="cloud_sync_started">Comprobando Google Drive antes de subir cambios locales…</string>
+    <string name="drive_backup_delete_menu">Eliminar copia de seguridad de Google Drive</string>
+    <string name="drive_backup_delete_title">¿Eliminar copia de seguridad de Google Drive?</string>
+    <string name="drive_backup_delete_body">Esto elimina permanentemente la copia de seguridad de Robia en Google Drive. La ropa de este dispositivo no se eliminará.</string>
+    <string name="drive_backup_again">Crear copia de seguridad de nuevo</string>
+    <string name="drive_backup_deletion_status_none">No hay ninguna eliminación de copia de seguridad en curso.</string>
+    <string name="drive_backup_deletion_status_deleting">Eliminando la copia de seguridad de Google Drive</string>
+    <string name="drive_backup_deletion_status_complete">Copia de seguridad eliminada</string>
+    <string name="drive_backup_deletion_status_attention">La eliminación de la copia de seguridad requiere atención. La sincronización sigue en pausa.</string>
     <string name="cloud_setup_prompt_title">¿Configurar la copia en la nube ahora?</string>
     <string name="cloud_setup_prompt_body">Robia recomienda activar Google Drive antes de añadir prendas. Así la primera copia en la nube queda limpia y se evitan decisiones de fusión inseguras más adelante.</string>
     <string name="cloud_setup_configure_when_available">Configurar</string>

@@ -384,10 +384,18 @@ fun RobiaApp(
             },
             onRequestCloudSetup = onRequestCloudSetup,
             onRequestCloudManualSync = {
-                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) }
+                scope.launch {
+                    // Explicit Backup again is the only path that re-enables sync after deletion.
+                    settingsRepository.setDriveBackupDeletionState(com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None)
+                    settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Connected)
+                    syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot())
+                }
             },
             onRequestCloudRestoreRetry = {
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L)) }
+            },
+            onRequestCloudBackupDeletion = {
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.DeleteCloudBackup()) }
             },
             onRetryRestoredPhoto = { garmentId ->
                 scope.launch { syncGateway.enqueue(WardrobeSyncOperation.RetryRestoredPhoto(garmentId)) }
@@ -567,6 +575,7 @@ private fun RobiaShell(
     onRequestCloudSetup: () -> Unit,
     onRequestCloudManualSync: () -> Unit = {},
     onRequestCloudRestoreRetry: () -> Unit = {},
+    onRequestCloudBackupDeletion: () -> Unit = {},
     onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
     onSaveItem: (ClothingItem) -> Unit,
@@ -615,6 +624,7 @@ private fun RobiaShell(
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
+    var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
     val items = clothingItems.toUiWardrobeItems(syncState)
     val filteredItems = remember(items, browseFilters, mainColors) {
         items.filter { item -> browseFilters.matches(item, mainColors) }
@@ -877,6 +887,9 @@ private fun RobiaShell(
         ) {
             onRequestCloudManualSync()
             Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
+        } else if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled) {
+            onRequestCloudManualSync()
+            Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
         } else if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
             Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
         } else {
@@ -918,6 +931,23 @@ private fun RobiaShell(
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
+            },
+        )
+    }
+
+    if (showBackupDeletionConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showBackupDeletionConfirmation = false },
+            title = { Text(stringResource(R.string.drive_backup_delete_title)) },
+            text = { Text(stringResource(R.string.drive_backup_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBackupDeletionConfirmation = false
+                    onRequestCloudBackupDeletion()
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDeletionConfirmation = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -1088,6 +1118,11 @@ private fun RobiaShell(
                                     requestCloudSetup()
                                     settingsExpanded = false
                                 },
+                                driveBackupDeletionState = settings.driveBackupDeletionState,
+                                onDeleteBackupClick = {
+                                    showBackupDeletionConfirmation = true
+                                    settingsExpanded = false
+                                },
                                 onRestoreSyncLogClick = {
                                     pushRoute(RobiaRoute.DeveloperSyncLog)
                                     settingsExpanded = false
@@ -1228,6 +1263,8 @@ private fun SettingsMenu(
     onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
     onCloudSetupClick: () -> Unit,
+    driveBackupDeletionState: com.gusanitolabs.robia.core.model.DriveBackupDeletionState,
+    onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
 ) {
     DropdownMenu(
@@ -1288,10 +1325,29 @@ private fun SettingsMenu(
             }
             Divider()
         }
+        if (driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
+            driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.drive_backup_delete_menu)) },
+                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                onClick = onDeleteBackupClick,
+            )
+        }
         DropdownMenuItem(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(stringResource(R.string.data_sync_google_drive))
+                    Text(
+                        stringResource(
+                            if (driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete ||
+                                driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention
+                            ) {
+                                R.string.drive_backup_again
+                            } else {
+                                R.string.data_sync_google_drive
+                            },
+                        ),
+                    )
                     Text(
                         text = stringResource(driveSyncConnectionStatus.statusLabelRes),
                         style = MaterialTheme.typography.labelMedium,
@@ -1306,6 +1362,13 @@ private fun SettingsMenu(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (driveBackupDeletionState != com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None) {
+                        Text(
+                            text = stringResource(driveBackupDeletionState.statusRes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             },
             leadingIcon = { Icon(driveSyncConnectionStatus.settingsIcon, contentDescription = null) },
@@ -1669,6 +1732,14 @@ private val DriveSyncConnectionStatus.statusLabelRes: Int
         DriveSyncConnectionStatus.Connected -> R.string.drive_sync_status_connected
         DriveSyncConnectionStatus.Syncing -> R.string.drive_sync_status_syncing
         DriveSyncConnectionStatus.NeedsAttention -> R.string.drive_sync_status_needs_attention
+    }
+
+private val com.gusanitolabs.robia.core.model.DriveBackupDeletionState.statusRes: Int
+    get() = when (this) {
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None -> R.string.drive_backup_deletion_status_none
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Deleting -> R.string.drive_backup_deletion_status_deleting
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete -> R.string.drive_backup_deletion_status_complete
+        com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention -> R.string.drive_backup_deletion_status_attention
     }
 
 private val LanguagePreference.labelRes: Int

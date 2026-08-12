@@ -86,4 +86,5 @@ data class RobiaSettings(
     val driveSyncConnectionStatus: DriveSyncConnectionStatus = DriveSyncConnectionStatus.NotConfigured,
     val cloudSetupPromptInteracted: Boolean = false,
     val driveFreshInstallRestoreAttempted: Boolean = false,
+    val driveBackupDeletionState: DriveBackupDeletionState = DriveBackupDeletionState.None,
 )
