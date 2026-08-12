@@ -44,7 +44,9 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            set -euo pipefail
+            # android-emulator-runner invokes this script with /bin/sh; use only
+            # POSIX shell options and timing primitives while retaining -e/-u.
+            set -eu
             mkdir -p performance-artifacts
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell mkdir -p /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images
@@ -62,8 +64,8 @@ jobs:
             sleep 8
             adb shell dumpsys gfxinfo com.gusanitolabs.robia reset
             adb shell 'perfetto -o /data/misc/perfetto-traces/robia-baseline.perfetto-trace -t 25s sched freq gfx view wm am >/dev/null 2>&1 &' || true
-            end=$((SECONDS + ${{ inputs.duration_seconds }}))
-            while [ "$SECONDS" -lt "$end" ]; do adb shell input swipe 540 1700 540 350 250; adb shell input swipe 540 350 540 1700 250; done
+            end=$(( $(date +%s) + ${{ inputs.duration_seconds }} ))
+            while [ "$(date +%s)" -lt "$end" ]; do adb shell input swipe 540 1700 540 350 250; adb shell input swipe 540 350 540 1700 250; done
             adb shell dumpsys gfxinfo com.gusanitolabs.robia > performance-artifacts/gfxinfo.txt
             adb pull /data/misc/perfetto-traces/robia-baseline.perfetto-trace performance-artifacts/ || true
             adb logcat -d -v threadtime RobiaPerformance:I '*:S' > performance-artifacts/batch-stages.log || true
