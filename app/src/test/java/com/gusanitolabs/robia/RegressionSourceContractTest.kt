@@ -482,6 +482,70 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun imagePreviewsUsePersistedBoundedThumbnailsWithoutChangingCanonicalPhotos() {
+        val imageStore = source("app/src/main/java/com/gusanitolabs/robia/media/ClothingImageStore.kt")
+        val boundedImage = source("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val batch = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+        val addEdit = source("app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt")
+        val colorReview = source("app/src/main/java/com/gusanitolabs/robia/ui/ColorReviewScreen.kt")
+        val paths = source("app/src/main/res/xml/file_paths.xml")
+
+        assertTrue(imageStore.contains("fun getOrCreateBoundedThumbnail("))
+        assertTrue(imageStore.contains("inJustDecodeBounds = true"))
+        assertTrue(imageStore.contains("inSampleSize = thumbnailDecodeSampleSize"))
+        assertTrue(imageStore.contains("Bitmap.createScaledBitmap"))
+        assertTrue(imageStore.contains("THUMBNAIL_DIRECTORY = \"robia_thumbnails\""))
+        assertTrue(imageStore.contains("data class ImageMetrics"))
+        assertTrue(paths.contains("name=\"private_thumbnails\""))
+
+        assertTrue(boundedImage.contains("withContext(Dispatchers.IO)"))
+        assertTrue(boundedImage.contains("ClothingImageStore.getOrCreateBoundedThumbnail"))
+        assertTrue(boundedImage.contains("thumbnailMaxEdgePx: Int?"))
+        assertTrue(!boundedImage.contains("mutableStateOf(photoUri)"))
+        val beforeThumbnailLookup = boundedImage
+            .substringAfter("// Avoid assigning the canonical full-size URI")
+            .substringBefore("ClothingImageStore.getOrCreateBoundedThumbnail")
+        assertTrue(!beforeThumbnailLookup.contains("resolvedUri = photoUri"))
+        assertTrue(boundedImage.contains("imageView.setImageURI(Uri.parse(nextUri))"))
+
+        val gridCard = app.substringAfter("private fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
+        val detailMedia = app.substringAfter("private fun DetailMediaCard(").substringBefore("@Composable\nprivate fun ColorMetricsCard")
+        assertTrue(gridCard.contains("GRID_THUMBNAIL_MAX_EDGE_PX"))
+        assertTrue(detailMedia.contains("thumbnailMaxEdgePx = null"))
+        assertTrue(detailMedia.contains("onShareImageClick"))
+
+        assertTrue(batch.contains("BATCH_THUMBNAIL_MAX_EDGE_PX"))
+        assertTrue(addEdit.contains("EDITOR_PREVIEW_MAX_EDGE_PX"))
+        assertTrue(colorReview.contains("COLOR_REVIEW_THUMBNAIL_MAX_EDGE_PX"))
+        assertTrue(batch.contains("photoUri = photoUri"))
+        assertTrue(addEdit.contains("photoUri = canonicalPhotoUri"))
+    }
+
+    @Test
+    fun performanceReportCapturesThumbnailAndMemoryEvidenceForLikeForLikeComparison() {
+        val workflow = source(".github/workflows/android-performance-baseline.yml")
+        val summary = source("scripts/summarize_performance_baseline.py")
+        val boundedImage = source("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt")
+
+        assertTrue(workflow.contains("dumpsys meminfo com.gusanitolabs.robia > performance-artifacts/meminfo-before.txt"))
+        assertTrue(workflow.contains("dumpsys meminfo com.gusanitolabs.robia > performance-artifacts/meminfo-after.txt"))
+        assertTrue(workflow.contains("RobiaPerformance:I"))
+        assertTrue(boundedImage.contains("thumbnail_stage"))
+        assertTrue(boundedImage.contains("elapsedMs"))
+        assertTrue(boundedImage.contains("sourceBytes"))
+        assertTrue(boundedImage.contains("thumbnailBytes"))
+        assertTrue(!boundedImage.contains("sourceHash"))
+
+        assertTrue(summary.contains("thumbnail_records ="))
+        assertTrue(summary.contains("Bounded-thumbnail records captured"))
+        assertTrue(summary.contains("read_meminfo"))
+        assertTrue(summary.contains("meminfo-before.txt"))
+        assertTrue(summary.contains("meminfo-after.txt"))
+        assertTrue(workflow.contains("python3 scripts/check_image_thumbnail_pipeline_static.py"))
+    }
+
+    @Test
     fun androidPlatformBackup_isDisabledForDriveOnlyOptInPolicy() {
         val manifest = source("app/src/main/AndroidManifest.xml")
         val drivePlan = source("docs/google_drive_sync_setup_plan.md")

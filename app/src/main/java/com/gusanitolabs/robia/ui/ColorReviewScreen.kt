@@ -1,7 +1,6 @@
 package com.gusanitolabs.robia.ui
 
 import android.net.Uri
-import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -60,7 +59,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
@@ -73,6 +71,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private const val COLOR_REVIEW_SECONDARY_MIN_RATIO = 0.05
+private const val COLOR_REVIEW_THUMBNAIL_MAX_EDGE_PX = 384
 
 internal data class ColorPaletteChangeSet(
     val beforePalette: List<MainColor>,
@@ -435,19 +434,9 @@ private fun ColorReviewPhoto(item: ClothingItem) {
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }
         if (photoUri != null) {
-            AndroidView(
-                factory = { context ->
-                    ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                update = { imageView ->
-                    if (imageView.tag != photoUri) {
-                        imageView.tag = photoUri
-                        imageView.setImageURI(Uri.parse(photoUri))
-                    }
-                },
+            BoundedGarmentImage(
+                photoUri = photoUri,
+                thumbnailMaxEdgePx = COLOR_REVIEW_THUMBNAIL_MAX_EDGE_PX,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

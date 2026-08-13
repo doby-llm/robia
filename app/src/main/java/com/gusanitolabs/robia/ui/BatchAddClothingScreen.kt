@@ -1,7 +1,6 @@
 package com.gusanitolabs.robia.ui
 
 import android.net.Uri
-import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloatAsState
@@ -60,7 +59,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
@@ -76,6 +74,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
+
+private const val BATCH_THUMBNAIL_MAX_EDGE_PX = 384
 
 internal data class BatchDraftItem(
     val id: String = UUID.randomUUID().toString(),
@@ -372,19 +372,9 @@ private fun BatchPhotoPreview(
         contentAlignment = Alignment.Center,
     ) {
         if (photoUri.isNotBlank()) {
-            AndroidView(
-                factory = { context ->
-                    ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                update = { imageView ->
-                    if (imageView.tag != photoUri) {
-                        imageView.tag = photoUri
-                        imageView.setImageURI(Uri.parse(photoUri))
-                    }
-                },
+            BoundedGarmentImage(
+                photoUri = photoUri,
+                thumbnailMaxEdgePx = BATCH_THUMBNAIL_MAX_EDGE_PX,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

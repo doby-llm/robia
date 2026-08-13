@@ -17,8 +17,11 @@ def main() -> None:
     fixture_manifest = json.loads((args.input / "fixture-manifest.json").read_text())
     stages = (args.input / "batch-stages.log").read_text(errors="replace") if (args.input / "batch-stages.log").exists() else ""
     records = [line for line in stages.splitlines() if "batch_stage" in line]
+    thumbnail_records = [line for line in stages.splitlines() if "thumbnail_stage" in line]
     gfxinfo = (args.input / "gfxinfo.txt").read_text(errors="replace") if (args.input / "gfxinfo.txt").exists() else "unavailable"
     janky = re.search(r"Janky frames:\s*(\d+)\s*\(([^)]+)\)", gfxinfo)
+    meminfo_before = read_meminfo(args.input / "meminfo-before.txt")
+    meminfo_after = read_meminfo(args.input / "meminfo-after.txt")
 
     lines = [
         "# Robia Android performance baseline",
@@ -36,8 +39,13 @@ def main() -> None:
         "",
         "## Batch stage timing",
         f"- Sanitized per-stage records captured: {len(records)}.",
-        "- `batch-stages.log` contains only fixture ordinal, input dimensions/bytes, and elapsed stage milliseconds; it deliberately excludes image names, URIs, clothing metadata, and pixels.",
-        "- A missing stage record is an infrastructure/fixture failure, not a successful measurement. The current app has no persisted thumbnail-write stage, so the report must not claim one until a thumbnail pipeline exists.",
+        f"- Bounded-thumbnail records captured: {len(thumbnail_records)}.",
+        "- `batch-stages.log` contains sanitized batch and bounded-thumbnail measurements: fixture/stage timing where emitted plus thumbnail source/thumbnail dimensions/bytes, max edge, cache-hit state, and elapsed milliseconds; it deliberately excludes image names, URIs, clothing metadata, and pixels.",
+        "- A missing stage record is an infrastructure/fixture failure, not a successful measurement.",
+        "",
+        "## Memory evidence",
+        f"- `meminfo-before.txt` total PSS: {format_kb(meminfo_before)}.",
+        f"- `meminfo-after.txt` total PSS: {format_kb(meminfo_after)}.",
         "",
         "## Interpretation",
         "1. Compare the same API level, AVD profile, Gradle/AGP versions, fixture manifest, and scroll duration before calling a change better or worse.",
@@ -45,6 +53,17 @@ def main() -> None:
         "3. Promote a finding only after a repeat on a representative low/mid physical device and a current device under release-like/Play-signed conditions.",
     ]
     args.output.write_text("\n".join(lines) + "\n")
+
+
+def read_meminfo(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    match = re.search(r"^\s*TOTAL\s+(\d+)", path.read_text(errors="replace"), flags=re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def format_kb(value: int | None) -> str:
+    return f"{value} KB" if value is not None else "unavailable"
 
 
 if __name__ == "__main__":

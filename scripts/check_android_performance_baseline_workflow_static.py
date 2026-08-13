@@ -131,6 +131,7 @@ def main() -> None:
     forbid(workflow, "pull_request:", "non-manual trigger")
     forbid(workflow, "push:", "non-manual trigger")
     require(workflow, "name: Comparative emulator baseline", "comparative emulator job name")
+    require(workflow, "python3 scripts/check_image_thumbnail_pipeline_static.py", "thumbnail pipeline static contract step")
     require(workflow, "uses: reactivecircus/android-emulator-runner@v2", "GitHub-hosted emulator action")
     require(workflow, "api-level: 35", "API 35 emulator image")
     require(workflow, "target: google_apis", "Google APIs emulator target")
@@ -146,6 +147,9 @@ def main() -> None:
     require(summary, "Comparative emulator baseline only", "report comparative-emulator warning")
     require(summary, "not physical-device", "report excludes physical-device proof")
     require(summary, "Do not apply the physical target", "report forbids physical target interpretation")
+    require(summary, "Bounded-thumbnail records captured", "report bounded-thumbnail evidence count")
+    require(summary, "meminfo-before.txt", "report before-scroll meminfo evidence")
+    require(summary, "meminfo-after.txt", "report after-scroll meminfo evidence")
 
     # Synthetic fixtures and debug-only instrumentation/extras.
     require(workflow, "python scripts/generate_performance_fixtures.py --output performance-fixtures", "fixture generation step")
@@ -180,6 +184,9 @@ def main() -> None:
     require(workflow, "if: always()", "artifact upload runs after failed capture")
     require(workflow, "if-no-files-found: error", "missing artifact evidence remains visible")
     require(workflow, "retention-days: 30", "artifact retention")
+    require(workflow, "adb shell am send-trim-memory com.gusanitolabs.robia RUNNING_CRITICAL || true", "pre-scroll trim-memory measurement setup")
+    require(workflow, "adb shell dumpsys meminfo com.gusanitolabs.robia > performance-artifacts/meminfo-before.txt || true", "before-scroll meminfo capture")
+    require(workflow, "adb shell dumpsys meminfo com.gusanitolabs.robia > performance-artifacts/meminfo-after.txt || true", "after-scroll meminfo capture")
 
     # Bounded Perfetto capture: keep the scroll input duration, extend only the
     # trace window, and wait for the locally backgrounded adb process before

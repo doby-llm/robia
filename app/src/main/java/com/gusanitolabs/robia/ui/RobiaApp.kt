@@ -12,7 +12,6 @@ import android.content.res.Configuration
 import android.os.LocaleList
 import android.os.SystemClock
 import android.widget.Toast
-import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
@@ -127,7 +126,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -167,6 +165,7 @@ import java.util.Locale
 
 private const val DEVELOPER_UNLOCK_TAP_COUNT = 10
 private const val DEVELOPER_UNLOCK_WINDOW_MILLIS = 5_000L
+private const val GRID_THUMBNAIL_MAX_EDGE_PX = 384
 
 private sealed interface RobiaRoute {
     @get:StringRes
@@ -2107,6 +2106,7 @@ private fun GarmentGridCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(3f / 4f),
+                thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
             )
             Surface(
                 shape = CircleShape,
@@ -2276,6 +2276,7 @@ private fun UiWardrobeItem.garmentCloudStatusTint(): Color = when (syncStatus) {
 private fun GarmentPhotoPlaceholder(
     item: UiWardrobeItem,
     modifier: Modifier = Modifier,
+    thumbnailMaxEdgePx: Int? = GRID_THUMBNAIL_MAX_EDGE_PX,
 ) {
     val swatchColor = item.primaryColor.swatchColor()
     Box(
@@ -2293,19 +2294,9 @@ private fun GarmentPhotoPlaceholder(
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }
         if (photoUri != null) {
-            AndroidView(
-                factory = { context ->
-                    ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                update = { imageView ->
-                    if (imageView.tag != photoUri) {
-                        imageView.tag = photoUri
-                        imageView.setImageURI(Uri.parse(photoUri))
-                    }
-                },
+            BoundedGarmentImage(
+                photoUri = photoUri,
+                thumbnailMaxEdgePx = thumbnailMaxEdgePx,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -2495,6 +2486,7 @@ private fun DetailMediaCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(3f / 4f),
+                thumbnailMaxEdgePx = null,
             )
             if (hasPhoto) {
                 Surface(
