@@ -19,7 +19,7 @@ jobs:
     # Android Emulator. The previous Linux runner booted API 35 without KVM and
     # timed out; this job intentionally remains a remote comparative emulator
     # baseline, not a physical-device benchmark.
-    runs-on: macos-13
+    runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -79,10 +79,14 @@ jobs:
             adb shell am force-stop com.gusanitolabs.robia
             adb shell am start -W -n com.gusanitolabs.robia/.MainActivity --esa com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS "$URIS" --ez com.gusanitolabs.robia.PERFORMANCE_BATCH true
             sleep 8
+            DURATION=${{ inputs.duration_seconds }}
+            TRACE_DURATION=$((DURATION + 5))
             adb shell dumpsys gfxinfo com.gusanitolabs.robia reset
-            adb shell 'perfetto -o /data/misc/perfetto-traces/robia-baseline.perfetto-trace -t 25s sched freq gfx view wm am >/dev/null 2>&1 &' || true
-            end=$(( $(date +%s) + ${{ inputs.duration_seconds }} ))
+            adb shell perfetto -o /data/misc/perfetto-traces/robia-baseline.perfetto-trace -t "${TRACE_DURATION}s" sched freq gfx view wm am >/dev/null 2>&1 &
+            PERFETTO_ADB_PID=$!
+            end=$(( $(date +%s) + DURATION ))
             while [ "$(date +%s)" -lt "$end" ]; do adb shell input swipe 540 1700 540 350 250; adb shell input swipe 540 350 540 1700 250; done
+            wait "$PERFETTO_ADB_PID" || true
             adb shell dumpsys gfxinfo com.gusanitolabs.robia > performance-artifacts/gfxinfo.txt
             adb pull /data/misc/perfetto-traces/robia-baseline.perfetto-trace performance-artifacts/ || true
             adb logcat -d -v threadtime RobiaPerformance:I '*:S' > performance-artifacts/batch-stages.log || true
