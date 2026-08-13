@@ -2,7 +2,6 @@ package com.gusanitolabs.robia.ui
 
 import android.net.Uri
 import android.os.SystemClock
-import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -88,7 +87,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
@@ -117,6 +115,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.UUID
+
+private const val EDITOR_PREVIEW_MAX_EDGE_PX = 512
+private const val QUICK_EDIT_PREVIEW_MAX_EDGE_PX = 512
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1735,15 +1736,9 @@ private fun PhotoPreview(
     ) {
         if (uri != null) {
             val processingOverlayColors = rememberProcessingOverlayColors(uri, isProcessing)
-            AndroidView(
-                factory = { context ->
-                    ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        adjustViewBounds = true
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                update = { imageView -> imageView.setImageURI(Uri.parse(uri)) },
+            BoundedGarmentImage(
+                photoUri = uri,
+                thumbnailMaxEdgePx = EDITOR_PREVIEW_MAX_EDGE_PX,
                 modifier = Modifier.fillMaxSize(),
             )
             if (!isProcessing && onQuickEditClick != null) {
@@ -1912,15 +1907,9 @@ private fun QuickEditDialog(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    AndroidView(
-                        factory = { viewContext ->
-                            ImageView(viewContext).apply {
-                                scaleType = ImageView.ScaleType.FIT_CENTER
-                                adjustViewBounds = true
-                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            }
-                        },
-                        update = { imageView -> imageView.setImageURI(Uri.parse(previewUri)) },
+                    BoundedGarmentImage(
+                        photoUri = previewUri,
+                        thumbnailMaxEdgePx = QUICK_EDIT_PREVIEW_MAX_EDGE_PX,
                         modifier = Modifier.fillMaxSize(),
                     )
                     if (showPreviewLoading && !showBefore) {

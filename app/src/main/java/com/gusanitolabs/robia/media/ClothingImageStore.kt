@@ -16,9 +16,11 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import kotlin.math.roundToInt
 
 object ClothingImageStore {
     private const val IMAGE_DIRECTORY = "robia_clothing_images"
+    private const val THUMBNAIL_DIRECTORY = "robia_thumbnails"
 
     fun createCaptureUri(context: Context): Uri {
         val imageFile = createImageFile(context, "camera")
@@ -152,6 +154,16 @@ object ClothingImageStore {
         return width.toFloat() / height.toFloat()
     }
 
+    fun readImageMetrics(context: Context, imageUri: Uri): ImageMetrics? {
+        val (width, height) = readImageDimensions(context, imageUri) ?: return null
+        val byteSize = runCatching {
+            context.contentResolver.openFileDescriptor(imageUri, "r")?.use { descriptor ->
+                descriptor.statSize.takeIf { it >= 0L }
+            }
+        }.getOrNull()
+        return ImageMetrics(width = width, height = height, byteSize = byteSize)
+    }
+
     fun readImageDimensions(context: Context, imageUri: Uri): Pair<Int, Int>? {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(imageUri)?.use { input ->
@@ -231,10 +243,108 @@ object ClothingImageStore {
         )
     }
 
+    fun getOrCreateBoundedThumbnail(
+        context: Context,
+        imageUri: Uri,
+        maxEdgePx: Int,
+    ): BoundedThumbnail? {
+        if (maxEdgePx <= 0) return null
+        val metrics = readImageMetrics(context, imageUri) ?: return null
+        val cacheKey = thumbnailCacheKey(imageUri, metrics, maxEdgePx)
+        val thumbnailDir = File(context.filesDir, THUMBNAIL_DIRECTORY).apply { mkdirs() }
+        existingThumbnailFile(thumbnailDir, cacheKey)?.let { existing ->
+            val existingUri = contentUriFor(context, existing)
+            return BoundedThumbnail(
+                uri = existingUri,
+                source = metrics,
+                thumbnail = readImageMetrics(context, existingUri),
+                maxEdgePx = maxEdgePx,
+                cacheHit = true,
+            )
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = thumbnailDecodeSampleSize(metrics.width, metrics.height, maxEdgePx)
+        }
+        val decoded = context.contentResolver.openInputStream(imageUri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, decodeOptions)
+        } ?: return null
+
+        return decoded.useForColors { sampled ->
+            val (thumbnailWidth, thumbnailHeight) = thumbnailSize(sampled.width, sampled.height, maxEdgePx)
+            val thumbnail = if (thumbnailWidth == sampled.width && thumbnailHeight == sampled.height) {
+                sampled
+            } else {
+                Bitmap.createScaledBitmap(sampled, thumbnailWidth, thumbnailHeight, true)
+            }
+            try {
+                val hasAlpha = thumbnail.hasAlpha()
+                val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+                val extension = if (hasAlpha) "png" else "jpg"
+                val outputFile = File(thumbnailDir, "$cacheKey.$extension")
+                outputFile.outputStream().use { output ->
+                    check(thumbnail.compress(format, if (hasAlpha) 100 else THUMBNAIL_JPEG_QUALITY, output)) {
+                        "Unable to encode bounded garment thumbnail."
+                    }
+                }
+                BoundedThumbnail(
+                    uri = contentUriFor(context, outputFile),
+                    source = metrics,
+                    thumbnail = ImageMetrics(
+                        width = thumbnail.width,
+                        height = thumbnail.height,
+                        byteSize = outputFile.length().takeIf { it >= 0L },
+                    ),
+                    maxEdgePx = maxEdgePx,
+                    cacheHit = false,
+                )
+            } finally {
+                if (thumbnail !== sampled) thumbnail.recycle()
+            }
+        }
+    }
+
     private fun createImageFile(context: Context, prefix: String, extension: String = "jpg"): File {
         val picturesDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir
         val imageDir = File(picturesDir, IMAGE_DIRECTORY).apply { mkdirs() }
         return File(imageDir, "$prefix-${UUID.randomUUID()}.$extension")
+    }
+
+    private fun contentUriFor(context: Context, file: File): Uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        file,
+    )
+
+    private fun existingThumbnailFile(thumbnailDir: File, cacheKey: String): File? =
+        listOf("jpg", "png")
+            .map { extension -> File(thumbnailDir, "$cacheKey.$extension") }
+            .firstOrNull { file -> file.isFile && file.length() > 0L }
+
+    private fun thumbnailCacheKey(imageUri: Uri, metrics: ImageMetrics, maxEdgePx: Int): String {
+        val source = "${imageUri}|${metrics.width}x${metrics.height}|${metrics.byteSize ?: -1L}|$maxEdgePx"
+        return MessageDigest.getInstance("SHA-256")
+            .digest(source.toByteArray())
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+            .take(32)
+    }
+
+    private fun thumbnailDecodeSampleSize(width: Int, height: Int, maxEdgePx: Int): Int {
+        val maxDimension = maxOf(width, height).coerceAtLeast(1)
+        var sampleSize = 1
+        while (maxDimension / (sampleSize * 2) >= maxEdgePx) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
+    private fun thumbnailSize(width: Int, height: Int, maxEdgePx: Int): Pair<Int, Int> {
+        val maxDimension = maxOf(width, height).coerceAtLeast(1)
+        if (maxDimension <= maxEdgePx) return width to height
+        val scale = maxEdgePx.toFloat() / maxDimension.toFloat()
+        return (width * scale).roundToInt().coerceAtLeast(1) to
+            (height * scale).roundToInt().coerceAtLeast(1)
     }
 
     private fun decodeBitmap(context: Context, imageUri: Uri): Bitmap? = runCatching {
@@ -390,6 +500,7 @@ object ClothingImageStore {
     }
 
     private const val DRIVE_JPEG_QUALITY = 92
+    private const val THUMBNAIL_JPEG_QUALITY = 82
     private const val TRANSPARENT_CROP_ALPHA_THRESHOLD = 24
     private const val LUMINANCE_MAX_DECODE_SIZE = 192
     private const val LUMINANCE_TARGET_SAMPLE_GRID = 48
@@ -411,6 +522,22 @@ data class ImageBlob(
 ) {
     val byteSize: Long = bytes.size.toLong()
 }
+
+data class ImageMetrics(
+    val width: Int,
+    val height: Int,
+    val byteSize: Long? = null,
+) {
+    val aspectRatio: Float = width.toFloat() / height.toFloat()
+}
+
+data class BoundedThumbnail(
+    val uri: Uri,
+    val source: ImageMetrics,
+    val thumbnail: ImageMetrics?,
+    val maxEdgePx: Int,
+    val cacheHit: Boolean,
+)
 
 private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
     .digest(this)
