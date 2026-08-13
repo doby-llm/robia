@@ -33,6 +33,11 @@ def forbid(text: str, needle: str, label: str) -> None:
         fail(f"forbidden {label}: {needle}")
 
 
+def forbid_regex(text: str, pattern: str, label: str) -> None:
+    if re.search(pattern, text, flags=re.MULTILINE):
+        fail(f"forbidden {label}: /{pattern}/")
+
+
 def require_regex(text: str, pattern: str, label: str) -> None:
     if not re.search(pattern, text, flags=re.MULTILINE):
         fail(f"missing {label}: /{pattern}/")
@@ -55,7 +60,10 @@ def main() -> None:
     require(workflow, "target: google_apis", "Google APIs emulator target")
     require(workflow, "profile: pixel_2", "stable AVD profile")
     forbid(workflow, "self-hosted", "self-hosted runner")
+    old_macos_runner = "macos-" + "13"
+    require(workflow, "runs-on: macos-15-intel", "dispatchable Intel macOS 15 runner")
     require_regex(workflow, r"runs-on:\s+macos-[^\n#]+", "macOS GitHub-hosted runner")
+    forbid(workflow, old_macos_runner, "retired macOS 13 runner regression")
     forbid(workflow, "runs-on: ubuntu", "Linux/KVM-disabled runner regression")
     require(workflow, "previous Linux runner booted API 35 without KVM and", "KVM boot-timeout rationale")
     require(workflow, "not a physical-device benchmark", "explicit non-physical-device semantics")
@@ -90,6 +98,37 @@ def main() -> None:
     require(workflow, "if: always()", "artifact upload runs after failed capture")
     require(workflow, "if-no-files-found: error", "missing artifact evidence remains visible")
     require(workflow, "retention-days: 30", "artifact retention")
+
+    # Bounded Perfetto capture: keep the scroll input duration, extend only the
+    # trace window, and wait for the locally backgrounded adb process before
+    # pulling the trace artifact. The old quoted remote-background form can
+    # return before Perfetto finishes writing the trace.
+    require(workflow, "DURATION=${{ inputs.duration_seconds }}", "workflow duration input assigned to shell variable")
+    require(workflow, "TRACE_DURATION=$((DURATION + 5))", "Perfetto trace duration padding")
+    require(workflow, "end=$(( $(date +%s) + DURATION ))", "scroll loop bounded by input duration")
+    require(
+        workflow,
+        'adb shell perfetto -o /data/misc/perfetto-traces/robia-baseline.perfetto-trace -t "${TRACE_DURATION}s" sched freq gfx view wm am >/dev/null 2>&1 &',
+        "locally backgrounded foreground Perfetto adb process",
+    )
+    require(workflow, "PERFETTO_ADB_PID=$!", "Perfetto adb PID capture")
+    require(workflow, 'wait "$PERFETTO_ADB_PID" || true', "Perfetto adb wait before trace pull")
+    require_regex(
+        workflow,
+        r'while \[ "\$\(date \+%s\)" -lt "\$end" \]; do [^\n]+; done\n\s+wait "\$PERFETTO_ADB_PID" \|\| true\n\s+adb shell dumpsys gfxinfo',
+        "Perfetto adb wait after scroll loop",
+    )
+    require_regex(
+        workflow,
+        r'wait "\$PERFETTO_ADB_PID" \|\| true\n\s+adb shell dumpsys gfxinfo[^\n]*\n\s+adb pull /data/misc/perfetto-traces/robia-baseline\.perfetto-trace',
+        "Perfetto adb wait before trace pull",
+    )
+    old_remote_perfetto = "adb shell " + "'perfetto"
+    old_hardcoded_trace_duration = "-t " + "25s"
+    forbid(workflow, old_remote_perfetto, "quoted remote Perfetto background shell")
+    forbid_regex(workflow, r"adb shell ['\"][^'\"]*perfetto[^'\"]*&", "quoted remote Perfetto background shell")
+    forbid(workflow, old_hardcoded_trace_duration, "hard-coded Perfetto trace duration")
+    forbid(workflow, ">&1 &' || true", "remote-backgrounded Perfetto fire-and-forget")
 
     print("Android performance baseline workflow static contract checks passed")
 
