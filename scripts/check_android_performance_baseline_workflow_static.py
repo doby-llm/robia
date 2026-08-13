@@ -7,6 +7,8 @@ local ARM workers and must not run Gradle, Android, emulator, or networked CI.
 from __future__ import annotations
 
 import re
+import shlex
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,80 @@ def forbid_regex(text: str, pattern: str, label: str) -> None:
 def require_regex(text: str, pattern: str, label: str) -> None:
     if not re.search(pattern, text, flags=re.MULTILINE):
         fail(f"missing {label}: /{pattern}/")
+
+
+def extract_folded_emulator_script(workflow: str) -> str:
+    lines = workflow.splitlines()
+    emulator_step_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if "uses: reactivecircus/android-emulator-runner@v2" in line
+        ),
+        None,
+    )
+    if emulator_step_index is None:
+        fail("missing android-emulator-runner step")
+
+    step_indent = len(lines[emulator_step_index]) - len(lines[emulator_step_index].lstrip())
+    for index in range(emulator_step_index + 1, len(lines)):
+        line = lines[index]
+        line_indent = len(line) - len(line.lstrip())
+        if line.strip().startswith("-") and line_indent <= step_indent:
+            break
+        if not re.match(r"\s*script:\s*>-\s*$", line):
+            continue
+
+        script_indent = len(line) - len(line.lstrip())
+        body: list[str] = []
+        for body_line in lines[index + 1 :]:
+            if not body_line.strip():
+                body.append("")
+                continue
+
+            body_indent = len(body_line) - len(body_line.lstrip())
+            if body_indent <= script_indent:
+                break
+            body.append(body_line[script_indent + 2 :])
+
+        if not body:
+            fail("empty android-emulator-runner script")
+        return "\n".join(body)
+
+    fail("missing folded single-command android-emulator-runner script: script: >-")
+
+
+def validate_sh_syntax(command: str, label: str) -> None:
+    candidate = command.replace("${{ inputs.duration_seconds }}", "20")
+    result = subprocess.run(
+        ["sh", "-n", "-c", candidate],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        fail(f"{label} is not valid /bin/sh syntax: {result.stderr.strip()}")
+
+
+def require_single_command_capture_script(workflow: str) -> str:
+    script = extract_folded_emulator_script(workflow)
+    commands = [line.strip() for line in script.splitlines() if line.strip()]
+    if len(commands) != 1:
+        fail("android-emulator-runner script must be exactly one non-empty command line")
+
+    command = commands[0]
+    if not command.startswith("sh -eu -c "):
+        fail("android-emulator-runner script must wrap capture in one sh -eu -c command")
+
+    validate_sh_syntax(command, "android-emulator-runner per-line command")
+    parts = shlex.split(command.replace("${{ inputs.duration_seconds }}", "20"))
+    try:
+        command_index = parts.index("-c")
+        inner_script = parts[command_index + 1]
+    except (ValueError, IndexError) as exc:
+        fail(f"missing inner sh -c script: {exc}")
+    validate_sh_syntax(inner_script, "inner capture script")
+    return inner_script
 
 
 def main() -> None:
@@ -87,10 +163,16 @@ def main() -> None:
     require(robia_app, "initialPerformanceBatchFixtureUris", "batch auto-start fixture seam")
 
     # POSIX /bin/sh capture script and failure artifacts.
-    require(workflow, "android-emulator-runner invokes this script with /bin/sh", "POSIX shell warning")
+    capture_script = require_single_command_capture_script(workflow)
+    require(workflow, "android-emulator-runner invokes each script line with /bin/sh -c", "per-line shell warning")
     require(workflow, "set -eu", "POSIX shell strict mode")
     forbid(workflow, "pipefail", "bash-only pipefail in /bin/sh script")
-    require(workflow, "trap record_capture_failure EXIT", "capture failure trap")
+    forbid(workflow, "record_capture_failure() {", "multiline shell function in per-line emulator script")
+    forbid_regex(workflow, r"^\s*(?:function\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\(\)\s*\{", "multiline shell function in per-line emulator script")
+    forbid(workflow, "trap record_capture_failure EXIT", "function-backed trap in per-line emulator script")
+    forbid(workflow, "<<'PY'", "multiline heredoc in per-line emulator script")
+    require(capture_script, "trap 'status=$?; if [ \"$status\" -ne 0 ]; then", "inline capture failure trap")
+    require(capture_script, 'exit "$status"', "failure trap preserves capture exit status")
     require(workflow, "capture-failure.txt", "failure marker artifact")
     require(workflow, "adb devices > performance-artifacts/adb-devices.txt 2>&1 || true", "ADB diagnostics on capture failure")
     require(workflow, "adb logcat -d -v threadtime > performance-artifacts/logcat.txt 2>&1 || true", "logcat diagnostics on capture failure")
@@ -114,13 +196,13 @@ def main() -> None:
     require(workflow, "PERFETTO_ADB_PID=$!", "Perfetto adb PID capture")
     require(workflow, 'wait "$PERFETTO_ADB_PID" || true', "Perfetto adb wait before trace pull")
     require_regex(
-        workflow,
-        r'while \[ "\$\(date \+%s\)" -lt "\$end" \]; do [^\n]+; done\n\s+wait "\$PERFETTO_ADB_PID" \|\| true\n\s+adb shell dumpsys gfxinfo',
+        capture_script,
+        r'while \[ "\$\(date \+%s\)" -lt "\$end" \]; do [^;]+; [^;]+; done; wait "\$PERFETTO_ADB_PID" \|\| true; adb shell dumpsys gfxinfo',
         "Perfetto adb wait after scroll loop",
     )
     require_regex(
-        workflow,
-        r'wait "\$PERFETTO_ADB_PID" \|\| true\n\s+adb shell dumpsys gfxinfo[^\n]*\n\s+adb pull /data/misc/perfetto-traces/robia-baseline\.perfetto-trace',
+        capture_script,
+        r'wait "\$PERFETTO_ADB_PID" \|\| true; adb shell dumpsys gfxinfo[^;]*; adb pull /data/misc/perfetto-traces/robia-baseline\.perfetto-trace',
         "Perfetto adb wait before trace pull",
     )
     old_remote_perfetto = "adb shell " + "'perfetto"

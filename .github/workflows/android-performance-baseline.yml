@@ -51,47 +51,11 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: |
-            # android-emulator-runner invokes this script with /bin/sh; use only
-            # POSIX shell options and timing primitives while retaining -e/-u.
-            set -eu
-            mkdir -p performance-artifacts
-            record_capture_failure() {
-              status=$?
-              if [ "$status" -ne 0 ]; then
-                printf 'capture step failed with exit status %s\n' "$status" > performance-artifacts/capture-failure.txt
-                adb devices > performance-artifacts/adb-devices.txt 2>&1 || true
-                adb logcat -d -v threadtime > performance-artifacts/logcat.txt 2>&1 || true
-              fi
-            }
-            trap record_capture_failure EXIT
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell mkdir -p /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images
-            adb push performance-fixtures/. /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images
-            # The app accepts these debug-only synthetic fixture extras. No personal image or URI is recorded.
-            URIS=$(python - <<'PY'
-            import json
-            base = 'content://com.gusanitolabs.robia.fileprovider/clothing_images/'
-            manifest = json.load(open('performance-fixtures/manifest.json'))
-            print(','.join(base + item['path'] for item in manifest['fixtures']))
-            PY
-            )
-            adb shell am force-stop com.gusanitolabs.robia
-            adb shell am start -W -n com.gusanitolabs.robia/.MainActivity --esa com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS "$URIS" --ez com.gusanitolabs.robia.PERFORMANCE_BATCH true
-            sleep 8
-            DURATION=${{ inputs.duration_seconds }}
-            TRACE_DURATION=$((DURATION + 5))
-            adb shell dumpsys gfxinfo com.gusanitolabs.robia reset
-            adb shell perfetto -o /data/misc/perfetto-traces/robia-baseline.perfetto-trace -t "${TRACE_DURATION}s" sched freq gfx view wm am >/dev/null 2>&1 &
-            PERFETTO_ADB_PID=$!
-            end=$(( $(date +%s) + DURATION ))
-            while [ "$(date +%s)" -lt "$end" ]; do adb shell input swipe 540 1700 540 350 250; adb shell input swipe 540 350 540 1700 250; done
-            wait "$PERFETTO_ADB_PID" || true
-            adb shell dumpsys gfxinfo com.gusanitolabs.robia > performance-artifacts/gfxinfo.txt
-            adb pull /data/misc/perfetto-traces/robia-baseline.perfetto-trace performance-artifacts/ || true
-            adb logcat -d -v threadtime RobiaPerformance:I '*:S' > performance-artifacts/batch-stages.log || true
-            cp performance-fixtures/manifest.json performance-artifacts/fixture-manifest.json
-            python scripts/summarize_performance_baseline.py --input performance-artifacts --output performance-artifacts/report.md
+          # android-emulator-runner invokes each script line with /bin/sh -c, so
+          # keep capture as one folded command while retaining POSIX -e/-u.
+          # The app accepts these debug-only synthetic fixture extras. No personal image or URI is recorded.
+          script: >-
+            sh -eu -c 'set -eu; mkdir -p performance-artifacts; trap '"'"'status=$?; if [ "$status" -ne 0 ]; then printf "capture step failed with exit status %s\n" "$status" > performance-artifacts/capture-failure.txt; adb devices > performance-artifacts/adb-devices.txt 2>&1 || true; adb logcat -d -v threadtime > performance-artifacts/logcat.txt 2>&1 || true; fi; exit "$status"'"'"' EXIT; adb install -r app/build/outputs/apk/debug/app-debug.apk; adb shell mkdir -p /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images; adb push performance-fixtures/. /sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images; URIS=$(python -c '"'"'import json; base = "content://com.gusanitolabs.robia.fileprovider/clothing_images/"; manifest = json.load(open("performance-fixtures/manifest.json")); print(",".join(base + item["path"] for item in manifest["fixtures"]))'"'"'); adb shell am force-stop com.gusanitolabs.robia; adb shell am start -W -n com.gusanitolabs.robia/.MainActivity --esa com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS "$URIS" --ez com.gusanitolabs.robia.PERFORMANCE_BATCH true; sleep 8; DURATION=${{ inputs.duration_seconds }}; TRACE_DURATION=$((DURATION + 5)); adb shell dumpsys gfxinfo com.gusanitolabs.robia reset; adb shell perfetto -o /data/misc/perfetto-traces/robia-baseline.perfetto-trace -t "${TRACE_DURATION}s" sched freq gfx view wm am >/dev/null 2>&1 & PERFETTO_ADB_PID=$!; end=$(( $(date +%s) + DURATION )); while [ "$(date +%s)" -lt "$end" ]; do adb shell input swipe 540 1700 540 350 250; adb shell input swipe 540 350 540 1700 250; done; wait "$PERFETTO_ADB_PID" || true; adb shell dumpsys gfxinfo com.gusanitolabs.robia > performance-artifacts/gfxinfo.txt; adb pull /data/misc/perfetto-traces/robia-baseline.perfetto-trace performance-artifacts/ || true; adb logcat -d -v threadtime RobiaPerformance:I "*:S" > performance-artifacts/batch-stages.log || true; cp performance-fixtures/manifest.json performance-artifacts/fixture-manifest.json; python scripts/summarize_performance_baseline.py --input performance-artifacts --output performance-artifacts/report.md'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
