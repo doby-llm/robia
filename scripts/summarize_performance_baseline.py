@@ -22,6 +22,14 @@ def main() -> None:
     janky = re.search(r"Janky frames:\s*(\d+)\s*\(([^)]+)\)", gfxinfo)
     meminfo_before = read_meminfo(args.input / "meminfo-before.txt")
     meminfo_after = read_meminfo(args.input / "meminfo-after.txt")
+    require_valid_baseline_evidence(
+        fixture_count=len(fixture_manifest["fixtures"]),
+        stage_records=records,
+        thumbnail_records=thumbnail_records,
+        gfxinfo=gfxinfo,
+        meminfo_before=meminfo_before,
+        meminfo_after=meminfo_after,
+    )
 
     lines = [
         "# Robia Android performance baseline",
@@ -60,6 +68,34 @@ def read_meminfo(path: Path) -> int | None:
         return None
     match = re.search(r"^\s*TOTAL\s+(\d+)", path.read_text(errors="replace"), flags=re.MULTILINE)
     return int(match.group(1)) if match else None
+
+
+def require_valid_baseline_evidence(
+    *,
+    fixture_count: int,
+    stage_records: list[str],
+    thumbnail_records: list[str],
+    gfxinfo: str,
+    meminfo_before: int | None,
+    meminfo_after: int | None,
+) -> None:
+    failures: list[str] = []
+    if fixture_count != 60:
+        failures.append(f"fixture-manifest.json contains {fixture_count} fixtures, expected 60")
+    if not stage_records:
+        failures.append("batch-stages.log contains no sanitized batch_stage records")
+    if not thumbnail_records:
+        failures.append("batch-stages.log contains no bounded thumbnail_stage records")
+    if "No process found" in gfxinfo:
+        failures.append("gfxinfo.txt reports No process found for Robia")
+    if not re.search(r"Janky frames:\s*\d+|Total frames rendered:\s*\d+", gfxinfo):
+        failures.append("gfxinfo.txt does not contain parseable frame evidence")
+    if meminfo_before is None:
+        failures.append("meminfo-before.txt does not contain parseable TOTAL PSS evidence")
+    if meminfo_after is None:
+        failures.append("meminfo-after.txt does not contain parseable TOTAL PSS evidence")
+    if failures:
+        raise SystemExit("invalid performance baseline evidence: " + "; ".join(failures))
 
 
 def format_kb(value: int | None) -> str:
