@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/android-performance-baseline.yml"
+FILE_PATHS = ROOT / "app/src/main/res/xml/file_paths.xml"
 MAIN_ACTIVITY = ROOT / "app/src/main/java/com/gusanitolabs/robia/MainActivity.kt"
 ROBIA_APP = ROOT / "app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt"
 FIXTURE_SCRIPT = ROOT / "scripts/generate_performance_fixtures.py"
@@ -121,6 +122,7 @@ def require_single_command_capture_script(workflow: str) -> str:
 
 def main() -> None:
     workflow = read(WORKFLOW)
+    file_paths = read(FILE_PATHS)
     main_activity = read(MAIN_ACTIVITY)
     robia_app = read(ROBIA_APP)
     fixtures = read(FIXTURE_SCRIPT)
@@ -165,9 +167,28 @@ def main() -> None:
     require(robia_app, "performanceFixtureMode = BuildConfig.DEBUG && performanceFixtureUris.isNotEmpty()", "app fixture mode debug gate")
     require(robia_app, "Synthetic fixture", "synthetic fixture display data")
     require(robia_app, "initialPerformanceBatchFixtureUris", "batch auto-start fixture seam")
+    capture_script = require_single_command_capture_script(workflow)
+
+    # API 35 scoped storage: stage through adb-readable /data/local/tmp, then
+    # copy into the debug app's private files/ directory with run-as so the
+    # FileProvider <files-path name="private_clothing_images"> mapping resolves.
+    require(file_paths, 'name="private_clothing_images"', "private clothing image FileProvider name")
+    require(file_paths, 'path="robia_clothing_images/"', "private clothing image FileProvider path")
+    require(capture_script, "STAGING_DIR=/data/local/tmp/robia-performance-fixtures", "adb-accessible temporary fixture staging")
+    require(capture_script, "APP_FIXTURE_DIR=files/robia_clothing_images", "app-private fixture destination")
+    require(capture_script, 'adb push performance-fixtures/. "$STAGING_DIR"', "fixture push into temporary staging")
+    require(capture_script, 'adb shell chmod -R 755 "$STAGING_DIR"', "run-as readable staging permissions")
+    require(capture_script, "run-as com.gusanitolabs.robia sh -c", "debug app-owned run-as copy")
+    require(capture_script, "rm -rf ${APP_FIXTURE_DIR}; mkdir -p ${APP_FIXTURE_DIR}; cp ${STAGING_DIR}/fixture-*.jpg ${APP_FIXTURE_DIR}/", "private fixture copy command")
+    require(capture_script, 'fixture_count=$(adb shell "run-as com.gusanitolabs.robia sh -c', "private fixture count validation")
+    require(capture_script, '[ "$fixture_count" = "60" ]', "60 staged private fixtures")
+    require(workflow, 'base = "content://com.gusanitolabs.robia.fileprovider/private_clothing_images/"', "private FileProvider fixture URI base")
+    forbid(workflow, "adb shell mkdir -p /sdcard/Android/data", "direct app-specific external storage mkdir")
+    forbid(workflow, "adb push performance-fixtures/. /sdcard/Android/data", "direct app-specific external storage push")
+    forbid(workflow, "/sdcard/Android/data/com.gusanitolabs.robia/files/Pictures/robia_clothing_images", "direct app-specific external storage fixture staging")
+    forbid(workflow, 'content://com.gusanitolabs.robia.fileprovider/clothing_images/', "external-files FileProvider fixture URI base")
 
     # POSIX /bin/sh capture script and failure artifacts.
-    capture_script = require_single_command_capture_script(workflow)
     require(workflow, "android-emulator-runner invokes each script line with /bin/sh -c", "per-line shell warning")
     require(workflow, "set -eu", "POSIX shell strict mode")
     forbid(workflow, "pipefail", "bash-only pipefail in /bin/sh script")
