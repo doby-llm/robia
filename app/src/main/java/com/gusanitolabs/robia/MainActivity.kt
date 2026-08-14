@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -93,7 +94,29 @@ class MainActivity : ComponentActivity() {
 
     /** Debug-only CI seam; release builds cannot populate synthetic benchmark data. */
     private fun performanceFixtureUris(): List<String> =
-        if (BuildConfig.DEBUG) intent.getStringArrayListExtra(EXTRA_PERFORMANCE_FIXTURE_URIS).orEmpty() else emptyList()
+        if (BuildConfig.DEBUG) intent.performanceFixtureUriStrings(EXTRA_PERFORMANCE_FIXTURE_URIS) else emptyList()
+
+    @Suppress("DEPRECATION")
+    private fun Intent.performanceFixtureUriStrings(extraName: String): List<String> {
+        // Read the raw debug extra so adb --esa String[] and legacy ArrayList<String>
+        // both avoid typed-getter ClassCastExceptions.
+        return when (val extra = extras?.get(extraName)) {
+            is Array<*> -> extra.toStringListOrEmpty()
+            is ArrayList<*> -> extra.toStringListOrEmpty()
+            else -> emptyList()
+        }
+    }
+
+    private fun Array<*>.toStringListOrEmpty(): List<String> = asList().toStringListOrEmpty()
+
+    private fun Iterable<*>.toStringListOrEmpty(): List<String> {
+        val strings = mutableListOf<String>()
+        for (value in this) {
+            val stringValue = value as? String ?: return emptyList()
+            strings += stringValue
+        }
+        return strings
+    }
 
     private fun requestGoogleDriveAuthorization() {
         lifecycleScope.launch { settingsRepository.markCloudSetupPromptInteracted() }
