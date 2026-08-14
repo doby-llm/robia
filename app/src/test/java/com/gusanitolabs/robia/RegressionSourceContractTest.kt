@@ -31,6 +31,22 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun performanceFixtureUris_acceptsAdbStringArrayAndArrayListExtrasSafely() {
+        val mainActivity = source("app/src/main/java/com/gusanitolabs/robia/MainActivity.kt")
+        val reader = mainActivity
+            .substringAfter("private fun performanceFixtureUris(): List<String> =")
+            .substringBefore("private fun requestGoogleDriveAuthorization()")
+
+        assertTrue(reader.contains("if (BuildConfig.DEBUG)"))
+        assertTrue(reader.contains("intent.performanceFixtureUriStrings(EXTRA_PERFORMANCE_FIXTURE_URIS)"))
+        assertTrue(!reader.contains("getStringArrayListExtra(EXTRA_PERFORMANCE_FIXTURE_URIS).orEmpty()"))
+        assertTrue(reader.contains("is Array<*> -> extra.toStringListOrEmpty()"))
+        assertTrue(reader.contains("is ArrayList<*> -> extra.toStringListOrEmpty()"))
+        assertTrue(reader.contains("else -> emptyList()"))
+        assertTrue(reader.contains("value as? String ?: return emptyList()"))
+    }
+
+    @Test
     fun browseFilterBar_keepsDividerWithLeftFilterGroupBeforeSyncSpinner() {
         val filterBar = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
             .substringAfter("private fun FilterBar(")
