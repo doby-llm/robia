@@ -547,9 +547,10 @@ class RegressionSourceContractTest {
     }
 
     @Test
-    fun imagePreviewsUsePersistedBoundedThumbnailsWithoutChangingCanonicalPhotos() {
+    fun imagePreviewsUseTheSharedCoilAdapterWithoutChangingCanonicalPhotos() {
         val imageStore = source("app/src/main/java/com/gusanitolabs/robia/media/ClothingImageStore.kt")
         val boundedImage = source("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt")
+        val pipeline = source("app/src/main/java/com/gusanitolabs/robia/media/ImagePipeline.kt")
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val batch = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
         val addEdit = source("app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt")
@@ -564,15 +565,19 @@ class RegressionSourceContractTest {
         assertTrue(imageStore.contains("data class ImageMetrics"))
         assertTrue(paths.contains("name=\"private_thumbnails\""))
 
-        assertTrue(boundedImage.contains("withContext(Dispatchers.IO)"))
-        assertTrue(boundedImage.contains("ClothingImageStore.getOrCreateBoundedThumbnail"))
+        assertTrue(pipeline.contains("ImageLoader.Builder"))
+        assertTrue(pipeline.contains("MemoryCache.Builder"))
+        assertTrue(pipeline.contains("DiskCache.Builder"))
+        assertTrue(pipeline.contains("eventListenerFactory"))
+        assertTrue(pipeline.contains("decoderCoroutineContext"))
+        assertTrue(pipeline.contains("prefetchPermit"))
+        assertTrue(pipeline.contains("Size.ORIGINAL"))
+        assertTrue(boundedImage.contains("ImagePipeline.shared"))
         assertTrue(boundedImage.contains("thumbnailMaxEdgePx: Int?"))
+        assertTrue(boundedImage.contains("allowOriginal = allowOriginal"))
         assertTrue(!boundedImage.contains("mutableStateOf(photoUri)"))
-        val beforeThumbnailLookup = boundedImage
-            .substringAfter("// Avoid assigning the canonical full-size URI")
-            .substringBefore("ClothingImageStore.getOrCreateBoundedThumbnail")
-        assertTrue(!beforeThumbnailLookup.contains("resolvedUri = photoUri"))
-        assertTrue(boundedImage.contains("imageView.setImageURI(Uri.parse(nextUri))"))
+        assertTrue(!boundedImage.contains("setImageURI"))
+        assertTrue(boundedImage.contains("ImageTargetBounds"))
 
         val gridCard = app.substringAfter("private fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
         val detailMedia = app.substringAfter("private fun DetailMediaCard(").substringBefore("@Composable\nprivate fun ColorMetricsCard")
@@ -591,22 +596,35 @@ class RegressionSourceContractTest {
     fun performanceReportCapturesThumbnailAndMemoryEvidenceForLikeForLikeComparison() {
         val workflow = source(".github/workflows/android-performance-baseline.yml")
         val summary = source("scripts/summarize_performance_baseline.py")
-        val boundedImage = source("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt")
+        val pipeline = source("app/src/main/java/com/gusanitolabs/robia/media/ImagePipeline.kt")
 
         assertTrue(workflow.contains("dumpsys meminfo com.gusanitolabs.robia > performance-artifacts/meminfo-before.txt"))
         assertTrue(workflow.contains("dumpsys meminfo com.gusanitolabs.robia > performance-artifacts/meminfo-after.txt"))
         assertTrue(workflow.contains("RobiaPerformance:I"))
-        assertTrue(boundedImage.contains("thumbnail_stage"))
-        assertTrue(boundedImage.contains("elapsedMs"))
-        assertTrue(boundedImage.contains("sourceBytes"))
-        assertTrue(boundedImage.contains("thumbnailBytes"))
-        assertTrue(!boundedImage.contains("sourceHash"))
+        assertTrue(pipeline.contains("placeholder_visible"))
+        assertTrue(pipeline.contains("memory_hit"))
+        assertTrue(pipeline.contains("disk_hit"))
+        assertTrue(pipeline.contains("in_flight_wait"))
+        assertTrue(pipeline.contains("blankDurationMs"))
+        assertTrue(pipeline.contains("activeDecodeCount"))
+        assertTrue(pipeline.contains("first_draw"))
+        assertTrue(pipeline.contains("TrackingMemoryCache"))
+        assertTrue(pipeline.contains("recordEvictions"))
+        assertTrue(pipeline.contains("onEvictions(keysBefore - delegate.keys)"))
+        assertTrue(pipeline.contains("evictionCount.addAndGet"))
+        assertTrue(!pipeline.contains("sourceUri="))
 
-        assertTrue(summary.contains("thumbnail_records ="))
-        assertTrue(summary.contains("Bounded-thumbnail records captured"))
+        assertTrue(summary.contains("REQUIRED_IMAGE_STAGES ="))
+        assertTrue(summary.contains("IMAGE_STAGE_PATTERN"))
+        assertTrue(summary.contains("image_stage_records ="))
+        assertTrue(summary.contains("Image pipeline records captured"))
         assertTrue(summary.contains("read_meminfo"))
         assertTrue(summary.contains("meminfo-before.txt"))
         assertTrue(summary.contains("meminfo-after.txt"))
+        assertTrue(workflow.contains("stage=(resolve|decode|bind|first_draw|in_flight_wait|placeholder_visible|eviction)"))
+        assertTrue(summary.contains("stage=(?:resolve|decode|bind|first_draw|in_flight_wait|placeholder_visible|eviction)"))
+        assertTrue(!workflow.contains("thumbnail_stage"))
+        assertTrue(!summary.contains("thumbnail_stage"))
         assertTrue(workflow.contains("python3 scripts/check_image_thumbnail_pipeline_static.py"))
     }
 

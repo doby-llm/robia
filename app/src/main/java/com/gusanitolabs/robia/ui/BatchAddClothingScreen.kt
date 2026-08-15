@@ -68,6 +68,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
@@ -346,6 +347,7 @@ private fun BatchDraftTile(
         Box {
             BatchPhotoPreview(
                 photoUri = draft.photoUri,
+                sourceRevision = draft.id,
                 isProcessing = draft.status == BatchDraftStatus.Processing,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -383,6 +385,7 @@ private fun BatchDraftTile(
 @Composable
 private fun BatchPhotoPreview(
     photoUri: String,
+    sourceRevision: String,
     isProcessing: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -404,6 +407,8 @@ private fun BatchPhotoPreview(
             BoundedGarmentImage(
                 photoUri = photoUri,
                 thumbnailMaxEdgePx = BATCH_THUMBNAIL_MAX_EDGE_PX,
+                purpose = ImagePurpose.BatchPreview,
+                sourceRevision = sourceRevision,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

@@ -149,7 +149,7 @@ def main() -> None:
     require(summary, "Comparative emulator baseline only", "report comparative-emulator warning")
     require(summary, "not physical-device", "report excludes physical-device proof")
     require(summary, "Do not apply the physical target", "report forbids physical target interpretation")
-    require(summary, "Bounded-thumbnail records captured", "report bounded-thumbnail evidence count")
+    require(summary, "Image pipeline records captured", "report image pipeline evidence count")
     require(summary, "meminfo-before.txt", "report before-scroll meminfo evidence")
     require(summary, "meminfo-after.txt", "report after-scroll meminfo evidence")
     require(summary, "require_valid_baseline_evidence(", "report refuses missing measurement evidence")
@@ -265,7 +265,11 @@ def main() -> None:
     require(capture_script, 'grep -Eq "^[[:space:]]*TOTAL[[:space:]]+[0-9]+" performance-artifacts/meminfo-after.txt', "after-scroll parseable memory gate")
     require(capture_script, 'grep -Eq "Janky frames:|Total frames rendered:" performance-artifacts/gfxinfo.txt', "parseable frame evidence gate")
     require(capture_script, 'grep -q "batch_stage" performance-artifacts/batch-stages.log', "non-empty batch stage evidence gate")
-    require(capture_script, 'grep -q "thumbnail_stage" performance-artifacts/batch-stages.log', "non-empty thumbnail stage evidence gate")
+    require(
+        capture_script,
+        'grep -Eq "stage=(resolve|decode|bind|first_draw|in_flight_wait|placeholder_visible|eviction)([[:space:]]|$)" performance-artifacts/batch-stages.log',
+        "non-empty sanitized RobiaPerformance image stage evidence gate",
+    )
 
     # Bounded Perfetto capture: keep the scroll input duration, extend only the
     # trace window, and wait for the locally backgrounded adb process before

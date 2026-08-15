@@ -11,6 +11,15 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REQUIRED_IMAGE_STAGES = (
+    "resolve",
+    "decode",
+    "bind",
+    "first_draw",
+    "in_flight_wait",
+    "placeholder_visible",
+    "eviction",
+)
 
 
 def read(relative: str) -> str:
@@ -45,6 +54,7 @@ def require_single_occurrence(text: str, needle: str, label: str) -> None:
 def main() -> None:
     image_store = read("app/src/main/java/com/gusanitolabs/robia/media/ClothingImageStore.kt")
     bounded_image = read("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt")
+    pipeline = read("app/src/main/java/com/gusanitolabs/robia/media/ImagePipeline.kt")
     app = read("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
     batch = read("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
     add_edit = read("app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt")
@@ -68,29 +78,35 @@ def main() -> None:
     require(
         "app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt",
         "thumbnailMaxEdgePx: Int?",
-        "withContext(Dispatchers.IO)",
-        "ClothingImageStore.getOrCreateBoundedThumbnail",
-        "thumbnail_stage",
-        "elapsedMs",
-        "sourceBytes",
-        "thumbnailBytes",
+        "ImagePipeline.shared",
+        "ImageTargetBounds",
+        "onSizeChanged",
     )
-    forbid(
-        "app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt",
-        "mutableStateOf(photoUri)",
-        "sourceHash",
+    forbid("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt", "setImageURI", "ImageView")
+    require(
+        "app/src/main/java/com/gusanitolabs/robia/media/ImagePipeline.kt",
+        "ImageLoader.Builder",
+        "MemoryCache.Builder",
+        "DiskCache.Builder",
+        "memoryCacheKey",
+        "diskCacheKey",
+        "decoderCoroutineContext",
+        "prefetchPermit",
+        "eventListenerFactory",
+        "Size.ORIGINAL",
+        "placeholder_visible",
+        "in_flight_wait",
+        "blankDurationMs",
+        "activeDecodeCount",
+        "first_draw",
+        "TrackingMemoryCache",
+        "recordEvictions",
+        "onEvictions(keysBefore - delegate.keys)",
+        "evictionCount.addAndGet",
     )
-    thumbnail_path_marker = "// Avoid assigning the canonical full-size URI"
-    if thumbnail_path_marker not in bounded_image:
-        raise AssertionError("BoundedGarmentImage is missing the thumbnail-enabled path guard marker")
-    after_thumbnail_enabled = bounded_image.split(thumbnail_path_marker, maxsplit=1)[1]
-    before_thumbnail_lookup = after_thumbnail_enabled.split("ClothingImageStore.getOrCreateBoundedThumbnail", maxsplit=1)[0]
-    if "resolvedUri = photoUri" in before_thumbnail_lookup:
-        raise AssertionError(
-            "BoundedGarmentImage must not assign the canonical photo URI on the "
-            "thumbnail-enabled path before the bounded thumbnail lookup; doing so "
-            "forces a full-size ImageView decode first."
-        )
+    for stage in REQUIRED_IMAGE_STAGES:
+        if f'"{stage}"' not in pipeline:
+            raise AssertionError(f"ImagePipeline.kt must record required sanitized image stage: {stage}")
 
     # Preview surfaces should route through the bounded helper; detail/share keeps
     # the original image by explicitly opting out with thumbnailMaxEdgePx = null.
@@ -108,11 +124,23 @@ def main() -> None:
         "GRID_THUMBNAIL_MAX_EDGE_PX",
         "thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX",
         "thumbnailMaxEdgePx = null",
-        "onShareImageClick",
     )
-    require("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt", "BATCH_THUMBNAIL_MAX_EDGE_PX")
-    require("app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt", "EDITOR_PREVIEW_MAX_EDGE_PX", "QUICK_EDIT_PREVIEW_MAX_EDGE_PX")
-    require("app/src/main/java/com/gusanitolabs/robia/ui/ColorReviewScreen.kt", "COLOR_REVIEW_THUMBNAIL_MAX_EDGE_PX")
+    require(
+        "app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt",
+        "BATCH_THUMBNAIL_MAX_EDGE_PX",
+        "ImagePurpose.BatchPreview",
+    )
+    require(
+        "app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt",
+        "EDITOR_PREVIEW_MAX_EDGE_PX",
+        "QUICK_EDIT_PREVIEW_MAX_EDGE_PX",
+        "ImagePurpose.Editor",
+    )
+    require(
+        "app/src/main/java/com/gusanitolabs/robia/ui/ColorReviewScreen.kt",
+        "COLOR_REVIEW_THUMBNAIL_MAX_EDGE_PX",
+        "ImagePurpose.ColorReview",
+    )
 
     require(
         ".github/workflows/android-performance-baseline.yml",
@@ -122,12 +150,21 @@ def main() -> None:
     )
     require(
         "scripts/summarize_performance_baseline.py",
-        "thumbnail_records =",
-        "Bounded-thumbnail records captured",
+        "REQUIRED_IMAGE_STAGES =",
+        "IMAGE_STAGE_PATTERN",
+        "image_stage_records =",
+        "Image pipeline records captured",
         "read_meminfo",
         "meminfo-before.txt",
         "meminfo-after.txt",
     )
+    summary = read("scripts/summarize_performance_baseline.py")
+    workflow = read(".github/workflows/android-performance-baseline.yml")
+    for stage in REQUIRED_IMAGE_STAGES:
+        if stage not in summary:
+            raise AssertionError(f"summarize_performance_baseline.py must parse image stage: {stage}")
+        if stage not in workflow:
+            raise AssertionError(f"android-performance-baseline workflow must recognize image stage: {stage}")
 
     print("Robia image thumbnail pipeline static guardrails passed")
 

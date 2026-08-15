@@ -66,6 +66,7 @@ import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.ImagePurpose
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -437,6 +438,8 @@ private fun ColorReviewPhoto(item: ClothingItem) {
             BoundedGarmentImage(
                 photoUri = photoUri,
                 thumbnailMaxEdgePx = COLOR_REVIEW_THUMBNAIL_MAX_EDGE_PX,
+                purpose = ImagePurpose.ColorReview,
+                sourceRevision = item.id,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

@@ -44,6 +44,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -105,6 +107,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,6 +149,11 @@ import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
 import com.gusanitolabs.robia.media.GarmentShareMetadataIcon
+import com.gusanitolabs.robia.media.ImagePipeline
+import com.gusanitolabs.robia.media.ImagePriority
+import com.gusanitolabs.robia.media.ImagePurpose
+import com.gusanitolabs.robia.media.ImageRequest
+import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import com.gusanitolabs.robia.sync.CloudRestorePhase
@@ -157,6 +165,7 @@ import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -1982,8 +1991,12 @@ private fun BrowseWardrobeScreen(
     onResetFilters: () -> Unit,
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
+    val gridState = rememberLazyGridState()
+
+    BrowseImagePrefetch(items = items, gridState = gridState)
 
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Adaptive(minSize = 160.dp),
         modifier = Modifier
             .fillMaxSize()
@@ -2031,6 +2044,61 @@ private fun BrowseWardrobeScreen(
         }
     }
 }
+
+@Composable
+private fun BrowseImagePrefetch(
+    items: List<UiWardrobeItem>,
+    gridState: LazyGridState,
+) {
+    val context = LocalContext.current
+    val pipeline = remember(context) { ImagePipeline.shared(context) }
+    LaunchedEffect(pipeline, items, gridState) {
+        var previousFirstIndex = 0
+        snapshotFlow {
+            gridState.layoutInfo.visibleItemsInfo
+                .map { it.index }
+                .let { visible ->
+                    visible.minOrNull().orDefault(0) to visible.maxOrNull().orDefault(-1)
+                }
+        }.collectLatest { (firstIndex, lastIndex) ->
+            if (lastIndex < 0) return@collectLatest
+            if (firstIndex != previousFirstIndex) {
+                pipeline.cancelPrefetch()
+            }
+            val movingForward = firstIndex >= previousFirstIndex
+            previousFirstIndex = firstIndex
+            val gridIndices = if (movingForward) {
+                (lastIndex + 1)..(lastIndex + GRID_PREFETCH_ITEM_COUNT)
+            } else {
+                (firstIndex - GRID_PREFETCH_ITEM_COUNT until firstIndex).reversed()
+            }
+            gridIndices
+                .map { it - 1 } // index zero is the full-width filter row
+                .filter { it in items.indices }
+                .take(GRID_PREFETCH_ITEM_COUNT)
+                .mapNotNull { items.getOrNull(it) }
+                .mapNotNull { item ->
+                    val uri = item.photoUri?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+                    ImageRequest(
+                        sourceUri = Uri.parse(uri),
+                        purpose = ImagePurpose.Browse,
+                        targetBounds = ImageTargetBounds(
+                            GRID_THUMBNAIL_MAX_EDGE_PX,
+                            GRID_THUMBNAIL_MAX_EDGE_PX,
+                        ),
+                        sourceRevision = "${item.id}:$uri",
+                        priority = ImagePriority.Prefetch,
+                        maxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
+                    )
+                }
+                .forEach(pipeline::prefetch)
+        }
+    }
+}
+
+private fun Int?.orDefault(default: Int): Int = this ?: default
+
+private const val GRID_PREFETCH_ITEM_COUNT = 6
 
 @Composable
 private fun FilterBar(
@@ -2309,6 +2377,7 @@ private fun GarmentPhotoPlaceholder(
     item: UiWardrobeItem,
     modifier: Modifier = Modifier,
     thumbnailMaxEdgePx: Int? = GRID_THUMBNAIL_MAX_EDGE_PX,
+    purpose: ImagePurpose = ImagePurpose.Browse,
 ) {
     val swatchColor = item.primaryColor.swatchColor()
     Box(
@@ -2329,6 +2398,8 @@ private fun GarmentPhotoPlaceholder(
             BoundedGarmentImage(
                 photoUri = photoUri,
                 thumbnailMaxEdgePx = thumbnailMaxEdgePx,
+                purpose = purpose,
+                sourceRevision = "${item.id}:$photoUri",
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -2519,6 +2590,7 @@ private fun DetailMediaCard(
                     .fillMaxWidth()
                     .aspectRatio(3f / 4f),
                 thumbnailMaxEdgePx = null,
+                purpose = ImagePurpose.Detail,
             )
             if (hasPhoto) {
                 Surface(

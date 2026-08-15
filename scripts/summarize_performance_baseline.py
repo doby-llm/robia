@@ -8,6 +8,19 @@ import json
 import re
 from pathlib import Path
 
+REQUIRED_IMAGE_STAGES = (
+    "resolve",
+    "decode",
+    "bind",
+    "first_draw",
+    "in_flight_wait",
+    "placeholder_visible",
+    "eviction",
+)
+IMAGE_STAGE_PATTERN = re.compile(
+    rf"stage=(?:{'|'.join(REQUIRED_IMAGE_STAGES)})(?: |$)",
+)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -17,7 +30,11 @@ def main() -> None:
     fixture_manifest = json.loads((args.input / "fixture-manifest.json").read_text())
     stages = (args.input / "batch-stages.log").read_text(errors="replace") if (args.input / "batch-stages.log").exists() else ""
     records = [line for line in stages.splitlines() if "batch_stage" in line]
-    thumbnail_records = [line for line in stages.splitlines() if "thumbnail_stage" in line]
+    image_stage_records = [
+        line
+        for line in stages.splitlines()
+        if "RobiaPerformance" in line and IMAGE_STAGE_PATTERN.search(line)
+    ]
     gfxinfo = (args.input / "gfxinfo.txt").read_text(errors="replace") if (args.input / "gfxinfo.txt").exists() else "unavailable"
     janky = re.search(r"Janky frames:\s*(\d+)\s*\(([^)]+)\)", gfxinfo)
     meminfo_before = read_meminfo(args.input / "meminfo-before.txt")
@@ -25,7 +42,7 @@ def main() -> None:
     require_valid_baseline_evidence(
         fixture_count=len(fixture_manifest["fixtures"]),
         stage_records=records,
-        thumbnail_records=thumbnail_records,
+        image_stage_records=image_stage_records,
         gfxinfo=gfxinfo,
         meminfo_before=meminfo_before,
         meminfo_after=meminfo_after,
@@ -47,8 +64,8 @@ def main() -> None:
         "",
         "## Batch stage timing",
         f"- Sanitized per-stage records captured: {len(records)}.",
-        f"- Bounded-thumbnail records captured: {len(thumbnail_records)}.",
-        "- `batch-stages.log` contains sanitized batch and bounded-thumbnail measurements: fixture/stage timing where emitted plus thumbnail source/thumbnail dimensions/bytes, max edge, cache-hit state, and elapsed milliseconds; it deliberately excludes image names, URIs, clothing metadata, and pixels.",
+        f"- Image pipeline records captured: {len(image_stage_records)}.",
+        "- `batch-stages.log` contains sanitized batch and image pipeline measurements: fixture/stage timing where emitted plus hashed request ids, purpose, priority, target bounds, cache state, blank duration, active decode count, cache bytes/entries, and eviction reason; it deliberately excludes image names, URIs, clothing metadata, and pixels.",
         "- A missing stage record is an infrastructure/fixture failure, not a successful measurement.",
         "",
         "## Memory evidence",
@@ -74,7 +91,7 @@ def require_valid_baseline_evidence(
     *,
     fixture_count: int,
     stage_records: list[str],
-    thumbnail_records: list[str],
+    image_stage_records: list[str],
     gfxinfo: str,
     meminfo_before: int | None,
     meminfo_after: int | None,
@@ -84,8 +101,8 @@ def require_valid_baseline_evidence(
         failures.append(f"fixture-manifest.json contains {fixture_count} fixtures, expected 60")
     if not stage_records:
         failures.append("batch-stages.log contains no sanitized batch_stage records")
-    if not thumbnail_records:
-        failures.append("batch-stages.log contains no bounded thumbnail_stage records")
+    if not image_stage_records:
+        failures.append("batch-stages.log contains no sanitized RobiaPerformance image stage records")
     if "No process found" in gfxinfo:
         failures.append("gfxinfo.txt reports No process found for Robia")
     if not re.search(r"Janky frames:\s*\d+|Total frames rendered:\s*\d+", gfxinfo):

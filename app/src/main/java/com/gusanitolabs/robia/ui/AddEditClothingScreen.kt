@@ -100,6 +100,7 @@ import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
 import com.gusanitolabs.robia.media.EditorPhotoState
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
@@ -1739,6 +1740,7 @@ private fun PhotoPreview(
             BoundedGarmentImage(
                 photoUri = uri,
                 thumbnailMaxEdgePx = EDITOR_PREVIEW_MAX_EDGE_PX,
+                purpose = ImagePurpose.Editor,
                 modifier = Modifier.fillMaxSize(),
             )
             if (!isProcessing && onQuickEditClick != null) {
@@ -1910,6 +1912,7 @@ private fun QuickEditDialog(
                     BoundedGarmentImage(
                         photoUri = previewUri,
                         thumbnailMaxEdgePx = QUICK_EDIT_PREVIEW_MAX_EDGE_PX,
+                        purpose = ImagePurpose.Editor,
                         modifier = Modifier.fillMaxSize(),
                     )
                     if (showPreviewLoading && !showBefore) {
