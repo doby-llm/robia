@@ -616,6 +616,7 @@ private fun RobiaShell(
     val batchBackgroundRemover = remember { PhotoBackgroundRemover() }
     val batchAdditionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
+    var batchSaveStatusMessage by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
     var showBrowseDeleteDialog by remember { mutableStateOf(false) }
@@ -751,6 +752,7 @@ private fun RobiaShell(
     fun startBatchAdd(photoUris: List<String>) {
         batchProcessingCoordinator.cancel()
         batchDrafts.clear()
+        batchSaveStatusMessage = null
         photoUris.forEachIndexed { index, uri ->
             batchDrafts += BatchDraftItem(orderIndex = index, originalPhotoUri = uri)
         }
@@ -760,7 +762,8 @@ private fun RobiaShell(
     }
 
     fun retryBatchDraft(draft: BatchDraftItem) {
-        updateBatchDraft(draft.copy(status = BatchDraftStatus.Queued, errorMessage = null))
+        updateBatchDraft(draft.retryForBatch())
+        batchSaveStatusMessage = null
         processQueuedBatchDrafts()
     }
 
@@ -772,6 +775,7 @@ private fun RobiaShell(
     fun cancelBatchAdd() {
         batchProcessingCoordinator.cancel()
         batchDrafts.clear()
+        batchSaveStatusMessage = null
         selectedBatchDraftId = null
         showBatchDiscardDialog = false
         replaceRoute(RobiaRoute.Browse)
@@ -1171,6 +1175,7 @@ private fun RobiaShell(
             selectedDomainItem = selectedDomainItem,
             batchDrafts = batchDrafts,
             selectedBatchDraft = batchDrafts.firstOrNull { draft -> draft.id == selectedBatchDraftId },
+            batchSaveStatusMessage = batchSaveStatusMessage,
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
@@ -1204,19 +1209,37 @@ private fun RobiaShell(
             },
             onRetryBatchDraft = ::retryBatchDraft,
             onDiscardBatchDraft = ::discardBatchDraft,
-            onSaveBatch = { batchItems ->
-                onSaveItems(batchItems)
-                val savedIds = batchItems.map(ClothingItem::id).toSet()
+            onSaveBatch = { requestedDraftIds ->
+                // Revalidate the UI's accepted-ID snapshot against the latest state immediately
+                // before creating payloads. A late failure, cancellation, or review change must
+                // not slip into this save operation.
+                val acceptedDrafts = batchDrafts.toList().acceptedForSave(requestedDraftIds)
+                val batchItems = acceptedDrafts.map { draft ->
+                    draft.toClothingItem(availableTags, mainColors)
+                }
+                if (batchItems.isNotEmpty()) onSaveItems(batchItems)
+                val savedIds = acceptedDrafts.map(BatchDraftItem::id).toSet()
                 batchDrafts.removeAll { it.id in savedIds }
+                batchSaveStatusMessage = context.getString(
+                    R.string.batch_save_result,
+                    savedIds.size,
+                    batchDrafts.size,
+                )
                 selectedBatchDraftId = null
                 if (batchDrafts.isEmpty()) replaceRoute(RobiaRoute.Browse)
             },
             onCancelBatch = {
                 cancelBatchAdd()
             },
-            onSaveBatchDraft = { item ->
+            onSaveBatchDraft = { item, acceptOriginalPhoto ->
                 batchDrafts.firstOrNull { draft -> draft.id == item.id }?.let { previous ->
-                    updateBatchDraft(item.toBatchDraftFromExisting(previous, mainColors))
+                    updateBatchDraft(
+                        item.toBatchDraftFromExisting(
+                            previous = previous,
+                            mainColors = mainColors,
+                            acceptOriginalPhoto = acceptOriginalPhoto,
+                        ),
+                    )
                 }
                 popRoute()
             },
@@ -1783,6 +1806,7 @@ private fun RobiaNavHost(
     selectedDomainItem: ClothingItem?,
     batchDrafts: List<BatchDraftItem>,
     selectedBatchDraft: BatchDraftItem?,
+    batchSaveStatusMessage: String?,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
@@ -1802,9 +1826,9 @@ private fun RobiaNavHost(
     onDraftSelected: (BatchDraftItem) -> Unit,
     onRetryBatchDraft: (BatchDraftItem) -> Unit,
     onDiscardBatchDraft: (BatchDraftItem) -> Unit,
-    onSaveBatch: (List<ClothingItem>) -> Unit,
+    onSaveBatch: (Set<String>) -> Unit,
     onCancelBatch: () -> Unit,
-    onSaveBatchDraft: (ClothingItem) -> Unit,
+    onSaveBatchDraft: (ClothingItem, Boolean) -> Unit,
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
@@ -1878,6 +1902,7 @@ private fun RobiaNavHost(
             onDiscardDraft = onDiscardBatchDraft,
             onSaveBatch = onSaveBatch,
             onCancelBatch = onCancelBatch,
+            saveStatusMessage = batchSaveStatusMessage,
         )
         RobiaRoute.BatchEditClothing -> selectedBatchDraft?.let { draft ->
             AddEditClothingScreen(
@@ -1889,9 +1914,15 @@ private fun RobiaNavHost(
                 initialPhotoReviewState = draft.toBatchEditPhotoReviewState(),
                 titleRes = R.string.batch_edit_title,
                 bodyRes = R.string.batch_edit_body,
-                saveButtonTextRes = R.string.batch_return_to_batch,
+                saveButtonTextRes = if (draft.status == BatchDraftStatus.NeedsReview) {
+                    R.string.batch_keep_original_accept
+                } else {
+                    R.string.batch_return_to_batch
+                },
                 onCancel = onBack,
-                onSave = onSaveBatchDraft,
+                onSave = { item ->
+                    onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview)
+                },
             )
         } ?: BatchAddClothingScreen(
             innerPadding = innerPadding,
@@ -1903,6 +1934,7 @@ private fun RobiaNavHost(
             onDiscardDraft = onDiscardBatchDraft,
             onSaveBatch = onSaveBatch,
             onCancelBatch = onCancelBatch,
+            saveStatusMessage = batchSaveStatusMessage,
         )
         RobiaRoute.ItemDetail -> selectedItem?.let { item ->
             ItemDetailScreen(

@@ -84,6 +84,7 @@ internal data class BatchDraftItem(
     val photoUri: String = originalPhotoUri,
     val photoAspectRatio: Float? = null,
     val status: BatchDraftStatus = BatchDraftStatus.Queued,
+    val explicitlyAccepted: Boolean = false,
     val errorMessage: String? = null,
     val name: String = "",
     val notes: String = "",
@@ -112,8 +113,9 @@ internal fun BatchAddClothingScreen(
     onDraftSelected: (BatchDraftItem) -> Unit,
     onRetryDraft: (BatchDraftItem) -> Unit,
     onDiscardDraft: (BatchDraftItem) -> Unit,
-    onSaveBatch: (List<ClothingItem>) -> Unit,
+    onSaveBatch: (Set<String>) -> Unit,
     onCancelBatch: () -> Unit,
+    saveStatusMessage: String? = null,
 ) {
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -148,20 +150,30 @@ internal fun BatchAddClothingScreen(
     }
 
     val processedCount = drafts.count { it.status.isTerminal }
-    val processingCount = drafts.count { it.status == BatchDraftStatus.Queued || it.status == BatchDraftStatus.Processing }
-    val needsReviewCount = drafts.count { it.status == BatchDraftStatus.NeedsReview }
+    val activeCount = drafts.count(BatchDraftItem::isProcessingActive)
+    val needsReviewCount = drafts.count {
+        it.status == BatchDraftStatus.NeedsReview && !it.explicitlyAccepted
+    }
     val failedCount = drafts.count { it.status == BatchDraftStatus.Failed }
     val interruptedCount = drafts.count { it.status == BatchDraftStatus.Interrupted }
+    val acceptedCount = drafts.count(BatchDraftItem::isAcceptedForSave)
     val progress = if (drafts.isEmpty()) 0f else processedCount.toFloat() / drafts.size.toFloat()
-    val savableDrafts = drafts.filter { it.status.isSavable }
-    val canSave = savableDrafts.isNotEmpty()
-    val saveHelper = when {
-        processingCount > 0 -> stringResource(R.string.batch_helper_processing, processingCount)
-        needsReviewCount > 0 -> stringResource(R.string.batch_helper_needs_review, needsReviewCount)
-        interruptedCount > 0 -> stringResource(R.string.batch_helper_interrupted, interruptedCount)
-        failedCount > 0 -> stringResource(R.string.batch_helper_failed, failedCount)
-        drafts.isEmpty() -> stringResource(R.string.batch_helper_empty)
-        else -> stringResource(R.string.batch_helper_ready, drafts.size)
+    val canSave = drafts.canSaveBatch()
+    val saveContentDescription = stringResource(R.string.batch_save_content_description, acceptedCount)
+    val saveStateDescription = stringResource(
+        if (canSave) R.string.batch_save_enabled_state else R.string.batch_save_disabled_state,
+    )
+    val saveHelper = if (drafts.isEmpty()) {
+        stringResource(R.string.batch_helper_empty)
+    } else {
+        stringResource(
+            if (activeCount > 0) R.string.batch_helper_active_summary else R.string.batch_helper_summary,
+            acceptedCount,
+            activeCount,
+            needsReviewCount,
+            failedCount,
+            interruptedCount,
+        )
     }
 
     Box(
@@ -215,14 +227,26 @@ internal fun BatchAddClothingScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                saveStatusMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Button(
-                    onClick = { onSaveBatch(savableDrafts.map { it.toClothingItem(availableTags, mainColors) }) },
+                    onClick = { onSaveBatch(drafts.filter(BatchDraftItem::isAcceptedForSave).map { it.id }.toSet()) },
                     enabled = canSave,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            contentDescription = saveContentDescription
+                            stateDescription = saveStateDescription
+                        },
                 ) {
                     Icon(Icons.Rounded.Save, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.batch_save_items, drafts.size))
+                    Text(stringResource(R.string.batch_save_items, acceptedCount))
                 }
             }
         }
@@ -298,7 +322,11 @@ private fun BatchDraftTile(
     onRetry: () -> Unit,
     onDiscard: () -> Unit,
 ) {
-    val status = stringResource(draft.status.labelRes)
+    val status = if (draft.status == BatchDraftStatus.NeedsReview && draft.explicitlyAccepted) {
+        stringResource(R.string.batch_status_original_accepted)
+    } else {
+        stringResource(draft.status.labelRes)
+    }
     val tileDescription = stringResource(R.string.batch_tile_content_description, position, totalCount, status)
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -325,6 +353,7 @@ private fun BatchDraftTile(
             )
             BatchStatusBadge(
                 status = draft.status,
+                isAccepted = draft.isAcceptedForSave(),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp),
@@ -401,15 +430,17 @@ private fun BatchPhotoPreview(
 @Composable
 private fun BatchStatusBadge(
     status: BatchDraftStatus,
+    isAccepted: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val containerColor = when (status) {
+    val visualStatus = if (isAccepted) BatchDraftStatus.Ready else status
+    val containerColor = when (visualStatus) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.primaryContainer
         BatchDraftStatus.Failed, BatchDraftStatus.Interrupted -> MaterialTheme.colorScheme.errorContainer
         BatchDraftStatus.NeedsReview -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     }
-    val contentColor = when (status) {
+    val contentColor = when (visualStatus) {
         BatchDraftStatus.Ready -> MaterialTheme.colorScheme.onPrimaryContainer
         BatchDraftStatus.Failed, BatchDraftStatus.Interrupted -> MaterialTheme.colorScheme.onErrorContainer
         BatchDraftStatus.NeedsReview -> MaterialTheme.colorScheme.onTertiaryContainer
@@ -426,7 +457,7 @@ private fun BatchStatusBadge(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            when (status) {
+            when (visualStatus) {
                 BatchDraftStatus.Ready -> Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                 BatchDraftStatus.Failed, BatchDraftStatus.Interrupted -> Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(14.dp))
                 BatchDraftStatus.NeedsReview -> Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -450,7 +481,13 @@ internal suspend fun processBatchDraft(
     availableTags: List<GarmentTag>,
     onDraftUpdated: (BatchDraftItem) -> Unit,
 ) {
-    onDraftUpdated(draft.copy(status = BatchDraftStatus.Processing, errorMessage = null))
+    onDraftUpdated(
+        draft.copy(
+            status = BatchDraftStatus.Processing,
+            explicitlyAccepted = false,
+            errorMessage = null,
+        ),
+    )
     try {
         val sourceUri = Uri.parse(draft.originalPhotoUri)
         val sourceAspectRatio = withContext(Dispatchers.IO) {
@@ -513,16 +550,36 @@ internal suspend fun processBatchDraft(
 }
 
 private val BatchDraftStatus.isSelectable: Boolean
-    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview || isRetryable
+    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview
 
 private val BatchDraftStatus.isRetryable: Boolean
     get() = this == BatchDraftStatus.Failed || this == BatchDraftStatus.Interrupted
 
-private val BatchDraftStatus.isSavable: Boolean
-    get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview
-
 private val BatchDraftStatus.isTerminal: Boolean
     get() = this != BatchDraftStatus.Queued && this != BatchDraftStatus.Processing
+
+internal fun BatchDraftItem.isAcceptedForSave(): Boolean =
+    status == BatchDraftStatus.Ready ||
+        (status == BatchDraftStatus.NeedsReview && explicitlyAccepted)
+
+internal fun BatchDraftItem.isProcessingActive(): Boolean =
+    status == BatchDraftStatus.Queued || status == BatchDraftStatus.Processing
+
+internal fun List<BatchDraftItem>.canSaveBatch(): Boolean =
+    none { it.isProcessingActive() } && any { it.isAcceptedForSave() }
+
+internal fun List<BatchDraftItem>.acceptedForSave(requestedDraftIds: Set<String>): List<BatchDraftItem> =
+    filter { draft -> draft.id in requestedDraftIds && draft.isAcceptedForSave() }
+
+internal fun BatchDraftItem.retryForBatch(): BatchDraftItem = if (status.isRetryable) {
+    copy(
+        status = BatchDraftStatus.Queued,
+        explicitlyAccepted = false,
+        errorMessage = null,
+    )
+} else {
+    this
+}
 
 internal fun BatchDraftItem.toClothingItem(
     availableTags: List<GarmentTag>,
@@ -573,8 +630,7 @@ internal fun BatchDraftItem.toBatchEditItem(
 
 internal fun BatchDraftItem.toBatchEditPhotoReviewState(): AddEditPhotoReviewState? {
     if (originalPhotoUri.isBlank()) return null
-    val needsRetryReview = status == BatchDraftStatus.NeedsReview || status == BatchDraftStatus.Failed
-    if (!needsRetryReview) return null
+    if (status != BatchDraftStatus.NeedsReview) return null
     return AddEditPhotoReviewState(
         captureStatus = PhotoStatus.BackgroundFallback,
         retrySourceUri = originalPhotoUri,
@@ -592,7 +648,8 @@ internal fun ClothingItem.toBatchDraftItem(
     fitValue = fitValue,
     selectedPrimaryColorId = colorMetrics.primaryPaletteColorId,
     selectedSecondaryColorId = colorMetrics.secondaryPaletteColorId,
-    status = BatchDraftStatus.Ready,
+    status = previous.status,
+    explicitlyAccepted = previous.explicitlyAccepted,
     errorMessage = null,
 )
 
@@ -621,6 +678,7 @@ private fun List<MainColor>.nearestColor(rawHex: String?): MainColor? {
 internal fun ClothingItem.toBatchDraftFromExisting(
     previous: BatchDraftItem,
     mainColors: List<MainColor>,
+    acceptOriginalPhoto: Boolean = false,
 ): BatchDraftItem = previous.copy(
     name = name,
     notes = notes,
@@ -629,7 +687,9 @@ internal fun ClothingItem.toBatchDraftFromExisting(
     fitValue = fitValue,
     selectedPrimaryColorId = colorMetrics.primaryPaletteColorId ?: mainColors.nearestColor(colorMetrics.primaryPaletteColorHex ?: colorMetrics.primaryRawValue)?.id,
     selectedSecondaryColorId = colorMetrics.secondaryPaletteColorId ?: mainColors.nearestColor(colorMetrics.secondaryPaletteColorHex ?: colorMetrics.secondaryRawValue)?.id,
-    status = BatchDraftStatus.Ready,
+    status = previous.status,
+    explicitlyAccepted = previous.explicitlyAccepted ||
+        (previous.status == BatchDraftStatus.NeedsReview && acceptOriginalPhoto),
     errorMessage = null,
 )
 

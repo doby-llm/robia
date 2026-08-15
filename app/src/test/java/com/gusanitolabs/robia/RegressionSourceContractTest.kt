@@ -7,11 +7,60 @@ import java.nio.file.Path
 
 class RegressionSourceContractTest {
     @Test
+    fun batchSave_requiresExplicitReviewAcceptanceAndRevalidatesAtSaveBoundary() {
+        val batch = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val strings = source("app/src/main/res/values/strings.xml")
+
+        assertTrue(batch.contains("val explicitlyAccepted: Boolean = false"))
+        assertTrue(batch.contains("val acceptedCount = drafts.count(BatchDraftItem::isAcceptedForSave)"))
+        assertTrue(batch.contains("val canSave = drafts.canSaveBatch()"))
+        assertTrue(batch.contains("onSaveBatch(drafts.filter(BatchDraftItem::isAcceptedForSave).map { it.id }.toSet())"))
+        assertTrue(batch.contains("R.string.batch_save_items, acceptedCount"))
+        assertTrue(batch.contains("R.string.batch_save_disabled_state"))
+        assertTrue(batch.contains("BatchDraftStatus.NeedsReview && explicitlyAccepted"))
+        assertTrue(batch.contains("status != BatchDraftStatus.NeedsReview"))
+        assertTrue(batch.contains("status = previous.status"))
+        assertTrue(batch.contains("acceptOriginalPhoto: Boolean = false"))
+        assertTrue(batch.contains("status = BatchDraftStatus.Queued"))
+        assertTrue(batch.contains("explicitlyAccepted = false"))
+
+        assertTrue(app.contains("onSaveBatch = { requestedDraftIds ->"))
+        assertTrue(app.contains("val acceptedDrafts = batchDrafts.toList().acceptedForSave(requestedDraftIds)"))
+        assertTrue(app.contains("val batchItems = acceptedDrafts.map { draft ->"))
+        assertTrue(app.contains("batchDrafts.removeAll { it.id in savedIds }"))
+        assertTrue(app.contains("R.string.batch_save_result"))
+        assertTrue(app.contains("if (batchDrafts.isEmpty()) replaceRoute(RobiaRoute.Browse)"))
+        assertTrue(app.contains("R.string.batch_keep_original_accept"))
+        assertTrue(app.contains("onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview)"))
+
+        assertTrue(strings.contains("name=\"batch_save_items\">Save %1$d items"))
+        assertTrue(strings.contains("name=\"batch_helper_summary\""))
+        assertTrue(strings.contains("name=\"batch_save_result\""))
+        assertTrue(strings.contains("name=\"batch_keep_original_accept\">Keep original and accept"))
+    }
+
+    @Test
+    fun batchSave_keepsFailureActionsAndDoesNotMakeEditingFailedItemsSaveable() {
+        val batch = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+        val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
+
+        assertTrue(batch.contains("get() = this == BatchDraftStatus.Failed || this == BatchDraftStatus.Interrupted"))
+        assertTrue(batch.contains("TextButton(onClick = onRetry)"))
+        assertTrue(batch.contains("TextButton(onClick = onDiscard)"))
+        assertTrue(batch.contains("get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview"))
+        assertTrue(batch.contains("internal fun BatchDraftItem.retryForBatch()"))
+        assertTrue(batch.contains("status = BatchDraftStatus.Queued"))
+        assertTrue(coordinator.contains("drafts().filter(BatchDraftItem::isProcessingActive)"))
+        assertTrue(coordinator.contains("interruptActiveDrafts?.invoke()"))
+    }
+
+    @Test
     fun batchCancellation_terminalizesTheCurrentItemForManualRetry() {
         val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
         val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
 
-        assertTrue(coordinator.contains("onInterrupted(next)"))
+        assertTrue(coordinator.contains("forEach(onInterrupted)"))
         assertTrue(batchScreen.contains("BatchDraftStatus.Interrupted"))
         assertTrue(batchScreen.contains("catch (throwable: CancellationException)"))
         assertTrue(batchScreen.contains("status = BatchDraftStatus.Interrupted"))
