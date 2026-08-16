@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,8 +37,10 @@ import coil3.request.ImageRequest as CoilImageRequest
 import coil3.request.SuccessResult
 import coil3.getExtra
 import coil3.size.Size
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -54,9 +57,9 @@ import java.util.concurrent.atomic.AtomicLong
  * Robia's adapter boundary around Coil. Coil types stay inside this file; UI call sites only
  * construct [ImageRequest] values and invoke [Display].
  *
- * Coil owns the decoded-memory LRU, disk cache, in-flight request sharing, and composition-aware
- * cancellation. This adapter owns stable Robia keys, request purpose/priority, cache budgets,
- * bounded prefetch, placeholder/error policy, and sanitized telemetry.
+ * Coil owns decoded-memory and disk caches. This adapter owns stable Robia keys, request purpose/priority,
+ * composition-safe single-flight coordination, cache budgets, bounded prefetch, placeholder/error policy,
+ * and sanitized telemetry.
  */
 class ImagePipeline private constructor(
     private val appContext: Context,
@@ -67,11 +70,13 @@ class ImagePipeline private constructor(
     )
     private val prefetchPermit = Semaphore(MAX_PREFETCH_DECODE)
     private val prefetchJobs = ConcurrentHashMap<String, Job>()
-    private val activeRequestIds = ConcurrentHashMap<String, Boolean>()
+    private val ownedInFlightRequests = ConcurrentHashMap<String, InFlightRequest>()
+    private val inFlightLock = Any()
     private val activeDecodeCount = AtomicInteger(0)
     private val cacheIdentities = ConcurrentHashMap<String, CacheIdentity>()
     private val cacheIdentityOrder = ConcurrentLinkedQueue<String>()
     private val evictionCount = AtomicLong(0L)
+    private val diskCacheDirectory = appContext.cacheDir.resolve(DISK_CACHE_DIRECTORY)
 
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)
         .memoryCache {
@@ -97,7 +102,6 @@ class ImagePipeline private constructor(
                 request = request,
                 telemetry = telemetry,
                 cacheStats = ::cacheStats,
-                activeRequestIds = activeRequestIds,
                 activeDecodeCount = activeDecodeCount,
             )
         }
@@ -127,35 +131,105 @@ class ImagePipeline private constructor(
             .build()
     }
 
-    /**
-     * Enqueue a bounded low-priority warm-up. Coil deduplicates the same keyed request with a
-     * visible consumer, and only one prefetch decoder is admitted at a time.
-     */
+    /** Enqueue bounded warm-up work through the adapter-owned in-flight registry. */
     fun prefetch(request: ImageRequest): Job? {
         if (request.priority != ImagePriority.Prefetch || request.allowOriginal) return null
         val key = request.cacheKey().stableId
-        if (prefetchJobs.containsKey(key) || prefetchJobs.size >= MAX_PREFETCH_JOBS) return null
         if (imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null) return null
 
-        val job = prefetchScope.launch {
-            try {
-                prefetchPermit.withPermit {
-                    imageLoader.execute(requestFor(request))
-                }
-            } finally {
-                prefetchJobs.remove(key)
+        synchronized(inFlightLock) {
+            ownedInFlightRequests[key]?.let {
+                recordInFlightWait(request)
+                return prefetchJobs[key]
             }
+            if (prefetchJobs.size >= MAX_PREFETCH_JOBS) return null
+
+            val ownedRequest = InFlightRequest(InFlightOwner.Prefetch)
+            lateinit var job: Job
+            job = prefetchScope.launch(start = CoroutineStart.LAZY) {
+                var success = false
+                try {
+                    prefetchPermit.withPermit {
+                        val result = imageLoader.execute(requestFor(request))
+                        success = result is SuccessResult
+                    }
+                } finally {
+                    completeInFlight(key, ownedRequest, success)
+                    synchronized(inFlightLock) {
+                        prefetchJobs.remove(key, job)
+                    }
+                }
+            }
+            ownedInFlightRequests[key] = ownedRequest
+            prefetchJobs[key] = job
+            job.start()
+            return job
         }
-        return prefetchJobs.putIfAbsent(key, job)?.let {
-            job.cancel()
-            it
-        } ?: job
     }
 
     /** Drop stale directional work when the grid changes direction or its window jumps. */
     fun cancelPrefetch() {
-        prefetchJobs.values.forEach(Job::cancel)
-        prefetchJobs.clear()
+        val jobs = synchronized(inFlightLock) {
+            val jobsToCancel = prefetchJobs.values.toList()
+            prefetchJobs.clear()
+            ownedInFlightRequests.entries
+                .filter { (_, request) -> request.owner == InFlightOwner.Prefetch }
+                .forEach { (key, request) ->
+                    if (ownedInFlightRequests.remove(key, request)) {
+                        request.completion.complete(false)
+                    }
+                }
+            jobsToCancel
+        }
+        jobs.forEach(Job::cancel)
+    }
+
+    private fun acquireVisible(request: ImageRequest): RequestLease {
+        val key = request.cacheKey().stableId
+        synchronized(inFlightLock) {
+            ownedInFlightRequests[key]?.let { existing ->
+                recordInFlightWait(request)
+                return RequestLease(key, existing, isOwner = false)
+            }
+            val ownedRequest = InFlightRequest(InFlightOwner.Visible)
+            ownedInFlightRequests[key] = ownedRequest
+            return RequestLease(key, ownedRequest, isOwner = true)
+        }
+    }
+
+    private fun completeVisible(lease: RequestLease, success: Boolean) {
+        if (lease.isOwner) completeInFlight(lease.key, lease.request, success)
+    }
+
+    private fun releaseVisible(lease: RequestLease) {
+        completeVisible(lease, success = false)
+    }
+
+    private fun completeInFlight(key: String, request: InFlightRequest, success: Boolean) {
+        synchronized(inFlightLock) {
+            if (ownedInFlightRequests.remove(key, request)) {
+                request.completion.complete(success)
+            }
+        }
+    }
+
+    private fun recordInFlightWait(request: ImageRequest) {
+        val key = request.cacheKey()
+        val stats = cacheStats()
+        telemetry.record(
+            ImageTelemetryEvent(
+                stage = "in_flight_wait",
+                requestId = key.stableId,
+                purpose = key.purpose,
+                priority = request.priority,
+                target = key.target,
+                cache = "in_flight",
+                memoryCacheBytes = stats.memoryCacheBytes,
+                memoryCacheEntries = stats.memoryCacheEntries,
+                diskCacheBytes = stats.diskCacheBytes,
+                diskCacheEntries = stats.diskCacheEntries,
+            ),
+        )
     }
 
     fun recordPlaceholderVisible(request: ImageRequest): Long {
@@ -171,6 +245,7 @@ class ImagePipeline private constructor(
                 memoryCacheBytes = imageLoader.memoryCache?.size,
                 memoryCacheEntries = imageLoader.memoryCache?.keys?.size,
                 diskCacheBytes = imageLoader.diskCache?.size,
+                diskCacheEntries = diskCacheEntryCount(),
             ),
         )
         return now
@@ -215,6 +290,7 @@ class ImagePipeline private constructor(
                 memoryCacheBytes = imageLoader.memoryCache?.size,
                 memoryCacheEntries = imageLoader.memoryCache?.keys?.size,
                 diskCacheBytes = imageLoader.diskCache?.size,
+                diskCacheEntries = diskCacheEntryCount(),
             ),
         )
     }
@@ -224,7 +300,11 @@ class ImagePipeline private constructor(
         memoryCacheEntries = imageLoader.memoryCache?.keys?.size,
         memoryCacheKeys = imageLoader.memoryCache?.keys?.map { it.key }?.toSet().orEmpty(),
         diskCacheBytes = imageLoader.diskCache?.size,
+        diskCacheEntries = diskCacheEntryCount(),
     )
+
+    private fun diskCacheEntryCount(): Int? = diskCacheDirectory.listFiles()
+        ?.count { file -> file.isFile && file.name.endsWith(".0") }
 
     private fun rememberCacheIdentity(request: ImageRequest, cacheKey: ImageCacheKey) {
         if (cacheIdentities.putIfAbsent(
@@ -257,6 +337,7 @@ class ImagePipeline private constructor(
                     memoryCacheBytes = stats.memoryCacheBytes,
                     memoryCacheEntries = stats.memoryCacheEntries,
                     diskCacheBytes = stats.diskCacheBytes,
+                    diskCacheEntries = stats.diskCacheEntries,
                     evictionReason = "memory_capacity",
                 ),
             )
@@ -269,24 +350,40 @@ class ImagePipeline private constructor(
         modifier: Modifier = Modifier,
         errorContentDescription: String = "Image unavailable; tap to retry",
     ) {
+        val cacheKey = remember(request) { request.cacheKey() }
         val coilRequest = remember(request) { requestFor(request) }
+        val lease = remember(cacheKey.stableId) { acquireVisible(request) }
+        var followerReady by remember(lease) { mutableStateOf(lease.isOwner) }
+        DisposableEffect(lease) {
+            onDispose { releaseVisible(lease) }
+        }
+        LaunchedEffect(lease) {
+            if (!lease.isOwner) {
+                lease.await()
+                followerReady = true
+            }
+        }
+        val requestReady = lease.isOwner || followerReady
         val painter = rememberAsyncImagePainter(
-            model = coilRequest,
+            model = coilRequest.takeIf { requestReady },
             imageLoader = imageLoader,
             contentScale = ContentScale.Fit,
         )
         val state by painter.state.collectAsState()
-        var previousSuccessPainter by remember(request.cacheKey().stableId) {
+        var previousSuccessPainter by remember(cacheKey.stableId) {
             mutableStateOf<Painter?>(null)
         }
-        var placeholderAt by remember(request) { mutableStateOf<Long?>(null) }
+        var placeholderAt by remember(cacheKey.stableId) { mutableStateOf<Long?>(null) }
+        var errorRecorded by remember(cacheKey.stableId) { mutableStateOf(false) }
 
         LaunchedEffect(request, state) {
             when (val current = state) {
                 is AsyncImagePainter.State.Empty,
-                is AsyncImagePainter.State.Loading,
-                -> {
-                    if (placeholderAt == null) {
+                is AsyncImagePainter.State.Loading -> {
+                    if (errorRecorded) {
+                        placeholderAt = recordPlaceholderVisible(request)
+                        errorRecorded = false
+                    } else if (placeholderAt == null) {
                         placeholderAt = recordPlaceholderVisible(request)
                     }
                 }
@@ -294,17 +391,20 @@ class ImagePipeline private constructor(
                     previousSuccessPainter = current.painter
                     val startedAt = placeholderAt ?: recordPlaceholderVisible(request)
                     recordBind(request, startedAt)
+                    completeVisible(lease, success = true)
                     withFrameNanos {
                         recordFirstDraw(request, startedAt)
                     }
                 }
                 is AsyncImagePainter.State.Error -> {
                     val startedAt = placeholderAt ?: recordPlaceholderVisible(request)
-                    // Coil's listener records the typed failure; this terminal record adds the
-                    // user-visible blank duration when no previous image can be retained.
-                    if (previousSuccessPainter == null) {
+                    if (!errorRecorded) {
+                        errorRecorded = true
+                        // Coil's listener records the typed failure; this terminal record adds the
+                        // user-visible blank duration even when a stale image is retained.
                         recordTerminal(request, "error", startedAt, android.os.SystemClock.elapsedRealtime())
                     }
+                    completeVisible(lease, success = false)
                 }
             }
         }
@@ -318,12 +418,26 @@ class ImagePipeline private constructor(
             contentAlignment = Alignment.Center,
         ) {
             if (displayPainter != null) {
-                Image(
-                    painter = displayPainter,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.matchParentSize(),
-                )
+                Box(modifier = Modifier.matchParentSize()) {
+                    Image(
+                        painter = displayPainter,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    if (state is AsyncImagePainter.State.Error) {
+                        Icon(
+                            imageVector = Icons.Rounded.ErrorOutline,
+                            contentDescription = errorContentDescription,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .clickable { painter.restart() }
+                                .semantics { contentDescription = errorContentDescription },
+                        )
+                    }
+                }
             } else {
                 when (state) {
                     is AsyncImagePainter.State.Error -> {
@@ -420,13 +534,13 @@ private data class ImageCacheStats(
     val memoryCacheEntries: Int?,
     val memoryCacheKeys: Set<String>,
     val diskCacheBytes: Long?,
+    val diskCacheEntries: Int?,
 )
 
 private class RobiaCoilEventListener(
     private val request: CoilImageRequest,
     private val telemetry: ImageTelemetrySink,
     private val cacheStats: () -> ImageCacheStats,
-    private val activeRequestIds: ConcurrentHashMap<String, Boolean>,
     private val activeDecodeCount: AtomicInteger,
 ) : EventListener() {
     private val requestId = request.memoryCacheKey ?: request.diskCacheKey ?: "unknown"
@@ -434,10 +548,6 @@ private class RobiaCoilEventListener(
     private val priority = request.getExtra(ImagePipeline.IMAGE_PRIORITY_EXTRA)
     private val target = request.getExtra(IMAGE_TARGET_EXTRA)
 
-    override fun onStart(request: CoilImageRequest) {
-        val alreadyActive = activeRequestIds.putIfAbsent(requestId, true) != null
-        if (alreadyActive) record("in_flight_wait", cache = "in_flight")
-    }
 
     override fun resolveSizeStart(request: CoilImageRequest, sizeResolver: coil3.size.SizeResolver) {
         // The resolved bounds are recorded by resolveSizeEnd below.
@@ -474,17 +584,14 @@ private class RobiaCoilEventListener(
     }
 
     override fun onCancel(request: CoilImageRequest) {
-        activeRequestIds.remove(requestId)
         record("cancel")
     }
 
     override fun onError(request: CoilImageRequest, result: coil3.request.ErrorResult) {
-        activeRequestIds.remove(requestId)
         record("error", error = result.throwable::class.simpleName ?: "image_error")
     }
 
     override fun onSuccess(request: CoilImageRequest, result: SuccessResult) {
-        activeRequestIds.remove(requestId)
         val cache = when (result.dataSource) {
             DataSource.MEMORY_CACHE -> "memory"
             DataSource.DISK -> "disk"
@@ -520,10 +627,30 @@ private class RobiaCoilEventListener(
                 memoryCacheBytes = stats.memoryCacheBytes,
                 memoryCacheEntries = stats.memoryCacheEntries,
                 diskCacheBytes = stats.diskCacheBytes,
+                diskCacheEntries = stats.diskCacheEntries,
                 error = error,
             ),
         )
     }
+}
+
+private enum class InFlightOwner {
+    Visible,
+    Prefetch,
+}
+
+private class InFlightRequest(
+    val owner: InFlightOwner,
+) {
+    val completion = CompletableDeferred<Boolean>()
+}
+
+private class RequestLease(
+    val key: String,
+    val request: InFlightRequest,
+    val isOwner: Boolean,
+) {
+    suspend fun await(): Boolean = request.completion.await()
 }
 
 private val IMAGE_PURPOSE_EXTRA = Extras.Key(ImagePurpose.Browse)

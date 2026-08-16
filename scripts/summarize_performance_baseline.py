@@ -20,6 +20,9 @@ REQUIRED_IMAGE_STAGES = (
 IMAGE_STAGE_PATTERN = re.compile(
     rf"stage=(?:{'|'.join(REQUIRED_IMAGE_STAGES)})(?: |$)",
 )
+IMAGE_STAGE_NAME_PATTERN = re.compile(
+    rf"stage=({'|'.join(REQUIRED_IMAGE_STAGES)})(?: |$)",
+)
 
 
 def main() -> None:
@@ -35,6 +38,11 @@ def main() -> None:
         for line in stages.splitlines()
         if "RobiaPerformance" in line and IMAGE_STAGE_PATTERN.search(line)
     ]
+    image_stage_names = {
+        match.group(1)
+        for line in image_stage_records
+        for match in IMAGE_STAGE_NAME_PATTERN.finditer(line)
+    }
     gfxinfo = (args.input / "gfxinfo.txt").read_text(errors="replace") if (args.input / "gfxinfo.txt").exists() else "unavailable"
     janky = re.search(r"Janky frames:\s*(\d+)\s*\(([^)]+)\)", gfxinfo)
     meminfo_before = read_meminfo(args.input / "meminfo-before.txt")
@@ -43,6 +51,7 @@ def main() -> None:
         fixture_count=len(fixture_manifest["fixtures"]),
         stage_records=records,
         image_stage_records=image_stage_records,
+        image_stage_names=image_stage_names,
         gfxinfo=gfxinfo,
         meminfo_before=meminfo_before,
         meminfo_after=meminfo_after,
@@ -92,6 +101,7 @@ def require_valid_baseline_evidence(
     fixture_count: int,
     stage_records: list[str],
     image_stage_records: list[str],
+    image_stage_names: set[str],
     gfxinfo: str,
     meminfo_before: int | None,
     meminfo_after: int | None,
@@ -103,6 +113,11 @@ def require_valid_baseline_evidence(
         failures.append("batch-stages.log contains no sanitized batch_stage records")
     if not image_stage_records:
         failures.append("batch-stages.log contains no sanitized RobiaPerformance image stage records")
+    missing_image_stages = sorted(set(REQUIRED_IMAGE_STAGES) - image_stage_names)
+    if missing_image_stages:
+        failures.append(
+            "batch-stages.log is missing required image stages: " + ", ".join(missing_image_stages),
+        )
     if "No process found" in gfxinfo:
         failures.append("gfxinfo.txt reports No process found for Robia")
     if not re.search(r"Janky frames:\s*\d+|Total frames rendered:\s*\d+", gfxinfo):

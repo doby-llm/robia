@@ -2053,45 +2053,49 @@ private fun BrowseImagePrefetch(
     val context = LocalContext.current
     val pipeline = remember(context) { ImagePipeline.shared(context) }
     LaunchedEffect(pipeline, items, gridState) {
-        var previousFirstIndex = 0
-        snapshotFlow {
-            gridState.layoutInfo.visibleItemsInfo
-                .map { it.index }
-                .let { visible ->
-                    visible.minOrNull().orDefault(0) to visible.maxOrNull().orDefault(-1)
+        try {
+            var previousFirstIndex = 0
+            snapshotFlow {
+                gridState.layoutInfo.visibleItemsInfo
+                    .map { it.index }
+                    .let { visible ->
+                        visible.minOrNull().orDefault(0) to visible.maxOrNull().orDefault(-1)
+                    }
+            }.collectLatest { (firstIndex, lastIndex) ->
+                if (lastIndex < 0) return@collectLatest
+                if (firstIndex != previousFirstIndex) {
+                    pipeline.cancelPrefetch()
                 }
-        }.collectLatest { (firstIndex, lastIndex) ->
-            if (lastIndex < 0) return@collectLatest
-            if (firstIndex != previousFirstIndex) {
-                pipeline.cancelPrefetch()
-            }
-            val movingForward = firstIndex >= previousFirstIndex
-            previousFirstIndex = firstIndex
-            val gridIndices = if (movingForward) {
-                (lastIndex + 1)..(lastIndex + GRID_PREFETCH_ITEM_COUNT)
-            } else {
-                (firstIndex - GRID_PREFETCH_ITEM_COUNT until firstIndex).reversed()
-            }
-            gridIndices
-                .map { it - 1 } // index zero is the full-width filter row
-                .filter { it in items.indices }
-                .take(GRID_PREFETCH_ITEM_COUNT)
-                .mapNotNull { items.getOrNull(it) }
-                .mapNotNull { item ->
-                    val uri = item.photoUri?.takeIf(String::isNotBlank) ?: return@mapNotNull null
-                    ImageRequest(
-                        sourceUri = Uri.parse(uri),
-                        purpose = ImagePurpose.Browse,
-                        targetBounds = ImageTargetBounds(
-                            GRID_THUMBNAIL_MAX_EDGE_PX,
-                            GRID_THUMBNAIL_MAX_EDGE_PX,
-                        ),
-                        sourceRevision = "${item.id}:$uri",
-                        priority = ImagePriority.Prefetch,
-                        maxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
-                    )
+                val movingForward = firstIndex >= previousFirstIndex
+                previousFirstIndex = firstIndex
+                val gridIndices = if (movingForward) {
+                    (lastIndex + 1)..(lastIndex + GRID_PREFETCH_ITEM_COUNT)
+                } else {
+                    (firstIndex - GRID_PREFETCH_ITEM_COUNT until firstIndex).reversed()
                 }
-                .forEach(pipeline::prefetch)
+                gridIndices
+                    .map { it - 1 } // index zero is the full-width filter row
+                    .filter { it in items.indices }
+                    .take(GRID_PREFETCH_ITEM_COUNT)
+                    .mapNotNull { items.getOrNull(it) }
+                    .mapNotNull { item ->
+                        val uri = item.photoUri?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+                        ImageRequest(
+                            sourceUri = Uri.parse(uri),
+                            purpose = ImagePurpose.Browse,
+                            targetBounds = ImageTargetBounds(
+                                GRID_THUMBNAIL_MAX_EDGE_PX * 3 / 4,
+                                GRID_THUMBNAIL_MAX_EDGE_PX,
+                            ),
+                            sourceRevision = "${item.id}:$uri",
+                            priority = ImagePriority.Prefetch,
+                            maxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
+                        )
+                    }
+                    .forEach(pipeline::prefetch)
+            }
+        } finally {
+            pipeline.cancelPrefetch()
         }
     }
 }

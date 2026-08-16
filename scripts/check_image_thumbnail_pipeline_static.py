@@ -92,6 +92,9 @@ def main() -> None:
         "diskCacheKey",
         "decoderCoroutineContext",
         "prefetchPermit",
+        "ownedInFlightRequests",
+        "CoroutineStart.LAZY",
+        "completeInFlight",
         "eventListenerFactory",
         "Size.ORIGINAL",
         "placeholder_visible",
@@ -103,6 +106,8 @@ def main() -> None:
         "recordEvictions",
         "onEvictions(keysBefore - delegate.keys)",
         "evictionCount.addAndGet",
+        "diskCacheEntries = diskCacheEntryCount()",
+        "errorRecorded",
     )
     for stage in REQUIRED_IMAGE_STAGES:
         if f'"{stage}"' not in pipeline:
@@ -122,6 +127,7 @@ def main() -> None:
     require(
         "app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt",
         "GRID_THUMBNAIL_MAX_EDGE_PX",
+        "GRID_THUMBNAIL_MAX_EDGE_PX * 3 / 4",
         "thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX",
         "thumbnailMaxEdgePx = null",
     )
@@ -152,7 +158,9 @@ def main() -> None:
         "scripts/summarize_performance_baseline.py",
         "REQUIRED_IMAGE_STAGES =",
         "IMAGE_STAGE_PATTERN",
+        "IMAGE_STAGE_NAME_PATTERN",
         "image_stage_records =",
+        "missing required image stages",
         "Image pipeline records captured",
         "read_meminfo",
         "meminfo-before.txt",

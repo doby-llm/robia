@@ -43,7 +43,10 @@ internal fun BoundedGarmentImage(
             val measured = if (measuredSize.width > 0 && measuredSize.height > 0) {
                 ImageTargetBounds(measuredSize.width, measuredSize.height)
             } else {
-                ImageTargetBounds(boundedMaxEdgePx, boundedMaxEdgePx)
+                ImageTargetBounds(
+                    widthPx = (boundedMaxEdgePx * 3 / 4).coerceAtLeast(1),
+                    heightPx = boundedMaxEdgePx,
+                )
             }
             measured.boundedBy(boundedMaxEdgePx)
         }

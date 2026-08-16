@@ -267,8 +267,13 @@ def main() -> None:
     require(capture_script, 'grep -q "batch_stage" performance-artifacts/batch-stages.log', "non-empty batch stage evidence gate")
     require(
         capture_script,
-        'grep -Eq "stage=(resolve|decode|bind|first_draw|in_flight_wait|placeholder_visible|eviction)([[:space:]]|$)" performance-artifacts/batch-stages.log',
-        "non-empty sanitized RobiaPerformance image stage evidence gate",
+        "for image_stage in resolve decode bind first_draw in_flight_wait placeholder_visible eviction; do",
+        "all required sanitized RobiaPerformance image stages evidence gate",
+    )
+    require(
+        capture_script,
+        'grep -Eq "stage=${image_stage}([[:space:]]|$)" performance-artifacts/batch-stages.log',
+        "per-stage sanitized RobiaPerformance image evidence check",
     )
 
     # Bounded Perfetto capture: keep the scroll input duration, extend only the
