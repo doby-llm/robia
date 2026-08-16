@@ -175,6 +175,7 @@ import java.util.Locale
 private const val DEVELOPER_UNLOCK_TAP_COUNT = 10
 private const val DEVELOPER_UNLOCK_WINDOW_MILLIS = 5_000L
 private const val GRID_THUMBNAIL_MAX_EDGE_PX = 384
+private const val DETAIL_DISPLAY_MAX_EDGE_PX = 512
 
 private sealed interface RobiaRoute {
     @get:StringRes
@@ -2593,7 +2594,7 @@ private fun DetailMediaCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(3f / 4f),
-                thumbnailMaxEdgePx = null,
+                thumbnailMaxEdgePx = DETAIL_DISPLAY_MAX_EDGE_PX,
                 purpose = ImagePurpose.Detail,
             )
             if (hasPhoto) {

@@ -113,8 +113,8 @@ def main() -> None:
         if f'"{stage}"' not in pipeline:
             raise AssertionError(f"ImagePipeline.kt must record required sanitized image stage: {stage}")
 
-    # Preview surfaces should route through the bounded helper; detail/share keeps
-    # the original image by explicitly opting out with thumbnailMaxEdgePx = null.
+    # Preview and detail display surfaces route through the bounded helper; explicit
+    # export/share paths keep the canonical image available outside the display pipeline.
     for relative, text in (
         ("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt", app),
         ("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt", batch),
@@ -127,9 +127,10 @@ def main() -> None:
     require(
         "app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt",
         "GRID_THUMBNAIL_MAX_EDGE_PX",
+        "DETAIL_DISPLAY_MAX_EDGE_PX",
         "GRID_THUMBNAIL_MAX_EDGE_PX * 3 / 4",
         "thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX",
-        "thumbnailMaxEdgePx = null",
+        "thumbnailMaxEdgePx = DETAIL_DISPLAY_MAX_EDGE_PX",
     )
     require(
         "app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt",

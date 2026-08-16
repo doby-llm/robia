@@ -587,7 +587,8 @@ class RegressionSourceContractTest {
         val gridCard = app.substringAfter("private fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
         val detailMedia = app.substringAfter("private fun DetailMediaCard(").substringBefore("@Composable\nprivate fun ColorMetricsCard")
         assertTrue(gridCard.contains("GRID_THUMBNAIL_MAX_EDGE_PX"))
-        assertTrue(detailMedia.contains("thumbnailMaxEdgePx = null"))
+        assertTrue(app.contains("DETAIL_DISPLAY_MAX_EDGE_PX = 512"))
+        assertTrue(detailMedia.contains("thumbnailMaxEdgePx = DETAIL_DISPLAY_MAX_EDGE_PX"))
         assertTrue(detailMedia.contains("onShareImageClick"))
 
         assertTrue(batch.contains("BATCH_THUMBNAIL_MAX_EDGE_PX"))

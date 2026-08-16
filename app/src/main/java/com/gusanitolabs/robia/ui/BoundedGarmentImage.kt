@@ -18,8 +18,8 @@ import com.gusanitolabs.robia.media.ImageTargetBounds
 private const val DETAIL_DISPLAY_MAX_EDGE_PX = 512
 
 /**
- * Shared display binding for every garment surface. Preview surfaces pass an explicit bound;
- * detail passes null to request the canonical original resolution, while export still owns sharing.
+ * Shared display binding for garment surfaces. Display callers pass explicit bounds;
+ * export still owns original-resolution sharing by opting into allowOriginal.
  */
 @Composable
 internal fun BoundedGarmentImage(
