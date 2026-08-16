@@ -747,14 +747,9 @@ private fun RobiaShell(
             },
             onInterrupted = { draft ->
                 val current = batchDrafts.firstOrNull { it.id == draft.id }
-                if (current?.status == BatchDraftStatus.Processing) {
-                    updateBatchDraft(
-                        current.copy(
-                            status = BatchDraftStatus.Interrupted,
-                            errorMessage = context.getString(R.string.batch_interrupted_message),
-                        ),
-                    )
-                }
+                current
+                    ?.interruptedForBatch(context.getString(R.string.batch_interrupted_message))
+                    ?.let(::updateBatchDraft)
             },
         )
     }

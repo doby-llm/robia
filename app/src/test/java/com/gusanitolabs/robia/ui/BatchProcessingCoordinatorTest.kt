@@ -74,6 +74,85 @@ class BatchProcessingCoordinatorTest {
     }
 
     @Test
+    fun cancellation_lateOldCoroutineDoesNotTerminalizeReplacementBatch() = runBlocking {
+        val oldDrafts = MutableList(2) { index ->
+            BatchDraftItem(
+                orderIndex = index,
+                originalPhotoUri = "content://old/$index",
+            )
+        }
+        val replacementDrafts = mutableListOf(
+            BatchDraftItem(
+                orderIndex = 0,
+                originalPhotoUri = "content://replacement/queued",
+            ),
+            BatchDraftItem(
+                orderIndex = 1,
+                originalPhotoUri = "content://replacement/processing",
+                status = BatchDraftStatus.Processing,
+            ),
+        )
+        var visibleDrafts = oldDrafts
+        val processingStarted = CompletableDeferred<Unit>()
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { visibleDrafts.toList() },
+            processDraft = { draft ->
+                val index = visibleDrafts.indexOfFirst { it.id == draft.id }
+                visibleDrafts[index] = draft.copy(status = BatchDraftStatus.Processing)
+                processingStarted.complete(Unit)
+                awaitCancellation()
+            },
+            onInterrupted = { draft ->
+                val index = visibleDrafts.indexOfFirst { it.id == draft.id }
+                if (index >= 0) {
+                    visibleDrafts[index] = visibleDrafts[index].copy(status = BatchDraftStatus.Interrupted)
+                }
+            },
+        )
+
+        processingStarted.await()
+        coordinator.cancel()
+        visibleDrafts = replacementDrafts
+        yield()
+
+        assertTrue(oldDrafts.all { it.status == BatchDraftStatus.Interrupted })
+        assertEquals(BatchDraftStatus.Queued, replacementDrafts[0].status)
+        assertEquals(BatchDraftStatus.Processing, replacementDrafts[1].status)
+    }
+
+    @Test
+    fun interruptedForBatch_terminalizesQueuedAndProcessingDraftsAndPreservesFields() {
+        val queued = BatchDraftItem(
+            id = "queued",
+            orderIndex = 0,
+            originalPhotoUri = "content://original",
+            photoUri = "content://edited",
+            photoAspectRatio = 0.75f,
+            status = BatchDraftStatus.Queued,
+            explicitlyAccepted = true,
+            errorMessage = "old message",
+            name = "linen shirt",
+            notes = "summer",
+            selectedTagIds = listOf("category-shirt"),
+            fitValue = 2,
+            selectedPrimaryColorId = "main-blue",
+            selectedSecondaryColorId = "main-white",
+            createdAtEpochMillis = 123L,
+        )
+        val processing = queued.copy(id = "processing", status = BatchDraftStatus.Processing)
+        val ready = queued.copy(id = "ready", status = BatchDraftStatus.Ready)
+
+        val interruptedQueued = queued.interruptedForBatch("Interrupted")
+        val interruptedProcessing = processing.interruptedForBatch("Interrupted")
+
+        assertEquals(queued.copy(status = BatchDraftStatus.Interrupted, errorMessage = "Interrupted"), interruptedQueued)
+        assertEquals(processing.copy(status = BatchDraftStatus.Interrupted, errorMessage = "Interrupted"), interruptedProcessing)
+        assertEquals(null, ready.interruptedForBatch("Interrupted"))
+    }
+
+    @Test
     fun acceptedCount_readyItemsAreImplicitlyAcceptedButReviewNeedsExplicitAcceptance() {
         val drafts = listOf(
             BatchDraftItem(orderIndex = 0, originalPhotoUri = "content://ready", status = BatchDraftStatus.Ready),

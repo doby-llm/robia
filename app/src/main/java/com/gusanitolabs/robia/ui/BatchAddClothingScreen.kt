@@ -570,6 +570,16 @@ internal fun BatchDraftItem.isAcceptedForSave(): Boolean =
 internal fun BatchDraftItem.isProcessingActive(): Boolean =
     status == BatchDraftStatus.Queued || status == BatchDraftStatus.Processing
 
+internal fun BatchDraftItem.interruptedForBatch(message: String): BatchDraftItem? =
+    if (isProcessingActive()) {
+        copy(
+            status = BatchDraftStatus.Interrupted,
+            errorMessage = message,
+        )
+    } else {
+        null
+    }
+
 internal fun List<BatchDraftItem>.canSaveBatch(): Boolean =
     none { it.isProcessingActive() } && any { it.isAcceptedForSave() }
 

@@ -22,8 +22,12 @@ internal class BatchProcessingCoordinator(
     ) {
         if (processingJob?.isActive == true) return
 
+        val ownedDraftIds = drafts().map(BatchDraftItem::id).toSet()
+
         fun terminalizeActiveDrafts() {
-            drafts().filter(BatchDraftItem::isProcessingActive).forEach(onInterrupted)
+            drafts()
+                .filter { draft -> draft.id in ownedDraftIds && draft.isProcessingActive() }
+                .forEach(onInterrupted)
         }
 
         // Mark the old batch synchronously when cancel() is called. This prevents a new batch

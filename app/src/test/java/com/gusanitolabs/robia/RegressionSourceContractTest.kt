@@ -51,7 +51,8 @@ class RegressionSourceContractTest {
         assertTrue(batch.contains("get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview"))
         assertTrue(batch.contains("internal fun BatchDraftItem.retryForBatch()"))
         assertTrue(batch.contains("status = BatchDraftStatus.Queued"))
-        assertTrue(coordinator.contains("drafts().filter(BatchDraftItem::isProcessingActive)"))
+        assertTrue(coordinator.contains("val ownedDraftIds = drafts().map(BatchDraftItem::id).toSet()"))
+        assertTrue(coordinator.contains("draft.id in ownedDraftIds && draft.isProcessingActive()"))
         assertTrue(coordinator.contains("interruptActiveDrafts?.invoke()"))
     }
 
@@ -59,11 +60,15 @@ class RegressionSourceContractTest {
     fun batchCancellation_terminalizesTheCurrentItemForManualRetry() {
         val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
         val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
 
         assertTrue(coordinator.contains("forEach(onInterrupted)"))
         assertTrue(batchScreen.contains("BatchDraftStatus.Interrupted"))
+        assertTrue(batchScreen.contains("internal fun BatchDraftItem.interruptedForBatch(message: String): BatchDraftItem?"))
+        assertTrue(batchScreen.contains("if (isProcessingActive())"))
         assertTrue(batchScreen.contains("catch (throwable: CancellationException)"))
         assertTrue(batchScreen.contains("status = BatchDraftStatus.Interrupted"))
+        assertTrue(app.contains("?.interruptedForBatch(context.getString(R.string.batch_interrupted_message))"))
     }
 
     @Test
