@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
@@ -47,7 +48,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withFrameNanos
 import okio.Path.Companion.toPath
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -91,7 +91,7 @@ class ImagePipeline private constructor(
         }
         .diskCache {
             DiskCache.Builder()
-                .directory(appContext.cacheDir.resolve(DISK_CACHE_DIRECTORY).toPath())
+                .directory(diskCacheDirectory.absolutePath.toPath())
                 .maxSizeBytes(MAX_DISK_CACHE_BYTES)
                 .build()
         }
