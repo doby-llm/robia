@@ -72,6 +72,17 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun batchStatusBadge_labelsAcceptedNeedsReviewWithVisualStatus() {
+        val badge = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
+            .substringAfter("private fun BatchStatusBadge(")
+            .substringBefore("internal suspend fun processBatchDraft(")
+
+        assertTrue(badge.contains("val visualStatus = if (isAccepted) BatchDraftStatus.Ready else status"))
+        assertTrue(badge.contains("text = stringResource(visualStatus.labelRes)"))
+        assertTrue(!badge.contains("text = stringResource(status.labelRes)"))
+    }
+
+    @Test
     fun batchCoordinator_processesAll60QueuedItemsSeriallyToTerminalStates() {
         val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")

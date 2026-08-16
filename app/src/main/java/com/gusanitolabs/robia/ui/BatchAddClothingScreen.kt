@@ -469,7 +469,7 @@ private fun BatchStatusBadge(
                 else -> Unit
             }
             Text(
-                text = stringResource(status.labelRes),
+                text = stringResource(visualStatus.labelRes),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
             )
