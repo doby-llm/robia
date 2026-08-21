@@ -7,6 +7,7 @@ import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
 import com.gusanitolabs.robia.core.model.MainColor
@@ -290,6 +291,16 @@ class WardrobeSyncOutboxProcessor(
                 return@withLock
             }
             val retryRevision = wardrobeRepository.claimGarmentPhotoRestoreRetry(garmentId) ?: run {
+                val retryState = wardrobeRepository.observeItem(garmentId).first()
+                val now = System.currentTimeMillis()
+                val reason = when {
+                    retryState == null -> "garment_not_found"
+                    !retryState.photoRestoreState.guarded -> "photo_not_guarded"
+                    retryState.syncStatus == GarmentSyncStatus.Running -> "duplicate_in_progress"
+                    retryState.photoRestoreState.retryDeadlineEpochMillis?.let { it < now } == true -> "deadline_expired"
+                    retryState.photoRestoreState.retryAfterEpochMillis?.let { it > now } == true -> "backoff"
+                    else -> "attempt_exhausted_or_revision_changed"
+                }
                 restoreSyncLogRepository.append(
                     RestoreSyncLogEvent(
                         correlationId = retryCorrelationId,
@@ -297,7 +308,15 @@ class WardrobeSyncOutboxProcessor(
                         level = "warn",
                         phase = null,
                         status = null,
-                        message = "retry rejected reason=not_eligible_or_duplicate_or_backoff_or_exhausted",
+                        message = buildString {
+                            append("retry rejected reason=").append(reason)
+                            retryState?.photoRestoreState?.retryAfterEpochMillis?.let {
+                                append(" retry_after_epoch_ms=").append(it)
+                            }
+                            retryState?.photoRestoreState?.retryDeadlineEpochMillis?.let {
+                                append(" retry_deadline_epoch_ms=").append(it)
+                            }
+                        },
                         garmentId = garmentId,
                     ),
                 )
@@ -334,13 +353,18 @@ class WardrobeSyncOutboxProcessor(
                     })
                 }) {
                     is DriveSyncResult.Success -> {
+                        recordPhotoRetryDiagnosticEvents(
+                            correlationId = retryCorrelationId,
+                            garmentId = garmentId,
+                            events = result.value.restoreDiagnosticEvents,
+                        )
                         val applied = snapshotRepository.applyRestoredPhoto(result.value, retryRevision)
                         restoreSyncLogRepository.append(
                             RestoreSyncLogEvent(
                                 correlationId = retryCorrelationId,
                                 category = "photo_restore_apply",
                                 phase = CloudRestorePhase.Applying,
-                                status = if (applied) CloudRestoreStatus.Running else CloudRestoreStatus.Failed,
+                                status = CloudRestoreStatus.Failed.takeUnless { applied },
                                 message = "retry apply result applied=$applied",
                                 garmentId = garmentId,
                             ),
@@ -431,6 +455,33 @@ class WardrobeSyncOutboxProcessor(
                 }
                 throw cancellation
             }
+        }
+    }
+
+    private fun recordPhotoRetryDiagnosticEvents(
+        correlationId: String,
+        garmentId: String,
+        events: List<String>,
+    ) {
+        events.take(MAX_RETRY_DIAGNOSTIC_EVENTS).forEach { event ->
+            val category = when {
+                event.startsWith("drive_file_lookup_result") -> "photo_restore_lookup"
+                event.startsWith("photo_restore_fetch_result") -> "photo_restore_download"
+                event.startsWith("photo_restore_decode_result") -> "photo_restore_decode"
+                event.startsWith("photo_restore_local_write_result") -> "photo_restore_write"
+                event.startsWith("photo_restore_import_result") -> "photo_restore_apply"
+                else -> "photo_restore_retry"
+            }
+            restoreSyncLogRepository.append(
+                RestoreSyncLogEvent(
+                    correlationId = correlationId,
+                    category = category,
+                    phase = CloudRestorePhase.Downloading,
+                    status = CloudRestoreStatus.Running,
+                    message = event,
+                    garmentId = garmentId,
+                ),
+            )
         }
     }
 
@@ -925,6 +976,7 @@ private data class WardrobeSyncStateInputs(
 )
 
 private const val MAX_RETRY_ATTEMPTS = 3
+private const val MAX_RETRY_DIAGNOSTIC_EVENTS = 16
 private const val STALE_RUNNING_TIMEOUT_MILLIS = 15 * 60 * 1000L
 private const val SYNC_OPERATION_TIMEOUT_MILLIS = 2 * 60 * 1000L
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS = 60 * 1000L

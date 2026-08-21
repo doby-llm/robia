@@ -88,7 +88,9 @@ class FileRestoreSyncLogRepository(
     private val maxBytes: Int = DEFAULT_MAX_BYTES,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : RestoreSyncLogRepository {
-    private val logFile = File(context.filesDir, "developer_diagnostics.log")
+    // Keep the established file name so enabling the generalized event log does not orphan the
+    // existing bounded restore/sync history or create a second diagnostics file.
+    private val logFile = File(context.filesDir, "developer_restore_sync.log")
     private val enabledLock = Any()
     private val mutableText = MutableStateFlow("")
     @Volatile private var enabled = false
