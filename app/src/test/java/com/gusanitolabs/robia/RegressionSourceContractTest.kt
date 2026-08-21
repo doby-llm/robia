@@ -247,7 +247,7 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("scheduleRetryWakeUp"))
         assertTrue(processor.contains("delay((retryAt - System.currentTimeMillis()).coerceAtLeast(0L))"))
         assertTrue(processor.contains("hasPendingCloudDeletion()"))
-        assertTrue(processor.contains("CLOUD_DELETION_PENDING_MESSAGE"))
+        assertTrue(processor.contains("retry rejected reason=cloud_deletion_pending"))
         assertTrue(driveRepository.contains("withTimeout(AUTHORIZATION_TIMEOUT_MILLIS)"))
         assertTrue(driveRepository.contains("withDrivePhaseDeadline"))
         val repositoryBeforeHttpApi = driveRepository.substringBefore("private class HttpDriveSnapshotApi")
@@ -350,7 +350,7 @@ class RegressionSourceContractTest {
 
         assertTrue(gateway.contains("data class RetryRestoredPhoto"))
         assertTrue(retryHandler.contains("claimGarmentPhotoRestoreRetry(garmentId)"))
-        assertTrue(retryHandler.contains("driveRepository.retryRestoredPhoto(garmentId)"))
+        assertTrue(retryHandler.contains("driveRepository.retryRestoredPhoto(garmentId"))
         assertTrue(!retryHandler.contains("processPendingGarments("))
         assertTrue(!retryHandler.contains("restoreProgress.value"))
         assertTrue(dao.contains("retry_attempt_count < 3"))
@@ -418,6 +418,99 @@ class RegressionSourceContractTest {
         assertTrue(overlay.contains("progress.diagnostics.takeIf { developerModeEnabled }"))
         assertTrue(overlay.contains("contentAlignment = Alignment.Center"))
         assertTrue(overlay.contains(".widthIn(max = 520.dp)"))
+    }
+
+    @Test
+    fun settings_isDedicatedRouteAndDiagnosticsStayDeveloperGated() {
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val settingsScreen = app
+            .substringAfter("private fun SettingsScreen(")
+            .substringBefore("@StringRes\nprivate fun DriveSyncConnectionStatus.cloudSetupSummaryRes")
+
+        assertTrue(app.contains("data object Settings : RobiaRoute"))
+        assertTrue(app.contains("pushRoute(RobiaRoute.Settings)"))
+        assertTrue(!app.contains("private fun SettingsMenu("))
+        assertTrue(settingsScreen.contains("developerModeUnlocked"))
+        assertTrue(settingsScreen.contains("if (developerModeEnabled)"))
+        assertTrue(settingsScreen.contains("onRestoreSyncLogClick"))
+        assertTrue(app.contains("RobiaRoute.Settings -> SettingsScreen("))
+        assertTrue(app.contains("RobiaRoute.DeveloperSyncLog -> if (developerModeEnabled)"))
+    }
+
+    @Test
+    fun developerDiagnosticsLog_isAsyncGlobalBoundedAndDeveloperModeGated() {
+        val log = source("app/src/main/java/com/gusanitolabs/robia/sync/RestoreSyncLogRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+
+        assertTrue(log.contains("developer_diagnostics.log"))
+        assertTrue(log.contains("DEFAULT_MAX_EVENTS = 500"))
+        assertTrue(log.contains("DEFAULT_MAX_BYTES = 256 * 1024"))
+        assertTrue(log.contains("scope.launch"))
+        assertTrue(log.contains("runCatching"))
+        assertTrue(log.contains("if (!enabled) return"))
+        assertTrue(log.contains("category: String = \"restore\""))
+        assertTrue(log.contains("level: String = \"info\""))
+        assertTrue(log.contains("boundedDiagnosticLogLines"))
+        assertTrue(processor.contains("restoreSyncLogRepository.setEnabled(settings.developerModeEnabled)"))
+        assertTrue(processor.contains("recordSettingsChanges(settings)"))
+    }
+
+    @Test
+    fun restoreProgress_reportsItemAndByteProgressWithoutInventingTotals() {
+        val gateway = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncGateway.kt")
+        val drive = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+
+        assertTrue(gateway.contains("data class RestoreItemProgress"))
+        assertTrue(gateway.contains("data class RestoreByteProgress"))
+        assertTrue(gateway.contains("val totalBytes: Long?"))
+        assertTrue(drive.contains("readProgressBytes"))
+        assertTrue(drive.contains("contentLengthLong.takeIf { it >= 0L }"))
+        assertTrue(drive.contains("DRIVE_PROGRESS_THROTTLE_MILLIS"))
+        assertTrue(processor.contains("itemProgress = RestoreItemProgress"))
+        assertTrue(processor.contains("byteProgress = RestoreByteProgress"))
+        assertTrue(app.contains("cloud_restore_byte_progress_unknown"))
+        assertTrue(app.contains("cloud_restore_byte_progress_known"))
+    }
+
+    @Test
+    fun restoredPhotoRetry_hasVisibleStateBackoffAndNoDuplicateWork() {
+        val models = source("app/src/main/java/com/gusanitolabs/robia/core/model/ClothingModels.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+
+        assertTrue(models.contains("data class PhotoRestoreState"))
+        assertTrue(repository.contains("photoRestoreState = PhotoRestoreState"))
+        assertTrue(repository.contains("retryAfterEpochMillis = item.retryAfterEpochMillis"))
+        assertTrue(dao.contains("sync_status = 'Running'"))
+        assertTrue(dao.contains("retry_attempt_count < 3"))
+        assertTrue(dao.contains("retry_after_epoch_millis <= :now"))
+        assertTrue(processor.contains("retry requested"))
+        assertTrue(processor.contains("retry rejected reason=not_eligible_or_duplicate_or_backoff_or_exhausted"))
+        assertTrue(processor.contains("retry started"))
+        assertTrue(app.contains("canRetryRestoredPhotoNow"))
+        assertTrue(app.contains("cloud_restore_photo_retry_backoff_until"))
+        assertTrue(app.contains("syncStatus == GarmentSyncStatus.Running"))
+    }
+
+    @Test
+    fun affectedGarmentIdentityUsesDomainPhotoRestoreStateInsteadOfLocalizedFailureText() {
+        val models = source("app/src/main/java/com/gusanitolabs/robia/core/model/ClothingModels.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val hasMissing = app
+            .substringAfter("private val UiWardrobeItem.hasMissingRestoredPhoto")
+            .substringBefore("@Composable\nprivate fun TonalTag")
+
+        assertTrue(models.contains("val photoRestoreState: PhotoRestoreState"))
+        assertTrue(app.contains("val photoRestoreState: PhotoRestoreState"))
+        assertTrue(app.contains("photoRestoreState = item.photoRestoreState"))
+        assertTrue(hasMissing.contains("photoRestoreState.needsAttention"))
+        assertTrue(!hasMissing.contains("Foto no restaurada"))
+        assertTrue(app.contains("text = item.name"))
+        assertTrue(app.contains("text = item.subtitle"))
     }
 
     @Test

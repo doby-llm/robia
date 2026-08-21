@@ -322,6 +322,8 @@ class DriveRestoreDiagnosticsTest {
     fun restoreSyncLogEvent_usesSanitizedCopyableLine() {
         val line = RestoreSyncLogEvent(
             correlationId = "abc123",
+            category = "photo_restore",
+            level = "warn",
             phase = CloudRestorePhase.Downloading,
             status = CloudRestoreStatus.Running,
             message = "fetch Bearer token-value",
@@ -333,16 +335,49 @@ class DriveRestoreDiagnosticsTest {
             exceptionMessage = "refresh_token=sensitive",
             completedWork = 3,
             totalWork = 12,
+            itemIndex = 2,
+            itemTotal = 5,
+            bytesCompleted = 512,
+            bytesTotal = 1024,
+            durationMillis = 99,
         ).toLogLine()
 
         assertTrue(line.contains("correlation_id=abc123"))
+        assertTrue(line.contains("category=photo_restore"))
+        assertTrue(line.contains("level=warn"))
         assertTrue(line.contains("phase=Downloading"))
         assertTrue(line.contains("progress=3/12"))
+        assertTrue(line.contains("item_index=2"))
+        assertTrue(line.contains("item_total=5"))
+        assertTrue(line.contains("bytes_completed=512"))
+        assertTrue(line.contains("bytes_total=1024"))
+        assertTrue(line.contains("duration_ms=99"))
         assertTrue(line.contains("blob_path=photos/garment-1/original"))
         assertTrue(line.contains("content_hash=abcDEF1234567890"))
         assertTrue(line.contains("content://<redacted>"))
         assertTrue(line.contains("refresh_token=<redacted>"))
         assertTrue(!line.contains("token-value"))
         assertTrue(!line.contains("sensitive"))
+    }
+
+    @Test
+    fun diagnosticLogRetention_isBoundedByEventCountAndBytes() {
+        val events = (0 until 700).map { index -> "event-$index " + "x".repeat(40) }
+        val byCount = boundedDiagnosticLogLines(events, maxEvents = 500, maxBytes = 1024 * 1024)
+        val byBytes = boundedDiagnosticLogLines(events, maxEvents = 700, maxBytes = 256)
+
+        assertEquals(500, byCount.size)
+        assertTrue(byCount.first().startsWith("event-200"))
+        assertTrue(byBytes.joinToString("\n").toByteArray(Charsets.UTF_8).size <= 256)
+        assertTrue(byBytes.last().startsWith("event-699"))
+    }
+
+    @Test
+    fun cloudRestoreProgress_keepsUnknownTotalsHonest() {
+        val unknownTotal = RestoreByteProgress(completedBytes = 4096, totalBytes = null)
+        val knownTotal = RestoreByteProgress(completedBytes = 512, totalBytes = 1024)
+
+        assertEquals(null, unknownTotal.fraction)
+        assertEquals(0.5f, knownTotal.fraction)
     }
 }

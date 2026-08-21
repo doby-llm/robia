@@ -18,7 +18,21 @@ data class ClothingItem(
     val syncDirtyAtEpochMillis: Long? = null,
     val lastSyncedAtEpochMillis: Long? = null,
     val syncFailureMessage: String? = null,
+    val photoRestoreState: PhotoRestoreState = PhotoRestoreState.None,
 )
+
+data class PhotoRestoreState(
+    val guarded: Boolean = false,
+    val retryAfterEpochMillis: Long? = null,
+    val retryDeadlineEpochMillis: Long? = null,
+) {
+    val needsAttention: Boolean
+        get() = guarded
+
+    companion object {
+        val None = PhotoRestoreState()
+    }
+}
 
 data class ClothingColorMetrics(
     val primaryRawValue: String? = null,
