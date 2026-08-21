@@ -1439,7 +1439,7 @@ internal fun GarmentPhotoRecord.restoreDiagnosticEvent(): String {
         byteSize?.let { append(" byteSize=$it") }
         mimeType?.takeIf(String::isNotBlank)?.let { append(" mimeType=$it") }
         contentHash?.takeIf(String::isNotBlank)?.let { append(" contentHash=${it.take(12)}") }
-        byteMagic?.takeIf(String::isNotBlank)?.let { append(" byteMagic=${it.take(32)}") }
+        byteMagic?.takeIf(String::isNotBlank)?.let { append(" byteMagic=${it.imageMagicClassification()}") }
         if (decodedWidth != null && decodedHeight != null) append(" decoded=${decodedWidth}x$decodedHeight")
         append(" restoredLocalUri=${!restoredLocalUri.isNullOrBlank()}")
         restoreFailureMessage?.takeIf(String::isNotBlank)?.let { message ->
@@ -1454,9 +1454,22 @@ internal fun Throwable.restoreFetchFailureStatus(): CloudRestoreStatus =
 private fun sanitizeDiagnosticMessage(message: String): String = message
     .replace(Regex("Bearer\\s+[A-Za-z0-9._~+/=-]+", RegexOption.IGNORE_CASE), "Bearer <redacted>")
     .replace(Regex("(?i)(access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)=\\S+"), "\$1=<redacted>")
+    .replace(Regex("(?i)\\b(first32|last32|readbackFirst32|readbackLast32)=[0-9a-f]+"), "\$1=<redacted>")
+    .replace(Regex("(?i)\\b(sourceMagic|magic)=[0-9a-f]+"), "\$1=<redacted>")
     .replace(Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"), "<email-redacted>")
     .replace(Regex("(^|\\s)(/[^\\s:]+(?:/[^\\s:]+)+)")) { match -> "${match.groupValues[1]}<path-redacted>" }
     .take(MAX_DIAGNOSTIC_MESSAGE_CHARS)
+
+private fun String.imageMagicClassification(): String {
+    val hex = filter { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }.lowercase()
+    return when {
+        hex.startsWith("ffd8ff") -> "jpeg_signature"
+        hex.startsWith("89504e470d0a1a0a") -> "png_signature"
+        hex.length >= 24 && hex.startsWith("52494646") && hex.substring(16, 24) == "57454250" -> "webp_signature"
+        hex.startsWith("474946383761") || hex.startsWith("474946383961") -> "gif_signature"
+        else -> "unknown_signature"
+    }
+}
 
 private val garmentEntityTypes = setOf("garment", "clothing_item", "item")
 private val categoryEntityTypes = setOf("tag_category", "category")

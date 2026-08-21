@@ -243,6 +243,7 @@ private fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
     syncFailureMessage = item.syncFailureMessage,
     photoRestoreState = PhotoRestoreState(
         guarded = item.photoRestoreGuarded,
+        retryAttemptCount = item.retryAttemptCount,
         retryAfterEpochMillis = item.retryAfterEpochMillis,
         retryDeadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis,
     ),
@@ -276,6 +277,7 @@ private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     lastSyncedAtEpochMillis = lastSyncedAtEpochMillis,
     syncFailureMessage = syncFailureMessage,
     photoRestoreGuarded = photoRestoreState.guarded,
+    retryAttemptCount = photoRestoreState.retryAttemptCount,
     retryAfterEpochMillis = photoRestoreState.retryAfterEpochMillis,
     photoRestoreRetryDeadlineEpochMillis = photoRestoreState.retryDeadlineEpochMillis,
 )

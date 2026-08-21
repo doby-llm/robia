@@ -337,7 +337,7 @@ class GoogleDriveWardrobeRepository(
                         photo.guardedRestore(
                             category = REMOTE_PHOTO_UNREADABLE,
                             message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} fetched but could not be decoded/imported " +
-                                "mime=${photo.mimeType ?: "unknown"} magic=${bytes.magicHex()} byteSize=${bytes.size} detail=$message.",
+                                "mime=${photo.mimeType ?: "unknown"} magic=${bytes.imageMagicLabel()} byteSize=${bytes.size} detail=$message.",
                             cause = failure,
                             byteSize = bytes.size.toLong(),
                             contentHash = bytes.sha256Hex(),
@@ -965,9 +965,8 @@ internal fun DriveBlob.restoreFetchResultEvents(photo: GarmentPhotoRecord): List
         append(" bytesLength=${bytes.size}")
         contentType?.let { append(" contentType=$it") }
         contentLength?.let { append(" contentLength=$it") }
-        append(" sha256=${bytes.sha256Hex()}")
-        append(" first32=${bytes.firstHex(32)}")
-        append(" last32=${bytes.lastHex(32)}")
+        append(" sha256Prefix=${bytes.sha256Hex().take(12)}")
+        append(" magic=${bytes.imageMagicLabel()}")
         append(" png=${bytes.pngSanityLabel()}")
     },
 )
@@ -988,9 +987,9 @@ internal fun GarmentPhotoRecord.localWriteDiagnosticEvent(
     append(" targetExtension=$targetExtension fileLength=$fileLength")
     append(" readbackByteCount=${readBackBytes?.size ?: 0}")
     readBackBytes?.let {
-        append(" readbackHash=${it.sha256Hex()}")
-        append(" readbackFirst32=${it.firstHex(32)}")
-        append(" readbackLast32=${it.lastHex(32)}")
+        append(" readbackHashPrefix=${it.sha256Hex().take(12)}")
+        append(" readbackMagic=${it.imageMagicLabel()}")
+        append(" readbackPng=${it.pngSanityLabel()}")
     }
     writeFailure?.let { append(" writeFailure=\"").append(it.diagnosticSummary()).append('"') }
 }
@@ -1088,9 +1087,19 @@ private fun ByteArray.sha256Hex(): String = java.security.MessageDigest.getInsta
     .digest(this)
     .joinToString(separator = "") { byte -> "%02x".format(byte) }
 
-private fun ByteArray.firstHex(byteCount: Int): String = take(byteCount).joinToString(separator = "") { byte -> "%02x".format(byte) }
-
-private fun ByteArray.lastHex(byteCount: Int): String = takeLast(byteCount).joinToString(separator = "") { byte -> "%02x".format(byte) }
+private fun ByteArray.imageMagicLabel(): String = when {
+    size >= 3 && this[0] == 0xff.toByte() && this[1] == 0xd8.toByte() && this[2] == 0xff.toByte() -> "jpeg_signature"
+    size >= 8 &&
+        this[0] == 0x89.toByte() && this[1] == 0x50.toByte() && this[2] == 0x4e.toByte() && this[3] == 0x47.toByte() &&
+        this[4] == 0x0d.toByte() && this[5] == 0x0a.toByte() && this[6] == 0x1a.toByte() && this[7] == 0x0a.toByte() -> "png_signature"
+    size >= 12 &&
+        this[0] == 0x52.toByte() && this[1] == 0x49.toByte() && this[2] == 0x46.toByte() && this[3] == 0x46.toByte() &&
+        this[8] == 0x57.toByte() && this[9] == 0x45.toByte() && this[10] == 0x42.toByte() && this[11] == 0x50.toByte() -> "webp_signature"
+    size >= 6 &&
+        this[0] == 0x47.toByte() && this[1] == 0x49.toByte() && this[2] == 0x46.toByte() &&
+        this[3] == 0x38.toByte() && (this[4] == 0x37.toByte() || this[4] == 0x39.toByte()) && this[5] == 0x61.toByte() -> "gif_signature"
+    else -> "unknown_signature"
+}
 
 internal fun ByteArray.pngSanityLabel(): String {
     val signature = byteArrayOf(

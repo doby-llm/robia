@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
@@ -483,7 +484,10 @@ class RegressionSourceContractTest {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
 
         assertTrue(models.contains("data class PhotoRestoreState"))
+        assertTrue(models.contains("val retryAttemptCount: Int = 0"))
+        assertTrue(models.contains("val hasRetryAttemptsRemaining"))
         assertTrue(repository.contains("photoRestoreState = PhotoRestoreState"))
+        assertTrue(repository.contains("retryAttemptCount = item.retryAttemptCount"))
         assertTrue(repository.contains("retryAfterEpochMillis = item.retryAfterEpochMillis"))
         assertTrue(dao.contains("sync_status = 'Running'"))
         assertTrue(dao.contains("retry_attempt_count < 3"))
@@ -495,8 +499,31 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("photo_restore_write"))
         assertTrue(processor.contains("retry started"))
         assertTrue(app.contains("canRetryRestoredPhotoNow"))
+        assertTrue(app.contains("photoRestoreState.hasRetryAttemptsRemaining"))
+        assertTrue(app.contains("cloud_restore_photo_retry_exhausted"))
+        assertTrue(app.contains("cloud_restore_retry_photo_expired"))
         assertTrue(app.contains("cloud_restore_photo_retry_backoff_until"))
         assertTrue(app.contains("syncStatus == GarmentSyncStatus.Running"))
+    }
+
+    @Test
+    fun drivePhotoRestoreDiagnosticsDoNotEmitRawByteSamples() {
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+        val restoreLog = source("app/src/main/java/com/gusanitolabs/robia/sync/RestoreSyncLogRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+
+        assertFalse(driveRepository.contains(" first32="))
+        assertFalse(driveRepository.contains(" last32="))
+        assertFalse(driveRepository.contains(" readbackFirst32="))
+        assertFalse(driveRepository.contains(" readbackLast32="))
+        assertFalse(driveRepository.contains(" sha256="))
+        assertFalse(driveRepository.contains(" readbackHash="))
+        assertTrue(driveRepository.contains("sha256Prefix="))
+        assertTrue(driveRepository.contains("readbackHashPrefix="))
+        assertTrue(driveRepository.contains("imageMagicLabel"))
+        assertTrue(restoreLog.contains("content_hash_prefix="))
+        assertTrue(restoreLog.contains("sanitizeMagicClassification"))
+        assertTrue(processor.contains("imageMagicClassification"))
     }
 
     @Test

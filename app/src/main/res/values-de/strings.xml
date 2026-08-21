@@ -54,6 +54,9 @@
     <string name="cloud_restore_photo_retry_running">Der Foto-Wiederholversuch läuft bereits.</string>
     <string name="cloud_restore_photo_retry_backoff_until">Der Wiederholversuch ist nach %1$s verfügbar.</string>
     <string name="cloud_restore_photo_retry_expired">Das Wiederholfenster ist abgelaufen. Dieses Foto benötigt weiter Aufmerksamkeit.</string>
+    <string name="cloud_restore_photo_retry_exhausted">Das Wiederhollimit wurde erreicht. Dieses Foto benötigt weiter Aufmerksamkeit.</string>
+    <string name="cloud_restore_retry_photo_expired">Wiederholung abgelaufen</string>
+    <string name="cloud_restore_retry_photo_exhausted">Limit erreicht</string>
     <string name="cloud_restore_photo_missing_message">Einige Bilder konnten nicht aus Drive wiederhergestellt werden. Robia hält deine Garderobe sicher und versucht es bei der nächsten Cloud-Synchronisierung erneut.</string>
     <string name="cloud_restore_diagnostics_title">Wiederherstellungsdiagnose</string>
     <string name="cloud_restore_diagnostics_summary">Kopiere diese sicheren technischen Details und sende sie an Doby, wenn die Wiederherstellung weiter fehlschlägt. Robia speichert Sicherungen in Drive-App-Daten, die in der Drive-Weboberfläche verborgen sind.</string>

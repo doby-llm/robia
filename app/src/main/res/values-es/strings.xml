@@ -54,6 +54,9 @@
     <string name="cloud_restore_photo_retry_running">El reintento de la foto ya está en curso.</string>
     <string name="cloud_restore_photo_retry_backoff_until">El reintento estará disponible después de %1$s.</string>
     <string name="cloud_restore_photo_retry_expired">La ventana de reintento caducó. Esta foto aún requiere atención.</string>
+    <string name="cloud_restore_photo_retry_exhausted">Se alcanzó el límite de reintentos. Esta foto aún requiere atención.</string>
+    <string name="cloud_restore_retry_photo_expired">Reintento caducado</string>
+    <string name="cloud_restore_retry_photo_exhausted">Límite alcanzado</string>
     <string name="cloud_restore_photo_missing_message">Algunas imágenes no se pudieron restaurar desde Drive. Robia mantendrá tu armario seguro y lo reintentará en la próxima sincronización.</string>
     <string name="cloud_restore_diagnostics_title">Diagnóstico de restauración</string>
     <string name="cloud_restore_diagnostics_summary">Copia estos detalles técnicos seguros y envíaselos a Doby si la restauración sigue fallando. Robia guarda las copias en datos de app de Drive, ocultos en la web de Drive.</string>

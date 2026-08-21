@@ -2537,18 +2537,28 @@ private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
 private fun UiWardrobeItem.canRetryRestoredPhotoNow(now: Long = System.currentTimeMillis()): Boolean =
     hasMissingRestoredPhoto &&
         syncStatus != GarmentSyncStatus.Running &&
+        photoRestoreState.hasRetryAttemptsRemaining &&
         (photoRestoreState.retryAfterEpochMillis == null || photoRestoreState.retryAfterEpochMillis <= now) &&
         (photoRestoreState.retryDeadlineEpochMillis == null || photoRestoreState.retryDeadlineEpochMillis >= now)
 
 @Composable
 private fun UiWardrobeItem.photoRestoreRetryStateText(now: Long = System.currentTimeMillis()): String = when {
     syncStatus == GarmentSyncStatus.Running -> stringResource(R.string.cloud_restore_photo_retry_running)
+    photoRestoreState.retryExhausted -> stringResource(R.string.cloud_restore_photo_retry_exhausted)
     photoRestoreState.retryDeadlineEpochMillis?.let { it < now } == true -> stringResource(R.string.cloud_restore_photo_retry_expired)
     photoRestoreState.retryAfterEpochMillis?.let { it > now } == true -> stringResource(
         R.string.cloud_restore_photo_retry_backoff_until,
         formatEpochMillis(photoRestoreState.retryAfterEpochMillis),
     )
     else -> stringResource(R.string.cloud_restore_photo_retry_ready)
+}
+
+@Composable
+private fun UiWardrobeItem.photoRestoreRetryActionText(now: Long = System.currentTimeMillis()): String = when {
+    syncStatus == GarmentSyncStatus.Running -> stringResource(R.string.cloud_restore_retry_photo)
+    photoRestoreState.retryExhausted -> stringResource(R.string.cloud_restore_retry_photo_exhausted)
+    photoRestoreState.retryDeadlineEpochMillis?.let { it < now } == true -> stringResource(R.string.cloud_restore_retry_photo_expired)
+    else -> stringResource(R.string.cloud_restore_retry_photo)
 }
 
 @Composable
@@ -2650,8 +2660,10 @@ private fun ItemDetailScreen(
         item { GarmentCloudStatusRow(item) }
         if (item.hasMissingRestoredPhoto) {
             item {
-                val retryEnabled = item.canRetryRestoredPhotoNow()
-                val retryStateText = item.photoRestoreRetryStateText()
+                val now = System.currentTimeMillis()
+                val retryEnabled = item.canRetryRestoredPhotoNow(now)
+                val retryStateText = item.photoRestoreRetryStateText(now)
+                val retryActionText = item.photoRestoreRetryActionText(now)
                 Button(
                     onClick = { if (retryEnabled) onRetryRestoredPhoto(item.id) },
                     enabled = retryEnabled,
@@ -2665,7 +2677,7 @@ private fun ItemDetailScreen(
                         Icon(Icons.Rounded.Refresh, contentDescription = null)
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.cloud_restore_retry_photo))
+                    Text(retryActionText)
                 }
                 Text(
                     text = retryStateText,

@@ -125,7 +125,7 @@ class DriveRestoreDiagnosticsTest {
     }
 
     @Test
-    fun restoreDiagnosticEvent_includesPerPhotoBlobEvidenceWithoutFullHash() {
+    fun restoreDiagnosticEvent_includesPerPhotoBlobEvidenceWithoutFullHashOrRawMagic() {
         val event = GarmentPhotoRecord(
             garmentId = "garment-restored",
             localUri = "content://old-device/restored.jpg",
@@ -144,7 +144,8 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(event.contains("blobPath=photos/garment-restored/original"))
         assertTrue(event.contains("byteSize=1234"))
         assertTrue(event.contains("mimeType=image/jpeg"))
-        assertTrue(event.contains("byteMagic=ffd8ffe000104a464946"))
+        assertTrue(event.contains("byteMagic=jpeg_signature"))
+        assertTrue(!event.contains("ffd8ffe000104a464946"))
         assertTrue(event.contains("decoded=640x480"))
         assertTrue(event.contains("contentHash=abcdef123456"))
         assertTrue(event.contains("restoredLocalUri=true"))
@@ -189,8 +190,10 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(events.any { it.contains("fileIdHash=") })
         assertTrue(events.none { it.contains("drive-file-secret-id") })
         assertTrue(events.any { it.contains("photo_restore_fetch_result") && it.contains("httpStatus=200") })
-        assertTrue(events.any { it.contains("bytesLength=6") && it.contains("first32=ffd8ffe00010") })
-        assertTrue(events.any { it.contains("photo_restore_local_write_result") && it.contains("readbackByteCount=6") && it.contains("readbackHash=") })
+        assertTrue(events.any { it.contains("bytesLength=6") && it.contains("sha256Prefix=") && it.contains("magic=jpeg_signature") })
+        assertTrue(events.none { it.contains("first32=") || it.contains("last32=") })
+        assertTrue(events.any { it.contains("photo_restore_local_write_result") && it.contains("readbackByteCount=6") && it.contains("readbackHashPrefix=") })
+        assertTrue(events.none { it.contains("readbackFirst32=") || it.contains("readbackLast32=") })
         assertTrue(events.any { it.contains("photo_restore_decode_result") && it.contains("width=640 height=480") })
         assertTrue(events.any { it.contains("photo_restore_import_result") && it.contains("persistedPhotoUriPresent=true") })
     }
@@ -221,11 +224,12 @@ class DriveRestoreDiagnosticsTest {
                 readBackBytes = bytes,
             )
 
-        assertTrue(events.any { it.contains("sha256=") && !it.contains("sha256Prefix=") })
-        assertTrue(events.any { it.contains("first32=89504e470d0a1a0a0000000049454e44ae426082") })
-        assertTrue(events.any { it.contains("last32=89504e470d0a1a0a0000000049454e44ae426082") })
+        assertTrue(events.any { it.contains("sha256Prefix=") && it.contains("magic=png_signature") })
         assertTrue(events.any { it.contains("png=png_signature_iend_present") })
-        assertTrue(events.any { it.contains("readbackHash=") && it.contains("readbackFirst32=") && it.contains("readbackLast32=") })
+        assertTrue(events.any { it.contains("readbackHashPrefix=") && it.contains("readbackMagic=png_signature") })
+        assertTrue(events.any { it.contains("readbackPng=png_signature_iend_present") })
+        assertTrue(events.none { it.contains("first32=") || it.contains("last32=") })
+        assertTrue(events.none { it.contains("readbackFirst32=") || it.contains("readbackLast32=") })
     }
 
     @Test
@@ -297,17 +301,27 @@ class DriveRestoreDiagnosticsTest {
     @Test
     fun restoreSyncLogSanitizer_redactsSecretsAndDevicePaths() {
         val sanitized = sanitizeLogField(
-            "Bearer abc.def access_token=secret manu@example.com content://media/p/1 file:///tmp/photo.jpg /data/user/0/app/photo.jpg",
+            "Bearer abc.def access_token=secret manu@example.com content://media/p/1 file:///tmp/photo.jpg /data/user/0/app/photo.jpg " +
+                "first32=ffd8ffe00010 last32=ffd8ffe00010 readbackFirst32=89504e47 readbackLast32=ae426082 " +
+                "magic=ffd8ffe00010 sourceMagic=89504e470d0a1a0a",
         )
 
         assertTrue(sanitized.contains("Bearer <redacted>"))
         assertTrue(sanitized.contains("access_token=<redacted>"))
+        assertTrue(sanitized.contains("first32=<redacted>"))
+        assertTrue(sanitized.contains("last32=<redacted>"))
+        assertTrue(sanitized.contains("readbackFirst32=<redacted>"))
+        assertTrue(sanitized.contains("readbackLast32=<redacted>"))
+        assertTrue(sanitized.contains("magic=<redacted>"))
+        assertTrue(sanitized.contains("sourceMagic=<redacted>"))
         assertTrue(sanitized.contains("<email-redacted>"))
         assertTrue(sanitized.contains("content://<redacted>"))
         assertTrue(sanitized.contains("file://<redacted>"))
         assertTrue(sanitized.contains("<path-redacted>"))
         assertTrue(!sanitized.contains("secret"))
         assertTrue(!sanitized.contains("manu@example.com"))
+        assertTrue(!sanitized.contains("ffd8ffe00010"))
+        assertTrue(!sanitized.contains("89504e47"))
     }
 
     @Test
@@ -330,6 +344,7 @@ class DriveRestoreDiagnosticsTest {
             garmentId = "garment-1",
             blobPath = "photos/garment-1/original",
             byteSize = 42,
+            byteMagic = "ffd8ffe000104a464946",
             contentHash = "abcDEF1234567890",
             restoredUriStatus = "content://private/image.jpg",
             exceptionMessage = "refresh_token=sensitive",
@@ -353,11 +368,30 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(line.contains("bytes_total=1024"))
         assertTrue(line.contains("duration_ms=99"))
         assertTrue(line.contains("blob_path=photos/garment-1/original"))
-        assertTrue(line.contains("content_hash=abcDEF1234567890"))
+        assertTrue(line.contains("byte_magic=jpeg_signature"))
+        assertTrue(!line.contains("ffd8ffe000104a464946"))
+        assertTrue(line.contains("content_hash_prefix=abcDEF123456"))
+        assertTrue(!line.contains("abcDEF1234567890"))
         assertTrue(line.contains("content://<redacted>"))
         assertTrue(line.contains("refresh_token=<redacted>"))
         assertTrue(!line.contains("token-value"))
         assertTrue(!line.contains("sensitive"))
+    }
+
+    @Test
+    fun restoreSyncLogEvent_neverPersistsUnknownRawMagicBytes() {
+        val line = RestoreSyncLogEvent(
+            correlationId = "abc123",
+            category = "photo_restore",
+            level = "info",
+            phase = CloudRestorePhase.Downloading,
+            status = CloudRestoreStatus.Running,
+            message = "fetch completed",
+            byteMagic = "00112233445566778899aabbccddeeff",
+        ).toLogLine()
+
+        assertTrue(line.contains("byte_magic=unknown_signature"))
+        assertTrue(!line.contains("00112233445566778899aabbccddeeff"))
     }
 
     @Test
