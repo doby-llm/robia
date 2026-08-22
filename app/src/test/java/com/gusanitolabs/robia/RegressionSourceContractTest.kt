@@ -388,6 +388,92 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun restoredPhotoRetryApply_hasSingleVerifiedContractAndDecisiveDiagnostics() {
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+        val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+
+        assertTrue(dao.contains("data class RestoredPhotoApplyStateEntity"))
+        assertTrue(dao.contains("restoredPhotoApplyState"))
+        assertTrue(dao.contains("photo_uri AS photoUri"))
+        assertTrue(dao.contains("sync_dirty_at_epoch_millis AS syncDirtyAtEpochMillis"))
+
+        val applyQuery = queryBeforeMethod(dao, "suspend fun applyRestoredPhoto")
+        assertTrue(applyQuery.contains("photo_uri = :photoUri"))
+        assertTrue(applyQuery.contains("sync_revision = :revision"))
+        assertTrue(applyQuery.contains("photo_restore_guarded = 1"))
+        assertTrue(applyQuery.contains("sync_status = 'Running'"))
+        assertTrue(applyQuery.contains("CASE WHEN sync_dirty_at_epoch_millis IS NULL THEN 'Synced' ELSE 'Queued' END"))
+        assertTrue(applyQuery.contains("photo_restore_guarded = 0"))
+        assertTrue(applyQuery.contains("retry_attempt_count = 0"))
+
+        assertTrue(snapshotRepository.contains("sealed interface RestoredPhotoApplyResult"))
+        assertTrue(snapshotRepository.contains("restoredUri == null -> \"restored_uri_absent\""))
+        assertTrue(snapshotRepository.contains("\"import_guarded:\$guardedReason\""))
+        assertTrue(snapshotRepository.contains("rowsUpdated == 1 && persisted"))
+        assertTrue(snapshotRepository.contains("rowAfter?.photoUri == restoredUri"))
+        assertTrue(snapshotRepository.contains("!rowAfter.photoRestoreGuarded"))
+        assertTrue(snapshotRepository.contains("rowBefore.zeroUpdateReason(expectedRevision, persisted)"))
+        listOf(
+            "garment_not_found",
+            "revision_mismatch",
+            "photo_not_guarded",
+            "status_not_running",
+            "post_update_verification_failed",
+            "dao_update_zero_rows",
+        ).forEach { reason -> assertTrue(snapshotRepository.contains(reason)) }
+
+        assertTrue(processor.contains("applyResult.toDiagnosticEvent()"))
+        assertTrue(processor.contains("daoRowsUpdated=\$daoRowsUpdated"))
+        assertTrue(processor.contains("restoredUriPresent=\$restoredUriPresent restoredUriUsable=\$importedPhotoUsable"))
+        assertTrue(processor.contains("localRevisionBefore="))
+        assertTrue(processor.contains("statusBefore="))
+        assertTrue(processor.contains("guardBefore="))
+        assertTrue(processor.contains("photoUriPresentAfter="))
+        assertTrue(processor.contains("blobPath=\$blobPath"))
+
+        assertTrue(driveRepository.contains("fetchedByteCount=\${bytes.size}"))
+        assertTrue(driveRepository.contains("readbackByteCount=\${readBackBytes?.size ?: 0}"))
+        assertTrue(driveRepository.contains("photo_restore_decode_result garmentId=\$garmentId decoder=\$decoderPath"))
+        assertTrue(driveRepository.contains("photo_restore_import_result garmentId=\$garmentId"))
+
+        val fetchDiagnostics = driveRepository
+            .substringAfter("internal fun DriveBlob.restoreFetchResultEvents")
+            .substringBefore("internal fun GarmentPhotoRecord.driveLookupMissingEvent")
+        val fetchResultDiagnostics = fetchDiagnostics.substringAfter("photo_restore_fetch_result")
+        assertTrue(fetchResultDiagnostics.indexOf("fetchedByteCount=") < fetchResultDiagnostics.indexOf("blobPath="))
+
+        val importDiagnostics = driveRepository
+            .substringAfter("internal fun GarmentPhotoRecord.importDiagnosticEvent")
+            .substringBefore("private data class ImageDecodeResult")
+        assertTrue(importDiagnostics.indexOf("persistedPhotoUriPresent=") < importDiagnostics.indexOf("blobPath="))
+    }
+
+    @Test
+    fun guardedPhotoRestoreRetry_persistsAcrossRestartUntilVerifiedOneRowApply() {
+        val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
+        val repository = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
+        val snapshotRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt")
+
+        val claimQuery = queryBeforeMethod(dao, "suspend fun markGarmentPhotoRestoreRetrying")
+        assertTrue(claimQuery.contains("photo_restore_guarded = 1"))
+        assertTrue(claimQuery.contains("sync_status IN ('NeedsUserAction', 'Queued')"))
+        assertTrue(claimQuery.contains("retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now"))
+        assertTrue(claimQuery.contains("photo_restore_retry_deadline_epoch_millis >= :now"))
+
+        val staleRecoveryQuery = queryBeforeMethod(dao, "suspend fun recoverStaleGarmentSyncWork")
+        assertTrue(staleRecoveryQuery.contains("CASE WHEN photo_restore_guarded = 1 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
+        assertTrue(staleRecoveryQuery.contains("retry_after_epoch_millis = 0"))
+        assertTrue(staleRecoveryQuery.contains("sync_started_at_epoch_millis = NULL"))
+
+        assertTrue(repository.contains("eligibleGarmentPhotoRestoreRetryRevision(id, now)"))
+        assertTrue(repository.contains("markGarmentPhotoRestoreRetrying(id, revision, startedAtEpochMillis, now) > 0"))
+        assertTrue(snapshotRepository.contains("Targeted guarded-photo retry uses [applyRestoredPhoto]"))
+        assertTrue(snapshotRepository.contains("must resolve exactly one pre-existing guarded row"))
+    }
+
+    @Test
     fun restoredPhotoRetry_compilesGenericSuccessAndUsesComposableAccessibilityText() {
         val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/DriveWardrobeRepository.kt")
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")

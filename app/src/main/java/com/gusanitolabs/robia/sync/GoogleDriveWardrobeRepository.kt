@@ -942,40 +942,42 @@ internal fun GarmentPhotoRecord.restoreFetchStartedEvents(description: String?):
     buildString {
         append("photo_restore_fetch_started garmentId=$garmentId")
         description?.takeIf(String::isNotBlank)?.let { append(" description=\"").append(it).append('"') }
-        append(" blobPath=$blobPath")
         byteSize?.let { append(" snapshotByteSize=$it") }
         contentHash?.takeIf(String::isNotBlank)?.let { append(" snapshotHash=${it.take(12)}") }
         mimeType?.takeIf(String::isNotBlank)?.let { append(" snapshotMime=$it") }
+        append(" blobPath=$blobPath")
     },
 )
 
 internal fun DriveBlob.restoreFetchResultEvents(photo: GarmentPhotoRecord): List<String> = listOf(
     buildString {
-        append("drive_file_lookup_result garmentId=${photo.garmentId} blobPath=${photo.blobPath} found=${file != null}")
+        append("drive_file_lookup_result garmentId=${photo.garmentId} found=${file != null}")
         file?.let { metadata ->
             append(" fileIdHash=${metadata.id.sha256Prefix()}")
             metadata.modifiedTime?.let { append(" modifiedTime=$it") }
             metadata.mimeType?.let { append(" driveMimeType=$it") }
             metadata.size?.let { append(" driveSize=$it") }
         }
+        append(" blobPath=${photo.blobPath}")
     },
     buildString {
-        append("photo_restore_fetch_result garmentId=${photo.garmentId} blobPath=${photo.blobPath} status=success")
+        append("photo_restore_fetch_result garmentId=${photo.garmentId} status=success")
         httpStatusCode?.let { append(" httpStatus=$it category=${it.httpStatusCategoryLabel()}") }
-        append(" bytesLength=${bytes.size}")
+        append(" fetchedByteCount=${bytes.size} bytesLength=${bytes.size}")
         contentType?.let { append(" contentType=$it") }
         contentLength?.let { append(" contentLength=$it") }
         append(" sha256Prefix=${bytes.sha256Hex().take(12)}")
         append(" magic=${bytes.imageMagicLabel()}")
         append(" png=${bytes.pngSanityLabel()}")
+        append(" blobPath=${photo.blobPath}")
     },
 )
 
 internal fun GarmentPhotoRecord.driveLookupMissingEvent(): String =
-    "drive_file_lookup_result garmentId=$garmentId blobPath=$blobPath found=false"
+    "drive_file_lookup_result garmentId=$garmentId found=false blobPath=$blobPath"
 
 internal fun GarmentPhotoRecord.fetchMissingEvent(): String =
-    "photo_restore_fetch_result garmentId=$garmentId blobPath=$blobPath status=not_found httpStatus=404 category=http_not_found"
+    "photo_restore_fetch_result garmentId=$garmentId status=not_found httpStatus=404 category=http_not_found blobPath=$blobPath"
 
 internal fun GarmentPhotoRecord.localWriteDiagnosticEvent(
     targetExtension: String,
@@ -983,7 +985,7 @@ internal fun GarmentPhotoRecord.localWriteDiagnosticEvent(
     readBackBytes: ByteArray?,
     writeFailure: Throwable? = null,
 ): String = buildString {
-    append("photo_restore_local_write_result garmentId=$garmentId blobPath=$blobPath")
+    append("photo_restore_local_write_result garmentId=$garmentId")
     append(" targetExtension=$targetExtension fileLength=$fileLength")
     append(" readbackByteCount=${readBackBytes?.size ?: 0}")
     readBackBytes?.let {
@@ -992,6 +994,7 @@ internal fun GarmentPhotoRecord.localWriteDiagnosticEvent(
         append(" readbackPng=${it.pngSanityLabel()}")
     }
     writeFailure?.let { append(" writeFailure=\"").append(it.diagnosticSummary()).append('"') }
+    append(" blobPath=$blobPath")
 }
 
 internal fun GarmentPhotoRecord.decodeDiagnosticEvent(
@@ -1000,12 +1003,13 @@ internal fun GarmentPhotoRecord.decodeDiagnosticEvent(
     height: Int? = null,
     failure: String? = null,
 ): String = buildString {
-    append("photo_restore_decode_result garmentId=$garmentId blobPath=$blobPath decoder=$decoderPath")
+    append("photo_restore_decode_result garmentId=$garmentId decoder=$decoderPath")
     if (width != null && height != null) {
         append(" status=success width=$width height=$height")
     } else {
         append(" status=failure reason=\"").append(failure ?: "unknown").append('"')
     }
+    append(" blobPath=$blobPath")
 }
 
 private fun GarmentPhotoRecord.decodeDiagnosticEvent(
@@ -1026,9 +1030,10 @@ internal fun GarmentPhotoRecord.importDiagnosticEvent(
     persistedPhotoUriPresent: Boolean,
     placeholderReason: String?,
 ): String = buildString {
-    append("photo_restore_import_result garmentId=$garmentId blobPath=$blobPath")
+    append("photo_restore_import_result garmentId=$garmentId")
     append(" persistedPhotoUriPresent=$persistedPhotoUriPresent")
     placeholderReason?.let { append(" placeholderReason=$it") }
+    append(" blobPath=$blobPath")
 }
 
 private data class ImageDecodeResult(

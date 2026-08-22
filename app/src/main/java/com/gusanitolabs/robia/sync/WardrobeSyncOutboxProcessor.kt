@@ -358,18 +358,19 @@ class WardrobeSyncOutboxProcessor(
                             garmentId = garmentId,
                             events = result.value.restoreDiagnosticEvents,
                         )
-                        val applied = snapshotRepository.applyRestoredPhoto(result.value, retryRevision)
+                        val applyResult = snapshotRepository.applyRestoredPhoto(result.value, retryRevision)
                         restoreSyncLogRepository.append(
                             RestoreSyncLogEvent(
                                 correlationId = retryCorrelationId,
                                 category = "photo_restore_apply",
                                 phase = CloudRestorePhase.Applying,
-                                status = CloudRestoreStatus.Failed.takeUnless { applied },
-                                message = "retry apply result applied=$applied",
+                                status = CloudRestoreStatus.Failed.takeUnless { applyResult.applied },
+                                message = applyResult.toDiagnosticEvent(),
                                 garmentId = garmentId,
+                                blobPath = applyResult.blobPath,
                             ),
                         )
-                        if (!applied) {
+                        if (!applyResult.applied) {
                             wardrobeRepository.markGarmentPhotoRestoreFailed(
                                 garmentId,
                                 "$MISSING_RESTORED_PHOTO_MESSAGE Drive photo download completed but could not be saved locally.",
@@ -778,7 +779,7 @@ class WardrobeSyncOutboxProcessor(
         val importResult = if (mergedSnapshot.hasUserData()) {
             snapshotRepository.importSnapshot(mergedSnapshot)
         } else {
-            ImportSnapshotResult(restoredGarmentCount = 0, guardedPhotoCount = 0)
+            ImportSnapshotResult(restoredGarmentCount = 0, restoredPhotoCount = 0, guardedPhotoCount = 0)
         }
         diagnostics.recordLocalSave(importResult)
 
@@ -1032,7 +1033,10 @@ private class RestoreDiagnosticsTracker(
         localSaveCompleted = true
         restoredGarmentCount = result.restoredGarmentCount
         guardedPhotoCount = result.guardedPhotoCount
-        event("local_save_completed restored_garments=${result.restoredGarmentCount} guarded_photos=${result.guardedPhotoCount}")
+        event(
+            "local_save_completed restored_garments=${result.restoredGarmentCount} " +
+                "restored_photos=${result.restoredPhotoCount} guarded_photos=${result.guardedPhotoCount}",
+        )
     }
 
     fun recordDownloadProgress(progress: DriveRestoreProgress) {
@@ -1445,6 +1449,44 @@ internal fun GarmentPhotoRecord.restoreDiagnosticEvent(): String {
         restoreFailureMessage?.takeIf(String::isNotBlank)?.let { message ->
             append(" message=${sanitizeDiagnosticMessage(message)}")
         }
+    }.let(::sanitizeDiagnosticMessage)
+}
+
+internal fun RestoredPhotoApplyResult.toDiagnosticEvent(): String {
+    val before = rowBefore
+    val after = rowAfter
+    return buildString {
+        append("photo_restore_apply_result garmentId=$garmentId applied=$applied")
+        if (this@toDiagnosticEvent is RestoredPhotoApplyResult.NotApplied) {
+            append(" reason=$reason")
+        } else {
+            append(" reason=applied")
+        }
+        append(" daoRowsUpdated=$daoRowsUpdated expectedRevision=$expectedRevision")
+        append(" restoredUriPresent=$restoredUriPresent restoredUriUsable=$importedPhotoUsable")
+        append(" localRowPresentBefore=${before != null}")
+        before?.let {
+            append(" localRevisionBefore=${it.revision}")
+            append(" statusBefore=${it.syncStatus}")
+            append(" guardBefore=${it.photoRestoreGuarded}")
+            append(" retryAttemptBefore=${it.retryAttemptCount}")
+            append(" retryAfterBefore=${it.retryAfterEpochMillis}")
+            append(" retryDeadlineBefore=${it.retryDeadlineEpochMillis}")
+            append(" dirtyBefore=${it.syncDirtyAtEpochMillis != null}")
+            append(" photoUriPresentBefore=${!it.photoUri.isNullOrBlank()}")
+        }
+        append(" localRowPresentAfter=${after != null}")
+        after?.let {
+            append(" localRevisionAfter=${it.revision}")
+            append(" statusAfter=${it.syncStatus}")
+            append(" guardAfter=${it.photoRestoreGuarded}")
+            append(" retryAttemptAfter=${it.retryAttemptCount}")
+            append(" retryAfterAfter=${it.retryAfterEpochMillis}")
+            append(" retryDeadlineAfter=${it.retryDeadlineEpochMillis}")
+            append(" dirtyAfter=${it.syncDirtyAtEpochMillis != null}")
+            append(" photoUriPresentAfter=${!it.photoUri.isNullOrBlank()}")
+        }
+        append(" blobPath=$blobPath")
     }.let(::sanitizeDiagnosticMessage)
 }
 
