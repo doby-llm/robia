@@ -1,8 +1,10 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
+import com.gusanitolabs.robia.data.local.RestoredPhotoApplyStateEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -190,12 +192,166 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(events.any { it.contains("fileIdHash=") })
         assertTrue(events.none { it.contains("drive-file-secret-id") })
         assertTrue(events.any { it.contains("photo_restore_fetch_result") && it.contains("httpStatus=200") })
-        assertTrue(events.any { it.contains("bytesLength=6") && it.contains("sha256Prefix=") && it.contains("magic=jpeg_signature") })
+        assertTrue(events.any { it.contains("fetchedByteCount=6") && it.contains("bytesLength=6") })
+        assertTrue(events.any { it.contains("sha256Prefix=") && it.contains("magic=jpeg_signature") })
         assertTrue(events.none { it.contains("first32=") || it.contains("last32=") })
         assertTrue(events.any { it.contains("photo_restore_local_write_result") && it.contains("readbackByteCount=6") && it.contains("readbackHashPrefix=") })
         assertTrue(events.none { it.contains("readbackFirst32=") || it.contains("readbackLast32=") })
         assertTrue(events.any { it.contains("photo_restore_decode_result") && it.contains("width=640 height=480") })
         assertTrue(events.any { it.contains("photo_restore_import_result") && it.contains("persistedPhotoUriPresent=true") })
+    }
+
+    @Test
+    fun restoredPhotoApplyDiagnostics_makeFalseResultUnambiguousWithoutRawUri() {
+        val result = RestoredPhotoApplyResult.NotApplied(
+            garmentId = "garment-restored",
+            expectedRevision = 42L,
+            restoredUriPresent = true,
+            importedPhotoUsable = true,
+            daoRowsUpdated = 0,
+            reason = "revision_mismatch",
+            rowBefore = RestoredPhotoApplyStateEntity(
+                itemId = "garment-restored",
+                revision = 41L,
+                syncStatus = GarmentSyncStatus.Running,
+                photoRestoreGuarded = true,
+                retryAttemptCount = 1,
+                retryAfterEpochMillis = 100L,
+                retryDeadlineEpochMillis = 200L,
+                syncDirtyAtEpochMillis = null,
+                photoUri = null,
+            ),
+            rowAfter = RestoredPhotoApplyStateEntity(
+                itemId = "garment-restored",
+                revision = 41L,
+                syncStatus = GarmentSyncStatus.Running,
+                photoRestoreGuarded = true,
+                retryAttemptCount = 1,
+                retryAfterEpochMillis = 100L,
+                retryDeadlineEpochMillis = 200L,
+                syncDirtyAtEpochMillis = null,
+                photoUri = "content://private/restored.jpg",
+            ),
+            blobPath = "photos/garment-restored/original",
+        )
+
+        val event = result.toDiagnosticEvent()
+
+        assertTrue(event.contains("photo_restore_apply_result"))
+        assertTrue(event.contains("applied=false"))
+        assertTrue(event.contains("reason=revision_mismatch"))
+        assertTrue(event.contains("daoRowsUpdated=0"))
+        assertTrue(event.contains("expectedRevision=42"))
+        assertTrue(event.contains("localRevisionBefore=41"))
+        assertTrue(event.contains("statusBefore=Running"))
+        assertTrue(event.contains("guardBefore=true"))
+        assertTrue(event.contains("photoUriPresentAfter=true"))
+        assertTrue(event.contains("blobPath=photos/garment-restored/original"))
+        assertFalse(event.contains("content://private/restored.jpg"))
+    }
+
+    @Test
+    fun restoredPhotoApplyDiagnostics_separatesMissingUriFromDaoPredicateFailure() {
+        val result = RestoredPhotoApplyResult.NotApplied(
+            garmentId = "garment-missing-uri",
+            expectedRevision = 42L,
+            restoredUriPresent = false,
+            importedPhotoUsable = false,
+            daoRowsUpdated = 0,
+            reason = "restored_uri_absent",
+            rowBefore = null,
+            rowAfter = null,
+            blobPath = "photos/garment-missing-uri/original",
+        )
+
+        val event = result.toDiagnosticEvent()
+
+        assertTrue(event.contains("applied=false"))
+        assertTrue(event.contains("reason=restored_uri_absent"))
+        assertTrue(event.contains("daoRowsUpdated=0"))
+        assertTrue(event.contains("restoredUriPresent=false restoredUriUsable=false"))
+        assertTrue(event.contains("localRowPresentBefore=false"))
+        assertTrue(event.contains("localRowPresentAfter=false"))
+        assertFalse(event.contains("content://"))
+    }
+
+    @Test
+    fun restoredPhotoApplyDiagnostics_reportsSuccessfulVerifiedOneRowApply() {
+        val result = RestoredPhotoApplyResult.Applied(
+            garmentId = "garment-restored",
+            expectedRevision = 42L,
+            restoredUriPresent = true,
+            importedPhotoUsable = true,
+            daoRowsUpdated = 1,
+            rowBefore = RestoredPhotoApplyStateEntity(
+                itemId = "garment-restored",
+                revision = 42L,
+                syncStatus = GarmentSyncStatus.Running,
+                photoRestoreGuarded = true,
+                retryAttemptCount = 1,
+                retryAfterEpochMillis = 100L,
+                retryDeadlineEpochMillis = 200L,
+                syncDirtyAtEpochMillis = null,
+                photoUri = null,
+            ),
+            rowAfter = RestoredPhotoApplyStateEntity(
+                itemId = "garment-restored",
+                revision = 42L,
+                syncStatus = GarmentSyncStatus.Synced,
+                photoRestoreGuarded = false,
+                retryAttemptCount = 0,
+                retryAfterEpochMillis = null,
+                retryDeadlineEpochMillis = null,
+                syncDirtyAtEpochMillis = null,
+                photoUri = "content://private/restored.jpg",
+            ),
+            blobPath = "photos/garment-restored/original",
+        )
+
+        val event = result.toDiagnosticEvent()
+
+        assertTrue(event.contains("applied=true reason=applied"))
+        assertTrue(event.contains("daoRowsUpdated=1 expectedRevision=42"))
+        assertTrue(event.contains("statusBefore=Running"))
+        assertTrue(event.contains("guardBefore=true"))
+        assertTrue(event.contains("statusAfter=Synced"))
+        assertTrue(event.contains("guardAfter=false"))
+        assertTrue(event.contains("photoUriPresentAfter=true"))
+        assertFalse(event.contains("content://private/restored.jpg"))
+    }
+
+    @Test
+    fun fullBytesButUnreadableRestore_diagnosticsKeepByteAndImportOutcomesDistinct() {
+        val photo = GarmentPhotoRecord(
+            garmentId = "garment-unreadable",
+            localUri = "content://old-device/unreadable.png",
+            blobPath = "photos/garment-unreadable/original",
+        )
+        val bytes = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)
+        val events = DriveBlob(
+            bytes = bytes,
+            httpStatusCode = 200,
+            contentType = "image/png",
+            contentLength = bytes.size.toLong(),
+        ).restoreFetchResultEvents(photo) +
+            photo.localWriteDiagnosticEvent(
+                targetExtension = "png",
+                fileLength = bytes.size.toLong(),
+                readBackBytes = bytes,
+            ) +
+            photo.decodeDiagnosticEvent(
+                decoderPath = "BitmapFactory.readbackBytes",
+                failure = "no decoder produced dimensions",
+            ) +
+            photo.importDiagnosticEvent(
+                persistedPhotoUriPresent = false,
+                placeholderReason = REMOTE_PHOTO_UNREADABLE,
+            )
+
+        assertTrue(events.any { it.contains("fetchedByteCount=4") })
+        assertTrue(events.any { it.contains("readbackByteCount=4") })
+        assertTrue(events.any { it.contains("status=failure") && it.contains("no decoder produced dimensions") })
+        assertTrue(events.any { it.contains("persistedPhotoUriPresent=false") && it.contains(REMOTE_PHOTO_UNREADABLE) })
     }
 
     @Test

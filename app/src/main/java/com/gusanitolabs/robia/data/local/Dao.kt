@@ -114,10 +114,10 @@ interface WardrobeDao {
     @Query("UPDATE clothing_items SET sync_status = 'AuthBlocked', sync_failure_message = :message WHERE id = :itemId")
     suspend fun markGarmentSyncAuthBlocked(itemId: String, message: String?): Int
 
-    @Query("SELECT sync_revision FROM clothing_items WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND retry_after_epoch_millis <= :now AND photo_restore_retry_deadline_epoch_millis >= :now")
+    @Query("SELECT sync_revision FROM clothing_items WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now) AND photo_restore_retry_deadline_epoch_millis >= :now")
     suspend fun eligibleGarmentPhotoRestoreRetryRevision(itemId: String, now: Long): Long?
 
-    @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND retry_after_epoch_millis <= :now AND photo_restore_retry_deadline_epoch_millis >= :now")
+    @Query("UPDATE clothing_items SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status IN ('NeedsUserAction', 'Queued') AND retry_attempt_count < 3 AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now) AND photo_restore_retry_deadline_epoch_millis >= :now")
     suspend fun markGarmentPhotoRestoreRetrying(itemId: String, revision: Long, startedAtEpochMillis: Long, now: Long): Int
 
     @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status = 'Running'")
@@ -125,6 +125,9 @@ interface WardrobeDao {
 
     @Query("UPDATE clothing_items SET photo_uri = :photoUri, sync_status = CASE WHEN sync_dirty_at_epoch_millis IS NULL THEN 'Synced' ELSE 'Queued' END, sync_failure_message = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, photo_restore_guarded = 0, photo_restore_retry_deadline_epoch_millis = NULL, last_synced_at_epoch_millis = :syncedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status = 'Running'")
     suspend fun applyRestoredPhoto(itemId: String, photoUri: String, revision: Long, syncedAtEpochMillis: Long): Int
+
+    @Query("SELECT id AS itemId, sync_revision AS revision, sync_status AS syncStatus, photo_restore_guarded AS photoRestoreGuarded, retry_attempt_count AS retryAttemptCount, retry_after_epoch_millis AS retryAfterEpochMillis, photo_restore_retry_deadline_epoch_millis AS retryDeadlineEpochMillis, sync_dirty_at_epoch_millis AS syncDirtyAtEpochMillis, photo_uri AS photoUri FROM clothing_items WHERE id = :itemId")
+    suspend fun restoredPhotoApplyState(itemId: String): RestoredPhotoApplyStateEntity?
 
     @Transaction
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity): Boolean =
@@ -457,4 +460,16 @@ data class GuardedPhotoRestoreState(
     val guarded: Boolean,
     val retryAfterEpochMillis: Long?,
     val deadlineEpochMillis: Long?,
+)
+
+data class RestoredPhotoApplyStateEntity(
+    val itemId: String,
+    val revision: Long,
+    val syncStatus: GarmentSyncStatus,
+    val photoRestoreGuarded: Boolean,
+    val retryAttemptCount: Int,
+    val retryAfterEpochMillis: Long?,
+    val retryDeadlineEpochMillis: Long?,
+    val syncDirtyAtEpochMillis: Long?,
+    val photoUri: String?,
 )
