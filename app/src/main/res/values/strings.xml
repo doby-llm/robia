@@ -39,8 +39,10 @@
     <string name="cloud_restore_title">Restoring wardrobe from cloud</string>
     <string name="cloud_restore_remaining">%1$d of %2$d steps remaining</string>
     <string name="cloud_restore_photo_item_progress">Photos: %1$d of %2$d</string>
-    <string name="cloud_restore_byte_progress_known">%1$d of %2$d bytes</string>
-    <string name="cloud_restore_byte_progress_unknown">%1$d bytes downloaded</string>
+    <string name="cloud_restore_byte_progress_known">%1$s of %2$s downloaded</string>
+    <string name="cloud_restore_byte_progress_unknown">%1$s downloaded</string>
+    <string name="cloud_restore_eta_less_than_minute">Less than a minute left</string>
+    <string name="cloud_restore_eta_about_minutes">About %1$d min left</string>
     <string name="cloud_restore_status_running">Keep Robia open. Local changes are locked until restore finishes.</string>
     <string name="cloud_restore_status_interrupted">Restore was interrupted. Retry when you are ready.</string>
     <string name="cloud_restore_status_offline">Connection lost. Retry restore before adding local changes.</string>

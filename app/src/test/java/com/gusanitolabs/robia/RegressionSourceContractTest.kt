@@ -415,8 +415,10 @@ class RegressionSourceContractTest {
             .substringAfter("private fun CloudRestoreProgressOverlay(")
             .substringBefore("@Composable\nprivate fun CloudRestoreDiagnosticsPanel(")
 
+        assertTrue(overlay.contains("developerModeUnlocked: Boolean"))
         assertTrue(overlay.contains("developerModeEnabled: Boolean"))
-        assertTrue(overlay.contains("progress.diagnostics.takeIf { developerModeEnabled }"))
+        assertTrue(overlay.contains("val effectiveDeveloperMode = developerModeUnlocked && developerModeEnabled"))
+        assertTrue(overlay.contains("progress.diagnostics.takeIf { effectiveDeveloperMode }"))
         assertTrue(overlay.contains("contentAlignment = Alignment.Center"))
         assertTrue(overlay.contains(".widthIn(max = 520.dp)"))
     }
@@ -435,7 +437,7 @@ class RegressionSourceContractTest {
         assertTrue(settingsScreen.contains("if (developerModeEnabled)"))
         assertTrue(settingsScreen.contains("onRestoreSyncLogClick"))
         assertTrue(app.contains("RobiaRoute.Settings -> SettingsScreen("))
-        assertTrue(app.contains("RobiaRoute.DeveloperSyncLog -> if (developerModeEnabled)"))
+        assertTrue(app.contains("RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled)"))
     }
 
     @Test
@@ -473,6 +475,34 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("byteProgress = RestoreByteProgress"))
         assertTrue(app.contains("cloud_restore_byte_progress_unknown"))
         assertTrue(app.contains("cloud_restore_byte_progress_known"))
+        assertTrue(app.contains("byteProgress.toDisplayText()"))
+        assertTrue(!app.contains("byteProgress.completedBytes, total"))
+        assertTrue(!app.contains("R.string.cloud_restore_byte_progress_unknown, byteProgress.completedBytes"))
+        assertTrue(app.contains("RestoreEtaState()"))
+        assertTrue(app.contains("SystemClock.elapsedRealtime()"))
+        assertTrue(app.contains("R.string.cloud_restore_eta_less_than_minute"))
+        assertTrue(app.contains("R.string.cloud_restore_eta_about_minutes"))
+    }
+
+    @Test
+    fun restoreProgressStrings_haveResourceParityForHumanFriendlyBytesAndEta() {
+        val en = source("app/src/main/res/values/strings.xml")
+        val es = source("app/src/main/res/values-es/strings.xml")
+        val de = source("app/src/main/res/values-de/strings.xml")
+
+        listOf(
+            "cloud_restore_byte_progress_known",
+            "cloud_restore_byte_progress_unknown",
+            "cloud_restore_eta_less_than_minute",
+            "cloud_restore_eta_about_minutes",
+        ).forEach { name ->
+            assertTrue(en.contains("name=\"$name\""))
+            assertTrue(es.contains("name=\"$name\""))
+            assertTrue(de.contains("name=\"$name\""))
+        }
+        assertTrue(!en.contains("bytes downloaded"))
+        assertTrue(!es.contains("bytes descargados"))
+        assertTrue(!de.contains("Byte heruntergeladen"))
     }
 
     @Test

@@ -1251,7 +1251,8 @@ private fun RobiaShell(
     restoreProgress?.let { progress ->
         CloudRestoreProgressOverlay(
             progress = progress,
-            developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
+            developerModeUnlocked = settings.developerModeUnlocked,
+            developerModeEnabled = settings.developerModeEnabled,
             onRetry = onRequestCloudRestoreRetry,
         )
     }
@@ -1534,15 +1535,29 @@ private fun CloudSetupDialog(
 @Composable
 private fun CloudRestoreProgressOverlay(
     progress: CloudRestoreProgress,
+    developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
     onRetry: () -> Unit,
 ) {
     val statusText = cloudRestoreStatusText(progress)
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val diagnostics = progress.diagnostics.takeIf { developerModeEnabled }
+    val effectiveDeveloperMode = developerModeUnlocked && developerModeEnabled
+    val diagnostics = progress.diagnostics.takeIf { effectiveDeveloperMode }
     val diagnosticsText = diagnostics?.toCopyText().orEmpty()
     val diagnosticsCopiedMessage = stringResource(R.string.cloud_restore_diagnostics_copied)
+    var etaState by remember(progress.diagnostics?.correlationId, progress.status) {
+        mutableStateOf(RestoreEtaState())
+    }
+    LaunchedEffect(
+        progress.diagnostics?.correlationId,
+        progress.status,
+        progress.byteProgress?.completedBytes,
+        progress.byteProgress?.totalBytes,
+    ) {
+        etaState = etaState.updated(progress, SystemClock.elapsedRealtime())
+    }
+    val eta = etaState.estimate(progress)
     var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
         mutableStateOf(progress.status != CloudRestoreStatus.Running)
     }
@@ -1619,11 +1634,34 @@ private fun CloudRestoreProgressOverlay(
                             )
                         }
                         progress.byteProgress?.let { byteProgress ->
-                            val byteText = byteProgress.totalBytes?.let { total ->
-                                stringResource(R.string.cloud_restore_byte_progress_known, byteProgress.completedBytes, total)
-                            } ?: stringResource(R.string.cloud_restore_byte_progress_unknown, byteProgress.completedBytes)
+                            val byteProgressText = byteProgress.toDisplayText()
+                            val byteText = byteProgressText.totalMegabytes?.let { total ->
+                                stringResource(
+                                    R.string.cloud_restore_byte_progress_known,
+                                    byteProgressText.completedMegabytes,
+                                    total,
+                                )
+                            } ?: stringResource(
+                                R.string.cloud_restore_byte_progress_unknown,
+                                byteProgressText.completedMegabytes,
+                            )
                             Text(
                                 text = byteText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        eta?.let { estimate ->
+                            Text(
+                                text = when (estimate) {
+                                    RestoreEta.LessThanMinute -> stringResource(R.string.cloud_restore_eta_less_than_minute)
+                                    is RestoreEta.AboutMinutes -> stringResource(
+                                        R.string.cloud_restore_eta_about_minutes,
+                                        estimate.minutes,
+                                    )
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -2013,7 +2051,7 @@ private fun RobiaNavHost(
             onDeleteBackupClick = onDeleteBackupClick,
             onRestoreSyncLogClick = onRestoreSyncLogClick,
         )
-        RobiaRoute.DeveloperSyncLog -> if (developerModeEnabled) {
+        RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
             DeveloperRestoreSyncLogScreen(
                 innerPadding = innerPadding,
                 logText = restoreSyncLogText,
