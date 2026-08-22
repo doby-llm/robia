@@ -113,6 +113,99 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun driveAuthorizationResolutionCallback_surfacesAllNonSuccessBranches() {
+        val mainActivity = source("app/src/main/java/com/gusanitolabs/robia/MainActivity.kt")
+        val callback = mainActivity
+            .substringAfter("private val driveAuthorizationLauncher = registerForActivityResult(")
+            .substringBefore("override fun onCreate")
+        val resolver = mainActivity
+            .substringAfter("private fun handleDriveAuthorizationResolution(")
+            .substringBefore("private fun persistDriveAuthorizationResult(")
+
+        assertTrue(callback.contains("handleDriveAuthorizationResolution(result.resultCode, result.data)"))
+        assertTrue(!callback.contains("if (result.resultCode == RESULT_OK)"))
+        assertTrue(!callback.contains("result.data ?: return@registerForActivityResult"))
+
+        assertTrue(resolver.contains("if (data == null)"))
+        assertTrue(resolver.contains("resultCode == Activity.RESULT_CANCELED"))
+        assertTrue(resolver.contains("\"cancelled\""))
+        assertTrue(resolver.contains("\"missing_data\""))
+        assertTrue(resolver.contains("R.string.cloud_setup_cancelled"))
+        assertTrue(resolver.contains("R.string.cloud_setup_missing_result"))
+        assertTrue(resolver.contains("authorizationClient.getAuthorizationResultFromIntent(data)"))
+        assertTrue(resolver.contains(".onFailure {"))
+        assertTrue(resolver.contains("\"parse_error\""))
+        assertTrue(resolver.contains("R.string.cloud_setup_parse_failed"))
+        assertTrue(resolver.contains("settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)"))
+
+        assertIncreasing(
+            resolver.indexOf("if (data == null)"),
+            resolver.indexOf("runCatching { authorizationClient.getAuthorizationResultFromIntent(data) }"),
+            resolver.indexOf(".onSuccess { result ->"),
+            resolver.indexOf("persistDriveAuthorizationResult(result)"),
+        )
+    }
+
+    @Test
+    fun driveAuthorization_persistsConnectedAndImportsOnlyWhenScopeAndTokenArePresent() {
+        val mainActivity = source("app/src/main/java/com/gusanitolabs/robia/MainActivity.kt")
+        val persister = mainActivity
+            .substringAfter("private fun persistDriveAuthorizationResult(")
+            .substringBefore("private fun showCloudSetupLaunchFailure()")
+
+        assertTrue(persister.contains("val grantedDriveScope = result.grantedScopes.any"))
+        assertTrue(persister.contains("scope == DRIVE_APPDATA_SCOPE"))
+        assertTrue(persister.contains("val tokenPresent = !result.accessToken.isNullOrBlank()"))
+        assertTrue(persister.contains("val authorized = grantedDriveScope && tokenPresent"))
+        assertTrue(persister.contains("if (authorized) {\n                    DriveSyncConnectionStatus.Connected"))
+        assertTrue(persister.contains("DriveSyncConnectionStatus.Disconnected"))
+        assertTrue(persister.contains("if (authorized) {\n                syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))"))
+        assertTrue(persister.contains("R.string.cloud_setup_token_missing"))
+        assertTrue(persister.contains("R.string.cloud_setup_scope_denied"))
+
+        assertIncreasing(
+            persister.indexOf("val authorized = grantedDriveScope && tokenPresent"),
+            persister.indexOf("settingsRepository.setDriveSyncConnectionStatus("),
+            persister.indexOf("if (authorized) {\n                syncGateway.enqueue"),
+        )
+    }
+
+    @Test
+    fun driveAuthorizationDiagnostics_areSafeAndLocalized() {
+        val mainActivity = source("app/src/main/java/com/gusanitolabs/robia/MainActivity.kt")
+        val diagnostics = mainActivity
+            .substringAfter("private fun logDriveAuthorizationOutcome(")
+            .substringBefore("\n    }\n}")
+        val strings = source("app/src/main/res/values/strings.xml")
+        val stringsEs = source("app/src/main/res/values-es/strings.xml")
+        val stringsDe = source("app/src/main/res/values-de/strings.xml")
+
+        assertTrue(diagnostics.contains("resultCode"))
+        assertTrue(diagnostics.contains("dataPresent"))
+        assertTrue(diagnostics.contains("grantedScopes"))
+        assertTrue(diagnostics.contains("hasResolution"))
+        assertTrue(diagnostics.contains("tokenPresent"))
+        assertTrue(!diagnostics.contains("accessToken"))
+        assertTrue(!diagnostics.contains("account"))
+        assertTrue(!diagnostics.contains("email"))
+        assertTrue(!diagnostics.contains("Intent"))
+        assertTrue(!diagnostics.contains("credentials"))
+        assertTrue(!diagnostics.contains("secret"))
+
+        listOf(
+            "cloud_setup_cancelled",
+            "cloud_setup_missing_result",
+            "cloud_setup_parse_failed",
+            "cloud_setup_scope_denied",
+            "cloud_setup_token_missing",
+        ).forEach { name ->
+            assertTrue(strings.contains("name=\"$name\""))
+            assertTrue(stringsEs.contains("name=\"$name\""))
+            assertTrue(stringsDe.contains("name=\"$name\""))
+        }
+    }
+
+    @Test
     fun browseFilterBar_keepsDividerWithLeftFilterGroupBeforeSyncSpinner() {
         val filterBar = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
             .substringAfter("private fun FilterBar(")
