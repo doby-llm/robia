@@ -76,12 +76,27 @@ data class CloudRestoreProgress(
     val status: CloudRestoreStatus = CloudRestoreStatus.Running,
     val message: String? = null,
     val diagnostics: CloudRestoreDiagnostics? = null,
+    val itemProgress: RestoreItemProgress? = null,
+    val byteProgress: RestoreByteProgress? = null,
 ) {
     val remainingWork: Int
         get() = (totalWork - completedWork).coerceAtLeast(0)
 
     val progressFraction: Float?
         get() = totalWork.takeIf { it > 0 }?.let { completedWork.coerceIn(0, it).toFloat() / it }
+}
+
+data class RestoreItemProgress(
+    val completedItems: Int,
+    val totalItems: Int,
+)
+
+data class RestoreByteProgress(
+    val completedBytes: Long,
+    val totalBytes: Long?,
+) {
+    val fraction: Float?
+        get() = totalBytes?.takeIf { it > 0L }?.let { completedBytes.coerceIn(0L, it).toFloat() / it }
 }
 
 /**
@@ -108,6 +123,8 @@ data class CloudRestoreDiagnostics(
     val remoteFavoriteMarkedCount: Int? = null,
     val restoredGarmentCount: Int? = null,
     val guardedPhotoCount: Int? = null,
+    val downloadedPhotoCount: Int? = null,
+    val downloadedPhotoBytes: Long? = null,
     val localSaveCompleted: Boolean? = null,
     val finalUploadAttempted: Boolean? = null,
     val finalUploadSucceeded: Boolean? = null,
@@ -135,6 +152,8 @@ data class CloudRestoreDiagnostics(
         appendNullable("remote_favorite_marked_count", remoteFavoriteMarkedCount)
         appendNullable("restored_garment_count", restoredGarmentCount)
         appendNullable("guarded_photo_count", guardedPhotoCount)
+        appendNullable("downloaded_photo_count", downloadedPhotoCount)
+        appendNullable("downloaded_photo_bytes", downloadedPhotoBytes)
         appendNullable("local_save_completed", localSaveCompleted)
         appendNullable("final_upload_attempted", finalUploadAttempted)
         appendNullable("final_upload_succeeded", finalUploadSucceeded)

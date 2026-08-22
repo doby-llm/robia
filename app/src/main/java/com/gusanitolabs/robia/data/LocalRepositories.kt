@@ -6,6 +6,7 @@ import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
@@ -240,6 +241,12 @@ private fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
     syncDirtyAtEpochMillis = item.syncDirtyAtEpochMillis,
     lastSyncedAtEpochMillis = item.lastSyncedAtEpochMillis,
     syncFailureMessage = item.syncFailureMessage,
+    photoRestoreState = PhotoRestoreState(
+        guarded = item.photoRestoreGuarded,
+        retryAttemptCount = item.retryAttemptCount,
+        retryAfterEpochMillis = item.retryAfterEpochMillis,
+        retryDeadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis,
+    ),
 )
 
 private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
@@ -269,6 +276,10 @@ private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     syncDirtyAtEpochMillis = syncDirtyAtEpochMillis,
     lastSyncedAtEpochMillis = lastSyncedAtEpochMillis,
     syncFailureMessage = syncFailureMessage,
+    photoRestoreGuarded = photoRestoreState.guarded,
+    retryAttemptCount = photoRestoreState.retryAttemptCount,
+    retryAfterEpochMillis = photoRestoreState.retryAfterEpochMillis,
+    photoRestoreRetryDeadlineEpochMillis = photoRestoreState.retryDeadlineEpochMillis,
 )
 
 private fun TagCategoryEntity.toDomain(): TagCategory = TagCategory(id, name, sortOrder, isSystem)

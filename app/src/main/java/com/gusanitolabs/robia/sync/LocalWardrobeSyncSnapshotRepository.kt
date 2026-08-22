@@ -21,6 +21,7 @@ import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
 import com.gusanitolabs.robia.data.local.MainColorEntity
 import com.gusanitolabs.robia.data.local.RobiaDatabase
+import com.gusanitolabs.robia.data.local.RestoredPhotoApplyStateEntity
 import com.gusanitolabs.robia.data.local.SyncTombstoneDao
 import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
@@ -80,6 +81,9 @@ class LocalWardrobeSyncSnapshotRepository(
      * Applies a fetched Drive snapshot as one Room transaction. Photo rows only receive private-storage
      * URIs that were materialized from Drive blobs during fetch; failed blob hydration aborts before this
      * transaction so a fresh install is never committed with placeholder-only garments.
+     *
+     * Targeted guarded-photo retry uses [applyRestoredPhoto] instead of this bulk import because it
+     * must resolve exactly one pre-existing guarded row that has already been claimed as Running.
      */
     suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
         val deterministicSnapshot = snapshot.sortedDeterministically().withoutTombstonedTaxonomy()
@@ -116,28 +120,119 @@ class LocalWardrobeSyncSnapshotRepository(
 
         return ImportSnapshotResult(
             restoredGarmentCount = restoredItems.count { item -> !item.isArchived },
+            restoredPhotoCount = deterministicSnapshot.photos.count { photo -> photo.restorableLocalUri() != null },
             guardedPhotoCount = deterministicSnapshot.photos.count { photo -> photo.restorableLocalUri() == null },
         )
     }
 
     /** Persists only the successfully rehydrated image; garment metadata remains untouched. */
-    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): Boolean {
-        val restoredUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: return false
-        return wardrobeDao.applyRestoredPhoto(
-            itemId = photo.garmentId,
-            photoUri = restoredUri,
-            revision = expectedRevision,
-            syncedAtEpochMillis = System.currentTimeMillis(),
-        ) > 0
-    }
+    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult =
+        database.withTransaction {
+            val rowBefore = wardrobeDao.restoredPhotoApplyState(photo.garmentId)
+            val restoredUri = photo.restoredLocalUri?.takeIf(String::isNotBlank)
+            val guardedReason = photo.restoreFailureCategory?.takeIf(String::isNotBlank)
+            if (restoredUri == null || guardedReason != null) {
+                return@withTransaction RestoredPhotoApplyResult.NotApplied(
+                    garmentId = photo.garmentId,
+                    expectedRevision = expectedRevision,
+                    restoredUriPresent = restoredUri != null,
+                    importedPhotoUsable = restoredUri != null && guardedReason == null,
+                    daoRowsUpdated = 0,
+                    reason = when {
+                        restoredUri == null -> "restored_uri_absent"
+                        else -> "import_guarded:$guardedReason"
+                    },
+                    rowBefore = rowBefore,
+                    rowAfter = rowBefore,
+                    blobPath = photo.blobPath,
+                )
+            }
+
+            val rowsUpdated = wardrobeDao.applyRestoredPhoto(
+                itemId = photo.garmentId,
+                photoUri = restoredUri,
+                revision = expectedRevision,
+                syncedAtEpochMillis = System.currentTimeMillis(),
+            )
+            val rowAfter = wardrobeDao.restoredPhotoApplyState(photo.garmentId)
+            val persisted = rowAfter?.let { row ->
+                row.photoUri == restoredUri &&
+                    !row.photoRestoreGuarded &&
+                    row.syncStatus in setOf(GarmentSyncStatus.Synced, GarmentSyncStatus.Queued)
+            } == true
+            if (rowsUpdated == 1 && persisted) {
+                RestoredPhotoApplyResult.Applied(
+                    garmentId = photo.garmentId,
+                    expectedRevision = expectedRevision,
+                    restoredUriPresent = true,
+                    importedPhotoUsable = true,
+                    daoRowsUpdated = rowsUpdated,
+                    rowBefore = rowBefore,
+                    rowAfter = rowAfter,
+                    blobPath = photo.blobPath,
+                )
+            } else {
+                RestoredPhotoApplyResult.NotApplied(
+                    garmentId = photo.garmentId,
+                    expectedRevision = expectedRevision,
+                    restoredUriPresent = true,
+                    importedPhotoUsable = true,
+                    daoRowsUpdated = rowsUpdated,
+                    reason = rowBefore.zeroUpdateReason(expectedRevision, persisted),
+                    rowBefore = rowBefore,
+                    rowAfter = rowAfter,
+                    blobPath = photo.blobPath,
+                )
+            }
+        }
 
     suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
 }
 
 data class ImportSnapshotResult(
     val restoredGarmentCount: Int,
+    val restoredPhotoCount: Int,
     val guardedPhotoCount: Int,
 )
+
+sealed interface RestoredPhotoApplyResult {
+    val garmentId: String
+    val expectedRevision: Long
+    val restoredUriPresent: Boolean
+    val importedPhotoUsable: Boolean
+    val daoRowsUpdated: Int
+    val rowBefore: RestoredPhotoApplyStateEntity?
+    val rowAfter: RestoredPhotoApplyStateEntity?
+    val blobPath: String
+    val applied: Boolean
+
+    data class Applied(
+        override val garmentId: String,
+        override val expectedRevision: Long,
+        override val restoredUriPresent: Boolean,
+        override val importedPhotoUsable: Boolean,
+        override val daoRowsUpdated: Int,
+        override val rowBefore: RestoredPhotoApplyStateEntity?,
+        override val rowAfter: RestoredPhotoApplyStateEntity?,
+        override val blobPath: String,
+    ) : RestoredPhotoApplyResult {
+        override val applied: Boolean = true
+    }
+
+    data class NotApplied(
+        override val garmentId: String,
+        override val expectedRevision: Long,
+        override val restoredUriPresent: Boolean,
+        override val importedPhotoUsable: Boolean,
+        override val daoRowsUpdated: Int,
+        val reason: String,
+        override val rowBefore: RestoredPhotoApplyStateEntity?,
+        override val rowAfter: RestoredPhotoApplyStateEntity?,
+        override val blobPath: String,
+    ) : RestoredPhotoApplyResult {
+        override val applied: Boolean = false
+    }
+}
 
 private fun TagCategoryEntity.toSyncRecord(): TagCategorySyncRecord = TagCategorySyncRecord(
     id = id,
@@ -358,6 +453,18 @@ private val tagEntityTypes = setOf("garment_tag", "tag")
 private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
 private fun GarmentPhotoRecord.restorableLocalUri(): String? = restoredLocalUri?.takeIf(String::isNotBlank)
+
+private fun RestoredPhotoApplyStateEntity?.zeroUpdateReason(
+    expectedRevision: Long,
+    persistedAfterUpdate: Boolean,
+): String = when {
+    this == null -> "garment_not_found"
+    revision != expectedRevision -> "revision_mismatch"
+    !photoRestoreGuarded -> "photo_not_guarded"
+    syncStatus != GarmentSyncStatus.Running -> "status_not_running"
+    !persistedAfterUpdate -> "post_update_verification_failed"
+    else -> "dao_update_zero_rows"
+}
 
 internal data class ImportPhotoRestoreIssue(
     val category: String,
