@@ -39,8 +39,10 @@
     <string name="cloud_restore_title">Restaurando armario desde la nube</string>
     <string name="cloud_restore_remaining">Quedan %1$d de %2$d pasos</string>
     <string name="cloud_restore_photo_item_progress">Fotos: %1$d de %2$d</string>
-    <string name="cloud_restore_byte_progress_known">%1$d de %2$d bytes</string>
-    <string name="cloud_restore_byte_progress_unknown">%1$d bytes descargados</string>
+    <string name="cloud_restore_byte_progress_known">%1$s de %2$s descargados</string>
+    <string name="cloud_restore_byte_progress_unknown">%1$s descargados</string>
+    <string name="cloud_restore_eta_less_than_minute">Queda menos de un minuto</string>
+    <string name="cloud_restore_eta_about_minutes">Quedan aprox. %1$d min</string>
     <string name="cloud_restore_status_running">Mantén Robia abierta. Los cambios locales están bloqueados hasta que termine la restauración.</string>
     <string name="cloud_restore_status_interrupted">La restauración se interrumpió. Reintenta cuando estés listo.</string>
     <string name="cloud_restore_status_offline">Se perdió la conexión. Reintenta la restauración antes de añadir cambios locales.</string>
