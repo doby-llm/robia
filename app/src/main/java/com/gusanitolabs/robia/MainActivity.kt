@@ -1,8 +1,10 @@
 package com.gusanitolabs.robia
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +36,7 @@ private val Context.settingsDataStore by preferencesDataStore(name = "robia_sett
 private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 private const val EXTRA_PERFORMANCE_FIXTURE_URIS = "com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS"
 private const val EXTRA_PERFORMANCE_BATCH = "com.gusanitolabs.robia.PERFORMANCE_BATCH"
+private const val DRIVE_AUTH_LOG_TAG = "RobiaDriveAuth"
 
 class MainActivity : ComponentActivity() {
     private lateinit var authorizationClient: AuthorizationClient
@@ -43,12 +46,7 @@ class MainActivity : ComponentActivity() {
     private val driveAuthorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val data = result.data ?: return@registerForActivityResult
-            runCatching { authorizationClient.getAuthorizationResultFromIntent(data) }
-                .onSuccess(::persistDriveAuthorizationResult)
-                .onFailure { showCloudSetupLaunchFailure() }
-        }
+        handleDriveAuthorizationResolution(result.resultCode, result.data)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,6 +130,12 @@ class MainActivity : ComponentActivity() {
                     driveAuthorizationLauncher.launch(
                         IntentSenderRequest.Builder(pendingIntent.intentSender).build(),
                     )
+                } else if (result.hasResolution()) {
+                    logDriveAuthorizationOutcome(
+                        outcome = "resolution_missing",
+                        hasResolution = true,
+                    )
+                    showCloudSetupLaunchFailure()
                 } else {
                     persistDriveAuthorizationResult(result)
                 }
@@ -139,25 +143,114 @@ class MainActivity : ComponentActivity() {
             .addOnFailureListener { showCloudSetupLaunchFailure() }
     }
 
+    private fun handleDriveAuthorizationResolution(resultCode: Int, data: Intent?) {
+        if (data == null) {
+            val outcome = if (resultCode == Activity.RESULT_CANCELED) "cancelled" else "missing_data"
+            logDriveAuthorizationOutcome(
+                outcome = outcome,
+                resultCode = resultCode,
+                dataPresent = false,
+            )
+            lifecycleScope.launch {
+                settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)
+            }
+            showCloudSetupFailure(
+                if (resultCode == Activity.RESULT_CANCELED) {
+                    R.string.cloud_setup_cancelled
+                } else {
+                    R.string.cloud_setup_missing_result
+                },
+            )
+            return
+        }
+
+        runCatching { authorizationClient.getAuthorizationResultFromIntent(data) }
+            .onSuccess { result ->
+                logDriveAuthorizationOutcome(
+                    outcome = "resolution_parsed",
+                    resultCode = resultCode,
+                    dataPresent = true,
+                    grantedScopes = result.grantedScopes,
+                    hasResolution = result.hasResolution(),
+                    tokenPresent = !result.accessToken.isNullOrBlank(),
+                )
+                persistDriveAuthorizationResult(result)
+            }
+            .onFailure {
+                logDriveAuthorizationOutcome(
+                    outcome = "parse_error",
+                    resultCode = resultCode,
+                    dataPresent = true,
+                )
+                lifecycleScope.launch {
+                    settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)
+                }
+                showCloudSetupFailure(R.string.cloud_setup_parse_failed)
+            }
+    }
+
     private fun persistDriveAuthorizationResult(result: AuthorizationResult) {
         val grantedDriveScope = result.grantedScopes.any { scope ->
             scope == DRIVE_APPDATA_SCOPE
         }
+        val tokenPresent = !result.accessToken.isNullOrBlank()
+        val authorized = grantedDriveScope && tokenPresent
+        logDriveAuthorizationOutcome(
+            outcome = if (authorized) "authorized" else if (grantedDriveScope) "token_missing" else "scope_denied",
+            grantedScopes = result.grantedScopes,
+            hasResolution = result.hasResolution(),
+            tokenPresent = tokenPresent,
+        )
         lifecycleScope.launch {
             settingsRepository.setDriveSyncConnectionStatus(
-                if (grantedDriveScope) {
+                if (authorized) {
                     DriveSyncConnectionStatus.Connected
                 } else {
                     DriveSyncConnectionStatus.Disconnected
                 },
             )
-            if (grantedDriveScope) {
+            if (authorized) {
                 syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
             }
+        }
+        if (!authorized) {
+            showCloudSetupFailure(
+                if (grantedDriveScope) {
+                    R.string.cloud_setup_token_missing
+                } else {
+                    R.string.cloud_setup_scope_denied
+                },
+            )
         }
     }
 
     private fun showCloudSetupLaunchFailure() {
-        Toast.makeText(this, R.string.cloud_setup_launch_failed, Toast.LENGTH_LONG).show()
+        showCloudSetupFailure(R.string.cloud_setup_launch_failed)
+    }
+
+    private fun showCloudSetupFailure(messageRes: Int) {
+        Toast.makeText(this, messageRes, Toast.LENGTH_LONG).show()
+    }
+
+    private fun logDriveAuthorizationOutcome(
+        outcome: String,
+        resultCode: Int? = null,
+        dataPresent: Boolean? = null,
+        grantedScopes: Iterable<String> = emptyList(),
+        hasResolution: Boolean? = null,
+        tokenPresent: Boolean? = null,
+    ) {
+        Log.i(
+            DRIVE_AUTH_LOG_TAG,
+            buildString {
+                append("Google Drive authorization outcome=").append(outcome)
+                resultCode?.let { append(" resultCode=").append(it) }
+                dataPresent?.let { append(" dataPresent=").append(it) }
+                val scopeNames = grantedScopes.toList()
+                if (scopeNames.isNotEmpty()) append(" grantedScopes=").append(scopeNames.joinToString(","))
+                hasResolution?.let { append(" hasResolution=").append(it) }
+                tokenPresent?.let { append(" tokenPresent=").append(it) }
+            },
+        )
     }
 }

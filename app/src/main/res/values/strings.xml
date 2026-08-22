@@ -32,6 +32,11 @@
     <string name="cloud_setup_configure_when_available">Set up</string>
     <string name="cloud_setup_set_up">Set up</string>
     <string name="cloud_setup_launch_failed">Google Drive setup could not be opened. Check Google Play services and try again.</string>
+    <string name="cloud_setup_cancelled">Google Drive setup was cancelled. Choose Set up to try again.</string>
+    <string name="cloud_setup_missing_result">Google Drive setup did not return a usable result. Try again.</string>
+    <string name="cloud_setup_parse_failed">Google Drive setup returned an unreadable result. Check Google Play services and try again.</string>
+    <string name="cloud_setup_scope_denied">Google Drive app data access was not granted. Grant Drive access to enable cloud backup.</string>
+    <string name="cloud_setup_token_missing">Google Drive did not return an access token. Try setup again.</string>
     <string name="cloud_setup_late_blocked_title">Cloud setup is locked</string>
     <string name="cloud_setup_late_blocked_body">This wardrobe already has local data. Robia does not have a safe merge path yet, so late cloud setup is disabled to avoid overwriting garments, tags, colors, or pending changes.</string>
     <string name="cloud_setup_blocked_detail">Local state: %1$d garments, %2$d custom taxonomy entries, %3$d custom colors, %4$d pending sync operations.</string>

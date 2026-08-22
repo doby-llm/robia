@@ -32,6 +32,11 @@
     <string name="cloud_setup_configure_when_available">Einrichten</string>
     <string name="cloud_setup_set_up">Einrichten</string>
     <string name="cloud_setup_launch_failed">Die Google-Drive-Einrichtung konnte nicht geöffnet werden. Prüfe Google Play Dienste und versuche es erneut.</string>
+    <string name="cloud_setup_cancelled">Die Google-Drive-Einrichtung wurde abgebrochen. Wähle Einrichten, um es erneut zu versuchen.</string>
+    <string name="cloud_setup_missing_result">Die Google-Drive-Einrichtung hat kein nutzbares Ergebnis zurückgegeben. Versuche es erneut.</string>
+    <string name="cloud_setup_parse_failed">Die Google-Drive-Einrichtung hat ein unlesbares Ergebnis zurückgegeben. Prüfe Google Play Dienste und versuche es erneut.</string>
+    <string name="cloud_setup_scope_denied">Der Zugriff auf Google-Drive-App-Daten wurde nicht gewährt. Erlaube Drive-Zugriff, um die Cloud-Sicherung zu aktivieren.</string>
+    <string name="cloud_setup_token_missing">Google Drive hat kein Zugriffstoken zurückgegeben. Wiederhole die Einrichtung.</string>
     <string name="cloud_setup_late_blocked_title">Cloud-Einrichtung ist gesperrt</string>
     <string name="cloud_setup_late_blocked_body">Diese Garderobe enthält bereits lokale Daten. Robia hat noch keinen sicheren Zusammenführungsweg, daher ist die späte Cloud-Einrichtung deaktiviert, um Kleidungsstücke, Tags, Farben oder ausstehende Änderungen nicht zu überschreiben.</string>
     <string name="cloud_setup_blocked_detail">Lokaler Stand: %1$d Kleidungsstücke, %2$d benutzerdefinierte Taxonomieeinträge, %3$d benutzerdefinierte Farben, %4$d ausstehende Synchronisierungsvorgänge.</string>
