@@ -12,8 +12,8 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 interface DriveWardrobeRepository {
     val target: DriveSyncTarget
     suspend fun fetchManifest(): DriveSyncResult<DriveManifest>
-    suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot>
-    suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord>
+    suspend fun fetchSnapshot(progress: DriveRestoreProgressListener? = null): DriveSyncResult<WardrobeSyncSnapshot>
+    suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener? = null): DriveSyncResult<GarmentPhotoRecord>
     suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest>
     /** Deletes only Robia's remote appDataFolder backup; it never changes local clothes. */
     suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult>
@@ -24,8 +24,8 @@ class NotConfiguredDriveWardrobeRepository(
     override val target: DriveSyncTarget = DriveSyncTarget(),
 ) : DriveWardrobeRepository {
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = notConfigured()
-    override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
-    override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> = notConfigured()
+    override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
+    override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> = notConfigured()
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = notConfigured()
 
@@ -41,9 +41,9 @@ class InMemoryDriveWardrobeRepository(
     private var manifest: DriveManifest = DriveManifest.fromSnapshot(snapshot)
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = DriveSyncResult.Success(manifest)
-    override suspend fun fetchSnapshot(): DriveSyncResult<WardrobeSyncSnapshot> =
+    override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> =
         DriveSyncResult.Success(snapshot.sortedDeterministically())
-    override suspend fun retryRestoredPhoto(garmentId: String): DriveSyncResult<GarmentPhotoRecord> =
+    override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> =
         snapshot.photos.firstOrNull { it.garmentId == garmentId }
             ?.let { photo -> DriveSyncResult.Success(photo) }
             ?: DriveSyncResult.Failure(IllegalStateException("No remote photo exists for garment $garmentId."))
@@ -61,6 +61,19 @@ class InMemoryDriveWardrobeRepository(
         return DriveSyncResult.Success(DriveBackupDeletionResult())
     }
 }
+
+fun interface DriveRestoreProgressListener {
+    fun onProgress(progress: DriveRestoreProgress)
+}
+
+data class DriveRestoreProgress(
+    val garmentId: String,
+    val safeCategory: String?,
+    val completedItems: Int,
+    val totalItems: Int,
+    val completedBytes: Long,
+    val totalBytes: Long?,
+)
 
 sealed interface DriveSyncResult<out T> {
     data class Success<T>(val value: T) : DriveSyncResult<T>

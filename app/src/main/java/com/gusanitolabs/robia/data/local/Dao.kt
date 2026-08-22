@@ -290,7 +290,7 @@ interface WardrobeDao {
         upsertSyncTombstones(tombstones)
     }
 
-    @Query("SELECT photo_restore_guarded AS guarded, photo_restore_retry_deadline_epoch_millis AS deadlineEpochMillis FROM clothing_items WHERE id = :itemId")
+    @Query("SELECT photo_restore_guarded AS guarded, retry_after_epoch_millis AS retryAfterEpochMillis, photo_restore_retry_deadline_epoch_millis AS deadlineEpochMillis FROM clothing_items WHERE id = :itemId")
     suspend fun guardedPhotoRestoreState(itemId: String): GuardedPhotoRestoreState?
 
     @Transaction
@@ -448,8 +448,13 @@ private fun ClothingItemEntity.queuedForSync(guardedPhotoRestoreState: GuardedPh
         syncDirtyAtEpochMillis = revision,
         syncFailureMessage = null,
         photoRestoreGuarded = guardedPhotoRestoreState?.guarded == true,
+        retryAfterEpochMillis = guardedPhotoRestoreState?.retryAfterEpochMillis,
         photoRestoreRetryDeadlineEpochMillis = guardedPhotoRestoreState?.deadlineEpochMillis,
     )
 }
 
-data class GuardedPhotoRestoreState(val guarded: Boolean, val deadlineEpochMillis: Long?)
+data class GuardedPhotoRestoreState(
+    val guarded: Boolean,
+    val retryAfterEpochMillis: Long?,
+    val deadlineEpochMillis: Long?,
+)

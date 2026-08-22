@@ -139,6 +139,7 @@ import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.data.SettingsRepository
@@ -159,7 +160,6 @@ import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
-import com.gusanitolabs.robia.sync.MISSING_RESTORED_PHOTO_MESSAGE
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -213,6 +213,10 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.language
     }
 
+    data object Settings : RobiaRoute {
+        override val titleRes = R.string.settings
+    }
+
     data object DeveloperSyncLog : RobiaRoute {
         override val titleRes = R.string.restore_sync_log_title
     }
@@ -251,6 +255,7 @@ private data class UiWardrobeItem(
     val syncDirtyAtEpochMillis: Long?,
     val lastSyncedAtEpochMillis: Long?,
     val syncFailureMessage: String?,
+    val photoRestoreState: PhotoRestoreState,
 )
 
 private data class UiTag(
@@ -605,7 +610,6 @@ private fun RobiaShell(
         )
     }
     val currentRoute = routeStack.last()
-    var settingsExpanded by remember { mutableStateOf(false) }
     val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
     val context = LocalContext.current
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
@@ -876,7 +880,7 @@ private fun RobiaShell(
     }
 
     fun handleSettingsClick() {
-        settingsExpanded = true
+        if (currentRoute != RobiaRoute.Settings) pushRoute(RobiaRoute.Settings)
         if (settings.developerModeUnlocked) return
 
         val now = SystemClock.elapsedRealtime()
@@ -1090,51 +1094,14 @@ private fun RobiaShell(
                             )
                         }
                     } else {
-                        Box {
-                            val settingsDescription = stringResource(R.string.content_settings_menu)
-                            IconButton(
-                                modifier = Modifier.semantics { contentDescription = settingsDescription },
-                                onClick = ::handleSettingsClick,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Settings,
-                                    contentDescription = null,
-                                )
-                            }
-                            SettingsMenu(
-                                expanded = settingsExpanded,
-                                currentLanguage = settings.languagePreference,
-                                driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
-                                pendingGarmentSyncCount = pendingGarmentSyncCount,
-                                cloudSetupSummaryRes = settings.driveSyncConnectionStatus.cloudSetupSummaryRes(
-                                    canAttemptCloudSetup = !cloudSetupGuard.hasUnsafeLocalState,
-                                    pendingGarmentSyncCount = pendingGarmentSyncCount,
-                                ),
-                                developerModeUnlocked = settings.developerModeUnlocked,
-                                developerModeEnabled = settings.developerModeEnabled,
-                                onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
-                                onLanguageSelected = { language ->
-                                    onLanguageSelected(language)
-                                    settingsExpanded = false
-                                },
-                                onDismiss = { settingsExpanded = false },
-                                onLanguageClick = {
-                                    pushRoute(RobiaRoute.LanguageSettings)
-                                    settingsExpanded = false
-                                },
-                                onCloudSetupClick = {
-                                    requestCloudSetup()
-                                    settingsExpanded = false
-                                },
-                                driveBackupDeletionState = settings.driveBackupDeletionState,
-                                onDeleteBackupClick = {
-                                    showBackupDeletionConfirmation = true
-                                    settingsExpanded = false
-                                },
-                                onRestoreSyncLogClick = {
-                                    pushRoute(RobiaRoute.DeveloperSyncLog)
-                                    settingsExpanded = false
-                                },
+                        val settingsDescription = stringResource(R.string.content_settings_menu)
+                        IconButton(
+                            modifier = Modifier.semantics { contentDescription = settingsDescription },
+                            onClick = ::handleSettingsClick,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = null,
                             )
                         }
                     }
@@ -1150,6 +1117,7 @@ private fun RobiaShell(
         bottomBar = {
             if (currentRoute != RobiaRoute.ItemDetail &&
                 currentRoute != RobiaRoute.AdvancedFilters &&
+                currentRoute != RobiaRoute.Settings &&
                 currentRoute != RobiaRoute.DeveloperSyncLog &&
                 currentRoute != RobiaRoute.BatchAddClothing &&
                 currentRoute != RobiaRoute.BatchEditClothing &&
@@ -1188,6 +1156,15 @@ private fun RobiaShell(
             developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
             restoreSyncLogText = restoreSyncLogText,
             syncState = syncState,
+            currentLanguage = settings.languagePreference,
+            driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
+            pendingGarmentSyncCount = pendingGarmentSyncCount,
+            cloudSetupSummaryRes = settings.driveSyncConnectionStatus.cloudSetupSummaryRes(
+                canAttemptCloudSetup = !cloudSetupGuard.hasUnsafeLocalState,
+                pendingGarmentSyncCount = pendingGarmentSyncCount,
+            ),
+            developerModeUnlocked = settings.developerModeUnlocked,
+            driveBackupDeletionState = settings.driveBackupDeletionState,
             onRouteSelected = { route ->
                 if (route == RobiaRoute.AddEditClothing && currentRoute != RobiaRoute.ItemDetail) selectedItemId = null
                 pushRoute(route)
@@ -1263,13 +1240,19 @@ private fun RobiaShell(
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
             onClearRestoreSyncLog = onClearRestoreSyncLog,
+            onLanguageSelected = onLanguageSelected,
+            onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
+            onCloudSetupClick = ::requestCloudSetup,
+            onDeleteBackupClick = { showBackupDeletionConfirmation = true },
+            onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
         )
     }
     restoreProgress?.let { progress ->
         CloudRestoreProgressOverlay(
             progress = progress,
-            developerModeEnabled = settings.developerModeUnlocked && settings.developerModeEnabled,
+            developerModeUnlocked = settings.developerModeUnlocked,
+            developerModeEnabled = settings.developerModeEnabled,
             onRetry = onRequestCloudRestoreRetry,
         )
     }
@@ -1277,8 +1260,8 @@ private fun RobiaShell(
 }
 
 @Composable
-private fun SettingsMenu(
-    expanded: Boolean,
+private fun SettingsScreen(
+    innerPadding: PaddingValues,
     currentLanguage: LanguagePreference,
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
     pendingGarmentSyncCount: Int,
@@ -1287,121 +1270,150 @@ private fun SettingsMenu(
     developerModeEnabled: Boolean,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
-    onDismiss: () -> Unit,
     onLanguageClick: () -> Unit,
     onCloudSetupClick: () -> Unit,
     driveBackupDeletionState: com.gusanitolabs.robia.core.model.DriveBackupDeletionState,
     onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
 ) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.language)) },
-            leadingIcon = { Icon(Icons.Rounded.Language, contentDescription = null) },
-            onClick = onLanguageClick,
-        )
-        LanguagePreference.entries.forEach { language ->
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = stringResource(language.labelRes),
-                        fontWeight = if (language == currentLanguage) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                },
-                onClick = { onLanguageSelected(language) },
-            )
-        }
-        Divider()
-        if (developerModeUnlocked) {
-            DropdownMenuItem(
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(stringResource(R.string.developer_mode))
-                        Text(
-                            text = stringResource(R.string.developer_mode_summary),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                },
-                leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-                trailingIcon = {
-                    Switch(
-                        checked = developerModeEnabled,
-                        onCheckedChange = onDeveloperModeEnabledChange,
-                    )
-                },
-                onClick = { onDeveloperModeEnabledChange(!developerModeEnabled) },
-            )
-            if (developerModeEnabled) {
-                DropdownMenuItem(
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(stringResource(R.string.restore_sync_log_title))
-                            Text(
-                                text = stringResource(R.string.restore_sync_log_summary),
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                        }
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
-                    onClick = onRestoreSyncLogClick,
+        item {
+            SettingsSection(title = stringResource(R.string.language)) {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.language)) },
+                    supportingContent = { Text(stringResource(currentLanguage.labelRes)) },
+                    leadingContent = { Icon(Icons.Rounded.Language, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = onLanguageClick),
                 )
+                LanguagePreference.entries.forEach { language ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = stringResource(language.labelRes),
+                                fontWeight = if (language == currentLanguage) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        trailingContent = if (language == currentLanguage) {
+                            { Icon(Icons.Rounded.Check, contentDescription = null) }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.clickable { onLanguageSelected(language) },
+                    )
+                }
             }
-            Divider()
         }
-        if (driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
-            driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.drive_backup_delete_menu)) },
-                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
-                onClick = onDeleteBackupClick,
-            )
-        }
-        DropdownMenuItem(
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        stringResource(
-                            if (driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete ||
-                                driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention
-                            ) {
-                                R.string.drive_backup_again
-                            } else {
-                                R.string.data_sync_google_drive
-                            },
-                        ),
+        if (developerModeUnlocked) {
+            item {
+                SettingsSection(title = stringResource(R.string.developer_mode)) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.developer_mode)) },
+                        supportingContent = { Text(stringResource(R.string.developer_mode_summary)) },
+                        leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                        trailingContent = {
+                            Switch(
+                                checked = developerModeEnabled,
+                                onCheckedChange = onDeveloperModeEnabledChange,
+                            )
+                        },
+                        modifier = Modifier.clickable { onDeveloperModeEnabledChange(!developerModeEnabled) },
                     )
-                    Text(
-                        text = stringResource(driveSyncConnectionStatus.statusLabelRes),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                    Text(
-                        text = cloudQueueSummaryText(driveSyncConnectionStatus, pendingGarmentSyncCount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = stringResource(cloudSetupSummaryRes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (driveBackupDeletionState != com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None) {
-                        Text(
-                            text = stringResource(driveBackupDeletionState.statusRes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (developerModeEnabled) {
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.restore_sync_log_title)) },
+                            supportingContent = { Text(stringResource(R.string.restore_sync_log_summary)) },
+                            leadingContent = { Icon(Icons.Rounded.Share, contentDescription = null) },
+                            modifier = Modifier.clickable(onClick = onRestoreSyncLogClick),
                         )
                     }
                 }
-            },
-            leadingIcon = { Icon(driveSyncConnectionStatus.settingsIcon, contentDescription = null) },
-            onClick = onCloudSetupClick,
-            enabled = true,
-        )
+            }
+        }
+        item {
+            SettingsSection(title = stringResource(R.string.data_sync)) {
+                if (driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
+                    driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
+                ) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.drive_backup_delete_menu)) },
+                        leadingContent = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                        modifier = Modifier.clickable(onClick = onDeleteBackupClick),
+                    )
+                    Divider()
+                }
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(
+                                if (driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete ||
+                                    driveBackupDeletionState == com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention
+                                ) {
+                                    R.string.drive_backup_again
+                                } else {
+                                    R.string.data_sync_google_drive
+                                },
+                            ),
+                        )
+                    },
+                    supportingContent = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = stringResource(driveSyncConnectionStatus.statusLabelRes),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            Text(
+                                text = cloudQueueSummaryText(driveSyncConnectionStatus, pendingGarmentSyncCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = stringResource(cloudSetupSummaryRes),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (driveBackupDeletionState != com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None) {
+                                Text(
+                                    text = stringResource(driveBackupDeletionState.statusRes),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    leadingContent = { Icon(driveSyncConnectionStatus.settingsIcon, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = onCloudSetupClick),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column {
+            Text(
+                text = title.uppercase(),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 4.dp),
+            )
+            content()
+        }
     }
 }
 
@@ -1523,15 +1535,29 @@ private fun CloudSetupDialog(
 @Composable
 private fun CloudRestoreProgressOverlay(
     progress: CloudRestoreProgress,
+    developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
     onRetry: () -> Unit,
 ) {
     val statusText = cloudRestoreStatusText(progress)
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val diagnostics = progress.diagnostics.takeIf { developerModeEnabled }
+    val effectiveDeveloperMode = developerModeUnlocked && developerModeEnabled
+    val diagnostics = progress.diagnostics.takeIf { effectiveDeveloperMode }
     val diagnosticsText = diagnostics?.toCopyText().orEmpty()
     val diagnosticsCopiedMessage = stringResource(R.string.cloud_restore_diagnostics_copied)
+    var etaState by remember(progress.diagnostics?.correlationId, progress.status) {
+        mutableStateOf(RestoreEtaState())
+    }
+    LaunchedEffect(
+        progress.diagnostics?.correlationId,
+        progress.status,
+        progress.byteProgress?.completedBytes,
+        progress.byteProgress?.totalBytes,
+    ) {
+        etaState = etaState.updated(progress, SystemClock.elapsedRealtime())
+    }
+    val eta = etaState.estimate(progress)
     var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
         mutableStateOf(progress.status != CloudRestoreStatus.Running)
     }
@@ -1594,6 +1620,54 @@ private fun CloudRestoreProgressOverlay(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
+                        progress.itemProgress?.let { itemProgress ->
+                            Text(
+                                text = stringResource(
+                                    R.string.cloud_restore_photo_item_progress,
+                                    itemProgress.completedItems,
+                                    itemProgress.totalItems,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                        progress.byteProgress?.let { byteProgress ->
+                            val byteProgressText = byteProgress.toDisplayText()
+                            val byteText = byteProgressText.totalMegabytes?.let { total ->
+                                stringResource(
+                                    R.string.cloud_restore_byte_progress_known,
+                                    byteProgressText.completedMegabytes,
+                                    total,
+                                )
+                            } ?: stringResource(
+                                R.string.cloud_restore_byte_progress_unknown,
+                                byteProgressText.completedMegabytes,
+                            )
+                            Text(
+                                text = byteText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        eta?.let { estimate ->
+                            Text(
+                                text = when (estimate) {
+                                    RestoreEta.LessThanMinute -> stringResource(R.string.cloud_restore_eta_less_than_minute)
+                                    is RestoreEta.AboutMinutes -> stringResource(
+                                        R.string.cloud_restore_eta_about_minutes,
+                                        estimate.minutes,
+                                    )
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                         Text(
                             text = statusText,
                             style = MaterialTheme.typography.bodySmall,
@@ -1819,6 +1893,12 @@ private fun RobiaNavHost(
     developerModeEnabled: Boolean,
     restoreSyncLogText: String,
     syncState: WardrobeSyncState,
+    currentLanguage: LanguagePreference,
+    driveSyncConnectionStatus: DriveSyncConnectionStatus,
+    pendingGarmentSyncCount: Int,
+    @StringRes cloudSetupSummaryRes: Int,
+    developerModeUnlocked: Boolean,
+    driveBackupDeletionState: com.gusanitolabs.robia.core.model.DriveBackupDeletionState,
     onRouteSelected: (RobiaRoute) -> Unit,
     onBack: () -> Unit,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -1846,6 +1926,11 @@ private fun RobiaNavHost(
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
     onClearRestoreSyncLog: () -> Unit,
+    onLanguageSelected: (LanguagePreference) -> Unit,
+    onDeveloperModeEnabledChange: (Boolean) -> Unit,
+    onCloudSetupClick: () -> Unit,
+    onDeleteBackupClick: () -> Unit,
+    onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
 ) {
     when (currentRoute) {
@@ -1950,11 +2035,46 @@ private fun RobiaNavHost(
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
-        RobiaRoute.DeveloperSyncLog -> DeveloperRestoreSyncLogScreen(
+        RobiaRoute.Settings -> SettingsScreen(
             innerPadding = innerPadding,
-            logText = restoreSyncLogText,
-            onClear = onClearRestoreSyncLog,
+            currentLanguage = currentLanguage,
+            driveSyncConnectionStatus = driveSyncConnectionStatus,
+            pendingGarmentSyncCount = pendingGarmentSyncCount,
+            cloudSetupSummaryRes = cloudSetupSummaryRes,
+            developerModeUnlocked = developerModeUnlocked,
+            developerModeEnabled = developerModeEnabled,
+            onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
+            onLanguageSelected = onLanguageSelected,
+            onLanguageClick = { onRouteSelected(RobiaRoute.LanguageSettings) },
+            onCloudSetupClick = onCloudSetupClick,
+            driveBackupDeletionState = driveBackupDeletionState,
+            onDeleteBackupClick = onDeleteBackupClick,
+            onRestoreSyncLogClick = onRestoreSyncLogClick,
         )
+        RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
+            DeveloperRestoreSyncLogScreen(
+                innerPadding = innerPadding,
+                logText = restoreSyncLogText,
+                onClear = onClearRestoreSyncLog,
+            )
+        } else {
+            SettingsScreen(
+                innerPadding = innerPadding,
+                currentLanguage = currentLanguage,
+                driveSyncConnectionStatus = driveSyncConnectionStatus,
+                pendingGarmentSyncCount = pendingGarmentSyncCount,
+                cloudSetupSummaryRes = cloudSetupSummaryRes,
+                developerModeUnlocked = developerModeUnlocked,
+                developerModeEnabled = developerModeEnabled,
+                onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
+                onLanguageSelected = onLanguageSelected,
+                onLanguageClick = { onRouteSelected(RobiaRoute.LanguageSettings) },
+                onCloudSetupClick = onCloudSetupClick,
+                driveBackupDeletionState = driveBackupDeletionState,
+                onDeleteBackupClick = onDeleteBackupClick,
+                onRestoreSyncLogClick = onRestoreSyncLogClick,
+            )
+        }
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
             innerPadding = innerPadding,
             filters = filters,
@@ -2257,6 +2377,13 @@ private fun GarmentGridCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
+                text = item.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
                 text = item.subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2332,17 +2459,21 @@ private fun GarmentCloudStatusRow(item: UiWardrobeItem) {
 
 @Composable
 private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus) {
+    GarmentSyncStatus.Running,
+    GarmentSyncStatus.FailedRetryable,
+    GarmentSyncStatus.NeedsUserAction -> if (hasMissingRestoredPhoto) {
+        photoRestoreRetryStateText()
+    } else when (syncStatus) {
+        GarmentSyncStatus.Running -> stringResource(R.string.garment_sync_syncing)
+        GarmentSyncStatus.FailedRetryable -> syncFailureMessage?.takeIf(String::isNotBlank)
+            ?: stringResource(R.string.garment_sync_failed_retryable)
+        GarmentSyncStatus.NeedsUserAction -> stringResource(R.string.garment_sync_failed_retryable)
+        else -> error("Unexpected garment status branch")
+    }
     GarmentSyncStatus.LocalOnly -> stringResource(R.string.garment_sync_saved_device)
     GarmentSyncStatus.Dirty -> stringResource(R.string.garment_sync_waiting)
     GarmentSyncStatus.Queued -> stringResource(R.string.garment_sync_queued)
-    GarmentSyncStatus.Running -> stringResource(R.string.garment_sync_syncing)
     GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
-    GarmentSyncStatus.FailedRetryable -> when {
-        hasMissingRestoredPhoto -> stringResource(R.string.cloud_restore_photo_missing_message)
-        else -> syncFailureMessage?.takeIf(String::isNotBlank)
-            ?: stringResource(R.string.garment_sync_failed_retryable)
-    }
-    GarmentSyncStatus.NeedsUserAction -> stringResource(R.string.garment_sync_failed_retryable)
     GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
 }
 
@@ -2439,9 +2570,34 @@ private fun GarmentPhotoPlaceholder(
 }
 
 private val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
-    get() = syncFailureMessage == MISSING_RESTORED_PHOTO_MESSAGE ||
-        syncFailureMessage?.startsWith(MISSING_RESTORED_PHOTO_MESSAGE) == true ||
-        syncFailureMessage?.startsWith("Foto no restaurada desde Drive.") == true
+    get() = photoRestoreState.needsAttention
+
+private fun UiWardrobeItem.canRetryRestoredPhotoNow(now: Long = System.currentTimeMillis()): Boolean =
+    hasMissingRestoredPhoto &&
+        syncStatus != GarmentSyncStatus.Running &&
+        photoRestoreState.hasRetryAttemptsRemaining &&
+        (photoRestoreState.retryAfterEpochMillis == null || photoRestoreState.retryAfterEpochMillis <= now) &&
+        (photoRestoreState.retryDeadlineEpochMillis == null || photoRestoreState.retryDeadlineEpochMillis >= now)
+
+@Composable
+private fun UiWardrobeItem.photoRestoreRetryStateText(now: Long = System.currentTimeMillis()): String = when {
+    syncStatus == GarmentSyncStatus.Running -> stringResource(R.string.cloud_restore_photo_retry_running)
+    photoRestoreState.retryExhausted -> stringResource(R.string.cloud_restore_photo_retry_exhausted)
+    photoRestoreState.retryDeadlineEpochMillis?.let { it < now } == true -> stringResource(R.string.cloud_restore_photo_retry_expired)
+    photoRestoreState.retryAfterEpochMillis?.let { it > now } == true -> stringResource(
+        R.string.cloud_restore_photo_retry_backoff_until,
+        formatEpochMillis(photoRestoreState.retryAfterEpochMillis),
+    )
+    else -> stringResource(R.string.cloud_restore_photo_retry_ready)
+}
+
+@Composable
+private fun UiWardrobeItem.photoRestoreRetryActionText(now: Long = System.currentTimeMillis()): String = when {
+    syncStatus == GarmentSyncStatus.Running -> stringResource(R.string.cloud_restore_retry_photo)
+    photoRestoreState.retryExhausted -> stringResource(R.string.cloud_restore_retry_photo_exhausted)
+    photoRestoreState.retryDeadlineEpochMillis?.let { it < now } == true -> stringResource(R.string.cloud_restore_retry_photo_expired)
+    else -> stringResource(R.string.cloud_restore_retry_photo)
+}
 
 @Composable
 private fun TonalTag(text: String) {
@@ -2482,6 +2638,14 @@ private fun ItemDetailScreen(
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        item {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+            )
+        }
         item {
             DetailMediaCard(
                 item = item,
@@ -2534,16 +2698,31 @@ private fun ItemDetailScreen(
         item { GarmentCloudStatusRow(item) }
         if (item.hasMissingRestoredPhoto) {
             item {
+                val now = System.currentTimeMillis()
+                val retryEnabled = item.canRetryRestoredPhotoNow(now)
+                val retryStateText = item.photoRestoreRetryStateText(now)
+                val retryActionText = item.photoRestoreRetryActionText(now)
                 Button(
-                    onClick = { onRetryRestoredPhoto(item.id) },
+                    onClick = { if (retryEnabled) onRetryRestoredPhoto(item.id) },
+                    enabled = retryEnabled,
                     modifier = Modifier.fillMaxWidth().semantics {
                         contentDescription = retryPhotoContentDescription
                     },
                 ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    if (item.syncStatus == GarmentSyncStatus.Running) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    }
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.cloud_restore_retry_photo))
+                    Text(retryActionText)
                 }
+                Text(
+                    text = retryStateText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
         }
         item.notes.takeIf { it.isNotBlank() }?.let { description ->
@@ -3537,7 +3716,11 @@ private fun List<ClothingItem>.toUiWardrobeItems(
     UiWardrobeItem(
         id = item.id,
         name = item.name,
-        subtitle = item.notes.ifBlank { stringResource(effectiveSyncStatus.itemStatusLabelRes) },
+        subtitle = if (item.photoRestoreState.needsAttention) {
+            stringResource(R.string.cloud_restore_photo_missing_message)
+        } else {
+            item.notes.ifBlank { stringResource(effectiveSyncStatus.itemStatusLabelRes) }
+        },
         notes = item.notes,
         photoUri = item.photoUri,
         tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
@@ -3557,6 +3740,7 @@ private fun List<ClothingItem>.toUiWardrobeItems(
         syncDirtyAtEpochMillis = item.syncDirtyAtEpochMillis,
         lastSyncedAtEpochMillis = item.lastSyncedAtEpochMillis,
         syncFailureMessage = item.syncFailureMessage,
+        photoRestoreState = item.photoRestoreState,
     )
 }
 
