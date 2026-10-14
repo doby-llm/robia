@@ -18,7 +18,8 @@ import java.io.IOException
 
 /**
  * Every terminal outcome reachable through the processor fakes must leave the restore overlay
- * cleared (null) or finalized (download blocked: Failed; upload failed or blocked: Complete).
+ * cleared (null) or left as a terminal failure (download blocked: Failed). The restored wardrobe is already applied
+ * when the upload fails or is blocked, so that overlay is cleared too; WorkManager retries the upload.
  * Not reachable here: the whole-cycle timeout (removed in S04); only per-photo retry timeouts remain,
  * and they run outside the restore overlay.
  */
@@ -33,18 +34,18 @@ class SyncProgressOutcomesTest {
     }
 
     @Test
-    fun uploadFailureFinalizesTheOverlayAsComplete() = runBlocking {
+    fun uploadFailureClearsTheOverlay() = runBlocking {
         val processor = restoreScenario(
             FakeDriveWardrobeRepository(snapshot = remoteWith("b"), upsertResult = DriveSyncResult.Failure(IOException("offline"))),
         )
 
         processor.confirmMerge()
 
-        assertEquals(CloudRestorePhase.Complete, processor.state.first().restoreProgress?.phase)
+        assertNull(processor.state.first().restoreProgress)
     }
 
     @Test
-    fun uploadBlockedFinalizesTheOverlayAsComplete() = runBlocking {
+    fun uploadBlockedClearsTheOverlay() = runBlocking {
         val processor = restoreScenario(
             FakeDriveWardrobeRepository(
                 snapshot = remoteWith("b"),
@@ -54,7 +55,7 @@ class SyncProgressOutcomesTest {
 
         processor.confirmMerge()
 
-        assertEquals(CloudRestorePhase.Complete, processor.state.first().restoreProgress?.phase)
+        assertNull(processor.state.first().restoreProgress)
     }
 
     @Test

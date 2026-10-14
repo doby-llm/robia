@@ -681,7 +681,10 @@ class WardrobeSyncOutboxProcessor(
             SyncRunResult.Retry
         } finally {
             isProcessing.value = false
-            if (!keepTerminalProgress) restoreProgress.value = null
+            // A restore still Running has no terminal outcome left to show: the restored wardrobe is applied and WorkManager retries the upload.
+            // Terminal failures stay visible for the user to read.
+            val restoreStillRunning = restoreProgress.value?.status == CloudRestoreStatus.Running
+            if (!keepTerminalProgress || restoreStillRunning) restoreProgress.value = null
         }
     }
 
