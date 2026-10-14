@@ -33,7 +33,7 @@ class RegressionSourceContractTest {
         assertTrue(app.contains("R.string.batch_save_result"))
         assertTrue(app.contains("if (batchDrafts.isEmpty()) replaceRoute(RobiaRoute.Browse)"))
         assertTrue(app.contains("R.string.batch_keep_original_accept"))
-        assertTrue(app.contains("onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview)"))
+        assertTrue(app.contains("onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview, capture)"))
 
         assertTrue(strings.contains("name=\"batch_save_items\">Save %1\$d items"))
         assertTrue(strings.contains("name=\"batch_helper_summary\""))
