@@ -84,6 +84,8 @@ data class GarmentTag(
     val name: String,
     val sortOrder: Int,
     val isSystem: Boolean = false,
+    val description: String? = null,
+    val suggestOccasions: Boolean = true,
 )
 
 data class MainColor(

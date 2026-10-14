@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.first
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentColorRole
+import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
@@ -18,6 +19,8 @@ import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemTagCrossRef
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
+import com.gusanitolabs.robia.data.local.EmbeddingKind
+import com.gusanitolabs.robia.data.local.GarmentEmbeddingEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
 import com.gusanitolabs.robia.data.local.MainColorEntity
 import com.gusanitolabs.robia.data.local.RobiaDatabase
@@ -27,6 +30,8 @@ import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
+import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import java.util.Base64
 
 /** Builds deterministic snapshots of the full local wardrobe graph for Drive sync. */
 class LocalWardrobeSyncSnapshotRepository(
@@ -46,6 +51,9 @@ class LocalWardrobeSyncSnapshotRepository(
         val tags = tagDao.getTagsForSync()
         val colors = tagDao.getMainColorsForSync()
         val tombstones = syncTombstoneDao.getAllForSync()
+        val embeddingsByGarmentId = database.embeddingDao()
+            .getForRecipe(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
+            .groupBy(GarmentEmbeddingEntity::garmentId)
         val itemUpdatedAtById = items.associate { item -> item.id to item.syncRevision }
         val taxonomyRevisions = categories.map(TagCategoryEntity::syncRevision) +
             tags.map(GarmentTagEntity::syncRevision) +
@@ -67,7 +75,9 @@ class LocalWardrobeSyncSnapshotRepository(
                 tags = tags.map(GarmentTagEntity::toSyncRecord),
                 mainColors = colors.map(MainColorEntity::toSyncRecord),
             ),
-            garments = items.map(ClothingItemEntity::toGarmentRecord),
+            garments = items.map { item ->
+                item.toGarmentRecord(embeddingsByGarmentId[item.id].orEmpty().map(GarmentEmbeddingEntity::toSyncRecord))
+            },
             garmentTags = itemTagRefs.map { ref ->
                 ref.toSyncRecord(revision = itemUpdatedAtById[ref.clothingItemId] ?: 0L)
             },
@@ -105,6 +115,9 @@ class LocalWardrobeSyncSnapshotRepository(
             .filter { record -> record.garmentId in itemIdSet }
             .map { record -> ClothingItemTagCrossRef(record.garmentId, record.tagId) }
         val tombstones = deterministicSnapshot.tombstones.map(SyncTombstoneRecord::toEntity)
+        val embeddings = deterministicSnapshot.garments
+            .filter { garment -> garment.id in itemIdSet }
+            .flatMap { garment -> garment.embeddings.mapNotNull { record -> record.toImportEntity(garment.id) } }
 
         database.withTransaction {
             deterministicSnapshot.taxonomies.categories.forEach { record -> tagDao.upsertCategory(record.toEntity()) }
@@ -116,6 +129,7 @@ class LocalWardrobeSyncSnapshotRepository(
                 tagDao.insertItemTagRefs(tagRefs)
             }
             if (tombstones.isNotEmpty()) tagDao.upsertSyncTombstones(tombstones)
+            if (embeddings.isNotEmpty()) database.embeddingDao().upsertAll(embeddings)
         }
 
         return ImportSnapshotResult(
@@ -251,6 +265,8 @@ private fun GarmentTagEntity.toSyncRecord(): TagSyncRecord = TagSyncRecord(
     isSystem = isSystem,
     revision = syncRevision,
     updatedAtEpochMillis = syncRevision,
+    description = description,
+    suggestOccasions = suggestOccasions,
 )
 
 private fun MainColorEntity.toSyncRecord(): MainColorSyncRecord = MainColorSyncRecord(
@@ -263,7 +279,7 @@ private fun MainColorEntity.toSyncRecord(): MainColorSyncRecord = MainColorSyncR
     updatedAtEpochMillis = syncRevision,
 )
 
-private fun ClothingItemEntity.toGarmentRecord(): GarmentSyncRecord = GarmentSyncRecord(
+private fun ClothingItemEntity.toGarmentRecord(embeddings: List<EmbeddingSyncRecord>): GarmentSyncRecord = GarmentSyncRecord(
     id = id,
     name = name,
     notes = notes,
@@ -273,7 +289,39 @@ private fun ClothingItemEntity.toGarmentRecord(): GarmentSyncRecord = GarmentSyn
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
     revision = syncRevision,
+    embeddings = embeddings,
 )
+
+private fun GarmentEmbeddingEntity.toSyncRecord(): EmbeddingSyncRecord = EmbeddingSyncRecord(
+    kind = kind,
+    modelId = modelId,
+    recipeId = recipeId,
+    dim = dim,
+    inputHash = inputHash,
+    computedAtEpochMillis = computedAtEpochMillis,
+    b64 = Base64.getEncoder().encodeToString(vector),
+)
+
+/** Accepts only the current model+recipe with a complete 768-dim float32 payload; anything else is re-computed. */
+private fun EmbeddingSyncRecord.toImportEntity(garmentId: String): GarmentEmbeddingEntity? {
+    if (kind != EmbeddingKind.IMAGE && kind != EmbeddingKind.TEXT) return null
+    if (modelId != EmbeddingRecipe.MODEL_ID || recipeId != EmbeddingRecipe.RECIPE_ID) return null
+    if (dim != EmbeddingRecipe.DIMENSION) return null
+    val bytes = runCatching { Base64.getDecoder().decode(b64) }.getOrNull() ?: return null
+    if (bytes.size != EmbeddingRecipe.DIMENSION * Float.SIZE_BYTES) return null
+    return GarmentEmbeddingEntity(
+        garmentId = garmentId,
+        kind = kind,
+        modelId = modelId,
+        recipeId = recipeId,
+        dim = dim,
+        vector = bytes,
+        inputHash = inputHash,
+        computedAtEpochMillis = computedAtEpochMillis,
+        durationMillis = 0L,
+        pendingUpload = false,
+    )
+}
 
 private fun ClothingItemTagCrossRef.toSyncRecord(revision: Long): GarmentTagMappingRecord = GarmentTagMappingRecord(
     garmentId = clothingItemId,
@@ -345,6 +393,8 @@ private fun TagSyncRecord.toEntity(): GarmentTagEntity = GarmentTagEntity(
     syncRevision = revision,
     syncDirtyAtEpochMillis = null,
     lastSyncedAtEpochMillis = System.currentTimeMillis(),
+    description = description,
+    suggestOccasions = suggestOccasions,
 )
 
 private fun MainColorSyncRecord.toEntity(): MainColorEntity = MainColorEntity(

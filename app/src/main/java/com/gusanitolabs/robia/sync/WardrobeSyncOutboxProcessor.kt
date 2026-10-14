@@ -1260,6 +1260,8 @@ private fun TagSyncRecord.toDomain(): GarmentTag = GarmentTag(
     name = name,
     sortOrder = sortOrder,
     isSystem = isSystem,
+    description = description,
+    suggestOccasions = suggestOccasions,
 )
 
 private fun MainColorSyncRecord.toDomain(): MainColor = MainColor(
