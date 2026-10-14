@@ -237,6 +237,13 @@ private class InMemoryEmbeddingDao : EmbeddingDao {
         publish()
     }
 
+    override suspend fun deleteEverything(): Int {
+        val count = rows.size
+        rows.clear()
+        publish()
+        return count
+    }
+
     override suspend fun markUploaded(garmentId: String, kind: String) {
         rows[garmentId to kind]?.let { row -> rows[garmentId to kind] = row.copy(pendingUpload = false) }
         publish()
