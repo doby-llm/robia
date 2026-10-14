@@ -28,11 +28,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -42,7 +42,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.9
+          gradle-version: 8.14.3
 
       - name: Set up Python for TFLite drift check
         uses: actions/setup-python@v5
@@ -89,22 +89,25 @@ jobs:
           ROBIA_DEBUG_KEY_ALIAS: ${{ secrets.ROBIA_DEBUG_KEY_ALIAS }}
           ROBIA_DEBUG_KEY_PASSWORD: ${{ secrets.ROBIA_DEBUG_KEY_PASSWORD }}
 
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+      - name: Build debug and staging APKs
+        run: gradle --no-daemon testDebugUnitTest assembleDebug assembleStaging
 
       - name: Print APK signing certificate fingerprints
         run: |
           set -euo pipefail
-          apk_path="$(find app/build/outputs/apk/debug -name '*.apk' -type f | sort | head -n 1)"
-          if [ -z "${apk_path}" ]; then
-            echo "No debug APK found for signing certificate inspection" >&2
-            exit 1
-          fi
           build_tools_dir="$(find "${ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
-          echo "Inspecting signing certificate for ${apk_path}"
           echo "This fingerprint is safe to publish, but the default GitHub Actions debug signing key can change between runs."
           echo "For Google OAuth, use this only for the exact debug APK/build you are testing; use Play/release signing fingerprints for production."
-          "${build_tools_dir}/apksigner" verify --print-certs "${apk_path}"
+          for apk_dir in app/build/outputs/apk/debug app/build/outputs/apk/staging; do
+            apk_path="$(find "${apk_dir}" -name '*.apk' -type f | sort | head -n 1)"
+            if [ -z "${apk_path}" ]; then
+              echo "No APK found in ${apk_dir} for signing certificate inspection" >&2
+              exit 1
+            fi
+            echo "Inspecting signing certificate for ${apk_path}"
+            "${build_tools_dir}/aapt2" dump badging "${apk_path}" | grep -m 1 '^package:' || true
+            "${build_tools_dir}/apksigner" verify --print-certs "${apk_path}"
+          done
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -112,6 +115,20 @@ jobs:
           name: robia-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Upload staging APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: robia-staging-apk
+          path: app/build/outputs/apk/staging/*.apk
+          if-no-files-found: error
+
+      - name: Upload Room schemas
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas
+          if-no-files-found: warn
 
   release-aab:
     name: Build signed release AAB
@@ -123,11 +140,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -137,7 +154,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.9
+          gradle-version: 8.14.3
 
       - name: Configure release signing key
         run: |
