@@ -604,24 +604,27 @@ class WardrobeSyncOutboxProcessor(
         cycleStorageFull = false
         cyclePhotoUploadFailureIds = emptySet()
         isProcessing.value = true
-        val lockedWork = pendingWork.filter { work ->
-            wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())
-        }
-        val lockedMetadataWork = pendingMetadataWork.filter { work -> wardrobeRepository.markMetadataSyncing(work) }
+        // Claims happen inside the try so a cancellation mid-claim releases every row claimed so far.
+        val lockedWork = mutableListOf<PendingGarmentSyncWork>()
+        val lockedMetadataWork = mutableListOf<PendingMetadataSyncWork>()
         val syncCorrelationId = UUID.randomUUID().toString().take(8)
         val syncStartedAt = System.currentTimeMillis()
-        restoreSyncLogRepository.append(
-            RestoreSyncLogEvent(
-                correlationId = syncCorrelationId,
-                category = "sync",
-                phase = null,
-                status = CloudRestoreStatus.Running,
-                message = "sync started trigger=${trigger.name} forceSnapshot=$forceSnapshot forceImport=$forceImport " +
-                    "garments=${lockedWork.size} metadata=${lockedMetadataWork.size}",
-            ),
-        )
         var keepTerminalProgress = false
         try {
+            pendingWork.forEach { work ->
+                if (wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())) lockedWork += work
+            }
+            pendingMetadataWork.forEach { work -> if (wardrobeRepository.markMetadataSyncing(work)) lockedMetadataWork += work }
+            restoreSyncLogRepository.append(
+                RestoreSyncLogEvent(
+                    correlationId = syncCorrelationId,
+                    category = "sync",
+                    phase = null,
+                    status = CloudRestoreStatus.Running,
+                    message = "sync started trigger=${trigger.name} forceSnapshot=$forceSnapshot forceImport=$forceImport " +
+                        "garments=${lockedWork.size} metadata=${lockedMetadataWork.size}",
+                ),
+            )
             val localSnapshot = snapshotRepository.exportSnapshot()
             val result = executeDirection(localSnapshot, forceImport, mergeConfirmed)
             keepTerminalProgress = result != SyncRunResult.Success
@@ -654,13 +657,25 @@ class WardrobeSyncOutboxProcessor(
         forceImport: Boolean,
         mergeConfirmed: Boolean,
     ): SyncRunResult = when {
-        mergeConfirmed -> restoreThenFlush(localSnapshot)
+        mergeConfirmed -> restoreThenFlushAndResolveConflict(localSnapshot)
+        // An explicit import on a phone with data must not upload while a conflict is open: the user decides first.
+        forceImport && localSnapshot.hasUserData() && settingsRepository.syncConflict.first() -> SyncRunResult.Conflict
         else -> when (SyncDirectionPolicy.resolve(localSnapshot, explicitRestoreRequested = forceImport)) {
             SyncDirection.UploadLocalSnapshot -> uploadLocalSnapshot(localSnapshot)
             SyncDirection.MergeWithRemote -> proposeMergeOrUpload(localSnapshot)
-            SyncDirection.RestoreRemoteThenUpload -> restoreThenFlush(localSnapshot)
+            SyncDirection.RestoreRemoteThenUpload -> restoreThenFlushAndResolveConflict(localSnapshot)
             SyncDirection.SkipEmptyLocalUpload -> SyncRunResult.Success
         }
+    }
+
+    /** A restore that succeeds resolves the open conflict: the phone now holds the remote data it was asked to take. */
+    private suspend fun restoreThenFlushAndResolveConflict(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
+        val result = restoreThenFlush(localSnapshot)
+        if (result == SyncRunResult.Success) {
+            settingsRepository.setSyncConflict(false)
+            pendingMergeSummary.value = null
+        }
+        return result
     }
 
     private suspend fun restoreThenFlush(localSnapshot: WardrobeSyncSnapshot): SyncRunResult = try {
@@ -988,6 +1003,8 @@ class WardrobeSyncOutboxProcessor(
             is DriveSyncResult.Success -> {
                 diagnostics.recordFinalUploadSucceeded()
                 settingsRepository.setLastKnownRemoteRevision(uploadResult.value.revision)
+                // Garments whose photo did not upload wait for the user, exactly as in uploadLocalSnapshot.
+                cyclePhotoUploadFailureIds = uploadResult.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Uploading,
                     completedWork = RESTORE_STEP_FINAL_SYNCED,

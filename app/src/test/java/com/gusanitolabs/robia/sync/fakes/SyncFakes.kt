@@ -16,6 +16,7 @@ import com.gusanitolabs.robia.sync.RestoredPhotoApplyResult
 import com.gusanitolabs.robia.sync.SyncWorkScheduler
 import com.gusanitolabs.robia.sync.WardrobeSnapshotStore
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +34,8 @@ internal class FakeGarmentRow(val id: String, var revision: Long, var status: St
 internal class FakeWardrobeRepository : WardrobeRepository {
     val rows = linkedMapOf<String, FakeGarmentRow>()
     val failedRetryableCalls = mutableListOf<String>()
+    /** When set, claiming this garment throws a cancellation, as if the work was cancelled mid-claim. */
+    var cancelClaimOf: String? = null
     val needsUserActions = mutableListOf<Pair<String, String>>()
     private val guardedIds = mutableSetOf<String>()
     private val pendingCount = MutableStateFlow(0)
@@ -96,8 +99,10 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     override suspend fun archiveItem(id: String, updatedAtEpochMillis: Long) = error("not used by sync tests")
     override suspend fun archiveItems(ids: List<String>, updatedAtEpochMillis: Long) = error("not used by sync tests")
 
-    override suspend fun markGarmentSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Boolean =
-        rows[id]?.status == "Queued" && setStatus(id, revision, "Running")
+    override suspend fun markGarmentSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Boolean {
+        if (id == cancelClaimOf) throw CancellationException("cancelled while claiming $id")
+        return rows[id]?.status == "Queued" && setStatus(id, revision, "Running")
+    }
 
     override suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean =
         setStatus(id, revision, "Synced")

@@ -81,29 +81,28 @@ interface WardrobeDao {
     suspend fun markGarmentSyncing(itemId: String, revision: Long, startedAtEpochMillis: Long): Int
 
     @Transaction
-    suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int {
-        val now = System.currentTimeMillis()
-        return recoverStaleGarmentSyncWork(staleBeforeEpochMillis) +
-            recoverStaleTagCategorySyncWork(staleBeforeEpochMillis, now) +
-            recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis, now) +
-            recoverStaleMainColorSyncWork(staleBeforeEpochMillis, now) +
-            recoverStaleTombstoneSyncWork(staleBeforeEpochMillis, now)
-    }
+    suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int =
+        recoverStaleGarmentSyncWork(staleBeforeEpochMillis) +
+            recoverStaleTagCategorySyncWork(staleBeforeEpochMillis) +
+            recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis) +
+            recoverStaleMainColorSyncWork(staleBeforeEpochMillis) +
+            recoverStaleTombstoneSyncWork(staleBeforeEpochMillis)
 
-    @Query("UPDATE clothing_items SET sync_status = CASE WHEN photo_restore_guarded = 1 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_after_epoch_millis = 0, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    /** An interrupted claim is transient work: it goes back to Queued with no attempt counted and no attention needed. */
+    @Query("UPDATE clothing_items SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleGarmentSyncWork(staleBeforeEpochMillis: Long): Int
 
-    @Query("UPDATE tag_categories SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
-    suspend fun recoverStaleTagCategorySyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+    @Query("UPDATE tag_categories SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleTagCategorySyncWork(staleBeforeEpochMillis: Long): Int
 
-    @Query("UPDATE garment_tags SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
-    suspend fun recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+    @Query("UPDATE garment_tags SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis: Long): Int
 
-    @Query("UPDATE main_colors SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
-    suspend fun recoverStaleMainColorSyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+    @Query("UPDATE main_colors SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleMainColorSyncWork(staleBeforeEpochMillis: Long): Int
 
-    @Query("UPDATE sync_tombstones SET sync_status = CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END, retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
-    suspend fun recoverStaleTombstoneSyncWork(staleBeforeEpochMillis: Long, now: Long): Int
+    @Query("UPDATE sync_tombstones SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleTombstoneSyncWork(staleBeforeEpochMillis: Long): Int
 
     @Query("UPDATE clothing_items SET sync_status = 'Synced', last_synced_at_epoch_millis = :syncedAtEpochMillis, sync_dirty_at_epoch_millis = NULL, sync_failure_message = NULL WHERE id = :itemId AND sync_revision = :revision")
     suspend fun markGarmentSynced(itemId: String, revision: Long, syncedAtEpochMillis: Long): Int

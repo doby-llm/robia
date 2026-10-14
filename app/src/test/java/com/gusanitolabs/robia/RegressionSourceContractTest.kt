@@ -403,23 +403,22 @@ class RegressionSourceContractTest {
     }
 
     @Test
-    fun metadataAndTombstoneStaleRunningRecoveryUsesDurableRetryPolicy() {
+    fun metadataAndTombstoneStaleRunningRecoveryReturnsToQueued() {
         val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
         val recovery = dao.substringAfter("suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int")
             .substringBefore("@Query(\"UPDATE clothing_items")
 
-        assertTrue(recovery.contains("val now = System.currentTimeMillis()"))
-        assertTrue(recovery.contains("recoverStaleTagCategorySyncWork(staleBeforeEpochMillis, now)"))
-        assertTrue(recovery.contains("recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis, now)"))
-        assertTrue(recovery.contains("recoverStaleMainColorSyncWork(staleBeforeEpochMillis, now)"))
-        assertTrue(recovery.contains("recoverStaleTombstoneSyncWork(staleBeforeEpochMillis, now)"))
+        assertTrue(recovery.contains("recoverStaleTagCategorySyncWork(staleBeforeEpochMillis)"))
+        assertTrue(recovery.contains("recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis)"))
+        assertTrue(recovery.contains("recoverStaleMainColorSyncWork(staleBeforeEpochMillis)"))
+        assertTrue(recovery.contains("recoverStaleTombstoneSyncWork(staleBeforeEpochMillis)"))
         assertTrue(!recovery.contains("retry_after_epoch_millis = 0"))
 
         listOf("TagCategory", "GarmentTag", "MainColor", "Tombstone").forEach { entity ->
             val query = queryBeforeMethod(dao, "suspend fun recoverStale${entity}SyncWork")
-            assertTrue(query.contains("CASE WHEN retry_attempt_count + 1 >= 3 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
-            assertTrue(query.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
-            assertTrue(query.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
+            assertTrue(query.contains("SET sync_status = 'Queued'"))
+            assertTrue(!query.contains("NeedsUserAction"))
+            assertTrue(!query.contains("retry_attempt_count"))
             assertTrue(query.contains("COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis"))
             assertTrue(!query.contains("retry_after_epoch_millis = 0"))
         }
@@ -552,8 +551,10 @@ class RegressionSourceContractTest {
         assertTrue(claimQuery.contains("photo_restore_retry_deadline_epoch_millis >= :now"))
 
         val staleRecoveryQuery = queryBeforeMethod(dao, "suspend fun recoverStaleGarmentSyncWork")
-        assertTrue(staleRecoveryQuery.contains("CASE WHEN photo_restore_guarded = 1 THEN 'NeedsUserAction' ELSE 'FailedRetryable' END"))
-        assertTrue(staleRecoveryQuery.contains("retry_after_epoch_millis = 0"))
+        assertTrue(staleRecoveryQuery.contains("SET sync_status = 'Queued'"))
+        assertTrue(!staleRecoveryQuery.contains("photo_restore_guarded"))
+        assertTrue(!staleRecoveryQuery.contains("retry_attempt_count"))
+        assertTrue(staleRecoveryQuery.contains("retry_after_epoch_millis = NULL"))
         assertTrue(staleRecoveryQuery.contains("sync_started_at_epoch_millis = NULL"))
 
         assertTrue(repository.contains("eligibleGarmentPhotoRestoreRetryRevision(id, now)"))
