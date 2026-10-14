@@ -1,0 +1,43 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Robia mockups</title><style>
+:root{--surface:#f9f9f9;--lowest:#fff;--low:#f3f3f4;--cont:#efe5d9;--high:#e8e8e8;--on:#1a1c1c;--onv:#4f4442;
+--outline:#817472;--ov:#d2c3c0;--primary:#332421;--sec:#f1dcc9;--onsec:#6f6051;--terra:#a56639;--err:#ba1a1a;--errc:#ffdad6;--ok:#3f6b3a}
+*{box-sizing:border-box}body{margin:0;background:#e9e6e3;font:14px/20px Inter,system-ui,Roboto,sans-serif;color:var(--on)}
+header.page{padding:20px 24px 4px;max-width:1400px;margin:auto}header.page h1{margin:0;font-size:22px}header.page p{margin:4px 0;color:var(--onv)}
+.row{display:flex;flex-wrap:wrap;gap:28px;padding:16px 24px 32px;max-width:1400px;margin:auto;align-items:flex-start}
+.phone{width:360px;height:740px;background:var(--surface);border-radius:28px;box-shadow:0 8px 30px rgba(51,36,33,.18);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.cap{width:360px;font-weight:600;margin:0 0 8px;color:var(--primary)}.cap small{display:block;font-weight:400;color:var(--onv)}
+.top{display:flex;align-items:center;gap:8px;padding:16px 16px 8px}.top h2{flex:1;text-align:center;margin:0;font-size:22px;color:var(--primary)}
+.ic{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;color:var(--primary);font-size:18px}
+.body{flex:1;padding:8px 16px 96px;overflow:hidden}
+.card{background:var(--lowest);border-radius:16px;box-shadow:0 1px 3px rgba(51,36,33,.08);padding:14px;margin-bottom:12px}
+.card.tonal{background:var(--cont)}.card.err{background:var(--errc)}
+h3{margin:0 0 4px;font-size:16px}.muted{color:var(--onv)}.small{font-size:12px;line-height:16px}
+.btn{white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;padding:10px 16px;font-weight:600;border:0;font:inherit;font-weight:600;cursor:pointer}
+.btn.p{background:var(--primary);color:#fff}.btn.s{background:var(--sec);color:var(--primary)}.btn.t{background:transparent;color:var(--terra);padding:8px 6px}.btn.o{background:transparent;border:1px solid var(--ov);color:var(--primary)}
+.btn.full{width:100%;white-space:normal;text-align:center}.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip{white-space:nowrap;display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 10px;background:var(--sec);color:var(--primary);font-size:12px;font-weight:600}
+.chip.o{background:transparent;border:1px solid var(--ov);font-weight:500}.chip.sel{background:var(--primary);color:#fff}
+.field{border:1px solid var(--ov);border-radius:8px;padding:10px 12px;background:var(--lowest);margin-top:8px}.field label{display:block;font-size:12px;color:var(--onv)}
+.field.focus{border:2px solid var(--terra)}.field .ph{color:#9a8d8a}
+.search{display:flex;align-items:center;gap:8px;border:1px solid var(--ov);border-radius:999px;padding:9px 14px;background:var(--lowest)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.g{background:var(--lowest);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(51,36,33,.08)}
+.g .img{height:150px;display:flex;align-items:center;justify-content:center;font-size:56px;background:var(--low);position:relative}
+.g .img .badge{position:absolute;bottom:6px;right:6px;background:#fffd;border-radius:999px;font-size:12px;padding:2px 6px}
+.g .t{padding:8px 10px}.g .t b{display:block;font-size:13px}.g .t > span{font-size:12px;color:var(--onv)}
+.nav{position:absolute;left:0;right:0;bottom:0;height:68px;background:var(--lowest);display:flex;justify-content:space-around;align-items:center;border-top:1px solid var(--high);font-size:12px;color:var(--onv)}
+.nav .on{color:var(--primary);font-weight:700}
+.sec-h{display:flex;align-items:center;gap:8px;background:var(--lowest);border-radius:16px 16px 0 0;padding:12px 14px;margin-top:12px}
+.sec-h b{flex:1}.trow{display:flex;align-items:center;gap:10px;background:var(--lowest);padding:9px 14px;border-top:1px solid var(--low)}
+.trow:last-child{border-radius:0 0 16px 16px}.dot{width:8px;height:8px;border-radius:50%;background:var(--terra)}.trow .n{flex:1}
+.trow .d{display:block;font-size:11px;color:var(--onv)}
+.switch{width:40px;height:22px;border-radius:999px;background:var(--primary);position:relative;flex:none}.switch:after{content:"";position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff}
+.switch.off{background:var(--ov)}.switch.off:after{left:3px;right:auto}
+.bar{height:4px;border-radius:2px;background:var(--high);overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;background:var(--terra)}
+.dialog{position:absolute;inset:0;background:rgba(26,28,28,.42);display:flex;align-items:center;justify-content:center;padding:20px}
+.dialog .box{background:var(--lowest);border-radius:24px;padding:20px;width:100%}.dialog h3{font-size:20px;margin-bottom:8px}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:15px;white-space:pre;background:var(--low);border-radius:8px;padding:8px;overflow:hidden}
+.bottom{position:absolute;left:0;right:0;bottom:0;background:var(--lowest);padding:14px 16px;box-shadow:0 -4px 12px rgba(51,36,33,.08)}
+.rc{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-top:8px}.rc .arrow{color:var(--terra)}
+table.str{border-collapse:collapse;background:#fff;margin:0 24px 40px;max-width:1350px;font-size:12px}table.str td,table.str th{border:1px solid #ddd;padding:4px 6px;text-align:left;vertical-align:top}
+.note{max-width:1350px;margin:0 24px 12px;font-size:13px;color:var(--onv)}
+</style></head><body><header class="page"><h1>Robia · Mockups (revisión 1)</h1><p>Earth &amp; Steel, tema claro, móvil. Los textos de la app van en EN/ES/DE (tablas en cada página).</p><ul style="font-size:16px;line-height:28px"><li><a href="manage.html">Manage (rediseño) y editor de etiquetas</a></li><li><a href="tag-review.html">Revisión de category y occasion</a></li><li><a href="sync-states.html">Estados de sincronización</a></li><li><a href="model-download.html">Descarga del modelo e indicador</a></li><li><a href="browse-search.html">Búsqueda y prendas parecidas</a></li><li><a href="dev-diagnostics.html">Modo desarrollador</a></li></ul></header></body></html>
