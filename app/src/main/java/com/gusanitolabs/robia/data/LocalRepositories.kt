@@ -120,6 +120,12 @@ class LocalWardrobeRepository(
     override fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int> =
         wardrobeDao.observeGarmentNeedsUserActionCount(reasonCode)
 
+    override suspend fun releaseNeedsUserActionToQueued(reasonCode: String): Int =
+        wardrobeDao.releaseNeedsUserActionToQueued(reasonCode)
+
+    override suspend fun keepGarmentWithoutRestoredPhoto(id: String, now: Long): Boolean =
+        wardrobeDao.keepGarmentWithoutRestoredPhoto(id, now) > 0
+
     override suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean =
         wardrobeDao.markMetadataSyncing(work.toEntity())
 

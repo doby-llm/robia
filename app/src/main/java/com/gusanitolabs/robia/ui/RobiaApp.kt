@@ -165,6 +165,8 @@ import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
 import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
+import com.gusanitolabs.robia.sync.SyncAttention
+import com.gusanitolabs.robia.sync.SyncAttentionKind
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
@@ -383,6 +385,14 @@ fun RobiaApp(
             onRequestCloudSetup = onRequestCloudSetup,
             onConfirmMerge = { scope.launch { syncGateway.confirmMerge() } },
             onCancelMerge = { scope.launch { syncGateway.cancelMerge() } },
+            onUseBackup = { scope.launch { syncGateway.useBackup() } },
+            onKeepThisPhone = { scope.launch { syncGateway.keepThisPhone() } },
+            onRetryAttention = { kind ->
+                scope.launch { syncGateway.enqueue(WardrobeSyncOperation.RetryAttention(kind)) }
+            },
+            onKeepWithoutPhoto = { garmentId ->
+                scope.launch { syncGateway.keepWithoutPhoto(garmentId) }
+            },
             modelState = modelState,
             modelPromptShown = modelPromptShown,
             onModelPromptShown = {
@@ -588,6 +598,10 @@ private fun RobiaShell(
     onRequestCloudSetup: () -> Unit,
     onConfirmMerge: () -> Unit,
     onCancelMerge: () -> Unit,
+    onUseBackup: () -> Unit = {},
+    onKeepThisPhone: () -> Unit = {},
+    onRetryAttention: (SyncAttentionKind) -> Unit = {},
+    onKeepWithoutPhoto: (String) -> Unit = {},
     modelState: ModelState = ModelState.NotDownloaded,
     modelPromptShown: Boolean? = null,
     onModelPromptShown: () -> Unit = {},
@@ -642,6 +656,12 @@ private fun RobiaShell(
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var showCloudSetupPrompt by remember { mutableStateOf(false) }
     var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
+    var showUseBackupConfirmation by remember { mutableStateOf(false) }
+    var conflictDialogDismissed by remember(syncState.conflict) { mutableStateOf(false) }
+    // Merge confirmation is a dialog; every other attention kind is shown as a card in Browse, highest priority first.
+    val browseAttentions = syncState.attention
+        .filter { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
+        .take(MAX_BROWSE_ATTENTION_CARDS)
     val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
     val items = remember(context, clothingItems, syncState, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, context) else emptyList()
@@ -933,6 +953,33 @@ private fun RobiaShell(
         }
     }
 
+    fun openFirstGuardedGarment() {
+        val guarded = items.firstOrNull { item -> item.hasMissingRestoredPhoto } ?: return
+        selectedItemId = guarded.id
+        pushRoute(RobiaRoute.ItemDetail)
+    }
+
+    fun openSyncStorage() {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SYNC_STORAGE_URL)))
+        }
+    }
+
+    fun handleAttentionAction(attention: SyncAttention, action: SyncAttentionAction) {
+        when (action) {
+            SyncAttentionAction.SignIn -> onRequestCloudSetup()
+            SyncAttentionAction.Retry -> onRetryAttention(attention.kind)
+            SyncAttentionAction.OpenStorage -> openSyncStorage()
+            // Photo actions act on one garment, so the card opens the first affected garment's detail.
+            SyncAttentionAction.RetryPhoto,
+            SyncAttentionAction.KeepWithoutPhoto -> openFirstGuardedGarment()
+            SyncAttentionAction.UseBackup -> showUseBackupConfirmation = true
+            SyncAttentionAction.KeepThisPhone -> onKeepThisPhone()
+            SyncAttentionAction.ConfirmMerge -> onConfirmMerge()
+            SyncAttentionAction.CancelMerge -> onCancelMerge()
+        }
+    }
+
     fun dismissCloudSetupPrompt() {
         onCloudSetupPromptInteracted()
         showCloudSetupPrompt = false
@@ -1038,6 +1085,28 @@ private fun RobiaShell(
         CloudSetupDialog(
             onDismiss = ::dismissCloudSetupPrompt,
             onConfirmSetup = ::confirmCloudSetupPrompt,
+        )
+    }
+
+    if (syncState.conflict && !conflictDialogDismissed && !showUseBackupConfirmation) {
+        BackupConflictDialog(
+            onUseBackup = { showUseBackupConfirmation = true },
+            onKeepThisPhone = {
+                conflictDialogDismissed = true
+                onKeepThisPhone()
+            },
+            onNotNow = { conflictDialogDismissed = true },
+        )
+    }
+
+    if (showUseBackupConfirmation) {
+        UseBackupConfirmationDialog(
+            onConfirm = {
+                showUseBackupConfirmation = false
+                conflictDialogDismissed = true
+                onUseBackup()
+            },
+            onCancel = { showUseBackupConfirmation = false },
         )
     }
 
@@ -1286,6 +1355,10 @@ private fun RobiaShell(
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
+            browseAttentions = browseAttentions,
+            onSyncAttentionAction = ::handleAttentionAction,
+            onKeepWithoutPhoto = onKeepWithoutPhoto,
+            onRetryAttention = onRetryAttention,
         )
     }
     restoreProgress?.let { progress ->
@@ -1562,7 +1635,7 @@ private fun DriveSyncConnectionStatus.cloudSetupSummaryRes(
         R.string.cloud_setup_configured_summary
     }
     DriveSyncConnectionStatus.Syncing -> R.string.garment_sync_syncing
-    DriveSyncConnectionStatus.NeedsAttention -> R.string.garment_sync_failed_retryable
+    DriveSyncConnectionStatus.NeedsAttention -> R.string.cloud_setup_configured_summary
 }
 
 private val DriveSyncConnectionStatus.settingsIcon: ImageVector
@@ -1611,6 +1684,53 @@ private fun CloudSetupDialog(
 }
 
 @Composable
+private fun BackupConflictDialog(
+    onUseBackup: () -> Unit,
+    onKeepThisPhone: () -> Unit,
+    onNotNow: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onNotNow,
+        title = { Text(stringResource(R.string.sync_attention_conflict_title)) },
+        text = { Text(stringResource(R.string.sync_attention_conflict_body)) },
+        confirmButton = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Button(onClick = onUseBackup, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.sync_conflict_use_backup))
+                }
+                OutlinedButton(onClick = onKeepThisPhone, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.sync_conflict_keep_phone))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onNotNow) { Text(stringResource(R.string.not_now)) }
+        },
+    )
+}
+
+@Composable
+private fun UseBackupConfirmationDialog(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.sync_use_backup_confirm_title)) },
+        text = { Text(stringResource(R.string.sync_use_backup_confirm_body)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.sync_use_backup_confirm_action)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
 private fun MergeConfirmationDialog(
     summary: MergeSummary,
     onConfirm: () -> Unit,
@@ -1620,14 +1740,22 @@ private fun MergeConfirmationDialog(
         onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.sync_merge_title)) },
         text = {
-            Text(
-                stringResource(
-                    R.string.sync_merge_body,
-                    summary.remoteGarmentCount,
-                    summary.localGarmentCount,
-                    summary.mergedGarmentCount,
-                ),
-            )
+            Column {
+                Text(
+                    stringResource(
+                        R.string.sync_merge_body,
+                        summary.remoteGarmentCount,
+                        summary.localGarmentCount,
+                        summary.mergedGarmentCount,
+                    ),
+                )
+                Text(
+                    text = stringResource(R.string.sync_merge_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text(stringResource(R.string.sync_merge_confirm)) }
@@ -2038,6 +2166,10 @@ private fun RobiaNavHost(
     onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
+    browseAttentions: List<SyncAttention>,
+    onSyncAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
+    onKeepWithoutPhoto: (String) -> Unit,
+    onRetryAttention: (SyncAttentionKind) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -2055,6 +2187,10 @@ private fun RobiaNavHost(
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
             onResetFilters = onResetFilters,
+            attentions = browseAttentions,
+            onAttentionAction = onSyncAttentionAction,
+            showSyncDetails = developerModeEnabled,
+            onSyncDetailsClick = onRestoreSyncLogClick,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,
@@ -2138,6 +2274,10 @@ private fun RobiaNavHost(
                 item = item,
                 onEditClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
                 onRetryRestoredPhoto = onRetryRestoredPhoto,
+                onKeepWithoutPhoto = onKeepWithoutPhoto,
+                onRetryAttention = onRetryAttention,
+                showSyncDetails = developerModeEnabled,
+                onSyncDetailsClick = onRestoreSyncLogClick,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
@@ -2211,6 +2351,10 @@ private fun BrowseWardrobeScreen(
     onAddClick: () -> Unit,
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
+    attentions: List<SyncAttention>,
+    onAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
+    showSyncDetails: Boolean,
+    onSyncDetailsClick: () -> Unit,
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
     val gridState = rememberLazyGridState()
@@ -2234,6 +2378,18 @@ private fun BrowseWardrobeScreen(
                 showSyncActivity = showSyncActivity,
                 onFiltersClick = onFiltersClick,
             )
+        }
+        if (items.isNotEmpty()) {
+            attentions.forEach { attention ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    SyncAttentionCard(
+                        attention = attention,
+                        onAction = { action -> onAttentionAction(attention, action) },
+                        showDetails = showSyncDetails,
+                        onDetails = onSyncDetailsClick,
+                    )
+                }
+            }
         }
         if (isInitialLoading) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -2547,6 +2703,10 @@ private fun GarmentCloudStatusRow(item: UiWardrobeItem) {
                         formatEpochMillis(item.lastSyncedAtEpochMillis),
                     ),
                 )
+            } else if (item.syncStatus in PendingUploadStatuses) {
+                Text(stringResource(R.string.sync_status_pending_help))
+            } else if (item.parkedAttentionKind() != null) {
+                Text(stringResource(R.string.sync_status_parked_help))
             }
         },
         leadingContent = {
@@ -2570,17 +2730,29 @@ private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus)
     GarmentSyncStatus.NeedsUserAction -> if (hasMissingRestoredPhoto) {
         photoRestoreRetryStateText()
     } else when (syncStatus) {
-        GarmentSyncStatus.Running -> stringResource(R.string.garment_sync_syncing)
-        GarmentSyncStatus.FailedRetryable -> syncFailureMessage?.takeIf(String::isNotBlank)
-            ?: stringResource(R.string.garment_sync_failed_retryable)
-        GarmentSyncStatus.NeedsUserAction -> stringResource(R.string.garment_sync_failed_retryable)
-        else -> error("Unexpected garment status branch")
+        GarmentSyncStatus.Running -> stringResource(R.string.sync_status_uploading)
+        else -> stringResource(R.string.sync_status_pending)
     }
     GarmentSyncStatus.LocalOnly -> stringResource(R.string.garment_sync_saved_device)
-    GarmentSyncStatus.Dirty -> stringResource(R.string.garment_sync_waiting)
-    GarmentSyncStatus.Queued -> stringResource(R.string.garment_sync_queued)
+    GarmentSyncStatus.Dirty,
+    GarmentSyncStatus.Queued -> stringResource(R.string.sync_status_pending)
     GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
     GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
+}
+
+/** Saved on this phone and waiting for an automatic upload: no user action needed. */
+private val PendingUploadStatuses = setOf(
+    GarmentSyncStatus.Dirty,
+    GarmentSyncStatus.Queued,
+    GarmentSyncStatus.FailedRetryable,
+)
+
+/** Parked rows that only an explicit Retry releases (RetryAttention, TS§4.5). */
+private fun UiWardrobeItem.parkedAttentionKind(): SyncAttentionKind? = when {
+    syncStatus != GarmentSyncStatus.NeedsUserAction -> null
+    syncFailureMessage == DRIVE_FULL_REASON -> SyncAttentionKind.DriveFull
+    syncFailureMessage == PHOTO_UPLOAD_FAILED_REASON -> SyncAttentionKind.PhotoUploadFailed
+    else -> null
 }
 
 private fun formatEpochMillis(epochMillis: Long): String =
@@ -2593,16 +2765,16 @@ private fun UiWardrobeItem.garmentCloudStatusIcon(): ImageVector = when (syncSta
     GarmentSyncStatus.Queued,
     GarmentSyncStatus.Running -> Icons.Rounded.CloudUpload
     GarmentSyncStatus.Synced -> Icons.Rounded.CloudDone
-    GarmentSyncStatus.FailedRetryable,
+    GarmentSyncStatus.FailedRetryable -> Icons.Rounded.CloudUpload
     GarmentSyncStatus.NeedsUserAction -> Icons.Rounded.Error
 }
 
 @Composable
 private fun UiWardrobeItem.garmentCloudStatusTint(): Color = when (syncStatus) {
     GarmentSyncStatus.Synced -> MaterialTheme.colorScheme.primary
-    GarmentSyncStatus.FailedRetryable,
     GarmentSyncStatus.NeedsUserAction,
     GarmentSyncStatus.AuthBlocked -> MaterialTheme.colorScheme.error
+    GarmentSyncStatus.FailedRetryable,
     GarmentSyncStatus.Dirty,
     GarmentSyncStatus.Queued,
     GarmentSyncStatus.Running -> MaterialTheme.colorScheme.tertiary
@@ -2727,6 +2899,10 @@ private fun ItemDetailScreen(
     item: UiWardrobeItem,
     onEditClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
+    onKeepWithoutPhoto: (String) -> Unit,
+    onRetryAttention: (SyncAttentionKind) -> Unit,
+    showSyncDetails: Boolean,
+    onSyncDetailsClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -2802,7 +2978,29 @@ private fun ItemDetailScreen(
             )
         }
         item { GarmentCloudStatusRow(item) }
+        item.parkedAttentionKind()?.let { kind ->
+            item {
+                SyncAttentionCard(
+                    attention = SyncAttention(kind, listOf(item.id)),
+                    onAction = { action -> if (action == SyncAttentionAction.Retry) onRetryAttention(kind) },
+                    showDetails = showSyncDetails,
+                    onDetails = onSyncDetailsClick,
+                    actions = listOf(SyncAttentionAction.Retry),
+                )
+            }
+        }
         if (item.hasMissingRestoredPhoto) {
+            item {
+                SyncAttentionCard(
+                    attention = SyncAttention(SyncAttentionKind.PhotoUnrecoverable, listOf(item.id)),
+                    onAction = { action ->
+                        if (action == SyncAttentionAction.KeepWithoutPhoto) onKeepWithoutPhoto(item.id)
+                    },
+                    showDetails = showSyncDetails,
+                    onDetails = onSyncDetailsClick,
+                    actions = listOf(SyncAttentionAction.KeepWithoutPhoto),
+                )
+            }
             item {
                 val now = System.currentTimeMillis()
                 val retryEnabled = item.canRetryRestoredPhotoNow(now)
@@ -3871,14 +4069,19 @@ private fun GarmentSyncStatus.resolveForConnection(
 private val GarmentSyncStatus.itemStatusLabelRes: Int
     get() = when (this) {
         GarmentSyncStatus.LocalOnly -> R.string.garment_sync_saved_device
-        GarmentSyncStatus.Dirty -> R.string.garment_sync_waiting
-        GarmentSyncStatus.Queued -> R.string.garment_sync_queued
-        GarmentSyncStatus.Running -> R.string.garment_sync_syncing
+        GarmentSyncStatus.Dirty,
+        GarmentSyncStatus.Queued,
+        GarmentSyncStatus.FailedRetryable,
+        GarmentSyncStatus.NeedsUserAction -> R.string.sync_status_pending
+        GarmentSyncStatus.Running -> R.string.sync_status_uploading
         GarmentSyncStatus.Synced -> R.string.garment_sync_synced
-        GarmentSyncStatus.FailedRetryable -> R.string.garment_sync_failed_retryable
-        GarmentSyncStatus.NeedsUserAction -> R.string.garment_sync_failed_retryable
         GarmentSyncStatus.AuthBlocked -> R.string.garment_sync_auth_blocked
     }
+
+private const val SYNC_STORAGE_URL = "https://one.google.com/storage"
+private const val MAX_BROWSE_ATTENTION_CARDS = 2
+private const val DRIVE_FULL_REASON = "drive_full"
+private const val PHOTO_UPLOAD_FAILED_REASON = "photo_upload_failed"
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = localizedTagLabel()

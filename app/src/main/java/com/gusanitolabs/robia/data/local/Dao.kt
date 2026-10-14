@@ -170,6 +170,14 @@ interface WardrobeDao {
     @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status = 'NeedsUserAction' AND sync_failure_message = :reasonCode")
     fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int>
 
+    /** Explicit Retry only (TS§4.5): releases parked drive_full / photo_upload_failed rows. Guarded photos keep their own retry. */
+    @Query("UPDATE clothing_items SET sync_status = 'Queued', sync_started_at_epoch_millis = NULL, retry_after_epoch_millis = NULL, sync_failure_message = NULL WHERE sync_status = 'NeedsUserAction' AND sync_failure_message = :reasonCode AND photo_restore_guarded = 0")
+    suspend fun releaseNeedsUserActionToQueued(reasonCode: String): Int
+
+    /** "Keep without photo": clears the guard of one guarded garment that has no local photo. Never touches remote blobs. */
+    @Query("UPDATE clothing_items SET sync_status = 'Queued', sync_dirty_at_epoch_millis = COALESCE(sync_dirty_at_epoch_millis, :now), photo_restore_guarded = 0, photo_restore_retry_deadline_epoch_millis = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, sync_failure_message = NULL WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status = 'NeedsUserAction' AND photo_uri IS NULL")
+    suspend fun keepGarmentWithoutRestoredPhoto(itemId: String, now: Long): Int
+
     @Query("UPDATE clothing_items SET photo_uri = :photoUri, sync_status = CASE WHEN sync_dirty_at_epoch_millis IS NULL THEN 'Synced' ELSE 'Queued' END, sync_failure_message = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, photo_restore_guarded = 0, photo_restore_retry_deadline_epoch_millis = NULL, last_synced_at_epoch_millis = :syncedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status = 'Running'")
     suspend fun applyRestoredPhoto(itemId: String, photoUri: String, revision: Long, syncedAtEpochMillis: Long): Int
 

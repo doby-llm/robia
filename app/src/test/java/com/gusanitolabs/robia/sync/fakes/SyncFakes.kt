@@ -127,6 +127,25 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     override suspend fun releaseGarmentSyncToQueued(id: String, revision: Long): Boolean =
         setStatus(id, revision, "Queued")
 
+    override suspend fun releaseNeedsUserActionToQueued(reasonCode: String): Int {
+        val released = rows.values.filter { it.status == "NeedsUserAction" && it.failureMessage == reasonCode && !guardedIds.contains(it.id) }
+        released.forEach { row ->
+            row.status = "Queued"
+            row.failureMessage = null
+        }
+        publish()
+        return released.size
+    }
+
+    override suspend fun keepGarmentWithoutRestoredPhoto(id: String, now: Long): Boolean {
+        val row = rows[id]?.takeIf { it.status == "NeedsUserAction" && guardedIds.contains(id) } ?: return false
+        guardedIds -= id
+        row.status = "Queued"
+        row.failureMessage = null
+        publish()
+        return true
+    }
+
     override suspend fun markGarmentNeedsUserAction(id: String, revision: Long, reasonCode: String): Boolean {
         needsUserActions += id to reasonCode
         return setStatus(id, revision, "NeedsUserAction", reasonCode)

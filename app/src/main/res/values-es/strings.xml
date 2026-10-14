@@ -143,7 +143,6 @@
     <string name="garment_sync_synced">Sincronizada</string>
     <string name="garment_sync_all_synced">Todos los cambios en la nube están sincronizados</string>
     <string name="garment_sync_last_synced_at">Última sincronización: %1$s</string>
-    <string name="garment_sync_failed_retryable">Falló la sincronización — reintentar/detalles</string>
     <string name="garment_sync_auth_blocked">Se requiere iniciar sesión en la nube</string>
     <string name="garment_sync_pending_count_one">1 cambio esperando sincronización</string>
     <string name="garment_sync_pending_count_many">%1$d cambios esperando sincronización</string>
@@ -497,7 +496,34 @@
     <string name="tag_no_occasions_badge">Sin ocasiones</string>
     <string name="tag_add_button">Añadir</string>
     <string name="tag_description_counter">%1$d/200</string>
-    <string name="sync_merge_title">¿Combinar con la copia de seguridad de Google Drive?</string>
-    <string name="sync_merge_body">Drive tiene %1$d prendas. Este teléfono tiene %2$d. Tras combinar tendrás %3$d prendas.</string>
+    <string name="sync_merge_title">¿Combinar con tu copia de Drive?</string>
+    <string name="sync_merge_body">Drive: %1$d · Este móvil: %2$d → %3$d prendas</string>
     <string name="sync_merge_confirm">Combinar</string>
+    <!-- TASK-S05 -->
+    <string name="sync_status_pending">Pendiente de subir</string>
+    <string name="sync_status_uploading">Subiendo…</string>
+    <string name="sync_status_pending_help">Se subirá sola cuando haya conexión, aunque cierres la app.</string>
+    <string name="sync_attention_sign_in_title">Vuelve a iniciar sesión en Google Drive</string>
+    <string name="sync_attention_sign_in_body">Tus cambios están a salvo en este móvil. Robia necesita permiso de nuevo para guardarlos.</string>
+    <string name="sync_attention_sign_in_action">Iniciar sesión</string>
+    <string name="sync_attention_drive_full_title">Google Drive está lleno</string>
+    <string name="sync_attention_drive_full_body">Libera espacio en tu cuenta de Google y vuelve a intentarlo.</string>
+    <string name="sync_attention_open_storage">Gestionar espacio</string>
+    <string name="sync_action_retry">Reintentar</string>
+    <string name="sync_attention_photo_lost_title">No se pudo recuperar la foto</string>
+    <string name="sync_attention_photo_lost_body">La prenda está guardada; solo falta su foto.</string>
+    <string name="sync_attention_keep_without_photo">Mantener sin foto</string>
+    <string name="sync_attention_retry_photo">Reintentar foto</string>
+    <string name="sync_attention_photo_upload_title">Algunas fotos no se pudieron copiar</string>
+    <string name="sync_attention_photo_upload_body">Tus prendas están guardadas en este móvil. Una foto no se subió a Google Drive. Pulsa Reintentar para volver a intentarlo.</string>
+    <string name="sync_attention_conflict_title">Otro móvil actualizó tu copia</string>
+    <string name="sync_attention_conflict_body">Para no perder cambios, Robia ha pausado la copia. Elige qué versión conservar.</string>
+    <string name="sync_conflict_use_backup">Usar la copia (reemplaza este móvil)</string>
+    <string name="sync_conflict_keep_phone">Mantener este móvil (sobrescribe la copia)</string>
+    <string name="sync_merge_help">Si una prenda está en los dos sitios, gana la edición más reciente.</string>
+    <string name="sync_details">Detalles</string>
+    <string name="sync_use_backup_confirm_title">¿Reemplazar las prendas de este móvil?</string>
+    <string name="sync_use_backup_confirm_body">Las prendas y fotos de este móvil se reemplazarán por la copia de Google Drive. Los cambios que solo existen en este móvil se perderán.</string>
+    <string name="sync_use_backup_confirm_action">Reemplazar</string>
+    <string name="sync_status_parked_help">Guardada en este móvil. No se subirá hasta que pulses Reintentar.</string>
 </resources>

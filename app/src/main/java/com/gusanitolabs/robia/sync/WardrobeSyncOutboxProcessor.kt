@@ -217,6 +217,7 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.Syncing,
                 DriveSyncConnectionStatus.NeedsAttention -> when (operation) {
                     is WardrobeSyncOperation.RetryRestoredPhoto -> retryRestoredPhoto(operation.garmentId)
+                    is WardrobeSyncOperation.RetryAttention -> retryAttention(operation.kind)
                     else -> {
                         // WorkManager owns backoff and retries; running now keeps the foreground responsive.
                         syncWorkScheduler.requestSync()
@@ -275,6 +276,34 @@ class WardrobeSyncOutboxProcessor(
         // The phone keeps its data. A declined merge is persisted as a conflict, so no later run (or restart) uploads over the newer backup.
         pendingMergeSummary.value = null
         settingsRepository.setSyncConflict(true, pendingMergeRemoteRevision)
+    }
+
+    override suspend fun keepWithoutPhoto(garmentId: String) {
+        withContext(dispatcher) {
+            if (settingsRepository.settings.first().driveSyncConnectionStatus !in setOf(
+                    DriveSyncConnectionStatus.Connected,
+                    DriveSyncConnectionStatus.NeedsAttention,
+                )
+            ) {
+                return@withContext
+            }
+            // Only the chosen garment's guard is cleared; the next snapshot upload drops its photo record without deleting any blob.
+            val kept = mutex.withLock { wardrobeRepository.keepGarmentWithoutRestoredPhoto(garmentId) }
+            if (kept) runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
+        }
+    }
+
+    /** Explicit Retry from the attention button only; automatic cycles never release these rows. */
+    private suspend fun retryAttention(kind: SyncAttentionKind) {
+        val reasonCode = when (kind) {
+            SyncAttentionKind.DriveFull -> DRIVE_FULL_REASON
+            SyncAttentionKind.PhotoUploadFailed -> PHOTO_UPLOAD_FAILED_REASON
+            else -> return
+        }
+        val released = mutex.withLock { wardrobeRepository.releaseNeedsUserActionToQueued(reasonCode) }
+        if (released == 0) return
+        syncWorkScheduler.requestSync()
+        runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = false, forceImport = false)
     }
 
     private suspend fun deleteCloudBackup() = mutex.withLock {
@@ -1093,6 +1122,7 @@ class WardrobeSyncOutboxProcessor(
         is WardrobeSyncOperation.ExportFullSnapshot,
         is WardrobeSyncOperation.ImportFullSnapshot,
         is WardrobeSyncOperation.RetryRestoredPhoto,
+        is WardrobeSyncOperation.RetryAttention,
         is WardrobeSyncOperation.UpsertTaxonomy,
         is WardrobeSyncOperation.RecordTombstones,
         is WardrobeSyncOperation.DeleteCloudBackup -> emptySet()
