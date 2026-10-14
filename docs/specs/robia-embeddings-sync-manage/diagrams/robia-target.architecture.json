@@ -1,0 +1,372 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Robia · arquitectura objetivo (plan, revisión 1)",
+    "output": "robia-target-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "suggest",
+        "label": "Sugerencias al capturar",
+        "focus": [
+          "capture",
+          "service",
+          "engine",
+          "modelstore",
+          "room"
+        ],
+        "note": "Foto → vector IMAGEN → category/occasion con texto + tus prendas."
+      },
+      {
+        "id": "search",
+        "label": "Búsqueda y revisión",
+        "focus": [
+          "browse",
+          "review",
+          "service",
+          "room"
+        ],
+        "note": "Búsqueda 70 % imagen / 30 % texto; revisión solo de prendas afectadas."
+      },
+      {
+        "id": "sync",
+        "label": "Sync con Drive",
+        "focus": [
+          "room",
+          "processor",
+          "worker",
+          "drive"
+        ],
+        "note": "WorkManager, sin red = pendiente, fotos WebP con nombre corto, un solo listado."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "capture",
+      "type": "frontend",
+      "label": "Añadir prenda",
+      "sublabel": "individual y lote",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "browse",
+      "type": "frontend",
+      "label": "Explorar",
+      "sublabel": "búsqueda + parecidas",
+      "pos": [
+        250,
+        40
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "review",
+      "type": "frontend",
+      "label": "Revisar prendas",
+      "sublabel": "category / occasion",
+      "pos": [
+        460,
+        40
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "manage",
+      "type": "frontend",
+      "label": "Gestionar",
+      "sublabel": "rediseño sin lag",
+      "pos": [
+        670,
+        40
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "Lógica de sugerencias",
+      "sublabel": "scorer · selector · ranker",
+      "pos": [
+        250,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Motor de embeddings",
+      "sublabel": "LiteRT-LM 0.18 · CPU",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "SPIKE EN PI"
+    },
+    {
+      "id": "modelstore",
+      "type": "external",
+      "label": "Hugging Face",
+      "sublabel": "modelo 388 MB · SHA-256",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "VALIDADO OFFLINE"
+    },
+    {
+      "id": "room",
+      "type": "database",
+      "label": "Room v13",
+      "sublabel": "prendas + garment_embeddings",
+      "pos": [
+        560,
+        190
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "processor",
+      "type": "backend",
+      "label": "Procesador de sync",
+      "sublabel": "pendiente ≠ fallo",
+      "pos": [
+        900,
+        190
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "worker",
+      "type": "messagebus",
+      "label": "WorkManager",
+      "sublabel": "también con app cerrada",
+      "pos": [
+        900,
+        40
+      ],
+      "size": [
+        170,
+        60
+      ],
+      "tag": "PENDIENTE"
+    },
+    {
+      "id": "drive",
+      "type": "cloud",
+      "label": "Google Drive",
+      "sublabel": "appData · fotos WebP",
+      "pos": [
+        900,
+        330
+      ],
+      "size": [
+        170,
+        60
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Móvil (Poco F3)",
+      "wraps": [
+        "capture",
+        "browse",
+        "review",
+        "manage",
+        "service",
+        "engine",
+        "room",
+        "processor",
+        "worker"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "capture-service",
+      "from": "capture",
+      "to": "service",
+      "label": "foto",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        150,
+        150
+      ]
+    },
+    {
+      "id": "browse-service",
+      "from": "browse",
+      "to": "service",
+      "label": "consulta",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        358,
+        120
+      ]
+    },
+    {
+      "id": "review-service",
+      "from": "review",
+      "to": "service",
+      "label": "afectadas",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        470,
+        150
+      ]
+    },
+    {
+      "id": "service-engine",
+      "from": "service",
+      "to": "engine",
+      "label": "vectores",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "model-engine",
+      "from": "modelstore",
+      "to": "engine",
+      "label": "descarga Wi-Fi",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "service-room",
+      "from": "service",
+      "to": "room",
+      "label": "IMAGEN + TEXTO",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "manage-room",
+      "from": "manage",
+      "to": "room",
+      "label": "etiquetas",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        700,
+        150
+      ]
+    },
+    {
+      "id": "worker-processor",
+      "from": "worker",
+      "to": "processor",
+      "label": "runOnce",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1030,
+        150
+      ]
+    },
+    {
+      "id": "room-processor",
+      "from": "room",
+      "to": "processor",
+      "label": "cambios",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "processor-drive",
+      "from": "processor",
+      "to": "drive",
+      "label": "solo lo cambiado",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1040,
+        292
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Evidencia",
+      "items": [
+        "Spike Pi: 768 dim, ~0,9 GB RAM",
+        "Informe 142 fotos: 86 % texto, ~95 % combinado",
+        "Causas de sync con fichero y línea"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Pendiente de medir",
+      "items": [
+        "≤ 2 s extra en Poco F3 (G-DEVICE-1)",
+        "Lag de Manage con gfxinfo (Z01)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Fuera de alcance",
+      "items": [
+        "Fine-tuning",
+        "Tema oscuro",
+        "Varios móviles a la vez"
+      ]
+    }
+  ]
+}
