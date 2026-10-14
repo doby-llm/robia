@@ -129,6 +129,11 @@ def occasion_result(ids, scores, mode, flag_on):
             "selected": selected, "reason": "margin_ok" if selected else f"margin_below:{r6(g23)}"}
 
 
+def recipe_id(vt):
+    """Matches EmbeddingRecipe.RECIPE_ID: eg2-r1 at 140 tokens (default), eg2-r1-vt<N> otherwise."""
+    return RECIPE_ID if vt == 140 else f"{RECIPE_ID}-vt{vt}"
+
+
 def build(picks, garments, labels, vt):
     cat_ids = [t for t, _ in LABEL_TABLE[:N_CATEGORIES]]
     occ_ids = [t for t, _ in LABEL_TABLE[N_CATEGORIES:]]
@@ -147,7 +152,7 @@ def build(picks, garments, labels, vt):
             expected[name]["occasion"].append({"garment": g["id"], **occasion_result(occ_ids, occ_scores, mode, flag_on)})
     return {
         "modelId": MODEL_ID,
-        "recipeId": RECIPE_ID,
+        "recipeId": recipe_id(vt),
         "visionTokens": vt,
         "labels": [{"tagId": tag, "text": CLASSIFICATION_PREFIX + desc, "b64": b64(vec)}
                    for (tag, desc), vec in zip(LABEL_TABLE, labels)],
