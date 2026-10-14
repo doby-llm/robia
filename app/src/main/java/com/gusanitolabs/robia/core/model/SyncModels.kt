@@ -207,6 +207,8 @@ data class GarmentPhotoRecord(
     val decodedHeight: Int? = null,
     /** Local-only bounded Developer Mode event lines for per-photo restore/upload diagnostics. */
     val restoreDiagnosticEvents: List<String> = emptyList(),
+    /** SHA-256 (first 16 hex digits) of the local photo bytes; serialized, the change-detection key of TS§4.2. Null before S03. */
+    val sourceHash: String? = null,
 )
 
 data class SyncTombstoneRecord(

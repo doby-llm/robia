@@ -56,48 +56,6 @@ object ClothingImageStore {
     }
 
     /**
-     * Re-encodes a user/source image into a Robia-owned Drive-safe bitmap format before upload.
-     *
-     * Gallery providers can hand us HEIC or misleadingly-named bytes. Drive snapshots must only
-     * reference blobs that Robia can decode again on restore, so this method decodes first, encodes to
-     * JPEG for opaque photos or PNG when alpha must be preserved, and verifies the encoded bytes.
-     */
-    fun readCanonicalDriveImageBlob(context: Context, imageUri: Uri): ImageBlob? {
-        val sourceBytes = context.contentResolver.openInputStream(imageUri)?.use { input -> input.readBytes() } ?: return null
-        val sourceMimeType = context.contentResolver.getType(imageUri)
-        val bitmap = decodeBitmap(context, imageUri) ?: error(
-            "Source garment image is not decodable before Drive upload " +
-                "mime=${sourceMimeType ?: "unknown"} magic=${sourceBytes.magicHex()} byteSize=${sourceBytes.size}",
-        )
-        return bitmap.useForColors { source ->
-            val hasAlpha = source.hasAlpha()
-            val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-            val mimeType = if (hasAlpha) "image/png" else "image/jpeg"
-            val quality = if (hasAlpha) 100 else DRIVE_JPEG_QUALITY
-            val canonicalBytes = ByteArrayOutputStream().use { output ->
-                check(source.compress(format, quality, output)) { "Unable to encode Drive-safe garment image." }
-                output.toByteArray()
-            }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(canonicalBytes, 0, canonicalBytes.size, bounds)
-            check(bounds.outWidth > 0 && bounds.outHeight > 0) {
-                "Drive-safe garment image failed post-encode decode verification."
-            }
-            ImageBlob(
-                bytes = canonicalBytes,
-                mimeType = mimeType,
-                contentHash = canonicalBytes.sha256Hex(),
-                byteMagic = canonicalBytes.magicHex(),
-                decodedWidth = bounds.outWidth,
-                decodedHeight = bounds.outHeight,
-                sourceMimeType = sourceMimeType,
-                sourceByteMagic = sourceBytes.magicHex(),
-                sourceByteSize = sourceBytes.size.toLong(),
-            )
-        }
-    }
-
-    /**
      * Encodes a garment photo as the lossy WebP that Drive stores: longest edge capped at
      * [DRIVE_WEBP_MAX_EDGE_PX], quality [DRIVE_WEBP_QUALITY], alpha preserved.
      */
@@ -557,7 +515,6 @@ object ClothingImageStore {
             left == 0 && top == 0 && width == bitmapWidth && height == bitmapHeight
     }
 
-    private const val DRIVE_JPEG_QUALITY = 92
     private const val DRIVE_WEBP_QUALITY = 90
     private const val DRIVE_WEBP_MAX_EDGE_PX = 2048
     private const val THUMBNAIL_JPEG_QUALITY = 82
