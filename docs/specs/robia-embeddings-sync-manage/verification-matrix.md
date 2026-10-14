@@ -66,4 +66,6 @@ Evidence levels: **CI** (GitHub Actions on the task PR), **Pi** (Raspberry Pi to
 - Reviewers report only failed/missing rows; new ideas go to a follow-up list, not into the task.
 | V-S12 | REQ-S09 | S06 | CI | ETA text stable (no null frame, buckets, monotonic), per-stage bars from bytes/items/upload photos, every terminal outcome clears the overlay | `CloudRestoreProgressTextTest`, `SyncProgressOutcomesTest`, `UploadProgressForwardingTest` |
 | V-Z05 | REQ-S09 | S06 | Device | slow Wi-Fi: ETA line never disappears, changes at most every 5 s, bar advances per photo, no layout shift, no frozen-looking bar after download | Manu's answers |
-\n| V-S13 | REQ-S09 | S07 | CI | upload stage reaches a terminal state and clears the overlay in the Success path; step count equals real work | to be named by S07 |\n| V-Z11 | - | M02 | Device | Manage: Colors like other tabs, no blank space at bottom, no Search tags box, no height jump | Manu's answers |\n| V-Z12 | REQ-S09 | S07 | Device | slow Wi-Fi: Updating cloud backup finishes by itself, step text truthful | Manu's answers |\n
+| V-S13 | REQ-S09 | S07 | CI | upload stage reaches a terminal state and clears the overlay in the Success path; step count equals real work | to be named by S07 |
+| V-Z11 | - | M02 | Device | Manage: Colors like other tabs, no blank space at bottom, no Search tags box, no height jump | Manu's answers |
+| V-Z12 | REQ-S09 | S07 | Device | slow Wi-Fi: Updating cloud backup finishes by itself, step text truthful | Manu's answers |
