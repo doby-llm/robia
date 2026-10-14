@@ -17,7 +17,12 @@ interface DriveWardrobeRepository {
     /** The remote snapshot JSON only: photo records without blobs, for keeping a guarded or failed photo's record. */
     suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot>
     suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener? = null): DriveSyncResult<GarmentPhotoRecord>
-    suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest>
+    /** [onPhotoProgress] reports photos done over total while photos upload; null keeps the upload silent. */
+    suspend fun upsertSnapshot(
+        snapshot: WardrobeSyncSnapshot,
+        remote: WardrobeSyncSnapshot?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)? = null,
+    ): DriveSyncResult<DriveManifest>
     /** Deletes only Robia's remote appDataFolder backup; it never changes local clothes. */
     suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult>
 }
@@ -30,7 +35,11 @@ class NotConfiguredDriveWardrobeRepository(
     override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
     override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
     override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> = notConfigured()
-    override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest> = notConfigured()
+    override suspend fun upsertSnapshot(
+        snapshot: WardrobeSyncSnapshot,
+        remote: WardrobeSyncSnapshot?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+    ): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = notConfigured()
 
     private fun <T> notConfigured(): DriveSyncResult<T> =
@@ -54,7 +63,11 @@ class InMemoryDriveWardrobeRepository(
             ?.let { photo -> DriveSyncResult.Success(photo) }
             ?: DriveSyncResult.Failure(IllegalStateException("No remote photo exists for garment $garmentId."))
 
-    override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest> {
+    override suspend fun upsertSnapshot(
+        snapshot: WardrobeSyncSnapshot,
+        remote: WardrobeSyncSnapshot?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+    ): DriveSyncResult<DriveManifest> {
         val deterministicSnapshot = snapshot.sortedDeterministically()
         this.snapshot = deterministicSnapshot
         manifest = DriveManifest.fromSnapshot(deterministicSnapshot)

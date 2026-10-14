@@ -121,11 +121,13 @@ class GoogleDriveWardrobeRepository(
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> = withAccessToken { accessToken ->
         // Previous photo records: the local cache first, the remote snapshot covers a fresh install.
         val previous = remote?.photos.orEmpty().associate { photo -> photo.garmentId to photo.toLastUploadedPhoto() } +
             lastUploadedPhotos.read()
-        when (val result = photoUploadPipeline().upload(accessToken, snapshot.sortedDeterministically(), remote, previous)) {
+        val photoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = onPhotoProgress ?: { _, _ -> }
+        when (val result = photoUploadPipeline().upload(accessToken, snapshot.sortedDeterministically(), remote, previous, photoProgress)) {
             is DriveSyncResult.Success -> {
                 // The cache only saves re-uploads in the next cycle, so a failed write must not fail this sync.
                 runCatching {

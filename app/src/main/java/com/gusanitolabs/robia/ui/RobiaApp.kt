@@ -102,6 +102,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1796,11 +1797,6 @@ private fun CloudRestoreProgressOverlay(
         mutableStateOf(progress.status != CloudRestoreStatus.Running)
     }
     val stageFraction = progress.stageBarFraction()?.coerceIn(0f, 1f)
-    val animatedProgress by animateFloatAsState(
-        targetValue = stageFraction ?: 0f,
-        animationSpec = tween(durationMillis = 450),
-        label = "cloudRestoreProgress",
-    )
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -1845,7 +1841,15 @@ private fun CloudRestoreProgressOverlay(
                             contentAlignment = Alignment.Center,
                         ) {
                             if (stageFraction != null) {
-                                CloudRestoreProgressBar(progress = animatedProgress)
+                                // Keyed per stage: a new stage starts at its own value, never animating down from 100%.
+                                key(progress.phase) {
+                                    val animatedProgress by animateFloatAsState(
+                                        targetValue = stageFraction,
+                                        animationSpec = tween(durationMillis = 450),
+                                        label = "cloudRestoreProgress",
+                                    )
+                                    CloudRestoreProgressBar(progress = animatedProgress)
+                                }
                             } else {
                                 CircularProgressIndicator()
                             }

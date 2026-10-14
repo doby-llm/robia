@@ -1041,7 +1041,13 @@ class WardrobeSyncOutboxProcessor(
             completedWork = RESTORE_STEP_UPLOAD_STARTED,
         )
 
-        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot)) {
+        // Photo progress only updates the overlay state; it adds no sync-log lines, one per photo would flood the log.
+        val onPhotoProgress = { completedPhotos: Int, totalPhotos: Int ->
+            restoreProgress.value = restoreProgress.value?.copy(
+                uploadProgress = RestoreUploadProgress(completedPhotos, totalPhotos),
+            )
+        }
+        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot, onPhotoProgress)) {
             is DriveSyncResult.Success -> {
                 diagnostics.recordFinalUploadSucceeded()
                 settingsRepository.setLastKnownRemoteRevision(uploadResult.value.revision)

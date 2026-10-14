@@ -11,6 +11,7 @@ import com.gusanitolabs.robia.data.PendingGarmentSyncWork
 import com.gusanitolabs.robia.data.PendingMetadataSyncWork
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.sync.DriveWardrobeRepository
 import com.gusanitolabs.robia.sync.ImportSnapshotResult
 import com.gusanitolabs.robia.sync.RestoredPhotoApplyResult
 import com.gusanitolabs.robia.sync.SyncWorkScheduler
@@ -283,6 +284,21 @@ internal fun newTestProcessor(
     snapshotRepository = snapshots,
     driveRepository = drive,
     syncWorkScheduler = scheduler,
+    scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+    dispatcher = Dispatchers.Unconfined,
+)
+
+/** Same wiring as [newTestProcessor], for tests that wrap the Drive fake (for example to block or cancel an upload). */
+internal fun processorWithDrive(
+    drive: DriveWardrobeRepository,
+    wardrobe: FakeWardrobeRepository = FakeWardrobeRepository(),
+    snapshots: FakeWardrobeSnapshotStore = FakeWardrobeSnapshotStore(),
+    settings: FakeSettingsRepository = FakeSettingsRepository(),
+): WardrobeSyncOutboxProcessor = WardrobeSyncOutboxProcessor(
+    settingsRepository = settings,
+    wardrobeRepository = wardrobe,
+    snapshotRepository = snapshots,
+    driveRepository = drive,
     scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     dispatcher = Dispatchers.Unconfined,
 )
