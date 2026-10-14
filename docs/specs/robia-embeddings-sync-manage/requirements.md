@@ -141,7 +141,7 @@ Four capabilities (see `README.md` capability map):
 **Acceptance:** Pure-Kotlin ranking test; manual check "vestido rojo".
 
 ### REQ-E12 — Similar garments
-**Priority:** could (subject to mockup approval) · **Statement:** Item detail shows "See similar garments", opening Browse sorted by cosine to the garment's IMAGE vector (excluding itself), keeping filters cleared.
+**Priority:** must (approved by Manu 2026-10-14) · **Statement:** Item detail shows "See similar garments", opening Browse sorted by cosine to the garment's IMAGE vector (excluding itself), keeping filters cleared.
 **Acceptance:** Ranking unit test.
 
 ### REQ-E13 — Developer diagnostics

@@ -1,6 +1,6 @@
 # robia-embeddings-sync-manage
 
-**Status:** awaiting approval (revision 1) · **Base:** `origin/main` `791dacd` · **Owner:** Manu · **Planner:** Hermes
+**Status:** mockups approved 2026-10-14; package awaiting `APROBADO` (revision 1) · **Base:** `origin/main` `791dacd` · **Owner:** Manu · **Planner:** Hermes
 
 Replace the TFLite classifier with on-device EmbeddingGemma 2 suggestions (category, occasion, review flow, semantic search), make Google Drive sync robust and fast with actionable errors, and redesign Manage without scroll lag.
 

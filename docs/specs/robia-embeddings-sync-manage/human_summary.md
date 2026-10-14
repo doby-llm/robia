@@ -47,7 +47,7 @@ Este documento explica, sin jerga, qué cambiará en Robia cuando se completen t
 - Nuevo campo de búsqueda: escribes, por ejemplo, "vestido rojo" o "falda negra" (en español, inglés o alemán).
 - Respeta los filtros que ya tengas puestos y muestra todas esas prendas ordenadas de más a menos parecida.
 - La búsqueda combina la foto (70 %) con el nombre y las notas (30 %).
-- En la ficha de cada prenda: botón opcional **"Ver prendas parecidas"** (lo apruebas o lo quitas con los mockups).
+- En la ficha de cada prenda: botón **"Ver prendas parecidas"** (aprobado). Abre Explorar con tus prendas ordenadas de más a menos parecida a esa foto.
 
 ## 6. Google Drive más fiable y más rápido
 

@@ -205,7 +205,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 - **Reqs:** REQ-E11, REQ-E12 · TS§3.11 · mockup `mockups/browse-search.html`
 - **Predecessors:** E06 · **Successors:** Z01
 - **Files:** `ui/RobiaApp.kt` (`FilterBar`, `RobiaShell` derivation, ItemDetail button, similar chip), strings.
-- **Acceptance:** V-E09 (debounce + fallback wiring unit test on a small `SearchController` class in `suggestions/SearchController.kt`), device "vestido rojo" in Z01. If Manu rejected "See similar garments" in mockup review, skip that part.
+- **Acceptance:** V-E09 (debounce + fallback wiring unit test on a small `SearchController` class in `suggestions/SearchController.kt`), device "vestido rojo" in Z01. "See similar garments" is approved and in scope (REQ-E12).
 
 ## TASK-E10 — Item-detail diagnostics (dev mode)
 - **Reqs:** REQ-E13 · TS§3.12 · mockup `mockups/dev-diagnostics.html`

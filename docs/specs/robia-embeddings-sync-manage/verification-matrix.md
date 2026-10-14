@@ -57,6 +57,7 @@ Evidence levels: **CI** (GitHub Actions on the task PR), **Pi** (Raspberry Pi to
 | V-Z06 | REQ-E08 | Z01 | Device | after model download banner counts down to 0 | observation |
 | V-Z07 | REQ-E10 | Z01 | Device | add category "Polos" with description → review lists only affected garments; accept applies | observation |
 | V-Z08 | REQ-E11 | Z01 | Device | "vestido rojo" with no filters → red dresses first; with a filter → only filtered garments | observation |
+| V-Z11 | REQ-E12 | Z01 | Device | item detail → "See similar garments" → Browse shows chip "Similar to …", the garment itself is absent, most similar first; clearing the chip restores Browse | observation |
 | V-Z09 | REQ-S09 | Z01 | Device | revoke Drive access in Google account → "Sign in again" card, button works | observation |
 | V-Z10 | REQ-M01/S09/E07 | Z01 | Device | screens match approved mockups | side-by-side screenshots |
 

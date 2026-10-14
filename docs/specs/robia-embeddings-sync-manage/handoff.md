@@ -1,6 +1,6 @@
 # Handoff — robia-embeddings-sync-manage
 
-**Valid only after Manu writes `APROBADO` for revision 1.** Approval: _pending_ (date, message ref).
+**Valid only after Manu writes `APROBADO` for revision 1.** Approval: mockups approved 2026-10-14 (incl. REQ-E12 "See similar garments"); package `APROBADO` _pending_.
 
 ## For the Kanban orchestrator
 - Repo: `doby-llm/robia` (GitHub namespace `doby-llm`). Base: latest `origin/main`. Do not use or modify Manu's local checkout `~/git/robia`; workers clone/worktree separately. Do not touch `robia_ai`.

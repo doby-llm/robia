@@ -77,4 +77,4 @@ Each entry: context → decision → rationale → consequences → review trigg
 - **Decision:** `staging` build type (`initWith(debug)`-free: copies release, `isMinifyEnabled = true`, `isShrinkResources = true`, `isDebuggable = false`, `signingConfig` = CI debug signing or default debug, `matchingFallbacks = ["release"]`). Release also minified with the same rules. Baseline profiles postponed.
 
 ## DEC-016 — UX
-- **Decision:** light theme only; Earth & Steel; HTML mockups approved before UI tasks start; "See similar garments" included in mockup, subject to approval; sync notices in-app only.
+- **Decision:** light theme only; Earth & Steel; HTML mockups approved before UI tasks start; "See similar garments" approved (must, REQ-E12); mockups approved by Manu on 2026-10-14; sync notices in-app only.
