@@ -148,6 +148,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 ---
 
 ## TASK-S06 — Sync progress UX (requested by Manu, PLAN-CHANGE 6)
+- **PLAN-CHANGE 10:** S06 may also edit `sync/DriveWardrobeRepository.kt` (optional `onPhotoProgress` parameter on `upsertSnapshot` only).
 - **Reqs:** REQ-S09 (clarity of sync state) · investigation notes in `decision-log.md` PLAN-CHANGE 6
 - **Predecessors:** S04, S05 · **Successors:** Z01
 - **Files:** `ui/CloudRestoreProgressText.kt`, `ui/RobiaApp.kt` (`CloudRestoreProgressOverlay`, `CloudRestoreProgressBar` only), `sync/WardrobeSyncGateway.kt` (add an upload progress field to the restore progress state), `sync/WardrobeSyncOutboxProcessor.kt` (forward the upload progress only), `sync/GoogleDriveWardrobeRepository.kt` (`PhotoUploadPipeline`: progress callback with photos done and total, nothing else), strings (only if a new label is needed, EN/ES/DE, section `<!-- TASK-S06 -->`), tests.
