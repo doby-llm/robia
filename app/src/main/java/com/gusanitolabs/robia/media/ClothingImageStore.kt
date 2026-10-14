@@ -12,8 +12,10 @@ import com.gusanitolabs.robia.core.color.GarmentColorAnalyzer
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.sync.PhotoBlobKeys
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.UUID
 import kotlin.math.roundToInt
@@ -95,22 +97,70 @@ object ClothingImageStore {
         }
     }
 
-    fun writeRestoredImageBlob(
-        context: Context,
-        bytes: ByteArray,
-        blobPath: String,
-        mimeType: String?,
-    ): Uri {
-        val imageFile = createImageFile(
-            context = context,
-            prefix = "drive-${blobPath.substringAfterLast('/').substringBeforeLast('.').ifBlank { "photo" }}",
-            extension = mimeType.toImageExtension() ?: blobPath.substringAfterLast('.', "jpg"),
+    /**
+     * Encodes a garment photo as the lossy WebP that Drive stores: longest edge capped at
+     * [DRIVE_WEBP_MAX_EDGE_PX], quality [DRIVE_WEBP_QUALITY], alpha preserved.
+     */
+    fun encodeDriveWebp(context: Context, imageUri: Uri): ImageBlob {
+        val sourceMimeType = context.contentResolver.getType(imageUri)
+        val bitmap = decodeBitmap(context, imageUri) ?: error(
+            "Source garment image is not decodable before Drive upload mime=${sourceMimeType ?: "unknown"}",
         )
-        imageFile.outputStream().use { output -> output.write(bytes) }
+        return bitmap.useForColors { source ->
+            val (targetWidth, targetHeight) = thumbnailSize(source.width, source.height, DRIVE_WEBP_MAX_EDGE_PX)
+            val scaled = if (targetWidth == source.width && targetHeight == source.height) {
+                source
+            } else {
+                Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
+            }
+            try {
+                val canonicalBytes = ByteArrayOutputStream().use { output ->
+                    check(scaled.compressDriveWebp(output)) { "Unable to encode Drive WebP garment image." }
+                    output.toByteArray()
+                }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(canonicalBytes, 0, canonicalBytes.size, bounds)
+                check(bounds.outWidth > 0 && bounds.outHeight > 0) {
+                    "Drive WebP garment image failed post-encode decode verification."
+                }
+                ImageBlob(
+                    bytes = canonicalBytes,
+                    mimeType = "image/webp",
+                    contentHash = canonicalBytes.sha256Hex(),
+                    byteMagic = canonicalBytes.magicHex(),
+                    decodedWidth = bounds.outWidth,
+                    decodedHeight = bounds.outHeight,
+                    sourceMimeType = sourceMimeType,
+                )
+            } finally {
+                if (scaled !== source) scaled.recycle()
+            }
+        }
+    }
+
+    /**
+     * Moves a downloaded temp file into the restored-photo slot. The name depends only on the garment
+     * id and content hash, so restoring the same photo again replaces the same file.
+     */
+    fun writeRestoredImageFile(
+        context: Context,
+        garmentId: String,
+        hash16: String,
+        source: File,
+    ): Uri {
+        val imageDir = File(
+            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir,
+            IMAGE_DIRECTORY,
+        ).apply { mkdirs() }
+        val target = File(imageDir, PhotoBlobKeys.restoredLocalFileName(garmentId, hash16))
+        if (!source.renameTo(target)) {
+            source.copyTo(target, overwrite = true)
+            source.delete()
+        }
         return FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
-            imageFile,
+            target,
         )
     }
 
@@ -363,6 +413,14 @@ object ClothingImageStore {
         recycle()
     }
 
+    @Suppress("DEPRECATION")
+    private fun Bitmap.compressDriveWebp(output: OutputStream): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            compress(Bitmap.CompressFormat.WEBP_LOSSY, DRIVE_WEBP_QUALITY, output)
+        } else {
+            compress(Bitmap.CompressFormat.WEBP, DRIVE_WEBP_QUALITY, output)
+        }
+
     private fun colorSampleStep(bitmap: Bitmap): Int {
         val maxDimension = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
         return (maxDimension / 96).coerceAtLeast(1)
@@ -500,6 +558,8 @@ object ClothingImageStore {
     }
 
     private const val DRIVE_JPEG_QUALITY = 92
+    private const val DRIVE_WEBP_QUALITY = 90
+    private const val DRIVE_WEBP_MAX_EDGE_PX = 2048
     private const val THUMBNAIL_JPEG_QUALITY = 82
     private const val TRANSPARENT_CROP_ALPHA_THRESHOLD = 24
     private const val LUMINANCE_MAX_DECODE_SIZE = 192
@@ -545,13 +605,6 @@ private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
 
 fun ByteArray.magicHex(maxBytes: Int = 12): String =
     take(maxBytes.coerceAtLeast(0)).joinToString(separator = "") { byte -> "%02x".format(byte) }
-
-private fun String?.toImageExtension(): String? = when (this?.lowercase()) {
-    "image/jpeg", "image/jpg" -> "jpg"
-    "image/png" -> "png"
-    "image/webp" -> "webp"
-    else -> null
-}
 
 data class PaletteColorDiagnostics(
     val width: Int? = null,

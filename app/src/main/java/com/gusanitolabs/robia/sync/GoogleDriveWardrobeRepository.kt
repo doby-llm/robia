@@ -23,17 +23,26 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImageBlob
 import com.gusanitolabs.robia.media.magicHex
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
@@ -57,7 +66,7 @@ class GoogleDriveWardrobeRepository(
             )
             is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveManifest(target = target))
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
@@ -66,7 +75,7 @@ class GoogleDriveWardrobeRepository(
             is DriveApiResult.Success -> hydratePhotoBlobs(accessToken, snapshotResult.value.sortedDeterministically(), progress)
             is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
@@ -91,7 +100,7 @@ class GoogleDriveWardrobeRepository(
                 IllegalStateException("No remote snapshot exists for garment $garmentId."),
             )
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
@@ -113,7 +122,7 @@ class GoogleDriveWardrobeRepository(
                 is DriveApiResult.NotFound -> DriveSyncResult.Failure(
                     IllegalStateException("Drive snapshot upload completed without a readable file."),
                 )
-                is DriveApiResult.Failure -> DriveSyncResult.Failure(result.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(result.failureCause())
             }
         }
 
@@ -129,7 +138,7 @@ class GoogleDriveWardrobeRepository(
                     when (val deleted = api.deleteFile(accessToken, file.id)) {
                         is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
                         is DriveApiResult.Unauthorized -> return@withAccessToken authBlocked()
-                        is DriveApiResult.Failure -> return@withAccessToken DriveSyncResult.Failure(deleted.throwable)
+                        is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return@withAccessToken DriveSyncResult.Failure(deleted.failureCause())
                     }
                 }
                 // Relist after idempotent DELETEs; a backup is deleted only once inventory is empty.
@@ -139,12 +148,12 @@ class GoogleDriveWardrobeRepository(
                     )
                     is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveBackupDeletionResult(listed.value.size))
                     is DriveApiResult.Unauthorized -> authBlocked()
-                    is DriveApiResult.Failure -> DriveSyncResult.Failure(relist.throwable)
+                    is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(relist.failureCause())
                 }
             }
             is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveBackupDeletionResult())
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(listed.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(listed.failureCause())
         }
     }
 
@@ -175,280 +184,41 @@ class GoogleDriveWardrobeRepository(
             return authBlocked()
         }
 
-        return withDrivePhaseDeadline { operation(accessToken) }
-    }
-
-    private suspend fun <T> withDrivePhaseDeadline(
-        operation: suspend () -> DriveSyncResult<T>,
-    ): DriveSyncResult<T> = try {
-        withTimeout(DRIVE_PHASE_TIMEOUT_MILLIS) { operation() }
-    } catch (timeout: TimeoutCancellationException) {
-        DriveSyncResult.Failure(java.net.SocketTimeoutException("Drive operation timed out."))
+        return operation(accessToken)
     }
 
     private companion object {
         const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L
-        const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L
     }
 
-    private fun hydratePhotoBlobs(
+    private suspend fun hydratePhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
         progress: DriveRestoreProgressListener?,
     ): DriveSyncResult<WardrobeSyncSnapshot> {
         val garmentNameById = snapshot.garments.associate { it.id to it.name }
-        val totalPhotos = snapshot.photos.size
-        var downloadedBytes = 0L
-        val hydratedPhotos = snapshot.photos.mapIndexed { index, photo ->
-            val blobPath = photo.blobPath.takeIf(String::isNotBlank)
-                ?: run {
-                    val guardedPhoto = photo.guardedRestore(
-                        category = REMOTE_PHOTO_MISSING_BLOB_PATH,
-                        message = "Garment photo ${photo.garmentId} is missing a Drive blob path.",
-                        restoreDiagnosticEvents = listOf(
-                            photo.importDiagnosticEvent(
-                                persistedPhotoUriPresent = false,
-                                placeholderReason = REMOTE_PHOTO_MISSING_BLOB_PATH,
-                            ),
-                        ),
-                    )
-                    progress?.onProgress(
-                        DriveRestoreProgress(
-                            garmentId = photo.garmentId,
-                            safeCategory = REMOTE_PHOTO_MISSING_BLOB_PATH,
-                            completedItems = index + 1,
-                            totalItems = totalPhotos,
-                            completedBytes = downloadedBytes,
-                            totalBytes = snapshot.photos.aggregateTotalBytes(index, null),
-                        ),
-                    )
-                    return@mapIndexed guardedPhoto
-                }
-            val fetchStartedEvents = photo.restoreFetchStartedEvents(description = garmentNameById[photo.garmentId])
-            progress?.onProgress(
-                DriveRestoreProgress(
-                    garmentId = photo.garmentId,
-                    safeCategory = "photo_restore",
-                    completedItems = index,
-                    totalItems = totalPhotos,
-                    completedBytes = downloadedBytes,
-                    totalBytes = snapshot.photos.aggregateTotalBytes(index, null),
-                ),
+        return when (
+            val restored = restorePhotoBlobs(
+                api = api,
+                accessToken = accessToken,
+                photos = snapshot.photos,
+                garmentNameById = garmentNameById,
+                workDir = File(context.cacheDir, RESTORE_WORK_DIRECTORY),
+                decodeBounds = ::imageBoundsOf,
+                moveToFinal = { garmentId, hash16, source ->
+                    ClothingImageStore.writeRestoredImageFile(context, garmentId, hash16, source).toString()
+                },
+                progress = progress,
             )
-            when (val blobResult = fetchPhotoBlob(accessToken, photo, blobPath) { bytesCopied, bytesTotal ->
-                progress?.onProgress(
-                    DriveRestoreProgress(
-                        garmentId = photo.garmentId,
-                        safeCategory = "photo_restore_download",
-                        completedItems = index,
-                        totalItems = totalPhotos,
-                        completedBytes = downloadedBytes + bytesCopied,
-                        totalBytes = snapshot.photos.aggregateTotalBytes(index, bytesTotal),
-                    ),
-                )
-            }) {
-                is DriveApiResult.Success -> {
-                    val bytes = blobResult.value.bytes
-                    downloadedBytes += bytes.size
-                    progress?.onProgress(
-                        DriveRestoreProgress(
-                            garmentId = photo.garmentId,
-                            safeCategory = "photo_restore_downloaded",
-                            completedItems = index + 1,
-                            totalItems = totalPhotos,
-                            completedBytes = downloadedBytes,
-                            totalBytes = snapshot.photos.aggregateTotalBytes(
-                                index,
-                                blobResult.value.contentLength ?: photo.byteSize,
-                            ),
-                        ),
-                    )
-                    val fetchEvents = fetchStartedEvents + blobResult.value.restoreFetchResultEvents(photo)
-                    val byteDecode = decodeImageBytes(bytes)
-                    val restoredUriResult = runCatching {
-                        ClothingImageStore.writeRestoredImageBlob(
-                            context = context,
-                            bytes = bytes,
-                            blobPath = blobPath,
-                            mimeType = photo.mimeType,
-                        )
-                    }
-                    val restoredUri = restoredUriResult.getOrNull()
-                    val readBackBytes = restoredUri?.let { uri ->
-                        runCatching {
-                            context.contentResolver.openInputStream(uri)?.use { input ->
-                                input.readProgressBytes(null) { bytesCopied, _ ->
-                                    progress?.onProgress(
-                                        DriveRestoreProgress(
-                                            garmentId = photo.garmentId,
-                                            safeCategory = "photo_restore_readback",
-                                            completedItems = index + 1,
-                                            totalItems = totalPhotos,
-                                            completedBytes = downloadedBytes,
-                                            totalBytes = snapshot.photos.aggregateTotalBytes(
-                                                index,
-                                                blobResult.value.contentLength ?: photo.byteSize,
-                                            ),
-                                        ),
-                                    )
-                                }
-                            }
-                        }.getOrNull()
-                    }
-                    val readBackDecode = readBackBytes?.let(::decodeImageBytes)
-                    val uriDimensions = restoredUri?.let { uri -> runCatching { ClothingImageStore.readImageDimensions(context, uri) }.getOrNull() }
-                    val localWriteEvent = photo.localWriteDiagnosticEvent(
-                        targetExtension = photo.mimeType.toPhotoExtension() ?: blobPath.substringAfterLast('.', "jpg"),
-                        fileLength = bytes.size.toLong(),
-                        readBackBytes = readBackBytes,
-                        writeFailure = restoredUriResult.exceptionOrNull(),
-                    )
-                    val decodeEvents = listOf(
-                        photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.byteArray", result = byteDecode),
-                        photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.readbackBytes", result = readBackDecode),
-                        photo.decodeDiagnosticEvent(
-                            decoderPath = "BitmapFactory.contentUriBounds",
-                            width = uriDimensions?.first,
-                            height = uriDimensions?.second,
-                            failure = if (uriDimensions == null) "contentUriBounds returned no dimensions" else null,
-                        ),
-                    )
-                    val authoritativeDecode = readBackDecode?.takeIf { it.isSuccess }
-                        ?: byteDecode.takeIf { it.isSuccess }
-                    if (restoredUri != null && authoritativeDecode != null) {
-                        photo.copy(
-                            restoredLocalUri = restoredUri.toString(),
-                            byteSize = bytes.size.toLong(),
-                            contentHash = bytes.sha256Hex(),
-                            byteMagic = bytes.magicHex(),
-                            decodedWidth = authoritativeDecode.width,
-                            decodedHeight = authoritativeDecode.height,
-                            restoreFailureCategory = null,
-                            restoreFailureMessage = null,
-                            restoreDiagnosticEvents = fetchEvents + localWriteEvent + decodeEvents +
-                                photo.importDiagnosticEvent(persistedPhotoUriPresent = true, placeholderReason = null),
-                        )
-                    } else {
-                        val failure = restoredUriResult.exceptionOrNull()
-                        val message = when {
-                            restoredUri == null -> "write_failed:${failure?.diagnosticSummary() ?: "unknown"}"
-                            byteDecode.failure != null -> byteDecode.failure
-                            readBackDecode?.failure != null -> readBackDecode.failure
-                            else -> "decode_failed: no decoder produced dimensions"
-                        }
-                        photo.guardedRestore(
-                            category = REMOTE_PHOTO_UNREADABLE,
-                            message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} fetched but could not be decoded/imported " +
-                                "mime=${photo.mimeType ?: "unknown"} magic=${bytes.imageMagicLabel()} byteSize=${bytes.size} detail=$message.",
-                            cause = failure,
-                            byteSize = bytes.size.toLong(),
-                            contentHash = bytes.sha256Hex(),
-                            byteMagic = bytes.magicHex(),
-                            restoreDiagnosticEvents = fetchEvents + localWriteEvent + decodeEvents + photo.importDiagnosticEvent(
-                                persistedPhotoUriPresent = false,
-                                placeholderReason = REMOTE_PHOTO_UNREADABLE,
-                            ),
-                        )
-                    }
-                }
-                is DriveApiResult.NotFound -> photo.guardedRestore(
-                    category = REMOTE_PHOTO_MISSING,
-                    message = "Drive photo blob $blobPath was not found for garment ${photo.garmentId}.",
-                    restoreDiagnosticEvents = fetchStartedEvents + listOf(
-                        photo.driveLookupMissingEvent(),
-                        photo.fetchMissingEvent(),
-                        photo.importDiagnosticEvent(
-                            persistedPhotoUriPresent = false,
-                            placeholderReason = REMOTE_PHOTO_MISSING,
-                        ),
-                    ),
-                ).also {
-                    progress?.onProgress(
-                        DriveRestoreProgress(
-                            garmentId = photo.garmentId,
-                            safeCategory = REMOTE_PHOTO_MISSING,
-                            completedItems = index + 1,
-                            totalItems = totalPhotos,
-                            completedBytes = downloadedBytes,
-                            totalBytes = snapshot.photos.aggregateTotalBytes(index, null),
-                        ),
-                    )
-                }
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(blobResult.throwable)
-                is DriveApiResult.Unauthorized -> return authBlocked()
-            }
-        }
-        return DriveSyncResult.Success(snapshot.copy(photos = hydratedPhotos).sortedDeterministically())
-    }
-
-    private fun List<GarmentPhotoRecord>.aggregateTotalBytes(
-        index: Int,
-        currentTotalBytes: Long?,
-    ): Long? {
-        var total = 0L
-        forEachIndexed { photoIndex, photo ->
-            val bytes = if (photoIndex == index) {
-                currentTotalBytes ?: photo.byteSize
-            } else {
-                photo.byteSize
-            } ?: return null
-            if (bytes < 0L) return null
-            total += bytes
-        }
-        return total
-    }
-
-    /** Exact paths are authoritative; legacy paths are only safe when one candidate exists. */
-    private fun fetchPhotoBlob(
-        accessToken: String,
-        photo: GarmentPhotoRecord,
-        exactBlobPath: String,
-        onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit,
-    ): DriveApiResult<DriveBlob> {
-        val photoBlobPrefix = DriveFolderNaming.photoBlobPrefix(photo.garmentId)
-        return when (val exactResult = api.fetchBlob(accessToken, exactBlobPath, onProgress)) {
-            is DriveApiResult.NotFound -> when (
-                val candidates = api.listBlobPathsWithPrefix(accessToken, photoBlobPrefix)
-            ) {
-                is DriveApiResult.Success -> {
-                    val legacyPhotoRestoreCandidate = candidates.value
-                        .filter { path -> path.startsWith(photoBlobPrefix) }
-                        .distinct()
-                        .singleOrNull()
-                    // exact_blob_not_found: ambiguous candidates deliberately stay in terminal attention.
-                    legacyPhotoRestoreCandidate?.let { candidate -> api.fetchBlob(accessToken, candidate, onProgress) } ?: exactResult
-                }
-                is DriveApiResult.NotFound -> exactResult
-                is DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
-                is DriveApiResult.Failure -> DriveApiResult.Failure(candidates.throwable)
-            }
-            else -> exactResult
+        ) {
+            is DriveApiResult.Success -> DriveSyncResult.Success(snapshot.copy(photos = restored.value).sortedDeterministically())
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.NotFound -> DriveSyncResult.Failure(IllegalStateException("Drive photo restore returned no photo list."))
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(restored.failureCause())
         }
     }
 
-    private fun GarmentPhotoRecord.guardedRestore(
-        category: String,
-        message: String,
-        cause: Throwable? = null,
-        byteSize: Long? = null,
-        contentHash: String? = null,
-        byteMagic: String? = null,
-        restoreDiagnosticEvents: List<String> = emptyList(),
-    ): GarmentPhotoRecord = copy(
-        restoredLocalUri = null,
-        byteSize = byteSize ?: this.byteSize,
-        contentHash = contentHash ?: this.contentHash,
-        byteMagic = byteMagic ?: this.byteMagic,
-        decodedWidth = null,
-        decodedHeight = null,
-        restoreFailureCategory = category,
-        restoreFailureMessage = sanitizePhotoRestoreMessage(
-            if (cause?.message.isNullOrBlank()) message else "$message Cause: ${cause?.message}",
-        ),
-        restoreDiagnosticEvents = restoreDiagnosticEvents,
-    )
-
-    private fun uploadPhotoBlobs(
+    private suspend fun uploadPhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
     ): DriveSyncResult<WardrobeSyncSnapshot> {
@@ -480,7 +250,7 @@ class GoogleDriveWardrobeRepository(
                 is DriveApiResult.NotFound -> return DriveSyncResult.Failure(
                     IllegalStateException("Drive photo blob upload completed without a readable file."),
                 )
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(uploadResult.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(uploadResult.failureCause())
             }
             photo.copy(
                 blobPath = blobPath,
@@ -498,7 +268,7 @@ class GoogleDriveWardrobeRepository(
         return DriveSyncResult.Success(snapshot.copy(photos = uploadedPhotos).sortedDeterministically())
     }
 
-    private fun purgeDeletedPhotoBlobs(
+    private suspend fun purgeDeletedPhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
     ): DriveSyncResult<Unit> {
@@ -512,7 +282,7 @@ class GoogleDriveWardrobeRepository(
                 is DriveApiResult.Success -> prefixCandidates += result.value
                 is DriveApiResult.NotFound -> Unit
                 is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(result.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(result.failureCause())
             }
         }
         val activeBlobPaths = snapshot.photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
@@ -523,7 +293,7 @@ class GoogleDriveWardrobeRepository(
             when (val result = api.deleteBlob(accessToken, blobPath)) {
                 is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
                 is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(result.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(result.failureCause())
             }
         }
         return DriveSyncResult.Success(Unit)
@@ -541,6 +311,14 @@ private fun ImageBlob.requireDriveReadable(garmentId: String): ImageBlob {
     return this
 }
 
+// Transient and StorageFull keep the Failure behaviour until S02/S03 refine their callers.
+private fun DriveApiResult<*>.failureCause(): Throwable = when (this) {
+    is DriveApiResult.Failure -> throwable
+    is DriveApiResult.Transient -> cause ?: IOException("Drive request failed temporarily.")
+    DriveApiResult.StorageFull -> IOException("Google Drive storage quota is exceeded.")
+    else -> IllegalStateException("Unexpected Drive result: $this")
+}
+
 private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
         reason = DriveSyncDisabledReason.UserNotConnected,
         message = "Google Drive authorization is required before sync can continue.",
@@ -549,16 +327,25 @@ private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
 
 interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
-    fun fetchBlob(
+    suspend fun fetchBlob(
         accessToken: String,
         blobPath: String,
         onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit = { _, _ -> },
+        fileId: String? = null,
     ): DriveApiResult<DriveBlob>
-    fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>>
-    fun upsertBlob(accessToken: String, blobPath: String, bytes: ByteArray, mimeType: String?): DriveApiResult<Unit>
-    fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit>
-    fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
-    fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit>
+    suspend fun fetchBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long>
+    suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
+    suspend fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>>
+    suspend fun upsertBlob(
+        accessToken: String,
+        blobPath: String,
+        bytes: ByteArray,
+        mimeType: String?,
+        fileId: String? = null,
+    ): DriveApiResult<Unit>
+    suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String? = null): DriveApiResult<Unit>
+    suspend fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
+    suspend fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit>
     suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot>
 }
 
@@ -575,6 +362,7 @@ data class DriveFileMetadata(
     val modifiedTime: String? = null,
     val mimeType: String? = null,
     val size: Long? = null,
+    val name: String = "",
 )
 
 sealed interface DriveApiResult<out T> {
@@ -582,12 +370,20 @@ sealed interface DriveApiResult<out T> {
     data object NotFound : DriveApiResult<Nothing>
     data object Unauthorized : DriveApiResult<Nothing>
     data class Failure(val throwable: Throwable) : DriveApiResult<Nothing>
+    data class Transient(val cause: Throwable?) : DriveApiResult<Nothing>
+    data object StorageFull : DriveApiResult<Nothing>
 }
 
 // A full 1,000-item page is treated as overflow, so deletion never traverses unbounded inventory.
 private const val MAX_BACKUP_DELETE_FILES = 1_000
 private const val DRIVE_PROGRESS_CHUNK_BYTES = 32 * 1024
 private const val DRIVE_PROGRESS_THROTTLE_MILLIS = 250L
+private const val DRIVE_DOWNLOAD_BUFFER_BYTES = 64 * 1024
+
+private data class DriveFilesPage(
+    val files: List<DriveFileMetadata>,
+    val nextPageToken: String?,
+)
 
 private fun InputStream.readProgressBytes(
     contentLength: Long?,
@@ -649,12 +445,15 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun fetchBlob(
+    override suspend fun fetchBlob(
         accessToken: String,
         blobPath: String,
         onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit,
+        fileId: String?,
     ): DriveApiResult<DriveBlob> {
-        val file = findFileByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
+        val file = fileId?.let { id -> DriveFileMetadata(id = id, name = blobPath) }
+            ?: findFileByName(accessToken, blobPath)
+            ?: return DriveApiResult.NotFound
         return byteRequest(
             method = "GET",
             url = "https://www.googleapis.com/drive/v3/files/${file.id}?alt=media",
@@ -673,13 +472,37 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun upsertBlob(
+    override suspend fun fetchBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long> {
+        val result = withRetry { streamBlobToFile(accessToken, fileId, target) }
+        if (result !is DriveApiResult.Success) target.delete()
+        return result
+    }
+
+    override suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>> {
+        val files = mutableListOf<DriveFileMetadata>()
+        var pageToken: String? = null
+        do {
+            val pageUrl = "https://www.googleapis.com/drive/v3/files" +
+                "?spaces=appDataFolder&fields=nextPageToken,files(id,name,modifiedTime,size)&pageSize=1000" +
+                pageToken?.let { token -> "&pageToken=" + URLEncoder.encode(token, "UTF-8") }.orEmpty()
+            val page = request(method = "GET", url = pageUrl, accessToken = accessToken) { body ->
+                DriveApiResult.Success(parseFilesPage(body))
+            }
+            if (page !is DriveApiResult.Success) return page.failedAs()
+            files += page.value.files
+            pageToken = page.value.nextPageToken
+        } while (pageToken != null)
+        return DriveApiResult.Success(files)
+    }
+
+    override suspend fun upsertBlob(
         accessToken: String,
         blobPath: String,
         bytes: ByteArray,
         mimeType: String?,
+        fileId: String?,
     ): DriveApiResult<Unit> {
-        val existingFileId = findFileIdByName(accessToken, blobPath)
+        val existingFileId = fileId ?: findFileIdByName(accessToken, blobPath)
         val method = if (existingFileId == null) "POST" else "PATCH"
         val url = if (existingFileId == null) {
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
@@ -698,7 +521,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> {
+    override suspend fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> {
         val escapedPrefix = blobPathPrefix.toDriveQueryLiteral()
         val query = "name contains '$escapedPrefix' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
@@ -718,16 +541,16 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit> {
-        val fileId = findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
+    override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {
+        val resolvedFileId = fileId ?: findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
         return request(
             method = "DELETE",
-            url = "https://www.googleapis.com/drive/v3/files/$fileId",
+            url = "https://www.googleapis.com/drive/v3/files/$resolvedFileId",
             accessToken = accessToken,
         ) { DriveApiResult.Success(Unit) }
     }
 
-    override fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>> = request(
+    override suspend fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>> = request(
         method = "GET",
         url = "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime,mimeType,size)&pageSize=$MAX_BACKUP_DELETE_FILES",
         accessToken = accessToken,
@@ -738,17 +561,17 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         })
     }
 
-    override fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit> = request(
+    override suspend fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit> = request(
         method = "DELETE",
         url = "https://www.googleapis.com/drive/v3/files/$fileId",
         accessToken = accessToken,
     ) { DriveApiResult.Success(Unit) }
 
-    private fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
+    private suspend fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
 
-    private fun findFileIdByName(accessToken: String, name: String): String? = findFileByName(accessToken, name)?.id
+    private suspend fun findFileIdByName(accessToken: String, name: String): String? = findFileByName(accessToken, name)?.id
 
-    private fun findFileByName(accessToken: String, name: String): DriveFileMetadata? {
+    private suspend fun findFileByName(accessToken: String, name: String): DriveFileMetadata? {
         val escapedName = name.toDriveQueryLiteral()
         val query = "name='$escapedName' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
@@ -765,6 +588,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
                 file?.optString("id")?.takeIf(String::isNotBlank)?.let { id ->
                     DriveFileMetadata(
                         id = id,
+                        name = file.optString("name"),
                         modifiedTime = file.optString("modifiedTime").takeIf(String::isNotBlank),
                         mimeType = file.optString("mimeType").takeIf(String::isNotBlank),
                         size = file.optLong("size").takeIf { it > 0L },
@@ -777,42 +601,71 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
 
     private fun String.toDriveQueryLiteral(): String = replace("\\", "\\\\").replace("'", "\\'")
 
-    private fun <T> request(
+    private suspend fun <T> request(
         method: String,
         url: String,
         accessToken: String,
         parse: (body: String) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = try {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            connectTimeout = CONNECT_TIMEOUT_MILLIS
-            readTimeout = READ_TIMEOUT_MILLIS
+    ): DriveApiResult<T> = withRetry {
+        try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+            }
+            connection.toDriveResult(parse)
+        } catch (throwable: Throwable) {
+            throwable.toFailedDriveResult()
         }
-        connection.toDriveResult(parse)
-    } catch (throwable: Throwable) {
-        DriveApiResult.Failure(throwable)
     }
 
-    private fun <T> byteRequest(
+    private suspend fun <T> byteRequest(
         method: String,
         url: String,
         accessToken: String,
         onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit = { _, _ -> },
         parse: (bytes: ByteArray, connection: HttpURLConnection) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = try {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
+    ): DriveApiResult<T> = withRetry {
+        try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+            }
+            connection.toDriveByteResult(onProgress, parse)
+        } catch (throwable: Throwable) {
+            throwable.toFailedDriveResult()
+        }
+    }
+
+    /** One streamed GET into [target]; the caller deletes [target] on any non-success result. */
+    private suspend fun streamBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long> = try {
+        val connection = (URL("https://www.googleapis.com/drive/v3/files/$fileId?alt=media").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
             setRequestProperty("Authorization", "Bearer $accessToken")
             connectTimeout = CONNECT_TIMEOUT_MILLIS
             readTimeout = READ_TIMEOUT_MILLIS
         }
-        connection.toDriveByteResult(onProgress, parse)
+        try {
+            if (connection.responseCode in 200..299) {
+                val copiedBytes = connection.inputStream.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output, DRIVE_DOWNLOAD_BUFFER_BYTES) }
+                }
+                DriveApiResult.Success(copiedBytes)
+            } else {
+                val errorBody = connection.errorStream?.bufferedReader()?.use { reader -> reader.readText() }.orEmpty()
+                driveHttpError(connection.responseCode, errorBody)
+            }
+        } finally {
+            connection.disconnect()
+        }
     } catch (throwable: Throwable) {
-        DriveApiResult.Failure(throwable)
+        throwable.toFailedDriveResult()
     }
 
-    private fun <T> multipartRequest(
+    private suspend fun <T> multipartRequest(
         method: String,
         url: String,
         accessToken: String,
@@ -829,7 +682,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         parse = parse,
     )
 
-    private fun <T> multipartRequest(
+    private suspend fun <T> multipartRequest(
         method: String,
         url: String,
         accessToken: String,
@@ -837,31 +690,33 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         body: ByteArray,
         bodyMimeType: String,
         parse: (body: String) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = try {
-        val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
-        val header = buildString {
-            append("--$boundary\r\n")
-            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-            append(metadata)
-            append("\r\n--$boundary\r\n")
-            append("Content-Type: $bodyMimeType\r\n\r\n")
-        }.toByteArray(Charsets.UTF_8)
-        val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-        val payload = header + body + footer
+    ): DriveApiResult<T> = withRetry {
+        try {
+            val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
+            val header = buildString {
+                append("--$boundary\r\n")
+                append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+                append(metadata)
+                append("\r\n--$boundary\r\n")
+                append("Content-Type: $bodyMimeType\r\n\r\n")
+            }.toByteArray(Charsets.UTF_8)
+            val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+            val payload = header + body + footer
 
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            doOutput = true
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
-            setRequestProperty("Content-Length", payload.size.toString())
-            connectTimeout = CONNECT_TIMEOUT_MILLIS
-            readTimeout = READ_TIMEOUT_MILLIS
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                doOutput = true
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+                setRequestProperty("Content-Length", payload.size.toString())
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+            }
+            connection.outputStream.use { output -> output.write(payload) }
+            connection.toDriveResult(parse)
+        } catch (throwable: Throwable) {
+            throwable.toFailedDriveResult()
         }
-        connection.outputStream.use { output -> output.write(payload) }
-        connection.toDriveResult(parse)
-    } catch (throwable: Throwable) {
-        DriveApiResult.Failure(throwable)
     }
 
     private fun <T> HttpURLConnection.toDriveResult(parse: (body: String) -> DriveApiResult<T>): DriveApiResult<T> =
@@ -873,10 +728,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             when (responseCode) {
                 in 200..299 -> parse(body)
-                HttpURLConnection.HTTP_UNAUTHORIZED,
-                HttpURLConnection.HTTP_FORBIDDEN -> DriveApiResult.Unauthorized
-                HttpURLConnection.HTTP_NOT_FOUND -> DriveApiResult.NotFound
-                else -> DriveApiResult.Failure(IOException("Drive API returned HTTP $responseCode: $body"))
+                else -> driveHttpError(responseCode, body)
             }
         } finally {
             disconnect()
@@ -896,14 +748,56 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             when (responseCode) {
                 in 200..299 -> parse(bytes, this)
-                HttpURLConnection.HTTP_UNAUTHORIZED,
-                HttpURLConnection.HTTP_FORBIDDEN -> DriveApiResult.Unauthorized
-                HttpURLConnection.HTTP_NOT_FOUND -> DriveApiResult.NotFound
-                else -> DriveApiResult.Failure(IOException("Drive API returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8)}"))
+                else -> driveHttpError(responseCode, bytes.toString(Charsets.UTF_8))
             }
         } finally {
             disconnect()
         }
+
+    private fun driveHttpError(code: Int, body: String): DriveApiResult<Nothing> {
+        val failure = IOException("Drive API returned HTTP $code: $body")
+        return when (classify(code, body)) {
+            DriveErrorClass.AuthRequired -> DriveApiResult.Unauthorized
+            DriveErrorClass.NotFound -> DriveApiResult.NotFound
+            DriveErrorClass.StorageFull -> DriveApiResult.StorageFull
+            DriveErrorClass.Transient -> DriveApiResult.Transient(failure)
+            is DriveErrorClass.Permanent -> DriveApiResult.Failure(failure)
+        }
+    }
+
+    private fun Throwable.toFailedDriveResult(): DriveApiResult<Nothing> = when (classify(this)) {
+        DriveErrorClass.Transient -> DriveApiResult.Transient(this)
+        else -> DriveApiResult.Failure(this)
+    }
+
+    private fun <R> DriveApiResult<*>.failedAs(): DriveApiResult<R> = when (this) {
+        is DriveApiResult.Failure -> this
+        is DriveApiResult.Transient -> this
+        DriveApiResult.StorageFull -> DriveApiResult.StorageFull
+        DriveApiResult.NotFound -> DriveApiResult.NotFound
+        DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
+        is DriveApiResult.Success -> error("A successful Drive result is not a failure.")
+    }
+
+    private fun parseFilesPage(body: String): DriveFilesPage {
+        val json = JSONObject(body)
+        val files = json.optJSONArray("files") ?: JSONArray()
+        return DriveFilesPage(
+            files = (0 until files.length()).mapNotNull { index ->
+                files.optJSONObject(index)?.let { file ->
+                    file.optString("id").takeIf(String::isNotBlank)?.let { id ->
+                        DriveFileMetadata(
+                            id = id,
+                            name = file.optString("name"),
+                            modifiedTime = file.optString("modifiedTime").takeIf(String::isNotBlank),
+                            size = file.optLong("size").takeIf { it > 0L },
+                        )
+                    }
+                }
+            },
+            nextPageToken = json.optString("nextPageToken").takeIf(String::isNotBlank),
+        )
+    }
 
 
     private companion object {
@@ -919,6 +813,265 @@ internal const val REMOTE_PHOTO_MISSING_BLOB_PATH = "remote_photo_missing_blob_p
 internal const val REMOTE_PHOTO_MISSING = "remote_photo_missing"
 internal const val REMOTE_PHOTO_UNREADABLE = "remote_photo_unreadable"
 private val PHOTO_TOMBSTONE_ENTITY_TYPES = setOf("garment", "clothing_item", "item")
+
+internal const val REMOTE_PHOTO_TRANSIENT = "remote_photo_transient"
+internal const val RESTORE_PHOTO_CONCURRENCY = 4
+internal const val RESTORE_PHOTO_TIMEOUT_MILLIS = 60_000L
+private const val RESTORE_WORK_DIRECTORY = "restore"
+private const val MAGIC_HEADER_BYTES = 12
+
+/** Ends the restore early when Drive refuses the account or storage; cancels the sibling downloads. */
+private class RestorePhotoAbort(val result: DriveApiResult<Nothing>) : RuntimeException("Drive restore aborted.")
+
+/**
+ * Restores photos after one Drive listing, downloading at most [RESTORE_PHOTO_CONCURRENCY] at a time.
+ * A failing photo becomes a guarded record; only authorization or storage errors end the whole restore.
+ */
+internal suspend fun restorePhotoBlobs(
+    api: DriveSnapshotApi,
+    accessToken: String,
+    photos: List<GarmentPhotoRecord>,
+    garmentNameById: Map<String, String> = emptyMap(),
+    workDir: File,
+    decodeBounds: (File) -> Pair<Int, Int>?,
+    moveToFinal: (garmentId: String, hash16: String, source: File) -> String,
+    progress: DriveRestoreProgressListener? = null,
+): DriveApiResult<List<GarmentPhotoRecord>> {
+    val index = when (val listed = api.listAll(accessToken)) {
+        is DriveApiResult.Success -> DriveFileIndex(listed.value)
+        DriveApiResult.NotFound -> DriveFileIndex(emptyList())
+        DriveApiResult.Unauthorized -> return DriveApiResult.Unauthorized
+        DriveApiResult.StorageFull -> return DriveApiResult.StorageFull
+        is DriveApiResult.Transient -> return listed
+        is DriveApiResult.Failure -> return listed
+    }
+    workDir.mkdirs()
+    val totalBytes = photos.mapNotNull { photo -> photo.byteSize }.takeIf { sizes -> sizes.size == photos.size }?.sum()
+    val completedItems = AtomicInteger(0)
+    val completedBytes = AtomicLong(0L)
+    // The progress tracker is not thread-safe, so concurrent photos report one at a time.
+    val progressLock = Any()
+    val semaphore = Semaphore(RESTORE_PHOTO_CONCURRENCY)
+    return try {
+        val restored = coroutineScope {
+            photos.map { photo ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val record = restoreOnePhoto(
+                            api = api,
+                            accessToken = accessToken,
+                            photo = photo,
+                            index = index,
+                            workDir = workDir,
+                            garmentNameById = garmentNameById,
+                            decodeBounds = decodeBounds,
+                            moveToFinal = moveToFinal,
+                            completedBytes = completedBytes,
+                        )
+                        val done = completedItems.incrementAndGet()
+                        synchronized(progressLock) {
+                            progress?.onProgress(
+                                DriveRestoreProgress(
+                                    garmentId = photo.garmentId,
+                                    safeCategory = record.restoreFailureCategory ?: "photo_restore_downloaded",
+                                    completedItems = done,
+                                    totalItems = photos.size,
+                                    completedBytes = completedBytes.get(),
+                                    totalBytes = totalBytes,
+                                ),
+                            )
+                        }
+                        record
+                    }
+                }
+            }.awaitAll()
+        }
+        DriveApiResult.Success(restored)
+    } catch (abort: RestorePhotoAbort) {
+        abort.result
+    }
+}
+
+private suspend fun restoreOnePhoto(
+    api: DriveSnapshotApi,
+    accessToken: String,
+    photo: GarmentPhotoRecord,
+    index: DriveFileIndex,
+    workDir: File,
+    garmentNameById: Map<String, String>,
+    decodeBounds: (File) -> Pair<Int, Int>?,
+    moveToFinal: (garmentId: String, hash16: String, source: File) -> String,
+    completedBytes: AtomicLong,
+): GarmentPhotoRecord {
+    val blobPath = photo.blobPath.takeIf(String::isNotBlank) ?: return photo.guardedRestore(
+        category = REMOTE_PHOTO_MISSING_BLOB_PATH,
+        message = "Garment photo ${photo.garmentId} is missing a Drive blob path.",
+        restoreDiagnosticEvents = listOf(
+            photo.importDiagnosticEvent(persistedPhotoUriPresent = false, placeholderReason = REMOTE_PHOTO_MISSING_BLOB_PATH),
+        ),
+    )
+    val fetchStartedEvents = photo.restoreFetchStartedEvents(description = garmentNameById[photo.garmentId])
+    fun missingPhoto(): GarmentPhotoRecord = photo.guardedRestore(
+        category = REMOTE_PHOTO_MISSING,
+        message = "Drive photo blob $blobPath was not found for garment ${photo.garmentId}.",
+        restoreDiagnosticEvents = fetchStartedEvents + listOf(
+            photo.driveLookupMissingEvent(),
+            photo.fetchMissingEvent(),
+            photo.importDiagnosticEvent(persistedPhotoUriPresent = false, placeholderReason = REMOTE_PHOTO_MISSING),
+        ),
+    )
+    val fileId = index.resolveFileId(blobPath, photo.garmentId) ?: return missingPhoto()
+    val target = File(workDir, "${photo.garmentId.safeFileStem()}.part")
+    try {
+        val fetched = withTimeoutOrNull(RESTORE_PHOTO_TIMEOUT_MILLIS) {
+            api.fetchBlobToFile(accessToken, fileId, target)
+        } ?: return photo.guardedRestore(
+            category = REMOTE_PHOTO_TRANSIENT,
+            message = "Drive photo blob $blobPath for garment ${photo.garmentId} timed out.",
+            restoreDiagnosticEvents = fetchStartedEvents + listOf(
+                photo.importDiagnosticEvent(persistedPhotoUriPresent = false, placeholderReason = REMOTE_PHOTO_TRANSIENT),
+            ),
+        )
+        val size = when (fetched) {
+            is DriveApiResult.Success -> fetched.value
+            DriveApiResult.Unauthorized -> throw RestorePhotoAbort(DriveApiResult.Unauthorized)
+            DriveApiResult.StorageFull -> throw RestorePhotoAbort(DriveApiResult.StorageFull)
+            DriveApiResult.NotFound -> return missingPhoto()
+            is DriveApiResult.Transient -> return photo.guardedRestore(
+                category = REMOTE_PHOTO_TRANSIENT,
+                message = "Drive photo blob $blobPath for garment ${photo.garmentId} failed after retries.",
+                cause = fetched.cause,
+                restoreDiagnosticEvents = fetchStartedEvents + listOf(
+                    photo.importDiagnosticEvent(persistedPhotoUriPresent = false, placeholderReason = REMOTE_PHOTO_TRANSIENT),
+                ),
+            )
+            is DriveApiResult.Failure -> return photo.guardedRestore(
+                category = REMOTE_PHOTO_UNREADABLE,
+                message = "Drive photo blob $blobPath for garment ${photo.garmentId} could not be downloaded.",
+                cause = fetched.throwable,
+                restoreDiagnosticEvents = fetchStartedEvents + listOf(
+                    photo.importDiagnosticEvent(persistedPhotoUriPresent = false, placeholderReason = REMOTE_PHOTO_UNREADABLE),
+                ),
+            )
+        }
+        completedBytes.addAndGet(size)
+        val header = target.headerBytes()
+        val contentHash = target.streamedSha256Hex()
+        val fetchEvents = fetchStartedEvents + photo.fetchedFileEvent(
+            byteCount = size,
+            sha256Prefix = contentHash.take(12),
+            magic = header.imageMagicLabel(),
+        )
+        val dimensions = decodeBounds(target)
+        if (dimensions == null) {
+            return photo.guardedRestore(
+                category = REMOTE_PHOTO_UNREADABLE,
+                message = "Remote Drive photo blob $blobPath for garment ${photo.garmentId} fetched but could not be decoded " +
+                    "mime=${photo.mimeType ?: "unknown"} magic=${header.imageMagicLabel()} byteSize=$size detail=bounds_unavailable.",
+                byteSize = size,
+                contentHash = contentHash,
+                byteMagic = header.magicHex(),
+                restoreDiagnosticEvents = fetchEvents +
+                    photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.bounds", failure = "bounds_unavailable") +
+                    photo.importDiagnosticEvent(persistedPhotoUriPresent = false, placeholderReason = REMOTE_PHOTO_UNREADABLE),
+            )
+        }
+        val uri = runCatching { moveToFinal(photo.garmentId, contentHash.take(16), target) }.getOrElse { throwable ->
+            return photo.guardedRestore(
+                category = REMOTE_PHOTO_UNREADABLE,
+                message = "write_failed:${throwable.diagnosticSummary()}",
+                cause = throwable,
+                byteSize = size,
+                contentHash = contentHash,
+                byteMagic = header.magicHex(),
+                restoreDiagnosticEvents = fetchEvents + photo.importDiagnosticEvent(
+                    persistedPhotoUriPresent = false,
+                    placeholderReason = REMOTE_PHOTO_UNREADABLE,
+                ),
+            )
+        }
+        return photo.copy(
+            restoredLocalUri = uri,
+            byteSize = size,
+            contentHash = contentHash,
+            byteMagic = header.magicHex(),
+            decodedWidth = dimensions.first,
+            decodedHeight = dimensions.second,
+            restoreFailureCategory = null,
+            restoreFailureMessage = null,
+            restoreDiagnosticEvents = fetchEvents +
+                photo.localWriteDiagnosticEvent(
+                    targetExtension = photo.mimeType.toPhotoExtension() ?: blobPath.substringAfterLast('.', "jpg"),
+                    fileLength = size,
+                    readBackBytes = null,
+                ) +
+                photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.bounds", width = dimensions.first, height = dimensions.second) +
+                photo.importDiagnosticEvent(persistedPhotoUriPresent = true, placeholderReason = null),
+        )
+    } finally {
+        target.delete()
+    }
+}
+
+// Exact paths are authoritative; a legacy path is only used when exactly one candidate exists.
+// exact_blob_not_found: ambiguous candidates deliberately stay in terminal attention.
+private fun DriveFileIndex.resolveFileId(blobPath: String, garmentId: String): String? =
+    idOf(blobPath) ?: namesWithPrefix(DriveFolderNaming.photoBlobPrefix(garmentId))
+        .singleOrNull()
+        ?.let { candidate -> idOf(candidate) }
+
+private fun String.safeFileStem(): String = replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+private fun imageBoundsOf(file: File): Pair<Int, Int>? = runCatching {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.path, options)
+    if (options.outWidth > 0 && options.outHeight > 0) options.outWidth to options.outHeight else null
+}.getOrNull()
+
+private fun File.headerBytes(): ByteArray = inputStream().use { input ->
+    val buffer = ByteArray(MAGIC_HEADER_BYTES)
+    val read = input.read(buffer)
+    buffer.copyOf(maxOf(read, 0))
+}
+
+/** Streams the file through SHA-256 so a photo is never held in memory twice. */
+private fun File.streamedSha256Hex(): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    inputStream().use { input ->
+        val buffer = ByteArray(DRIVE_DOWNLOAD_BUFFER_BYTES)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+}
+
+private fun GarmentPhotoRecord.guardedRestore(
+    category: String,
+    message: String,
+    cause: Throwable? = null,
+    byteSize: Long? = null,
+    contentHash: String? = null,
+    byteMagic: String? = null,
+    restoreDiagnosticEvents: List<String> = emptyList(),
+): GarmentPhotoRecord = copy(
+    restoredLocalUri = null,
+    byteSize = byteSize ?: this.byteSize,
+    contentHash = contentHash ?: this.contentHash,
+    byteMagic = byteMagic ?: this.byteMagic,
+    decodedWidth = null,
+    decodedHeight = null,
+    restoreFailureCategory = category,
+    restoreFailureMessage = sanitizePhotoRestoreMessage(
+        if (cause?.message.isNullOrBlank()) message else "$message Cause: ${cause?.message}",
+    ),
+    restoreDiagnosticEvents = restoreDiagnosticEvents,
+)
+
+internal fun GarmentPhotoRecord.fetchedFileEvent(byteCount: Long, sha256Prefix: String, magic: String): String =
+    "photo_restore_fetch_result garmentId=$garmentId status=success fetchedByteCount=$byteCount sha256Prefix=$sha256Prefix magic=$magic blobPath=$blobPath"
 
 internal fun WardrobeSyncSnapshot.deletedPhotoBlobPurgeCandidates(): List<String> {
     val activeBlobPaths = photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
@@ -1014,20 +1167,6 @@ internal fun GarmentPhotoRecord.decodeDiagnosticEvent(
     append(" blobPath=$blobPath")
 }
 
-private fun GarmentPhotoRecord.decodeDiagnosticEvent(
-    decoderPath: String,
-    result: ImageDecodeResult?,
-): String = if (result == null) {
-    decodeDiagnosticEvent(decoderPath = decoderPath, failure = "not_attempted")
-} else {
-    decodeDiagnosticEvent(
-        decoderPath = decoderPath,
-        width = result.width,
-        height = result.height,
-        failure = result.failure,
-    )
-}
-
 internal fun GarmentPhotoRecord.importDiagnosticEvent(
     persistedPhotoUriPresent: Boolean,
     placeholderReason: String?,
@@ -1037,33 +1176,6 @@ internal fun GarmentPhotoRecord.importDiagnosticEvent(
     placeholderReason?.let { append(" placeholderReason=$it") }
     append(" blobPath=$blobPath")
 }
-
-private data class ImageDecodeResult(
-    val width: Int? = null,
-    val height: Int? = null,
-    val failure: String? = null,
-) {
-    val isSuccess: Boolean = width != null && width > 0 && height != null && height > 0
-}
-
-private fun decodeImageBytes(bytes: ByteArray): ImageDecodeResult = runCatching {
-    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-    if (options.outWidth > 0 && options.outHeight > 0) {
-        ImageDecodeResult(width = options.outWidth, height = options.outHeight)
-    } else {
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        if (bitmap != null) {
-            try {
-                ImageDecodeResult(width = bitmap.width, height = bitmap.height)
-            } finally {
-                bitmap.recycle()
-            }
-        } else {
-            ImageDecodeResult(failure = "BitmapFactory returned null bounds=${options.outWidth}x${options.outHeight}")
-        }
-    }
-}.getOrElse { throwable -> ImageDecodeResult(failure = throwable.diagnosticSummary()) }
 
 private fun Throwable.diagnosticSummary(): String = buildString {
     append(this@diagnosticSummary::class.java.name)

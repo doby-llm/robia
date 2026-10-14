@@ -86,3 +86,7 @@ Each entry: context → decision → rationale → consequences → review trigg
 ## PLAN-CHANGE 2 — D01 may patch ManageTagsScreen save path (2026-10-14)
 - **What:** TASK-D01 may edit `ui/ManageTagsScreen.kt` only in the tag save path, passing `description = existing?.description` and `suggestOccasions = existing?.suggestOccasions ?: true` when building `GarmentTag`.
 - **Why:** without it, renaming a default tag (Accessories, Jewelry) rebuilds `GarmentTag` with the new defaults and silently re-enables occasion suggestions (DEC-007 intent: those two are off). It preserves existing data; no scope, UX, data-model or dependency change.
+
+## PLAN-CHANGE 3 — E07 Cancel keeps the partial download; E07 may patch ModelStore (2026-10-14)
+- **What:** In the model-download UI, Cancel stops the WorkManager job, keeps the `.part` file (so a later download resumes via HTTP Range, REQ-E01) and sets state to `NotDownloaded`. TASK-E07 may edit `suggestions/model/ModelStore.kt` only to catch cancellation in `download()` and publish `NotDownloaded` (today the state stays `Downloading` until restart).
+- **Why:** the plan was silent on Cancel; E01 left cancellation unhandled. Resumable download is already a requirement; no scope, data-model or dependency change.
