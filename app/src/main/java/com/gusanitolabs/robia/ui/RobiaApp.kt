@@ -3947,6 +3947,8 @@ private fun RobiaAppPreview() {
             onDeveloperModeEnabledChange = {},
             onCloudSetupPromptInteracted = {},
             onRequestCloudSetup = {},
+            onConfirmMerge = {},
+            onCancelMerge = {},
             onSaveItem = {},
             onSaveItems = {},
             onDeleteItems = {},
