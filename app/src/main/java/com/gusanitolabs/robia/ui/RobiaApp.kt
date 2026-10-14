@@ -381,6 +381,8 @@ fun RobiaApp(
                 scope.launch { settingsRepository.markCloudSetupPromptInteracted() }
             },
             onRequestCloudSetup = onRequestCloudSetup,
+            onConfirmMerge = { scope.launch { syncGateway.confirmMerge() } },
+            onCancelMerge = { scope.launch { syncGateway.cancelMerge() } },
             modelState = modelState,
             modelPromptShown = modelPromptShown,
             onModelPromptShown = {
@@ -584,6 +586,8 @@ private fun RobiaShell(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
+    onConfirmMerge: () -> Unit,
+    onCancelMerge: () -> Unit,
     modelState: ModelState = ModelState.NotDownloaded,
     modelPromptShown: Boolean? = null,
     onModelPromptShown: () -> Unit = {},
@@ -1040,8 +1044,8 @@ private fun RobiaShell(
     syncState.pendingMergeSummary?.let { summary ->
         MergeConfirmationDialog(
             summary = summary,
-            onConfirm = { scope.launch { syncGateway.confirmMerge() } },
-            onCancel = { scope.launch { syncGateway.cancelMerge() } },
+            onConfirm = onConfirmMerge,
+            onCancel = onCancelMerge,
         )
     }
 
