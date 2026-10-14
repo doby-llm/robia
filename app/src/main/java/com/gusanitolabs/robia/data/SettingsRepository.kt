@@ -36,7 +36,10 @@ interface SettingsRepository {
     suspend fun setLastKnownRemoteRevision(revision: Long)
     /** True while a newer backup from another phone blocks uploads until the user chooses. */
     val syncConflict: Flow<Boolean>
-    suspend fun setSyncConflict(conflict: Boolean)
+    /** Remote revision the open conflict was raised against; cleared together with [syncConflict]. */
+    val syncConflictRemoteRevision: Flow<Long>
+    /** Opens the conflict against [remoteRevision], or clears it and its revision when [conflict] is false. */
+    suspend fun setSyncConflict(conflict: Boolean, remoteRevision: Long = 0L)
 }
 
 class DataStoreSettingsRepository(
@@ -138,8 +141,19 @@ class DataStoreSettingsRepository(
         preferences[syncConflictKey] ?: false
     }
 
-    override suspend fun setSyncConflict(conflict: Boolean) {
-        dataStore.edit { preferences -> preferences[syncConflictKey] = conflict }
+    override val syncConflictRemoteRevision: Flow<Long> = dataStore.data.map { preferences ->
+        preferences[syncConflictRemoteRevisionKey] ?: 0L
+    }
+
+    override suspend fun setSyncConflict(conflict: Boolean, remoteRevision: Long) {
+        dataStore.edit { preferences ->
+            preferences[syncConflictKey] = conflict
+            if (conflict) {
+                preferences[syncConflictRemoteRevisionKey] = remoteRevision
+            } else {
+                preferences.remove(syncConflictRemoteRevisionKey)
+            }
+        }
     }
 
     private fun String?.toLanguagePreference(): LanguagePreference =
@@ -164,5 +178,6 @@ class DataStoreSettingsRepository(
         val deviceIdKey = stringPreferencesKey("sync_device_id")
         val lastKnownRemoteRevisionKey = longPreferencesKey("sync_last_known_remote_revision")
         val syncConflictKey = booleanPreferencesKey("sync_conflict")
+        val syncConflictRemoteRevisionKey = longPreferencesKey("sync_conflict_remote_revision")
     }
 }

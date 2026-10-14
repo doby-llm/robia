@@ -36,6 +36,8 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     val failedRetryableCalls = mutableListOf<String>()
     /** When set, claiming this garment throws a cancellation, as if the work was cancelled mid-claim. */
     var cancelClaimOf: String? = null
+    /** When set, the claim of this garment commits (Running) and then throws a cancellation, as if cancelled right after the write. */
+    var cancelAfterClaimOf: String? = null
     val needsUserActions = mutableListOf<Pair<String, String>>()
     private val guardedIds = mutableSetOf<String>()
     private val pendingCount = MutableStateFlow(0)
@@ -101,7 +103,9 @@ internal class FakeWardrobeRepository : WardrobeRepository {
 
     override suspend fun markGarmentSyncing(id: String, revision: Long, startedAtEpochMillis: Long): Boolean {
         if (id == cancelClaimOf) throw CancellationException("cancelled while claiming $id")
-        return rows[id]?.status == "Queued" && setStatus(id, revision, "Running")
+        val claimed = rows[id]?.status == "Queued" && setStatus(id, revision, "Running")
+        if (id == cancelAfterClaimOf) throw CancellationException("cancelled after claiming $id")
+        return claimed
     }
 
     override suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean =
@@ -147,12 +151,14 @@ internal class FakeSettingsRepository(
     )
     private val revisionState = MutableStateFlow(0L)
     private val conflictState = MutableStateFlow(false)
+    private val conflictRevisionState = MutableStateFlow(0L)
     private val modelPromptState = MutableStateFlow(false)
     private val mobileDataState = MutableStateFlow(false)
 
     override val settings: Flow<RobiaSettings> = current
     override val lastKnownRemoteRevision: Flow<Long> = revisionState
     override val syncConflict: Flow<Boolean> = conflictState
+    override val syncConflictRemoteRevision: Flow<Long> = conflictRevisionState
     override val modelPromptShown: Flow<Boolean> = modelPromptState
     override val modelMobileDataApproved: Flow<Boolean> = mobileDataState
 
@@ -192,8 +198,9 @@ internal class FakeSettingsRepository(
         revisionState.value = revision
     }
 
-    override suspend fun setSyncConflict(conflict: Boolean) {
+    override suspend fun setSyncConflict(conflict: Boolean, remoteRevision: Long) {
         conflictState.value = conflict
+        conflictRevisionState.value = if (conflict) remoteRevision else 0L
     }
 }
 

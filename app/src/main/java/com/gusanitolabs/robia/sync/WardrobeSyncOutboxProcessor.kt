@@ -69,6 +69,8 @@ class WardrobeSyncOutboxProcessor(
     private val hasGuardedPhotoRestoreIssues = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
     private val pendingMergeSummary = MutableStateFlow<MergeSummary?>(null)
+    /** Remote revision the pending merge proposal was built from; declining it opens the conflict at this revision. */
+    private var pendingMergeRemoteRevision = 0L
     private val authBlocked = MutableStateFlow(false)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
     private var scheduledWorkJob: Job? = null
@@ -272,7 +274,7 @@ class WardrobeSyncOutboxProcessor(
     override suspend fun cancelMerge() {
         // The phone keeps its data. A declined merge is persisted as a conflict, so no later run (or restart) uploads over the newer backup.
         pendingMergeSummary.value = null
-        settingsRepository.setSyncConflict(true)
+        settingsRepository.setSyncConflict(true, pendingMergeRemoteRevision)
     }
 
     private suspend fun deleteCloudBackup() = mutex.withLock {
@@ -612,7 +614,9 @@ class WardrobeSyncOutboxProcessor(
         var keepTerminalProgress = false
         try {
             pendingWork.forEach { work ->
-                if (wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())) lockedWork += work
+                // Listed before the claim: a cancellation after the row turned Running must still release it.
+                lockedWork += work
+                if (!wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())) lockedWork -= work
             }
             pendingMetadataWork.forEach { work -> if (wardrobeRepository.markMetadataSyncing(work)) lockedMetadataWork += work }
             restoreSyncLogRepository.append(
@@ -696,6 +700,7 @@ class WardrobeSyncOutboxProcessor(
     }
 
     private fun proposeMerge(localSnapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): SyncRunResult {
+        pendingMergeRemoteRevision = remote.metadata.revision
         val merged = mergeSnapshots(localSnapshot, remote)
         pendingMergeSummary.value = MergeSummary(
             remoteGarmentCount = remote.garments.size,
@@ -765,12 +770,20 @@ class WardrobeSyncOutboxProcessor(
         return SyncRunResult.Success
     }
 
-    /** "Keep this phone": accept the newer Drive revision as known, then the caller uploads this phone's data. */
+    /**
+     * "Keep this phone": accept only the Drive revision the conflict was raised against, then the caller uploads this phone's data.
+     * A newer revision written since then reopens the conflict at that revision: the user sees it again before anything is uploaded.
+     */
     private suspend fun acceptRemoteRevisionAsKnown(): SyncRunResult {
         val manifest = when (val fetched = driveRepository.fetchManifest()) {
             is DriveSyncResult.Success -> fetched.value
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
             is DriveSyncResult.Failure -> return SyncRunResult.Retry
+        }
+        val conflictRevision = settingsRepository.syncConflictRemoteRevision.first()
+        if (manifest.revision != conflictRevision) {
+            if (manifest.revision > conflictRevision) settingsRepository.setSyncConflict(true, manifest.revision)
+            return SyncRunResult.Conflict
         }
         settingsRepository.setLastKnownRemoteRevision(manifest.revision)
         settingsRepository.setSyncConflict(false)

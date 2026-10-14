@@ -101,6 +101,53 @@ class ConflictResolutionTest {
     }
 
     @Test
+    fun keepThisPhoneAfterAnotherWriteReopensConflictAtNewRevisionAndUploadsNothing() = runBlocking {
+        val settings = FakeSettingsRepository()
+        val wardrobe = FakeWardrobeRepository().apply { addQueued("a") }
+        val drive = otherPhoneBackupAtRevision(5L)
+        val processor = newTestProcessor(
+            settings = settings,
+            wardrobe = wardrobe,
+            snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a")),
+            drive = drive,
+        )
+        assertEquals(SyncRunResult.NeedsUser, processor.runOnce(SyncTrigger.Foreground))
+        processor.cancelMerge()
+        assertEquals(5L, settings.syncConflictRemoteRevision.first())
+
+        // The user declined at revision 5; another phone writes revision 6 before "Keep this phone" is tapped.
+        drive.manifest = DriveSyncResult.Success(DriveManifest(revision = 6L, writerDeviceId = "third-phone"))
+        processor.keepThisPhone()
+
+        assertTrue(drive.upserts.isEmpty())
+        assertEquals(true, settings.syncConflict.first())
+        assertEquals(6L, settings.syncConflictRemoteRevision.first())
+        assertEquals("Queued", wardrobe.statusOf("a"))
+    }
+
+    @Test
+    fun keepThisPhoneUploadsWhenTheDeclinedRevisionIsStillCurrent() = runBlocking {
+        val settings = FakeSettingsRepository()
+        val wardrobe = FakeWardrobeRepository().apply { addQueued("a") }
+        val drive = otherPhoneBackupAtRevision(5L)
+        val processor = newTestProcessor(
+            settings = settings,
+            wardrobe = wardrobe,
+            snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a")),
+            drive = drive,
+        )
+        assertEquals(SyncRunResult.NeedsUser, processor.runOnce(SyncTrigger.Foreground))
+        processor.cancelMerge()
+
+        processor.keepThisPhone()
+
+        assertEquals(1, drive.upserts.size)
+        assertEquals(false, settings.syncConflict.first())
+        assertEquals(0L, settings.syncConflictRemoteRevision.first())
+        assertEquals("Synced", wardrobe.statusOf("a"))
+    }
+
+    @Test
     fun confirmedMergeWithPhotoUploadFailureLeavesGarmentNotSynced() = runBlocking {
         val wardrobe = FakeWardrobeRepository().apply { addQueued("a") }
         val drive = otherPhoneBackupWithData()
@@ -147,8 +194,38 @@ class ConflictResolutionTest {
         assertEquals("Queued", wardrobe.statusOf("b"))
     }
 
+    @Test
+    fun cancellationAfterClaimWriteStillReturnsRowToQueued() = runBlocking {
+        val wardrobe = FakeWardrobeRepository().apply {
+            addQueued("a")
+            cancelAfterClaimOf = "a"
+        }
+        val processor = newTestProcessor(
+            wardrobe = wardrobe,
+            snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a")),
+        )
+
+        try {
+            processor.runOnce(SyncTrigger.Foreground)
+            fail("expected the claim to be cancelled")
+        } catch (expected: CancellationException) {
+            // Cancellation must propagate; the row that was already Running is what this test checks.
+        }
+
+        assertEquals("Queued", wardrobe.statusOf("a"))
+    }
+
     private fun otherPhoneBackupWithData(): FakeDriveWardrobeRepository = FakeDriveWardrobeRepository(
         manifest = DriveSyncResult.Success(DriveManifest(revision = 5L, writerDeviceId = "other-phone")),
         snapshot = DriveSyncResult.Success(snapshotWithGarments("remote")),
     )
+
+    /** The other phone's backup at [revision], with the same revision in the snapshot metadata the merge is built from. */
+    private fun otherPhoneBackupAtRevision(revision: Long): FakeDriveWardrobeRepository {
+        val remote = snapshotWithGarments("remote")
+        return FakeDriveWardrobeRepository(
+            manifest = DriveSyncResult.Success(DriveManifest(revision = revision, writerDeviceId = "other-phone")),
+            snapshot = DriveSyncResult.Success(remote.copy(metadata = remote.metadata.copy(revision = revision))),
+        )
+    }
 }
