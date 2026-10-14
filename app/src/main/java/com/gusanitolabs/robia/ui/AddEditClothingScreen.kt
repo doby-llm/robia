@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeviceThermostat
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -92,8 +91,6 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
-import com.gusanitolabs.robia.core.model.AdditionalInfoDetectionResult
-import com.gusanitolabs.robia.core.model.AdditionalInfoLabelScore
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -107,8 +104,6 @@ import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
 import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
-import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoInputImageExporter
-import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -139,7 +134,6 @@ fun AddEditClothingScreen(
 ) {
     val context = LocalContext.current
     val backgroundRemover = remember { PhotoBackgroundRemover() }
-    val additionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     val latestMainColors by rememberUpdatedState(mainColors)
     val latestAvailableTags by rememberUpdatedState(availableTags)
     var name by rememberSaveable { mutableStateOf("") }
@@ -160,8 +154,7 @@ fun AddEditClothingScreen(
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
     var photoRetrySource by remember { mutableStateOf<PendingPhotoInput?>(null) }
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
-    var developerExportStatus by rememberSaveable { mutableStateOf<String?>(null) }
-    var additionalInfoSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var suggestionSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
     var showQuickEdit by rememberSaveable { mutableStateOf(false) }
     var quickEditStatus by rememberSaveable { mutableStateOf<String?>(null) }
     var photoAnalysisGeneration by rememberSaveable { mutableStateOf(0L) }
@@ -225,8 +218,10 @@ fun AddEditClothingScreen(
         }
     }
 
+    // Reused by TASK-E05 (EmbeddingGemma suggestions).
+    @Suppress("unused")
     fun applyPredictedTags(predictedTagIds: Set<String>, availableTagsSnapshot: List<GarmentTag>): PredictedTagReconciliation {
-        val result = reconcilePredictedAdditionalInfoTags(
+        val result = reconcilePredictedTags(
             currentTagIds = selectedTagIds,
             currentModelOwnedTagIds = modelOwnedTagIds,
             predictedTagIds = predictedTagIds,
@@ -273,8 +268,7 @@ fun AddEditClothingScreen(
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
-        developerExportStatus = null
-        additionalInfoSourceUri = null
+        suggestionSourceUri = null
         quickEditStatus = null
         photoRetrySource = PendingPhotoInput(
             id = inputId,
@@ -311,8 +305,7 @@ fun AddEditClothingScreen(
         captureStatus = sourceStatus
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
-        developerExportStatus = null
-        additionalInfoSourceUri = null
+        suggestionSourceUri = null
         quickEditStatus = null
         developerDiagnostics = listOf(
             "Photo processing started",
@@ -430,48 +423,6 @@ fun AddEditClothingScreen(
                 if (extracted.isNotEmpty()) {
                     applyExtractedColors(generation, extracted)
                 }
-
-                photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
-                val detectionStart = SystemClock.elapsedRealtime()
-                val tagsForDetection = latestAvailableTags
-                val classifierUri = croppedUri
-                additionalInfoSourceUri = classifierUri.toString()
-                editorPhotoState = editorPhotoState.copy(additionalInfoSourceUri = classifierUri.toString())
-                addLine("Additional-info classifier source: cropped foreground uri=$classifierUri")
-                var detectionResult = runCatching {
-                    withContext(Dispatchers.IO) {
-                        additionalInfoDetector.detect(context, classifierUri, tagsForDetection)
-                    }
-                }.getOrElse { throwable ->
-                    addLine("Additional-info detector exception on cropped foreground: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-                    null
-                }
-                val originalFallbackUri = Uri.parse(originalPhotoUri ?: uriString)
-                if (detectionResult?.prediction == null && editorPhotoState.usesOriginalPhotoFallback && originalFallbackUri != classifierUri) {
-                    addLine("Additional-info foreground fallback unavailable; falling back to original explicit fallback uri=$originalFallbackUri")
-                    additionalInfoSourceUri = originalFallbackUri.toString()
-                    editorPhotoState = editorPhotoState.copy(additionalInfoSourceUri = originalFallbackUri.toString())
-                    detectionResult = runCatching {
-                        withContext(Dispatchers.IO) {
-                            additionalInfoDetector.detect(context, originalFallbackUri, tagsForDetection)
-                        }
-                    }.getOrElse { throwable ->
-                        addLine("Additional-info detector exception on original fallback: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-                        detectionResult
-                    }
-                }
-                addLine("Additional-info detection duration: ${SystemClock.elapsedRealtime() - detectionStart}ms")
-                addDetectionDebugLines(diagnostics, detectionResult)
-                if (token != photoProcessingToken) return
-                detectionResult?.prediction?.let { prediction ->
-                    val tagResult = applyPredictedTags(
-                        predictedTagIds = prediction.selectedTagIds,
-                        availableTagsSnapshot = tagsForDetection,
-                    )
-                    if (tagResult.skippedCategories.isNotEmpty()) {
-                        addLine("Preserved user-overridden tag categories: ${tagResult.skippedCategories.sorted().joinToString()}")
-                    }
-                } ?: addLine("No additional-info prediction for generation $generation; model-owned tags remain cleared")
         } catch (throwable: CancellationException) {
             addLine("Pipeline cancelled because a newer photo input superseded this one")
             throw throwable
@@ -563,27 +514,6 @@ fun AddEditClothingScreen(
             if (token != photoProcessingToken) return
             if (extracted.isNotEmpty()) applyExtractedColors(generation, extracted)
 
-            photoProcessingStage = PhotoProcessingStage.DetectingAdditionalInformation
-            val tagsForDetection = latestAvailableTags
-            additionalInfoSourceUri = croppedUri.toString()
-            editorPhotoState = editorPhotoState.copy(additionalInfoSourceUri = croppedUri.toString())
-            val detectionResult = runCatching {
-                withContext(Dispatchers.IO) { additionalInfoDetector.detect(context, croppedUri, tagsForDetection) }
-            }.getOrElse { throwable ->
-                addLine("Quick Edit additional-info detector exception: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-                null
-            }
-            addDetectionDebugLines(diagnostics, detectionResult)
-            if (token != photoProcessingToken) return
-            detectionResult?.prediction?.let { prediction ->
-                val tagResult = applyPredictedTags(
-                    predictedTagIds = prediction.selectedTagIds,
-                    availableTagsSnapshot = tagsForDetection,
-                )
-                if (tagResult.skippedCategories.isNotEmpty()) {
-                    addLine("Preserved user-overridden tag categories: ${tagResult.skippedCategories.sorted().joinToString()}")
-                }
-            } ?: addLine("No Quick Edit additional-info prediction for generation $generation; model-owned tags remain cleared")
             captureStatus = PhotoStatus.QuickEdited
             quickEditStatus = context.getString(R.string.quick_edit_saved_status)
         } catch (throwable: CancellationException) {
@@ -617,7 +547,7 @@ fun AddEditClothingScreen(
             rawSourceUri = existingItem?.photoUri,
             croppedForegroundUri = existingItem?.photoUri,
             currentEditedUri = existingItem?.photoUri,
-            additionalInfoSourceUri = existingItem?.photoUri,
+            suggestionSourceUri = existingItem?.photoUri,
             backgroundRemovalStatus = if (existingItem?.photoUri.isNullOrBlank()) {
                 EditorBackgroundRemovalStatus.None
             } else {
@@ -646,15 +576,11 @@ fun AddEditClothingScreen(
             )
         }
         developerDiagnostics = emptyList()
-        developerExportStatus = null
-        additionalInfoSourceUri = existingItem?.photoUri
+        suggestionSourceUri = existingItem?.photoUri
     }
 
     val isEditing = existingItem != null
     val initialFitValue = existingItem?.fitValue ?: if (existingItem == null) FIT_VALUE_FITS else null
-    val developerExportNoPhotoStatus = stringResource(R.string.developer_export_input_image_no_photo)
-    val developerExportSavedStatus = stringResource(R.string.developer_export_input_image_saved)
-    val developerExportErrorStatus = stringResource(R.string.developer_export_input_image_error)
     val canonicalPhotoUri = editorPhotoState.canonicalEditorUri ?: photoUri
     val hasUsablePhoto = !canonicalPhotoUri.isNullOrBlank()
     val canSaveItem = hasUsablePhoto && !isPhotoProcessing
@@ -676,34 +602,6 @@ fun AddEditClothingScreen(
             showDiscardDialog = true
         } else {
             onCancel()
-        }
-    }
-
-    fun exportAdditionalInfoInputImage() {
-        val source = editorPhotoState.canonicalAdditionalInfoUri ?: additionalInfoSourceUri ?: photoUri
-        if (source.isNullOrBlank()) {
-            developerExportStatus = developerExportNoPhotoStatus
-            return
-        }
-
-        coroutineScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    AdditionalInfoInputImageExporter.exportToGallery(context, Uri.parse(source))
-                }
-            }
-            developerExportStatus = result.getOrNull()?.let { export ->
-                "$developerExportSavedStatus: ${export.uri}"
-            } ?: developerExportErrorStatus
-            developerDiagnostics = developerDiagnostics + listOf(
-                "Developer export additional-info sourceUri=$source",
-                "Developer export status=${developerExportStatus.orEmpty()}",
-            ) + result.getOrNull()?.let { export ->
-                listOf(
-                    "Developer export inputSize=${export.inputWidth}x${export.inputHeight}, sourceSize=${export.sourceWidth}x${export.sourceHeight}",
-                    "Developer export preprocessing=${export.preprocessing}",
-                )
-            }.orEmpty()
         }
     }
 
@@ -982,8 +880,6 @@ fun AddEditClothingScreen(
                     lines = developerDiagnostics.ifEmpty {
                         listOf(stringResource(R.string.developer_diagnostics_empty))
                     },
-                    exportStatus = developerExportStatus,
-                    onExportInputImage = ::exportAdditionalInfoInputImage,
                 )
             }
         }
@@ -993,84 +889,14 @@ fun AddEditClothingScreen(
 @Composable
 private fun DeveloperDiagnosticsSection(
     lines: List<String>,
-    exportStatus: String?,
-    onExportInputImage: () -> Unit,
 ) {
     CardSection(title = stringResource(R.string.developer_diagnostics_title)) {
-        OutlinedButton(onClick = onExportInputImage) {
-            Icon(Icons.Rounded.Download, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.developer_export_input_image))
-        }
-        exportStatus?.let { status ->
-            Text(
-                text = status,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         Text(
             text = lines.joinToString(separator = "\n"),
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-private fun addDetectionDebugLines(
-    lines: MutableList<String>,
-    detectionResult: AdditionalInfoDetectionResult?,
-) {
-    if (detectionResult == null) {
-        lines += "Additional info: detector returned no result"
-        return
-    }
-
-    detectionResult.failureReason?.let { reason ->
-        lines += "Additional info failure: $reason"
-    }
-    detectionResult.debug?.let { debug ->
-        val stats = debug.tensorStats
-        lines += "Additional info sourceUri: ${debug.sourceUri}"
-        lines += "Additional info sourceSize: ${debug.sourceWidth}x${debug.sourceHeight}"
-        lines += "Additional info model: id=${debug.modelId}, version=${debug.modelVersion}, file=${debug.modelFile}"
-        lines += "Additional info input: shape=${debug.inputShape}, externalValueRange=${debug.externalValueRange}, normalization=${debug.normalizationType}"
-        lines += "Additional info preprocessing: ${debug.preprocessing}"
-        lines += "Additional info resize/background: resize=${debug.resizeStrategy}, background=${debug.backgroundStrategy}"
-        lines += "Additional info tensor: min=${stats.min.formatDebugFloat()}, max=${stats.max.formatDebugFloat()}, mean=${stats.mean.formatDebugFloat()}, std=${stats.standardDeviation.formatDebugFloat()}, nonFinite=${stats.nonFiniteCount}, checksum=${stats.checksum}"
-        lines += "Additional info tensor channelMeans: ${stats.channelMeans.joinToString { it.formatDebugFloat() }}"
-        lines += "Additional info tensor channelMins: ${stats.channelMins.joinToString { it.formatDebugFloat() }}"
-        lines += "Additional info tensor channelMaxs: ${stats.channelMaxs.joinToString { it.formatDebugFloat() }}"
-        if (debug.outputShapes.isNotEmpty()) {
-            lines += "Additional info outputShapes: ${debug.outputShapes.entries.joinToString { (name, shape) -> "$name=$shape" }}"
-        }
-        if (debug.topScoresByHead.isNotEmpty()) {
-            lines += "Additional info debug topK: ${debug.topScoresByHead.formatDebugTopK()}"
-        }
-    }
-    val prediction = detectionResult.prediction
-    if (prediction == null) {
-        lines += "Additional info: no prediction"
-        return
-    }
-
-    lines += "Additional info selectedTagIds: ${prediction.selectedTagIds.sorted().joinToString().ifBlank { "none" }}"
-    lines += "Additional info category scores (${prediction.categoryScores.size}):"
-    prediction.categoryScores.appendDebugScores(lines)
-    lines += "Additional info season scores (${prediction.seasonScores.size}):"
-    prediction.seasonScores.appendDebugScores(lines)
-    lines += "Additional info occasion scores (${prediction.occasionScores.size}):"
-    prediction.occasionScores.appendDebugScores(lines)
-}
-
-private fun Map<String, List<AdditionalInfoLabelScore>>.formatDebugTopK(): String = entries.joinToString { (name, scores) ->
-    "$name=${scores.joinToString { score -> "${score.label}:${score.score.formatDebugFloat()}" }}"
-}
-
-private fun List<AdditionalInfoLabelScore>.appendDebugScores(lines: MutableList<String>) {
-    sortedByDescending(AdditionalInfoLabelScore::score).forEach { score ->
-        lines += "  ${score.label} tag=${score.tagId ?: "n/a"} score=${score.score.formatDebugFloat()}"
     }
 }
 
@@ -2422,7 +2248,6 @@ private enum class PhotoProcessingStage(val labelRes: Int) {
     RemovingBackground(R.string.processing_stage_removing_background),
     CroppingPicture(R.string.processing_stage_cropping_picture),
     ExtractingColor(R.string.processing_stage_extracting_color),
-    DetectingAdditionalInformation(R.string.processing_stage_detecting_additional_information),
     ApplyingQuickEdit(R.string.processing_stage_applying_quick_edit),
 }
 
@@ -2432,7 +2257,7 @@ private data class PredictedTagReconciliation(
     val skippedCategories: Set<String>,
 )
 
-private fun reconcilePredictedAdditionalInfoTags(
+private fun reconcilePredictedTags(
     currentTagIds: List<String>,
     currentModelOwnedTagIds: List<String>,
     predictedTagIds: Set<String>,
@@ -2459,7 +2284,7 @@ private fun reconcilePredictedAdditionalInfoTags(
 
     categoriesWithPredictions.forEach { categoryId ->
         if (categoryId in userOverridden) return@forEach
-        // A new photo generation owns only the detector output for category/season/occasion.
+        // A new photo generation owns only the detector output for category/occasion.
         // Previous model-owned selections are removed first, so trousers -> shirt cannot keep trousers.
         predictedByCategory.getValue(categoryId).forEach { tagId ->
             if (tagId !in selected) selected += tagId
@@ -2474,7 +2299,7 @@ private fun reconcilePredictedAdditionalInfoTags(
     )
 }
 
-private val MODEL_PREDICTED_CATEGORIES = setOf("category", "season", "occasion")
+private val MODEL_PREDICTED_CATEGORIES = setOf("category", "occasion")
 
 private const val FIT_VALUE_DOES_NOT_FIT = 0
 private const val FIT_VALUE_FITS = 2

@@ -156,7 +156,6 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
-import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -628,7 +627,6 @@ private fun RobiaShell(
         BatchProcessingCoordinator(batchProcessingScope)
     }
     val batchBackgroundRemover = remember { PhotoBackgroundRemover() }
-    val batchAdditionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var batchSaveStatusMessage by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
@@ -743,7 +741,6 @@ private fun RobiaShell(
                     draft = draft,
                     context = context,
                     backgroundRemover = batchBackgroundRemover,
-                    additionalInfoDetector = batchAdditionalInfoDetector,
                     mainColors = mainColors,
                     availableTags = availableTags,
                     onDraftUpdated = ::updateBatchDraft,

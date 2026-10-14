@@ -53,7 +53,6 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
-import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoModelOutputTags
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import java.util.Locale
@@ -105,8 +104,6 @@ fun ManageTagsScreen(
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
     var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
-    var pendingDeleteTag by remember { mutableStateOf<GarmentTag?>(null) }
-    var pendingModelTagRename by remember { mutableStateOf<GarmentTag?>(null) }
     var pendingRestoreDefault by remember { mutableStateOf<RestoreDefaultTarget?>(null) }
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
     val visibleTags = remember(tags) { tags.filterNot { tag -> tag.categoryId == "care" } }
@@ -152,13 +149,7 @@ fun ManageTagsScreen(
                     tags = categoryTags,
                     onAddTag = { editorState = TagEditorState(categoryId = category.id) },
                     onEditTag = { tag -> editorState = TagEditorState(categoryId = category.id, existingTag = tag) },
-                    onDeleteTag = { tag ->
-                        if (tag.id in AdditionalInfoModelOutputTags.ids) {
-                            pendingDeleteTag = tag
-                        } else {
-                            onDeleteTag(tag)
-                        }
-                    },
+                    onDeleteTag = { tag -> onDeleteTag(tag) },
                     onRestoreDefault = if (category.id in RestorableTagCategoryIds) {
                         { pendingRestoreDefault = RestoreDefaultTarget.Tags(category) }
                     } else {
@@ -175,28 +166,7 @@ fun ManageTagsScreen(
             categoryTags = tagsByCategory[state.categoryId].orEmpty(),
             onDismiss = { editorState = null },
             onSave = { tag ->
-                val existing = state.existingTag
-                if (existing != null && existing.id in AdditionalInfoModelOutputTags.ids && tag.name != existing.name) {
-                    pendingModelTagRename = tag
-                } else {
-                    onSaveTag(tag)
-                    editorState = null
-                }
-            },
-        )
-    }
-
-    pendingModelTagRename?.let { tag ->
-        val originalTag = editorState?.existingTag ?: tag
-        AiDetectedTagWarningDialog(
-            title = stringResource(R.string.rename_ai_tag_title),
-            body = stringResource(R.string.rename_ai_tag_body, originalTag.localizedName()),
-            confirmText = stringResource(R.string.rename_anyway),
-            destructive = false,
-            onDismiss = { pendingModelTagRename = null },
-            onConfirm = {
                 onSaveTag(tag)
-                pendingModelTagRename = null
                 editorState = null
             },
         )
@@ -221,20 +191,6 @@ fun ManageTagsScreen(
             onConfirm = {
                 onDeleteMainColor(color)
                 pendingDeleteColor = null
-            },
-        )
-    }
-
-    pendingDeleteTag?.let { tag ->
-        AiDetectedTagWarningDialog(
-            title = stringResource(R.string.delete_ai_tag_title),
-            body = stringResource(R.string.delete_ai_tag_body, tag.localizedName()),
-            confirmText = stringResource(R.string.delete_anyway),
-            destructive = true,
-            onDismiss = { pendingDeleteTag = null },
-            onConfirm = {
-                onDeleteTag(tag)
-                pendingDeleteTag = null
             },
         )
     }
@@ -325,7 +281,7 @@ private fun TagCategoryCard(
                         key(tag.id) {
                             TagListRow(
                                 tag = tag,
-                                canEdit = category.id != "season" || tag.id in AdditionalInfoModelOutputTags.ids,
+                                canEdit = true,
                                 onEdit = { onEditTag(tag) },
                                 onDelete = { onDeleteTag(tag) },
                             )
@@ -593,41 +549,6 @@ private fun TagEditorDialog(
                 },
             ) {
                 Text(stringResource(R.string.save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun AiDetectedTagWarningDialog(
-    title: String,
-    body: String,
-    confirmText: String,
-    destructive: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(body) },
-        confirmButton = {
-            if (destructive) {
-                TextButton(onClick = onConfirm) {
-                    Text(
-                        text = confirmText,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            } else {
-                Button(onClick = onConfirm) {
-                    Text(confirmText)
-                }
             }
         },
         dismissButton = {
