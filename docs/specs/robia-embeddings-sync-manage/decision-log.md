@@ -90,3 +90,7 @@ Each entry: context → decision → rationale → consequences → review trigg
 ## PLAN-CHANGE 3 — E07 Cancel keeps the partial download; E07 may patch ModelStore (2026-10-14)
 - **What:** In the model-download UI, Cancel stops the WorkManager job, keeps the `.part` file (so a later download resumes via HTTP Range, REQ-E01) and sets state to `NotDownloaded`. TASK-E07 may edit `suggestions/model/ModelStore.kt` only to catch cancellation in `download()` and publish `NotDownloaded` (today the state stays `Downloading` until restart).
 - **Why:** the plan was silent on Cancel; E01 left cancellation unhandled. Resumable download is already a requirement; no scope, data-model or dependency change.
+
+## PLAN-CHANGE 4 — S03 may edit the DriveWardrobeRepository interface (2026-10-14)
+- **What:** TASK-S03 may edit `sync/DriveWardrobeRepository.kt` (the interface and its two implementers `NotConfiguredDriveWardrobeRepository`, `InMemoryDriveWardrobeRepository`) only for: (1) the new parameter `remote: WardrobeSyncSnapshot?` on `upsertSnapshot`, (2) a `photoUploadFailures` field on the upsert result.
+- **Why:** tasks.md S03 requires the signature `upsertSnapshot(snapshot, remote)` and per-photo failures in the result, but the method is declared in that interface, which was missing from S03's file list. No behaviour, scope, UX, data-model or dependency change.
