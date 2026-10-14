@@ -20,7 +20,7 @@ class CloudRestoreProgressTextTest {
         assertEquals("0.0 MB", (-1L).formatRestoreMegabytes())
 
         assertEquals(
-            RestoreByteProgressText(completedMegabytes = "0.5 MB", totalMegabytes = "2.0 MB"),
+            RestoreByteProgressText(completedMegabytes = "0.5 MB", totalMegabytes = "2.1 MB"),
             RestoreByteProgress(completedBytes = 524_288L, totalBytes = 2_097_152L).toDisplayText(),
         )
         assertEquals(
