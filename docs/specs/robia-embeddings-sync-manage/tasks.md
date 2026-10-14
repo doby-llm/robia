@@ -160,6 +160,18 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 - **Tests (JVM):** no null frame while bytes are unchanged; bucket boundary 59/60 s; displayed ETA never moves backwards; fraction falls back to items when bytes are unknown; upload progress forwarded from the pipeline; terminal outcomes clear the overlay; update `CloudRestoreProgressTextTest.hidesPreviouslyValidEstimateAfterAStalledSample` on purpose.
 - **Acceptance:** V-S12 (the tests above, CI) and V-Z05 in Z01 (Manu, slow Wi-Fi: ETA line never disappears, text changes at most every 5 s, bar advances at each photo, no layout shift, bar does not look stuck after the download).
 
+## TASK-M02 — Manage UI polish (Manu request, PLAN-CHANGE 11)
+- **Predecessors:** S06 · **Successors:** E05
+- **Files:** `ui/ManageTagsScreen.kt`, the shared Manage scaffold in `ui/RobiaApp.kt`, strings (remove the unused search label only), tests.
+- **In scope:** (1) Colors tab in the same list format as Season/Occasions, no boxed card; (2) no blank space after the last item when scrolled to the bottom, in every tab; (3) remove the Search tags box, with no height jump between tabs.
+- **Acceptance:** CI green; V-Z11 in Z01 (Manu: Colors looks like the other tabs, bottom scroll ends at the last item, no height jump).
+
+## TASK-S07 — Cloud backup upload stage (Manu request, PLAN-CHANGE 11)
+- **Predecessors:** S06 · **Successors:** Z01
+- **Files:** investigate first; likely `sync/WardrobeSyncOutboxProcessor.kt`, `sync/GoogleDriveWardrobeRepository.kt`, `ui/CloudRestoreProgressText.kt`, `ui/RobiaApp.kt` (overlay only). Independent review required.
+- **In scope:** find why "Updating cloud backup" takes about 3 minutes with a constant-rate bar and never finishes (app restart shows the data), make progress honest and finish cleanly; make the "N out of 12 steps" text truthful or replace it with a real count.
+- **Acceptance:** V-S13 (tests reproducing the completion path in fakes) and V-Z12 in Z01 (Manu, slow Wi-Fi: the screen finishes by itself and the step text matches real work).
+
 ## TASK-E02 — Precision tool in repo + golden fixture
 - **Reqs:** REQ-E04 (parity), REQ-E05/E06 (test data) · TS§3.1, §3.6
 - **Predecessors:** G-APPROVAL (no code deps) · **Successors:** E04
