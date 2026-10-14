@@ -15,6 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Robia"
-include(":additional-info-core")
-include(":additional-info-cli")
 include(":app")

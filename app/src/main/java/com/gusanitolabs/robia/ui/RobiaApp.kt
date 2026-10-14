@@ -156,7 +156,6 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
-import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -569,6 +568,14 @@ private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean 
     !item.isArchived && (metrics.primaryPaletteColorId == colorId || metrics.secondaryPaletteColorId == colorId)
 }
 
+// Routes that render browse-style wardrobe items; the others skip building them.
+// TagReview joins this set in TASK-E08.
+private val WardrobeUiModelRoutes = setOf(
+    RobiaRoute.Browse,
+    RobiaRoute.ItemDetail,
+    RobiaRoute.AdvancedFilters,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RobiaShell(
@@ -628,7 +635,6 @@ private fun RobiaShell(
         BatchProcessingCoordinator(batchProcessingScope)
     }
     val batchBackgroundRemover = remember { PhotoBackgroundRemover() }
-    val batchAdditionalInfoDetector = remember { TfliteAdditionalInfoDetector() }
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var batchSaveStatusMessage by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
@@ -639,9 +645,16 @@ private fun RobiaShell(
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
     var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
-    val items = clothingItems.toUiWardrobeItems(syncState)
-    val filteredItems = remember(items, browseFilters, mainColors) {
-        items.filter { item -> browseFilters.matches(item, mainColors) }
+    val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
+    val items = remember(context, clothingItems, syncState, needsWardrobeUiModels) {
+        if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, context) else emptyList()
+    }
+    val filteredItems = remember(items, browseFilters, mainColors, needsWardrobeUiModels) {
+        if (needsWardrobeUiModels) {
+            items.filter { item -> browseFilters.matches(item, mainColors) }
+        } else {
+            emptyList()
+        }
     }
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
@@ -673,7 +686,9 @@ private fun RobiaShell(
         }
     }
 
-    LaunchedEffect(items) {
+    LaunchedEffect(items, needsWardrobeUiModels) {
+        // Items are empty off the wardrobe routes; pruning then would drop the selection.
+        if (!needsWardrobeUiModels) return@LaunchedEffect
         val activeIds = items.map(UiWardrobeItem::id).toSet()
         selectedBrowseItemIds = selectedBrowseItemIds.intersect(activeIds)
         selectedItemId?.let { itemId ->
@@ -743,7 +758,6 @@ private fun RobiaShell(
                     draft = draft,
                     context = context,
                     backgroundRemover = batchBackgroundRemover,
-                    additionalInfoDetector = batchAdditionalInfoDetector,
                     mainColors = mainColors,
                     availableTags = availableTags,
                     onDraftUpdated = ::updateBatchDraft,
@@ -3708,22 +3722,22 @@ private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
     }
 }
 
-@Composable
 private fun List<ClothingItem>.toUiWardrobeItems(
     syncState: WardrobeSyncState,
+    context: Context,
 ): List<UiWardrobeItem> = map { item ->
     val effectiveSyncStatus = item.syncStatus.resolveForConnection(syncState.connectionStatus)
     UiWardrobeItem(
         id = item.id,
         name = item.name,
         subtitle = if (item.photoRestoreState.needsAttention) {
-            stringResource(R.string.cloud_restore_photo_missing_message)
+            context.getString(R.string.cloud_restore_photo_missing_message)
         } else {
-            item.notes.ifBlank { stringResource(effectiveSyncStatus.itemStatusLabelRes) }
+            item.notes.ifBlank { context.getString(effectiveSyncStatus.itemStatusLabelRes) }
         },
         notes = item.notes,
         photoUri = item.photoUri,
-        tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedLabel()) },
+        tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedTagLabel(context)) },
         fitValue = item.fitValue,
         primaryColor = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
         primaryRawValue = item.colorMetrics.primaryRawValue,

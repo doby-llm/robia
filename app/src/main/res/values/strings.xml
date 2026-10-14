@@ -232,7 +232,6 @@
     <string name="processing_stage_removing_background">Removing background</string>
     <string name="processing_stage_cropping_picture">Cropping picture</string>
     <string name="processing_stage_extracting_color">Extracting color</string>
-    <string name="processing_stage_detecting_additional_information">Detecting additional information</string>
     <string name="processing_stage_applying_quick_edit">Applying quick edit</string>
     <string name="quick_edit_title">Quick edit photo</string>
     <string name="quick_edit_brightness">Brightness</string>
@@ -415,11 +414,7 @@
     <string name="tag_name_duplicate">A tag with this name already exists.</string>
     <string name="color_hex_duplicate">A color with this swatch already exists.</string>
     <string name="developer_diagnostics_title">Developer diagnostics</string>
-    <string name="developer_diagnostics_empty">No photo diagnostics yet. Select or capture a photo to populate pipeline, color, and TFLite data.</string>
-    <string name="developer_export_input_image">Export NN input image</string>
-    <string name="developer_export_input_image_saved">Exact NN input image saved to gallery</string>
-    <string name="developer_export_input_image_error">Couldn’t export exact NN input image</string>
-    <string name="developer_export_input_image_no_photo">Select or capture a photo before exporting the NN input image.</string>
+    <string name="developer_diagnostics_empty">No photo diagnostics yet. Select or capture a photo to populate pipeline and color data.</string>
     <string name="image_saved">Image saved</string>
     <string name="image_save_error">Couldn’t save image</string>
     <string name="share_image">Share image</string>
@@ -428,12 +423,6 @@
     <string name="image_share_error">Couldn’t share image</string>
     <string name="pdf_share_error">Couldn’t create PDF</string>
     <string name="share_no_app_error">No app available to share this garment.</string>
-    <string name="rename_ai_tag_title">Rename AI-detected tag?</string>
-    <string name="rename_ai_tag_body">Robia’s AI currently uses “%1$s” as a prediction label. If you rename it, the AI may no longer identify this label automatically for new garments.</string>
-    <string name="rename_anyway">Rename anyway</string>
-    <string name="delete_ai_tag_title">Delete AI-detected tag?</string>
-    <string name="delete_ai_tag_body">Robia’s AI currently uses “%1$s” as a prediction label. If you delete it, the AI will no longer be able to identify this label automatically for new garments.</string>
-    <string name="delete_anyway">Delete anyway</string>
     <string name="category_category">Category</string>
     <string name="category_location">Locations</string>
     <string name="restore_default_button">Default</string>
@@ -476,4 +465,10 @@
         <item>@string/language_spanish</item>
         <item>@string/language_german</item>
     </string-array>
+    <string name="manage_search_tags">Search tags</string>
+    <string name="manage_tab_count">%1$s %2$d</string>
+    <string name="tag_description_label">Description (optional)</string>
+    <string name="tag_no_occasions_badge">No occasions</string>
+    <string name="tag_add_button">Add</string>
+    <string name="tag_description_counter">%1$d/200</string>
 </resources>

@@ -30,7 +30,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,11 +41,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -53,13 +58,14 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
-import com.gusanitolabs.robia.media.additionalinfo.AdditionalInfoModelOutputTags
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
+import java.text.Normalizer
 import java.util.Locale
 import java.util.UUID
 
 private const val DefaultCustomColorHex = "#A8644E"
+private const val ColorsTabId = "colors"
 
 private data class NeutralColorPreset(
     @StringRes val nameRes: Int,
@@ -105,21 +111,40 @@ fun ManageTagsScreen(
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
     var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
-    var pendingDeleteTag by remember { mutableStateOf<GarmentTag?>(null) }
-    var pendingModelTagRename by remember { mutableStateOf<GarmentTag?>(null) }
     var pendingRestoreDefault by remember { mutableStateOf<RestoreDefaultTarget?>(null) }
+    var selectedTabId by rememberSaveable { mutableStateOf<String?>(null) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
     val visibleTags = remember(tags) { tags.filterNot { tag -> tag.categoryId == "care" } }
     val tagsByCategory = remember(visibleTags) { visibleTags.groupBy(GarmentTag::categoryId) }
+    val tabIds = remember(visibleCategories) { visibleCategories.map(TagCategory::id) + ColorsTabId }
+    val activeTabId = selectedTabId?.takeIf { id -> id in tabIds } ?: tabIds.first()
+    val isColorsTab = activeTabId == ColorsTabId
+    val activeCategory = visibleCategories.firstOrNull { category -> category.id == activeTabId }
+    val labelsById = remember(tags, configuration.locales) {
+        tags.associate { tag -> tag.id to tag.localizedTagLabel(context) }
+    }
+    val activeTags = tagsByCategory[activeTabId].orEmpty()
+    val searchTerm = searchQuery.foldForSearch()
+    val filteredActiveTags = remember(activeTags, labelsById, searchTerm) {
+        if (searchTerm.isEmpty()) {
+            activeTags
+        } else {
+            activeTags.filter { tag -> (labelsById[tag.id] ?: tag.name).foldForSearch().contains(searchTerm) }
+        }
+    }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
+        Column(
+            modifier = Modifier.padding(start = 24.dp, top = 24.dp, end = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = stringResource(R.string.manage_tags_title),
@@ -132,39 +157,99 @@ fun ManageTagsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (!isColorsTab) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { query -> searchQuery = query },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.manage_search_tags)) },
+                    singleLine = true,
+                )
+            }
         }
 
-        item(key = "main-color-palette") {
-            MainColorPaletteCard(
-                colors = mainColors,
-                onAddColor = { colorEditorState = ColorEditorState() },
-                onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
-                onDeleteColor = { color -> pendingDeleteColor = color },
-                onRestoreDefault = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
+        ScrollableTabRow(
+            selectedTabIndex = tabIds.indexOf(activeTabId),
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = Color.Transparent,
+            edgePadding = 24.dp,
+        ) {
+            visibleCategories.forEach { category ->
+                val categoryCount = tagsByCategory[category.id].orEmpty().size
+                Tab(
+                    selected = activeTabId == category.id,
+                    onClick = { selectedTabId = category.id },
+                    text = {
+                        Text(stringResource(R.string.manage_tab_count, category.localizedName(), categoryCount))
+                    },
+                )
+            }
+            Tab(
+                selected = isColorsTab,
+                onClick = { selectedTabId = ColorsTabId },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.manage_tab_count,
+                            stringResource(R.string.colors_section),
+                            mainColors.size,
+                        ),
+                    )
+                },
             )
         }
 
-        visibleCategories.forEach { category ->
-            item(key = category.id) {
-                val categoryTags = tagsByCategory[category.id].orEmpty()
-                TagCategoryCard(
-                    category = category,
-                    tags = categoryTags,
-                    onAddTag = { editorState = TagEditorState(categoryId = category.id) },
-                    onEditTag = { tag -> editorState = TagEditorState(categoryId = category.id, existingTag = tag) },
-                    onDeleteTag = { tag ->
-                        if (tag.id in AdditionalInfoModelOutputTags.ids) {
-                            pendingDeleteTag = tag
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = PaddingValues(start = 24.dp, top = 12.dp, end = 24.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (isColorsTab) {
+                item(key = "main-color-palette") {
+                    MainColorPaletteCard(
+                        colors = mainColors,
+                        onAddColor = { colorEditorState = ColorEditorState() },
+                        onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
+                        onDeleteColor = { color -> pendingDeleteColor = color },
+                        onRestoreDefault = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
+                    )
+                }
+            } else if (activeCategory != null) {
+                item(key = "section-header:${activeCategory.id}") {
+                    TagCategoryHeader(
+                        category = activeCategory,
+                        tagCount = activeTags.size,
+                        onAddTag = { editorState = TagEditorState(categoryId = activeCategory.id) },
+                        onRestoreDefault = if (activeCategory.id in RestorableTagCategoryIds) {
+                            { pendingRestoreDefault = RestoreDefaultTarget.Tags(activeCategory) }
                         } else {
-                            onDeleteTag(tag)
+                            null
+                        },
+                    )
+                }
+                if (filteredActiveTags.isEmpty()) {
+                    item(key = "section-empty:${activeCategory.id}") {
+                        Text(
+                            text = stringResource(R.string.no_tags_in_category),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    filteredActiveTags.forEach { tag ->
+                        item(key = "tag-row:${tag.id}", contentType = "tag-row") {
+                            TagListRow(
+                                tag = tag,
+                                label = labelsById[tag.id] ?: tag.name,
+                                canEdit = true,
+                                onEdit = { editorState = TagEditorState(categoryId = activeCategory.id, existingTag = tag) },
+                                onDelete = { onDeleteTag(tag) },
+                            )
                         }
-                    },
-                    onRestoreDefault = if (category.id in RestorableTagCategoryIds) {
-                        { pendingRestoreDefault = RestoreDefaultTarget.Tags(category) }
-                    } else {
-                        null
-                    },
-                )
+                    }
+                }
             }
         }
     }
@@ -175,28 +260,7 @@ fun ManageTagsScreen(
             categoryTags = tagsByCategory[state.categoryId].orEmpty(),
             onDismiss = { editorState = null },
             onSave = { tag ->
-                val existing = state.existingTag
-                if (existing != null && existing.id in AdditionalInfoModelOutputTags.ids && tag.name != existing.name) {
-                    pendingModelTagRename = tag
-                } else {
-                    onSaveTag(tag)
-                    editorState = null
-                }
-            },
-        )
-    }
-
-    pendingModelTagRename?.let { tag ->
-        val originalTag = editorState?.existingTag ?: tag
-        AiDetectedTagWarningDialog(
-            title = stringResource(R.string.rename_ai_tag_title),
-            body = stringResource(R.string.rename_ai_tag_body, originalTag.localizedName()),
-            confirmText = stringResource(R.string.rename_anyway),
-            destructive = false,
-            onDismiss = { pendingModelTagRename = null },
-            onConfirm = {
                 onSaveTag(tag)
-                pendingModelTagRename = null
                 editorState = null
             },
         )
@@ -225,20 +289,6 @@ fun ManageTagsScreen(
         )
     }
 
-    pendingDeleteTag?.let { tag ->
-        AiDetectedTagWarningDialog(
-            title = stringResource(R.string.delete_ai_tag_title),
-            body = stringResource(R.string.delete_ai_tag_body, tag.localizedName()),
-            confirmText = stringResource(R.string.delete_anyway),
-            destructive = true,
-            onDismiss = { pendingDeleteTag = null },
-            onConfirm = {
-                onDeleteTag(tag)
-                pendingDeleteTag = null
-            },
-        )
-    }
-
     pendingRestoreDefault?.let { target ->
         RestoreDefaultConfirmationDialog(
             target = target,
@@ -255,83 +305,48 @@ fun ManageTagsScreen(
 }
 
 @Composable
-private fun TagCategoryCard(
+private fun TagCategoryHeader(
     category: TagCategory,
-    tags: List<GarmentTag>,
+    tagCount: Int,
     onAddTag: () -> Unit,
-    onEditTag: (GarmentTag) -> Unit,
-    onDeleteTag: (GarmentTag) -> Unit,
     onRestoreDefault: (() -> Unit)?,
 ) {
     val addDescription = stringResource(R.string.content_add_tag)
     val allowsNewTags = category.id != "season"
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Icon(
+            imageVector = Icons.Rounded.LocalOffer,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = category.localizedName(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.tag_count, tagCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (allowsNewTags) {
+            IconButton(
+                modifier = Modifier.semantics { contentDescription = addDescription },
+                onClick = onAddTag,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.LocalOffer,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = category.localizedName(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = stringResource(R.string.tag_count, tags.size),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (allowsNewTags) {
-                    IconButton(
-                        modifier = Modifier.semantics { contentDescription = addDescription },
-                        onClick = onAddTag,
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                    }
-                }
-                onRestoreDefault?.let { restoreDefault ->
-                    TextButton(onClick = restoreDefault) {
-                        Text(stringResource(R.string.restore_default_button))
-                    }
-                }
+                Icon(Icons.Rounded.Add, contentDescription = null)
             }
-
-            if (tags.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.no_tags_in_category),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    tags.forEach { tag ->
-                        key(tag.id) {
-                            TagListRow(
-                                tag = tag,
-                                canEdit = category.id != "season" || tag.id in AdditionalInfoModelOutputTags.ids,
-                                onEdit = { onEditTag(tag) },
-                                onDelete = { onDeleteTag(tag) },
-                            )
-                        }
-                    }
-                }
+        }
+        onRestoreDefault?.let { restoreDefault ->
+            TextButton(onClick = restoreDefault) {
+                Text(stringResource(R.string.restore_default_button))
             }
         }
     }
@@ -340,6 +355,7 @@ private fun TagCategoryCard(
 @Composable
 private fun TagListRow(
     tag: GarmentTag,
+    label: String,
     canEdit: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -365,7 +381,7 @@ private fun TagListRow(
                     .background(tag.dotColor()),
             )
             Text(
-                text = tag.localizedName(),
+                text = label,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
@@ -593,41 +609,6 @@ private fun TagEditorDialog(
                 },
             ) {
                 Text(stringResource(R.string.save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun AiDetectedTagWarningDialog(
-    title: String,
-    body: String,
-    confirmText: String,
-    destructive: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(body) },
-        confirmButton = {
-            if (destructive) {
-                TextButton(onClick = onConfirm) {
-                    Text(
-                        text = confirmText,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            } else {
-                Button(onClick = onConfirm) {
-                    Text(confirmText)
-                }
             }
         },
         dismissButton = {
@@ -905,9 +886,6 @@ private fun TagCategory.localizedName(): String = when (id) {
 }
 
 @Composable
-private fun GarmentTag.localizedName(): String = localizedTagLabel()
-
-@Composable
 private fun GarmentTag.dotColor(): Color = when (categoryId) {
     "category" -> MaterialTheme.colorScheme.primaryContainer
     "season" -> MaterialTheme.colorScheme.secondaryContainer
@@ -915,6 +893,12 @@ private fun GarmentTag.dotColor(): Color = when (categoryId) {
     "location" -> MaterialTheme.colorScheme.inversePrimary
     else -> MaterialTheme.colorScheme.surfaceVariant
 }
+
+private fun String.foldForSearch(): String =
+    Normalizer.normalize(this, Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+        .lowercase(Locale.ROOT)
+        .trim()
 
 private fun List<GarmentTag>.nextTagSortOrder(): Int =
     (maxOfOrNull(GarmentTag::sortOrder) ?: 0) + 10

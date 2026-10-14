@@ -13,7 +13,7 @@ data class EditorPhotoState(
     val foregroundUri: String? = null,
     val croppedForegroundUri: String? = null,
     val currentEditedUri: String? = null,
-    val additionalInfoSourceUri: String? = null,
+    val suggestionSourceUri: String? = null,
     val backgroundRemovalStatus: EditorBackgroundRemovalStatus = EditorBackgroundRemovalStatus.None,
     val processingEventId: Long? = null,
     val processingToken: Int = 0,
@@ -24,8 +24,8 @@ data class EditorPhotoState(
     val quickEditComparisonBaseUri: String?
         get() = currentEditedUri ?: croppedForegroundUri ?: foregroundUri ?: rawSourceUri
 
-    val canonicalAdditionalInfoUri: String?
-        get() = additionalInfoSourceUri ?: canonicalEditorUri
+    val canonicalSuggestionUri: String?
+        get() = suggestionSourceUri ?: canonicalEditorUri
 
     val usesOriginalPhotoFallback: Boolean
         get() = backgroundRemovalStatus == EditorBackgroundRemovalStatus.OriginalFallback

@@ -1,0 +1,15 @@
+[project]
+name = "embedding-precision"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "litert-lm==0.18.0",
+    "numpy>=2.5.4",
+    "pillow>=12.3.0",
+]
+
+[dependency-groups]
+drive = [
+    "google-api-python-client>=2.201.0",
+    "google-auth>=2.62.0",
+]

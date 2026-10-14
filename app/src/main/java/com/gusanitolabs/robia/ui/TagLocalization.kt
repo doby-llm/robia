@@ -1,16 +1,19 @@
 package com.gusanitolabs.robia.ui
 
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.TagDisplayPolicy
 
 @Composable
-internal fun GarmentTag.localizedTagLabel(): String {
+internal fun GarmentTag.localizedTagLabel(): String = localizedTagLabel(LocalContext.current)
+
+internal fun GarmentTag.localizedTagLabel(context: Context): String {
     if (TagDisplayPolicy.shouldUseStoredName(this)) return name
-    return defaultTagLabelRes(id)?.let { resId -> stringResource(resId) } ?: name
+    return defaultTagLabelRes(id)?.let { resId -> context.getString(resId) } ?: name
 }
 
 @StringRes

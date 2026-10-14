@@ -1,7 +1,6 @@
 package com.gusanitolabs.robia
 
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -11,17 +10,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.lifecycleScope
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
-import com.gusanitolabs.robia.data.DataStoreSettingsRepository
-import com.gusanitolabs.robia.data.LocalTagRepository
-import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
-import com.gusanitolabs.robia.data.local.RobiaDatabase
-import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
-import com.gusanitolabs.robia.sync.FileRestoreSyncLogRepository
-import com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
 import com.gusanitolabs.robia.ui.RobiaApp
@@ -32,8 +23,6 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.launch
 
-private val Context.settingsDataStore by preferencesDataStore(name = "robia_settings")
-private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 private const val EXTRA_PERFORMANCE_FIXTURE_URIS = "com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS"
 private const val EXTRA_PERFORMANCE_BATCH = "com.gusanitolabs.robia.PERFORMANCE_BATCH"
 private const val DRIVE_AUTH_LOG_TAG = "RobiaDriveAuth"
@@ -54,34 +43,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         authorizationClient = Identity.getAuthorizationClient(this)
 
-        val database = RobiaDatabase.getInstance(applicationContext)
-        settingsRepository = DataStoreSettingsRepository(settingsDataStore)
-        val wardrobeRepository = LocalWardrobeRepository(database.wardrobeDao())
-        val tagRepository = LocalTagRepository(database.tagDao(), database.syncTombstoneDao())
-        val syncSnapshotRepository = LocalWardrobeSyncSnapshotRepository(
-            database = database,
-            wardrobeDao = database.wardrobeDao(),
-            tagDao = database.tagDao(),
-            syncTombstoneDao = database.syncTombstoneDao(),
-        )
-        syncGateway = WardrobeSyncOutboxProcessor(
-            settingsRepository = settingsRepository,
-            wardrobeRepository = wardrobeRepository,
-            snapshotRepository = syncSnapshotRepository,
-            driveRepository = GoogleDriveWardrobeRepository(
-                context = applicationContext,
-                authorizationClient = authorizationClient,
-                driveScope = Scope(DRIVE_APPDATA_SCOPE),
-            ),
-            restoreSyncLogRepository = FileRestoreSyncLogRepository(applicationContext),
-            scope = lifecycleScope,
-        )
+        val app = application as RobiaApplication
+        settingsRepository = app.settingsRepository
+        syncGateway = app.syncGateway
 
         setContent {
             RobiaApp(
                 settingsRepository = settingsRepository,
-                wardrobeRepository = wardrobeRepository,
-                tagRepository = tagRepository,
+                wardrobeRepository = app.wardrobeRepository,
+                tagRepository = app.tagRepository,
                 syncGateway = syncGateway,
                 onRequestCloudSetup = ::requestGoogleDriveAuthorization,
                 performanceFixtureUris = performanceFixtureUris(),

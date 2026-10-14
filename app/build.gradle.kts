@@ -133,17 +133,16 @@ ksp {
 }
 
 dependencies {
-    implementation(project(":additional-info-core"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.litertlm.android)
     implementation(libs.mlkit.subject.segmentation)
     implementation(libs.play.services.auth)
-    implementation(libs.tensorflow.lite)
     implementation(libs.skydoves.colorpicker.compose)
 
     implementation(platform(libs.androidx.compose.bom))

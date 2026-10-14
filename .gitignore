@@ -13,3 +13,7 @@ captures/
 
 # OS
 .DS_Store
+
+# Embedding precision tool: photo data and local venv (never commit)
+tools/embedding-precision/data/
+tools/embedding-precision/.venv/
