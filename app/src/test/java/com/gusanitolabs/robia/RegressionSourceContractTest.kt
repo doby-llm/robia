@@ -343,10 +343,10 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("hasPendingCloudDeletion()"))
         assertTrue(processor.contains("retry rejected reason=cloud_deletion_pending"))
         assertTrue(driveRepository.contains("withTimeout(AUTHORIZATION_TIMEOUT_MILLIS)"))
-        assertTrue(driveRepository.contains("withDrivePhaseDeadline"))
+        assertFalse(driveRepository.contains("withDrivePhaseDeadline"))
         val repositoryBeforeHttpApi = driveRepository.substringBefore("private class HttpDriveSnapshotApi")
         assertTrue(repositoryBeforeHttpApi.contains("const val AUTHORIZATION_TIMEOUT_MILLIS = 30_000L"))
-        assertTrue(repositoryBeforeHttpApi.contains("const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L"))
+        assertFalse(repositoryBeforeHttpApi.contains("DRIVE_PHASE_TIMEOUT_MILLIS"))
         assertTrue(!repositoryBeforeHttpApi.contains("private class HttpDriveSnapshotApi"))
         assertTrue(repository.contains("suspend fun hasPendingCloudDeletion(): Boolean"))
         assertTrue(repository.contains("suspend fun nextRunnableSyncRetryEpochMillis(): Long?"))
@@ -451,8 +451,8 @@ class RegressionSourceContractTest {
         assertTrue(dao.contains("retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now"))
         assertTrue(processor.contains("CloudRestoreStatus.CompletedWithAttention"))
         assertTrue(driveRepository.contains("listBlobPathsWithPrefix"))
-        assertTrue(driveRepository.contains("filter { path -> path.startsWith(photoBlobPrefix) }"))
-        assertTrue(driveRepository.contains("legacyPhotoRestoreCandidate"))
+        assertTrue(driveRepository.contains("namesWithPrefix(DriveFolderNaming.photoBlobPrefix(garmentId))"))
+        assertTrue(driveRepository.contains("private fun DriveFileIndex.resolveFileId("))
         assertTrue(driveRepository.contains("exact_blob_not_found"))
         assertTrue(app.contains("onRetryRestoredPhoto"))
         assertTrue(app.contains("R.string.cloud_restore_retry_photo"))
@@ -539,7 +539,7 @@ class RegressionSourceContractTest {
 
         val importDiagnostics = driveRepository
             .substringAfter("internal fun GarmentPhotoRecord.importDiagnosticEvent")
-            .substringBefore("private data class ImageDecodeResult")
+            .substringBefore("private fun Throwable.diagnosticSummary")
         assertTrue(importDiagnostics.indexOf("persistedPhotoUriPresent=") < importDiagnostics.indexOf("blobPath="))
     }
 
