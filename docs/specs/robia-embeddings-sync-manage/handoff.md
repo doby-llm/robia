@@ -7,6 +7,7 @@
 - Coding workers: Codex (never OpenHands). Python tooling (E02): `uv`, `UV_CACHE_DIR=/tmp/uv-cache`.
 - Create one card per task in `tasks.md` with the same ID, predecessors and the waves of `implementation-plan.md`. Respect file leases.
 - CI is the only build authority (`Android APK CI`). Never build Android on the Pi.
+- Known since 2026-10-14: the CI step "Set up Android SDK" fails on every branch (runner/sdkmanager change, not our code). TASK-B01 step 0 fixes it; run B01 first.
 - Known: since ~2026-10 the step "Set up Android SDK" fails on every branch (runner change, not our code). TASK-B01 step 0 fixes it; run B01 first.
 - Gates needing Manu: G-DEVICE-1 (after E01), G-DEVICE-2 / Z01 (end). Send him: the staging APK artifact link and the exact 3–5 steps from the task. Everything else proceeds autonomously.
 - Stop conditions: any ambiguity in the spec, a needed file outside a task's list, NFR-01 failing twice, two failed remediation cycles → Blocked + one precise question to Manu.
