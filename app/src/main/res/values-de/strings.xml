@@ -525,4 +525,5 @@
     <string name="sync_use_backup_confirm_title">Kleidungsstücke auf diesem Handy ersetzen?</string>
     <string name="sync_use_backup_confirm_body">Die Kleidungsstücke und Fotos auf diesem Handy werden durch die Google-Drive-Sicherung ersetzt. Änderungen, die nur auf diesem Handy existieren, gehen verloren.</string>
     <string name="sync_use_backup_confirm_action">Ersetzen</string>
+    <string name="sync_status_parked_help">Auf diesem Handy gespeichert. Es wird erst hochgeladen, wenn du Erneut versuchen tippst.</string>
 </resources>

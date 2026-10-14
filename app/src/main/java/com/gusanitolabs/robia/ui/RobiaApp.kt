@@ -658,8 +658,10 @@ private fun RobiaShell(
     var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
     var showUseBackupConfirmation by remember { mutableStateOf(false) }
     var conflictDialogDismissed by remember(syncState.conflict) { mutableStateOf(false) }
-    // Merge confirmation is a dialog; every other attention kind is shown as a card in Browse.
-    val browseAttention = syncState.attention.firstOrNull { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
+    // Merge confirmation is a dialog; every other attention kind is shown as a card in Browse, highest priority first.
+    val browseAttentions = syncState.attention
+        .filter { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
+        .take(MAX_BROWSE_ATTENTION_CARDS)
     val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
     val items = remember(context, clothingItems, syncState, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, context) else emptyList()
@@ -1353,9 +1355,10 @@ private fun RobiaShell(
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
-            browseAttention = browseAttention,
+            browseAttentions = browseAttentions,
             onSyncAttentionAction = ::handleAttentionAction,
             onKeepWithoutPhoto = onKeepWithoutPhoto,
+            onRetryAttention = onRetryAttention,
         )
     }
     restoreProgress?.let { progress ->
@@ -2163,9 +2166,10 @@ private fun RobiaNavHost(
     onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
-    browseAttention: SyncAttention?,
+    browseAttentions: List<SyncAttention>,
     onSyncAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     onKeepWithoutPhoto: (String) -> Unit,
+    onRetryAttention: (SyncAttentionKind) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -2183,8 +2187,8 @@ private fun RobiaNavHost(
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
             onResetFilters = onResetFilters,
-            attention = browseAttention,
-            onAttentionAction = { action -> browseAttention?.let { onSyncAttentionAction(it, action) } },
+            attentions = browseAttentions,
+            onAttentionAction = onSyncAttentionAction,
             showSyncDetails = developerModeEnabled,
             onSyncDetailsClick = onRestoreSyncLogClick,
         )
@@ -2271,6 +2275,7 @@ private fun RobiaNavHost(
                 onEditClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
                 onRetryRestoredPhoto = onRetryRestoredPhoto,
                 onKeepWithoutPhoto = onKeepWithoutPhoto,
+                onRetryAttention = onRetryAttention,
                 showSyncDetails = developerModeEnabled,
                 onSyncDetailsClick = onRestoreSyncLogClick,
             )
@@ -2346,8 +2351,8 @@ private fun BrowseWardrobeScreen(
     onAddClick: () -> Unit,
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
-    attention: SyncAttention?,
-    onAttentionAction: (SyncAttentionAction) -> Unit,
+    attentions: List<SyncAttention>,
+    onAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     showSyncDetails: Boolean,
     onSyncDetailsClick: () -> Unit,
 ) {
@@ -2374,14 +2379,16 @@ private fun BrowseWardrobeScreen(
                 onFiltersClick = onFiltersClick,
             )
         }
-        if (attention != null && items.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                SyncAttentionCard(
-                    attention = attention,
-                    onAction = onAttentionAction,
-                    showDetails = showSyncDetails,
-                    onDetails = onSyncDetailsClick,
-                )
+        if (items.isNotEmpty()) {
+            attentions.forEach { attention ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    SyncAttentionCard(
+                        attention = attention,
+                        onAction = { action -> onAttentionAction(attention, action) },
+                        showDetails = showSyncDetails,
+                        onDetails = onSyncDetailsClick,
+                    )
+                }
             }
         }
         if (isInitialLoading) {
@@ -2698,6 +2705,8 @@ private fun GarmentCloudStatusRow(item: UiWardrobeItem) {
                 )
             } else if (item.syncStatus in PendingUploadStatuses) {
                 Text(stringResource(R.string.sync_status_pending_help))
+            } else if (item.parkedAttentionKind() != null) {
+                Text(stringResource(R.string.sync_status_parked_help))
             }
         },
         leadingContent = {
@@ -2737,6 +2746,14 @@ private val PendingUploadStatuses = setOf(
     GarmentSyncStatus.Queued,
     GarmentSyncStatus.FailedRetryable,
 )
+
+/** Parked rows that only an explicit Retry releases (RetryAttention, TS§4.5). */
+private fun UiWardrobeItem.parkedAttentionKind(): SyncAttentionKind? = when {
+    syncStatus != GarmentSyncStatus.NeedsUserAction -> null
+    syncFailureMessage == DRIVE_FULL_REASON -> SyncAttentionKind.DriveFull
+    syncFailureMessage == PHOTO_UPLOAD_FAILED_REASON -> SyncAttentionKind.PhotoUploadFailed
+    else -> null
+}
 
 private fun formatEpochMillis(epochMillis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(epochMillis))
@@ -2883,6 +2900,7 @@ private fun ItemDetailScreen(
     onEditClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     onKeepWithoutPhoto: (String) -> Unit,
+    onRetryAttention: (SyncAttentionKind) -> Unit,
     showSyncDetails: Boolean,
     onSyncDetailsClick: () -> Unit,
 ) {
@@ -2960,6 +2978,17 @@ private fun ItemDetailScreen(
             )
         }
         item { GarmentCloudStatusRow(item) }
+        item.parkedAttentionKind()?.let { kind ->
+            item {
+                SyncAttentionCard(
+                    attention = SyncAttention(kind, listOf(item.id)),
+                    onAction = { action -> if (action == SyncAttentionAction.Retry) onRetryAttention(kind) },
+                    showDetails = showSyncDetails,
+                    onDetails = onSyncDetailsClick,
+                    actions = listOf(SyncAttentionAction.Retry),
+                )
+            }
+        }
         if (item.hasMissingRestoredPhoto) {
             item {
                 SyncAttentionCard(
@@ -4050,6 +4079,9 @@ private val GarmentSyncStatus.itemStatusLabelRes: Int
     }
 
 private const val SYNC_STORAGE_URL = "https://one.google.com/storage"
+private const val MAX_BROWSE_ATTENTION_CARDS = 2
+private const val DRIVE_FULL_REASON = "drive_full"
+private const val PHOTO_UPLOAD_FAILED_REASON = "photo_upload_failed"
 
 @Composable
 private fun GarmentTag.localizedLabel(): String = localizedTagLabel()

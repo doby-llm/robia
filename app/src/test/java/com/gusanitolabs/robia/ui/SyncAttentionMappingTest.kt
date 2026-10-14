@@ -3,27 +3,35 @@ package com.gusanitolabs.robia.ui
 import com.gusanitolabs.robia.sync.SyncAttentionKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** V-S09: every attention kind maps to a title, a body and at least one action; the retired copy is gone. */
+/** V-S09: every attention kind maps to its own title, body and actions; the retired copy is gone. */
 class SyncAttentionMappingTest {
     @Test
-    fun everyKindHasTitleBodyAndAtLeastOneAction() {
-        SyncAttentionKind.values().forEach { kind ->
-            val presentation = kind.presentation()
-            assertTrue("$kind needs a title", presentation.titleRes != 0)
-            assertTrue("$kind needs a body", presentation.bodyRes != 0)
-            assertTrue("$kind needs at least one action", presentation.actions.isNotEmpty())
-        }
+    fun everyKindMapsToItsOwnTitleAndBody() {
+        val presentations = SyncAttentionKind.values().map { kind -> kind.presentation() }
+        assertEquals(SyncAttentionKind.values().size, presentations.map { it.titleRes }.toSet().size)
+        assertEquals(SyncAttentionKind.values().size, presentations.map { it.bodyRes }.toSet().size)
+        presentations.forEach { assertNotEquals(it.titleRes, it.bodyRes) }
     }
 
     @Test
-    fun kindsHaveDistinctTitles() {
-        val titles = SyncAttentionKind.values().map { kind -> kind.presentation().titleRes }
-        assertEquals(titles.size, titles.toSet().size)
+    fun eachKindOffersExactlyItsExpectedActions() {
+        assertEquals(
+            mapOf(
+                SyncAttentionKind.SignInRequired to listOf(SyncAttentionAction.SignIn),
+                SyncAttentionKind.DriveFull to listOf(SyncAttentionAction.Retry, SyncAttentionAction.OpenStorage),
+                SyncAttentionKind.PhotoUnrecoverable to listOf(SyncAttentionAction.RetryPhoto, SyncAttentionAction.KeepWithoutPhoto),
+                SyncAttentionKind.PhotoUploadFailed to listOf(SyncAttentionAction.Retry),
+                SyncAttentionKind.BackupConflict to listOf(SyncAttentionAction.UseBackup, SyncAttentionAction.KeepThisPhone),
+                SyncAttentionKind.MergeConfirmation to listOf(SyncAttentionAction.ConfirmMerge, SyncAttentionAction.CancelMerge),
+            ),
+            SyncAttentionKind.values().associateWith { kind -> kind.presentation().actions },
+        )
     }
 
     @Test
