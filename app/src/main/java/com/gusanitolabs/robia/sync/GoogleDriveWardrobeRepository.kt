@@ -7,8 +7,10 @@ import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Task
+import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.DriveSyncTarget
+import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
@@ -1124,7 +1126,7 @@ internal fun ByteArray.pngSanityLabel(): String {
     return if (hasIend) "png_signature_iend_present" else "png_signature_iend_missing"
 }
 
-private object DriveSnapshotJson {
+internal object DriveSnapshotJson {
     fun encode(snapshot: WardrobeSyncSnapshot): String {
         val sorted = snapshot.sortedDeterministically()
         return JSONObject()
@@ -1135,7 +1137,8 @@ private object DriveSnapshotJson {
                     .put("appPackage", sorted.metadata.appPackage)
                     .put("generatedAtEpochMillis", sorted.metadata.generatedAtEpochMillis)
                     .put("wardrobeId", sorted.metadata.wardrobeId)
-                    .put("revision", sorted.metadata.revision),
+                    .put("revision", sorted.metadata.revision)
+                    .also { json -> sorted.metadata.writerDeviceId?.let { writerDeviceId -> json.put("writerDeviceId", writerDeviceId) } },
             )
             .put(
                 "taxonomies",
@@ -1163,6 +1166,7 @@ private object DriveSnapshotJson {
                 generatedAtEpochMillis = metadata?.optLong("generatedAtEpochMillis") ?: 0L,
                 wardrobeId = metadata?.optString("wardrobeId")?.takeIf(String::isNotBlank),
                 revision = metadata?.optLong("revision") ?: 0L,
+                writerDeviceId = metadata?.optNullableString("writerDeviceId"),
             ),
             taxonomies = com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot(
                 categories = taxonomies.optArray("categories", ::jsonToTagCategory),
@@ -1195,6 +1199,8 @@ private object DriveSnapshotJson {
         .put("isArchived", record.isArchived)
         .put("revision", record.revision)
         .put("updatedAtEpochMillis", record.updatedAtEpochMillis)
+        .put("suggestOccasions", record.suggestOccasions)
+        .also { json -> record.description?.let { description -> json.put("description", description) } }
 
     private fun mainColorToJson(record: MainColorSyncRecord): JSONObject = JSONObject()
         .put("id", record.id)
@@ -1216,6 +1222,18 @@ private object DriveSnapshotJson {
         .put("createdAtEpochMillis", record.createdAtEpochMillis)
         .put("updatedAtEpochMillis", record.updatedAtEpochMillis)
         .put("revision", record.revision)
+        .also { json ->
+            if (record.embeddings.isNotEmpty()) json.put("embeddings", record.embeddings.toJsonArray(::embeddingToJson))
+        }
+
+    private fun embeddingToJson(record: EmbeddingSyncRecord): JSONObject = JSONObject()
+        .put("kind", record.kind)
+        .put("modelId", record.modelId)
+        .put("recipeId", record.recipeId)
+        .put("dim", record.dim)
+        .put("inputHash", record.inputHash)
+        .put("computedAtEpochMillis", record.computedAtEpochMillis)
+        .put("b64", record.b64)
 
     private fun garmentTagToJson(record: GarmentTagMappingRecord): JSONObject = JSONObject()
         .put("garmentId", record.garmentId)
@@ -1260,16 +1278,22 @@ private object DriveSnapshotJson {
         updatedAtEpochMillis = json.optLong("updatedAtEpochMillis"),
     )
 
-    private fun jsonToTag(json: JSONObject): TagSyncRecord = TagSyncRecord(
-        id = json.getString("id"),
-        categoryId = json.getString("categoryId"),
-        name = json.getString("name"),
-        sortOrder = json.optInt("sortOrder"),
-        isSystem = json.optBoolean("isSystem"),
-        isArchived = json.optBoolean("isArchived"),
-        revision = json.optLong("revision"),
-        updatedAtEpochMillis = json.optLong("updatedAtEpochMillis"),
-    )
+    private fun jsonToTag(json: JSONObject): TagSyncRecord {
+        val id = json.getString("id")
+        return TagSyncRecord(
+            id = id,
+            categoryId = json.getString("categoryId"),
+            name = json.getString("name"),
+            sortOrder = json.optInt("sortOrder"),
+            isSystem = json.optBoolean("isSystem"),
+            isArchived = json.optBoolean("isArchived"),
+            revision = json.optLong("revision"),
+            updatedAtEpochMillis = json.optLong("updatedAtEpochMillis"),
+            description = json.optNullableString("description"),
+            // Older snapshots have no flag; only the default-off ids differ from the usual default.
+            suggestOccasions = json.optBoolean("suggestOccasions", DefaultTags.defaultSuggestOccasions(id)),
+        )
+    }
 
     private fun jsonToMainColor(json: JSONObject): MainColorSyncRecord = MainColorSyncRecord(
         id = json.getString("id"),
@@ -1292,6 +1316,17 @@ private object DriveSnapshotJson {
         createdAtEpochMillis = json.optLong("createdAtEpochMillis"),
         updatedAtEpochMillis = json.optLong("updatedAtEpochMillis"),
         revision = json.optLong("revision"),
+        embeddings = json.optArray("embeddings", ::jsonToEmbedding),
+    )
+
+    private fun jsonToEmbedding(json: JSONObject): EmbeddingSyncRecord = EmbeddingSyncRecord(
+        kind = json.optString("kind"),
+        modelId = json.optString("modelId"),
+        recipeId = json.optString("recipeId"),
+        dim = json.optInt("dim"),
+        inputHash = json.optString("inputHash"),
+        computedAtEpochMillis = json.optLong("computedAtEpochMillis"),
+        b64 = json.optString("b64"),
     )
 
     private fun jsonToGarmentTag(json: JSONObject): GarmentTagMappingRecord = GarmentTagMappingRecord(

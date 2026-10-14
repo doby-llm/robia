@@ -25,8 +25,8 @@ object DefaultTags {
         GarmentTag(id = "category-shoes", categoryId = "category", name = "Shoes", sortOrder = 140),
         GarmentTag(id = "category-shirts", categoryId = "category", name = "Shirts", sortOrder = 150),
         GarmentTag(id = "category-vests", categoryId = "category", name = "Vests", sortOrder = 160),
-        GarmentTag(id = "category-jewelry", categoryId = "category", name = "Jewelry", sortOrder = 170),
-        GarmentTag(id = "category-accessories", categoryId = "category", name = "Accessories", sortOrder = 180),
+        GarmentTag(id = "category-jewelry", categoryId = "category", name = "Jewelry", sortOrder = 170, suggestOccasions = false),
+        GarmentTag(id = "category-accessories", categoryId = "category", name = "Accessories", sortOrder = 180, suggestOccasions = false),
         GarmentTag(id = "category-coats", categoryId = "category", name = "Coats", sortOrder = 190),
         GarmentTag(id = "season-spring", categoryId = "season", name = "Spring", sortOrder = 10, isSystem = true),
         GarmentTag(id = "season-summer", categoryId = "season", name = "Summer", sortOrder = 20, isSystem = true),
@@ -59,6 +59,9 @@ object DefaultTags {
     private val tagsById = tags.associateBy(GarmentTag::id)
     private val mainColorsById = mainColors.associateBy(MainColor::id)
 
+    /** Whether a tag id seeds `suggestOccasions` when the field is absent from stored or Drive data. */
+    fun defaultSuggestOccasions(tagId: String): Boolean = tagsById[tagId]?.suggestOccasions ?: true
+
     fun isCustomOrModifiedDefault(category: TagCategory): Boolean {
         val defaultCategory = categoriesById[category.id] ?: return true
         return category.name != defaultCategory.name ||
@@ -71,7 +74,9 @@ object DefaultTags {
         return tag.categoryId != defaultTag.categoryId ||
             tag.name != defaultTag.name ||
             tag.sortOrder != defaultTag.sortOrder ||
-            tag.isSystem != defaultTag.isSystem
+            tag.isSystem != defaultTag.isSystem ||
+            tag.description != defaultTag.description ||
+            tag.suggestOccasions != defaultTag.suggestOccasions
     }
 
     fun isCustomOrModifiedDefault(color: MainColor): Boolean {

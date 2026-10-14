@@ -157,6 +157,9 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    // Android's org.json is a stub on the JVM unit-test classpath; this is the real implementation.
+    testImplementation("org.json:json:20240303")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

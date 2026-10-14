@@ -86,6 +86,27 @@ class DefaultTagsTest {
     }
 
     @Test
+    fun onlyJewelryAndAccessoriesAreExcludedFromOccasionSuggestions() {
+        assertEquals(
+            listOf("category-jewelry", "category-accessories"),
+            DefaultTags.tags.filterNot(GarmentTag::suggestOccasions).map(GarmentTag::id),
+        )
+        assertFalse(DefaultTags.defaultSuggestOccasions("category-jewelry"))
+        assertFalse(DefaultTags.defaultSuggestOccasions("category-accessories"))
+        assertTrue(DefaultTags.defaultSuggestOccasions("category-shirts"))
+        assertTrue(DefaultTags.defaultSuggestOccasions("unknown-tag"))
+    }
+
+    @Test
+    fun changedDescriptionOrOccasionFlagMakesDefaultTagCustom() {
+        val accessories = DefaultTags.tags.single { tag -> tag.id == "category-accessories" }
+
+        assertFalse(DefaultTags.isCustomOrModifiedDefault(accessories))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(accessories.copy(suggestOccasions = true)))
+        assertTrue(DefaultTags.isCustomOrModifiedDefault(accessories.copy(description = "a belt or a watch")))
+    }
+
+    @Test
     fun mainColorPaletteContainsMinimumDefaultColors() {
         assertEquals(11, DefaultTags.mainColors.count { color -> color.isDefault })
         assertTrue(DefaultTags.mainColors.all { color -> color.hex.matches(Regex("#[0-9A-Fa-f]{6}")) })

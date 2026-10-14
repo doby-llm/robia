@@ -284,8 +284,25 @@ private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
 
 private fun TagCategoryEntity.toDomain(): TagCategory = TagCategory(id, name, sortOrder, isSystem)
 private fun TagCategory.toEntity(): TagCategoryEntity = TagCategoryEntity(id, name, sortOrder, isSystem)
-private fun GarmentTagEntity.toDomain(): GarmentTag = GarmentTag(id, categoryId, name, sortOrder, isSystem)
-private fun GarmentTag.toEntity(): GarmentTagEntity = GarmentTagEntity(id, categoryId, name, sortOrder, isSystem)
+private fun GarmentTagEntity.toDomain(): GarmentTag = GarmentTag(
+    id = id,
+    categoryId = categoryId,
+    name = name,
+    sortOrder = sortOrder,
+    isSystem = isSystem,
+    description = description,
+    suggestOccasions = suggestOccasions,
+)
+
+private fun GarmentTag.toEntity(): GarmentTagEntity = GarmentTagEntity(
+    id = id,
+    categoryId = categoryId,
+    name = name,
+    sortOrder = sortOrder,
+    isSystem = isSystem,
+    description = description,
+    suggestOccasions = suggestOccasions,
+)
 private fun MainColorEntity.toDomain(): MainColor = MainColor(id, name, hex, sortOrder, isDefault)
 private fun MainColor.toEntity(): MainColorEntity = MainColorEntity(id, name, hex, sortOrder, isDefault)
 

@@ -16,8 +16,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MainColorEntity::class,
         SyncTombstoneEntity::class,
         ClothingItemTagCrossRef::class,
+        GarmentEmbeddingEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -25,6 +26,7 @@ abstract class RobiaDatabase : RoomDatabase() {
     abstract fun wardrobeDao(): WardrobeDao
     abstract fun tagDao(): TagDao
     abstract fun syncTombstoneDao(): SyncTombstoneDao
+    abstract fun embeddingDao(): EmbeddingDao
 
     companion object {
         @Volatile private var instance: RobiaDatabase? = null
@@ -48,6 +50,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                         MIGRATION_9_10,
                         MIGRATION_10_11,
                         MIGRATION_11_12,
+                        MIGRATION_12_13,
                     )
                     .build()
                     .also { instance = it }
@@ -230,6 +233,12 @@ abstract class RobiaDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                MIGRATION_12_13_SQL.forEach { sql -> database.execSQL(sql) }
+            }
+        }
+
         private fun addMetadataSyncColumns(database: SupportSQLiteDatabase, tableName: String) {
             database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced'")
             database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0")
@@ -239,3 +248,37 @@ abstract class RobiaDatabase : RoomDatabase() {
         }
     }
 }
+
+/**
+ * DB v13: garment embeddings table, tag fields, and the TS§4.7 status reset. Kept as plain SQL so the
+ * migration test runs the exact statements the app executes.
+ */
+internal val MIGRATION_12_13_SQL: List<String> = listOf(
+    """
+    CREATE TABLE IF NOT EXISTS garment_embeddings (
+        garment_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        recipe_id TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        vector BLOB NOT NULL,
+        input_hash TEXT NOT NULL,
+        computed_at_epoch_millis INTEGER NOT NULL,
+        duration_millis INTEGER NOT NULL,
+        pending_upload INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY(garment_id, kind),
+        FOREIGN KEY(garment_id) REFERENCES clothing_items(id) ON UPDATE NO ACTION ON DELETE CASCADE
+    )
+    """.trimIndent(),
+    "ALTER TABLE garment_tags ADD COLUMN description TEXT",
+    "ALTER TABLE garment_tags ADD COLUMN suggest_occasions INTEGER NOT NULL DEFAULT 1",
+    "UPDATE garment_tags SET suggest_occasions = 0 WHERE id IN ('category-accessories', 'category-jewelry')",
+    // FailedRetryable is no longer produced. NeedsUserAction is reset except for guarded photo restores,
+    // which stay until the user retries or keeps the garment without its photo.
+    "UPDATE clothing_items SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status = 'FailedRetryable'",
+    "UPDATE clothing_items SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status = 'NeedsUserAction' AND photo_restore_guarded = 0",
+    "UPDATE tag_categories SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
+    "UPDATE garment_tags SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
+    "UPDATE main_colors SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
+    "UPDATE sync_tombstones SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
+)

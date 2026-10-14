@@ -87,6 +87,7 @@ data class WardrobeSnapshotMetadata(
     val target: DriveSyncTarget = DriveSyncTarget(),
     val wardrobeId: String? = null,
     val revision: Long = 0L,
+    val writerDeviceId: String? = null,
 )
 
 data class WardrobeTaxonomySnapshot(
@@ -120,6 +121,8 @@ data class TagSyncRecord(
     val isArchived: Boolean = false,
     val revision: Long = 0L,
     val updatedAtEpochMillis: Long = 0L,
+    val description: String? = null,
+    val suggestOccasions: Boolean = true,
 )
 
 data class MainColorSyncRecord(
@@ -143,6 +146,18 @@ data class GarmentSyncRecord(
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val revision: Long = 0L,
+    val embeddings: List<EmbeddingSyncRecord> = emptyList(),
+)
+
+/** One garment vector as stored in Drive; `b64` is the float32 little-endian payload. */
+data class EmbeddingSyncRecord(
+    val kind: String,
+    val modelId: String,
+    val recipeId: String,
+    val dim: Int,
+    val inputHash: String,
+    val computedAtEpochMillis: Long,
+    val b64: String,
 )
 
 data class GarmentTagMappingRecord(

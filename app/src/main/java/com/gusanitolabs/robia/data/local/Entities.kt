@@ -90,6 +90,8 @@ data class GarmentTagEntity(
     @ColumnInfo(name = "retry_attempt_count") val retryAttemptCount: Int = 0,
     @ColumnInfo(name = "retry_after_epoch_millis") val retryAfterEpochMillis: Long? = null,
     @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
+    val description: String? = null,
+    @ColumnInfo(name = "suggest_occasions", defaultValue = "1") val suggestOccasions: Boolean = true,
 )
 
 @Entity(tableName = "main_colors")
