@@ -74,6 +74,9 @@ class WardrobeSyncOutboxProcessor(
     private var scheduledWorkJob: Job? = null
     private var hasAttemptedFreshInstallRestore = false
     private var restoreAttemptCounter = 0
+    // Per-cycle outcomes that the cycle result cannot carry. Written and read only while holding [mutex].
+    private var cycleStorageFull = false
+    private var cyclePhotoUploadFailureIds: Set<String> = emptySet()
     private var lastLoggedSettings: RobiaSettings? = null
 
     override val state: Flow<WardrobeSyncState> = mutableState
@@ -104,6 +107,8 @@ class WardrobeSyncOutboxProcessor(
                 pendingMergeSummary,
                 settingsRepository.syncConflict,
                 authBlocked,
+                wardrobeRepository.observeGarmentNeedsUserActionCount(DRIVE_FULL_REASON),
+                wardrobeRepository.observeGarmentNeedsUserActionCount(PHOTO_UPLOAD_FAILED_REASON),
             ) { values ->
                 val settings = values[0] as RobiaSettings
                 val pendingCount = values[1] as Int
@@ -123,6 +128,8 @@ class WardrobeSyncOutboxProcessor(
                     pendingMergeSummary = values[7] as MergeSummary?,
                     conflict = values[8] as Boolean,
                     authBlocked = values[9] as Boolean,
+                    driveFullCount = values[10] as Int,
+                    photoUploadFailedCount = values[11] as Int,
                 )
             }.combine(restoreProgress) { inputs, progress ->
                 inputs.connectionStatus.toWardrobeSyncState(inputs, progress)
@@ -228,7 +235,13 @@ class WardrobeSyncOutboxProcessor(
 
     /** Entry point for WorkManager ([SyncTrigger.Background]) and foreground callers. */
     suspend fun runOnce(trigger: SyncTrigger): SyncRunResult = withContext(dispatcher) {
+        retryGuardedPhotos()
         runCycle(trigger = trigger, forceSnapshot = false, forceImport = false)
+    }
+
+    /** Guarded photos are retried on every run. Transient download failures do not count toward the attempt cap. */
+    private suspend fun retryGuardedPhotos() {
+        wardrobeRepository.guardedPhotoRetryCandidateIds().forEach { garmentId -> retryRestoredPhoto(garmentId) }
     }
 
     override suspend fun clearRestoreSyncLog() {
@@ -454,10 +467,12 @@ class WardrobeSyncOutboxProcessor(
                                 exceptionMessage = result.throwable.message,
                             ),
                         )
-                        wardrobeRepository.markGarmentPhotoRestoreFailed(
-                            garmentId,
-                            "$MISSING_RESTORED_PHOTO_MESSAGE ${result.throwable.message ?: "Drive photo download failed."}",
-                        )
+                        val message = "$MISSING_RESTORED_PHOTO_MESSAGE ${result.throwable.message ?: "Drive photo download failed."}"
+                        if (result.throwable is IOException) {
+                            wardrobeRepository.markGarmentPhotoRestoreTransient(garmentId, message)
+                        } else {
+                            wardrobeRepository.markGarmentPhotoRestoreFailed(garmentId, message)
+                        }
                     }
                 }
             } catch (timeout: TimeoutCancellationException) {
@@ -475,7 +490,7 @@ class WardrobeSyncOutboxProcessor(
                     ),
                 )
                 withContext(NonCancellable) {
-                    wardrobeRepository.markGarmentPhotoRestoreFailed(
+                    wardrobeRepository.markGarmentPhotoRestoreTransient(
                         garmentId,
                         "$MISSING_RESTORED_PHOTO_MESSAGE $PHOTO_RESTORE_RETRY_TIMEOUT_MESSAGE",
                     )
@@ -585,6 +600,8 @@ class WardrobeSyncOutboxProcessor(
             return@withLock SyncRunResult.Success
         }
 
+        cycleStorageFull = false
+        cyclePhotoUploadFailureIds = emptySet()
         isProcessing.value = true
         val lockedWork = pendingWork.filter { work ->
             wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())
@@ -613,11 +630,7 @@ class WardrobeSyncOutboxProcessor(
                 "result=$result",
                 level = if (result == SyncRunResult.Success) "info" else "warn",
             )
-            if (result == SyncRunResult.Success) {
-                markSynced(lockedWork, lockedMetadataWork)
-            } else {
-                releaseClaimedWork(lockedWork, lockedMetadataWork)
-            }
+            settleClaimedWork(result, lockedWork, lockedMetadataWork)
             authBlocked.value = result == SyncRunResult.AuthBlocked
             result
         } catch (cancellation: CancellationException) {
@@ -689,11 +702,19 @@ class WardrobeSyncOutboxProcessor(
         return when (val uploaded = driveRepository.upsertSnapshot(snapshot, remote = null)) {
             is DriveSyncResult.Success -> {
                 settingsRepository.setLastKnownRemoteRevision(uploaded.value.revision)
+                cyclePhotoUploadFailureIds = uploaded.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
                 SyncRunResult.Success
             }
             is DriveSyncResult.Blocked -> uploaded.reason.toRunResult()
-            is DriveSyncResult.Failure -> SyncRunResult.Retry
+            is DriveSyncResult.Failure -> uploaded.failureResult()
         }
+    }
+
+    /** A full Drive parks the garments for the user; any other failure is transient and retried. */
+    private fun DriveSyncResult.Failure.failureResult(): SyncRunResult {
+        if (throwable !is DriveStorageFullException) return SyncRunResult.Retry
+        cycleStorageFull = true
+        return SyncRunResult.NeedsUser
     }
 
     /** "Use backup": clears local garments only after the remote snapshot is fetched and decoded. */
@@ -738,6 +759,33 @@ class WardrobeSyncOutboxProcessor(
             SyncRunResult.Retry
         } finally {
             isProcessing.value = false
+        }
+    }
+
+    /**
+     * Success marks rows synced, except garments whose photo could not be uploaded (they wait for the user).
+     * A full Drive parks the garments as drive_full. Anything else returns the rows to Queued (still pending).
+     */
+    private suspend fun settleClaimedWork(
+        result: SyncRunResult,
+        lockedWork: List<PendingGarmentSyncWork>,
+        lockedMetadataWork: List<PendingMetadataSyncWork>,
+    ) {
+        when {
+            result == SyncRunResult.Success -> {
+                val (photoFailed, synced) = lockedWork.partition { it.id in cyclePhotoUploadFailureIds }
+                markSynced(synced, lockedMetadataWork)
+                photoFailed.forEach { item ->
+                    wardrobeRepository.markGarmentNeedsUserAction(item.id, item.revision, PHOTO_UPLOAD_FAILED_REASON)
+                }
+            }
+            cycleStorageFull -> {
+                lockedWork.forEach { item ->
+                    wardrobeRepository.markGarmentNeedsUserAction(item.id, item.revision, DRIVE_FULL_REASON)
+                }
+                lockedMetadataWork.forEach { item -> wardrobeRepository.releaseMetadataSyncToQueued(item) }
+            }
+            else -> releaseClaimedWork(lockedWork, lockedMetadataWork)
         }
     }
 
@@ -1025,6 +1073,8 @@ private data class WardrobeSyncStateInputs(
     val pendingMergeSummary: MergeSummary?,
     val conflict: Boolean,
     val authBlocked: Boolean,
+    val driveFullCount: Int,
+    val photoUploadFailedCount: Int,
 )
 
 private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList {
@@ -1034,6 +1084,8 @@ private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList
     if (conflict) add(SyncAttention(SyncAttentionKind.BackupConflict))
     if (pendingMergeSummary != null) add(SyncAttention(SyncAttentionKind.MergeConfirmation))
     if (needsPhotoRestoreAttention) add(SyncAttention(SyncAttentionKind.PhotoUnrecoverable))
+    if (driveFullCount > 0) add(SyncAttention(SyncAttentionKind.DriveFull))
+    if (photoUploadFailedCount > 0) add(SyncAttention(SyncAttentionKind.PhotoUploadFailed))
 }
 
 private fun WardrobeSyncSnapshot.withWriter(deviceId: String): WardrobeSyncSnapshot =
@@ -1044,6 +1096,8 @@ private fun DriveManifest.isNewerWriterThan(deviceId: String, lastKnownRevision:
     writerDeviceId != null && writerDeviceId != deviceId && revision > lastKnownRevision
 
 private const val MAX_RETRY_ATTEMPTS = 3
+private const val DRIVE_FULL_REASON = "drive_full"
+private const val PHOTO_UPLOAD_FAILED_REASON = "photo_upload_failed"
 private const val MAX_RETRY_DIAGNOSTIC_EVENTS = 16
 private const val STALE_RUNNING_TIMEOUT_MILLIS = 15 * 60 * 1000L
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS = 60 * 1000L

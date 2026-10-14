@@ -160,6 +160,17 @@ interface WardrobeDao {
     @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', retry_attempt_count = MIN(retry_attempt_count + 1, 3), retry_after_epoch_millis = CASE WHEN retry_attempt_count + 1 >= 3 THEN NULL ELSE :now + CASE retry_attempt_count WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000 END END, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status = 'Running'")
     suspend fun markGarmentPhotoRestoreFailed(itemId: String, message: String, now: Long): Int
 
+    /** Transient photo download failure: the guard stays, the attempt counter does not move, and the next run retries. */
+    @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, sync_failure_message = :message WHERE id = :itemId AND photo_restore_guarded = 1 AND sync_status = 'Running'")
+    suspend fun markGarmentPhotoRestoreTransient(itemId: String, message: String): Int
+
+    /** Guarded photos the next run may retry on its own; permanent failures stop at the attempt cap. */
+    @Query("SELECT id FROM clothing_items WHERE photo_restore_guarded = 1 AND sync_status = 'NeedsUserAction' AND retry_attempt_count < 3 AND (retry_after_epoch_millis IS NULL OR retry_after_epoch_millis <= :now) AND photo_restore_retry_deadline_epoch_millis >= :now")
+    suspend fun guardedPhotoRetryCandidateIds(now: Long): List<String>
+
+    @Query("SELECT COUNT(*) FROM clothing_items WHERE sync_status = 'NeedsUserAction' AND sync_failure_message = :reasonCode")
+    fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int>
+
     @Query("UPDATE clothing_items SET photo_uri = :photoUri, sync_status = CASE WHEN sync_dirty_at_epoch_millis IS NULL THEN 'Synced' ELSE 'Queued' END, sync_failure_message = NULL, retry_attempt_count = 0, retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL, photo_restore_guarded = 0, photo_restore_retry_deadline_epoch_millis = NULL, last_synced_at_epoch_millis = :syncedAtEpochMillis WHERE id = :itemId AND sync_revision = :revision AND photo_restore_guarded = 1 AND sync_status = 'Running'")
     suspend fun applyRestoredPhoto(itemId: String, photoUri: String, revision: Long, syncedAtEpochMillis: Long): Int
 

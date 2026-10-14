@@ -5,6 +5,7 @@ import com.gusanitolabs.robia.core.model.DriveSyncTarget
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
+import java.io.IOException
 
 /**
  * Credential-free Drive contract. All cloud data is scoped to the authorized user's appDataFolder.
@@ -106,6 +107,9 @@ data class DriveManifest(
         )
     }
 }
+
+/** Google Drive reports the account quota is full. Classified by the processor as [SyncAttentionKind.DriveFull]. */
+class DriveStorageFullException : IOException("Google Drive storage quota is exceeded.")
 
 /** A photo whose upload failed permanently; its previous record was kept and its blobs are not purged. */
 data class PhotoUploadFailure(val garmentId: String)

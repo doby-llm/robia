@@ -33,6 +33,11 @@ interface WardrobeRepository {
     suspend fun markGarmentNeedsUserAction(id: String, revision: Long, reasonCode: String): Boolean
     suspend fun claimGarmentPhotoRestoreRetry(id: String, startedAtEpochMillis: Long = System.currentTimeMillis(), now: Long = startedAtEpochMillis): Long?
     suspend fun markGarmentPhotoRestoreFailed(id: String, message: String, now: Long = System.currentTimeMillis()): Boolean
+    /** Transient guarded-photo failure: stays guarded and retryable without counting an attempt. */
+    suspend fun markGarmentPhotoRestoreTransient(id: String, message: String): Boolean
+    suspend fun guardedPhotoRetryCandidateIds(now: Long = System.currentTimeMillis()): List<String>
+    /** Garments parked for the user with a given reason code (for example `drive_full`). */
+    fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int>
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean
     suspend fun markMetadataSynced(work: PendingMetadataSyncWork, syncedAtEpochMillis: Long): Boolean
     suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWork, message: String? = null): Boolean

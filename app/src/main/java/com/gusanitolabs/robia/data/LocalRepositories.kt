@@ -111,6 +111,15 @@ class LocalWardrobeRepository(
     override suspend fun markGarmentPhotoRestoreFailed(id: String, message: String, now: Long): Boolean =
         wardrobeDao.markGarmentPhotoRestoreFailed(id, message, now) > 0
 
+    override suspend fun markGarmentPhotoRestoreTransient(id: String, message: String): Boolean =
+        wardrobeDao.markGarmentPhotoRestoreTransient(id, message) > 0
+
+    override suspend fun guardedPhotoRetryCandidateIds(now: Long): List<String> =
+        wardrobeDao.guardedPhotoRetryCandidateIds(now)
+
+    override fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int> =
+        wardrobeDao.observeGarmentNeedsUserActionCount(reasonCode)
+
     override suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean =
         wardrobeDao.markMetadataSyncing(work.toEntity())
 
