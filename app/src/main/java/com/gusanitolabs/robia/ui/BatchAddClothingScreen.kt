@@ -70,7 +70,6 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
-import com.gusanitolabs.robia.media.additionalinfo.TfliteAdditionalInfoDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -481,7 +480,6 @@ internal suspend fun processBatchDraft(
     draft: BatchDraftItem,
     context: android.content.Context,
     backgroundRemover: PhotoBackgroundRemover,
-    additionalInfoDetector: TfliteAdditionalInfoDetector,
     mainColors: List<MainColor>,
     availableTags: List<GarmentTag>,
     onDraftUpdated: (BatchDraftItem) -> Unit,
@@ -513,11 +511,6 @@ internal suspend fun processBatchDraft(
             .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
             ?.color
             ?.id
-        val detectionResult = runCatching {
-            withContext(Dispatchers.IO) { additionalInfoDetector.detect(context, croppedUri, availableTags) }
-        }.getOrNull()
-        val detectedTagIds = detectionResult?.prediction?.selectedTagIds.orEmpty()
-        val mergedTags = mergePredictedTags(draft.selectedTagIds, detectedTagIds, availableTags)
         val needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri
         val resolvedStatus = if (needsOriginalFallbackReview) BatchDraftStatus.NeedsReview else BatchDraftStatus.Ready
         val resolvedMessage = if (needsOriginalFallbackReview) {
@@ -532,7 +525,6 @@ internal suspend fun processBatchDraft(
                 status = resolvedStatus,
                 selectedPrimaryColorId = primaryColorId,
                 selectedSecondaryColorId = secondaryColorId,
-                selectedTagIds = mergedTags,
                 errorMessage = resolvedMessage,
             ),
         )
@@ -668,6 +660,8 @@ internal fun ClothingItem.toBatchDraftItem(
     errorMessage = null,
 )
 
+// Reused by TASK-E05 (EmbeddingGemma suggestions).
+@Suppress("unused")
 private fun mergePredictedTags(
     currentTagIds: List<String>,
     predictedTagIds: Set<String>,
