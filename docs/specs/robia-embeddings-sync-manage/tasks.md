@@ -114,6 +114,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 - **Acceptance:** rows above + device row V-Z03 in Z01.
 
 ## TASK-S05 — Sync attention UX
+- **PLAN-CHANGE 9:** S05 may also edit `sync/WardrobeSyncGateway.kt`, `sync/WardrobeSyncOutboxProcessor.kt` (dispatch + `affectedGarmentIds()`) and `data/local/Dao.kt` (+ repository wrappers) for Retry and Keep-without-photo; the PhotoUploadFailed body copy is fixed in decision-log PLAN-CHANGE 9.
 - **PLAN-CHANGE 8:** S05 also owns the explicit Retry for `drive_full` / `photo_upload_failed` (new `WardrobeSyncOperation`, DAO query releasing NeedsUserAction rows to Queued, called by the Retry button only, plus a test that automatic cycles do not requeue them). It may edit `data/local/Dao.kt`, `data/WardrobeRepository.kt` and `LocalRepositories.kt` for this only.
 - **Reqs:** REQ-S09 · TS§4.7 · mockup `mockups/sync-states.html`
 - **Predecessors:** S04, M01 (lease order on `RobiaApp.kt`) · **Successors:** Z01
