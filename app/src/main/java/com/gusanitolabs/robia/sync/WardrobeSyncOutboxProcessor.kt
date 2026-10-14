@@ -270,8 +270,9 @@ class WardrobeSyncOutboxProcessor(
     }
 
     override suspend fun cancelMerge() {
-        // The phone keeps its data. Without a merge, the next upload sees the newer Drive backup and reports a conflict.
+        // The phone keeps its data. A declined merge is persisted as a conflict, so no later run (or restart) uploads over the newer backup.
         pendingMergeSummary.value = null
+        settingsRepository.setSyncConflict(true)
     }
 
     private suspend fun deleteCloudBackup() = mutex.withLock {
@@ -676,6 +677,10 @@ class WardrobeSyncOutboxProcessor(
             is DriveSyncResult.Failure -> return SyncRunResult.Retry
         }
         if (!remote.hasUserData()) return uploadLocalSnapshot(localSnapshot)
+        return proposeMerge(localSnapshot, remote)
+    }
+
+    private fun proposeMerge(localSnapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): SyncRunResult {
         val merged = mergeSnapshots(localSnapshot, remote)
         pendingMergeSummary.value = MergeSummary(
             remoteGarmentCount = remote.garments.size,
@@ -685,7 +690,10 @@ class WardrobeSyncOutboxProcessor(
         return SyncRunResult.NeedsUser
     }
 
-    /** Ordinary upload: the newer-writer check runs on the JSON manifest before anything is uploaded. */
+    /**
+     * Ordinary upload: the newer-writer check runs on the JSON manifest before anything is uploaded.
+     * Another writer's newer backup with user data is never overwritten: it goes to the merge proposal.
+     */
     private suspend fun uploadLocalSnapshot(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
         val deviceId = settingsRepository.deviceId()
         val lastKnownRevision = settingsRepository.lastKnownRemoteRevision.first()
@@ -694,12 +702,20 @@ class WardrobeSyncOutboxProcessor(
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
             is DriveSyncResult.Failure -> return SyncRunResult.Retry
         }
-        if (remoteManifest.isNewerWriterThan(deviceId, lastKnownRevision)) {
-            settingsRepository.setSyncConflict(true)
-            return SyncRunResult.Conflict
+        val otherWriterBackup = remoteManifest.isNewerWriterThan(deviceId, lastKnownRevision)
+        // The remote JSON (photo records, no blobs) is needed for another writer's data and for keeping guarded or failed photo records.
+        val remote = if (otherWriterBackup || localSnapshot.photos.isNotEmpty()) {
+            when (val fetched = driveRepository.fetchSnapshotRecords()) {
+                is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
+                is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+                is DriveSyncResult.Failure -> return SyncRunResult.Retry
+            }
+        } else {
+            null
         }
+        if (remote != null && otherWriterBackup && remote.hasUserData()) return proposeMerge(localSnapshot, remote)
         val snapshot = localSnapshot.withWriter(deviceId).sortedDeterministically()
-        return when (val uploaded = driveRepository.upsertSnapshot(snapshot, remote = null)) {
+        return when (val uploaded = driveRepository.upsertSnapshot(snapshot, remote)) {
             is DriveSyncResult.Success -> {
                 settingsRepository.setLastKnownRemoteRevision(uploaded.value.revision)
                 cyclePhotoUploadFailureIds = uploaded.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
@@ -726,6 +742,8 @@ class WardrobeSyncOutboxProcessor(
         }
         // An empty remote must never wipe the phone; it keeps the conflict visible instead.
         if (!remote.hasUserData()) return SyncRunResult.NeedsUser
+        // A newer schema is never applied: the conflict stays unresolved and nothing on the phone is cleared.
+        if (remote.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) return SyncRunResult.NeedsUser
         snapshotRepository.replaceLocalWithRemote(remote)
         settingsRepository.setLastKnownRemoteRevision(remote.metadata.revision)
         settingsRepository.setSyncConflict(false)
@@ -940,7 +958,8 @@ class WardrobeSyncOutboxProcessor(
                 completedWork = RESTORE_TOTAL_STEPS,
                 status = CloudRestoreStatus.CompletedWithAttention,
             )
-            return SyncRunResult.Success
+            // Nothing was uploaded, so the claimed local rows stay pending; the guard is retried on the next run.
+            return SyncRunResult.Retry
         }
         if (!mergedSnapshot.hasUserData()) {
             diagnostics.recordFinalUploadSkipped("no_remote_user_data")
@@ -981,25 +1000,22 @@ class WardrobeSyncOutboxProcessor(
             }
             is DriveSyncResult.Blocked -> {
                 diagnostics.recordBlocked(uploadResult.reason, uploadResult.message, finalUploadSucceeded = false)
-                // The fresh-install restore is already transactionally applied at this point. A final
-                // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
-                // user on the progress overlay even though the restored wardrobe is safe locally.
+                // The restored wardrobe is applied locally already, so the progress overlay still completes.
+                // The claimed rows are not marked synced: the run reports the block and they stay pending.
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
                 )
-                SyncRunResult.Success
+                uploadResult.reason.toRunResult()
             }
             is DriveSyncResult.Failure -> {
                 diagnostics.recordFailure(uploadResult.throwable, finalUploadSucceeded = false)
-                // The fresh-install restore is already transactionally applied at this point. A final
-                // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
-                // user on the progress overlay even though the restored wardrobe is safe locally.
+                // Same as the blocked branch: the local restore stands, but the upload did not happen.
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
                 )
-                SyncRunResult.Success
+                uploadResult.failureResult()
             }
         }
     }
@@ -1091,9 +1107,12 @@ private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList
 private fun WardrobeSyncSnapshot.withWriter(deviceId: String): WardrobeSyncSnapshot =
     copy(metadata = metadata.copy(writerDeviceId = deviceId))
 
-/** Another phone wrote a backup newer than the last revision this phone saw or uploaded. */
+/**
+ * Another writer made a backup newer than the last revision this phone saw or uploaded.
+ * A backup written before S04 has no writer id; it counts as another writer (PLAN-CHANGE 7).
+ */
 private fun DriveManifest.isNewerWriterThan(deviceId: String, lastKnownRevision: Long): Boolean =
-    writerDeviceId != null && writerDeviceId != deviceId && revision > lastKnownRevision
+    writerDeviceId != deviceId && revision > lastKnownRevision
 
 private const val MAX_RETRY_ATTEMPTS = 3
 private const val DRIVE_FULL_REASON = "drive_full"

@@ -17,16 +17,25 @@ internal class FakeDriveWardrobeRepository(
 ) : DriveWardrobeRepository {
     override val target: DriveSyncTarget = DriveSyncTarget()
     val upserts = mutableListOf<WardrobeSyncSnapshot>()
+    /** The `remote` argument of each upload, so tests can see which photo records the processor passed. */
+    val upsertRemotes = mutableListOf<WardrobeSyncSnapshot?>()
+    var recordsFetches = 0
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = manifest
 
     override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = snapshot
+
+    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> {
+        recordsFetches++
+        return snapshot
+    }
 
     override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> =
         DriveSyncResult.Failure(IllegalStateException("not used by sync tests"))
 
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest> {
         upserts += snapshot
+        upsertRemotes += remote
         return upsertResult ?: DriveSyncResult.Success(DriveManifest.fromSnapshot(snapshot))
     }
 

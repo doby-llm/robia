@@ -80,6 +80,15 @@ class GoogleDriveWardrobeRepository(
         }
     }
 
+    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { accessToken ->
+        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
+            is DriveApiResult.Success -> DriveSyncResult.Success(snapshotResult.value.sortedDeterministically())
+            is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
+        }
+    }
+
     override suspend fun retryRestoredPhoto(
         garmentId: String,
         progress: DriveRestoreProgressListener?,

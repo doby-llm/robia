@@ -214,10 +214,10 @@ internal class FakeWardrobeSnapshotStore(
     override suspend fun hasGuardedPhotoRestoreIssues(): Boolean = false
 
     override suspend fun replaceLocalWithRemote(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
-        // Models the transaction: a failure throws before anything is replaced.
+        // Worst case: the store changes and then throws. The processor must treat this as not applied.
+        local = snapshot
         replaceFailure?.let { throw it }
         replacements += snapshot
-        local = snapshot
         return ImportSnapshotResult(snapshot.garments.size, snapshot.photos.size, guardedPhotoCount = 0)
     }
 }
