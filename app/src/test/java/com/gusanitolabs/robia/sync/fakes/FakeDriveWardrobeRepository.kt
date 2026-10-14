@@ -33,7 +33,11 @@ internal class FakeDriveWardrobeRepository(
     override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> =
         DriveSyncResult.Failure(IllegalStateException("not used by sync tests"))
 
-    override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest> {
+    override suspend fun upsertSnapshot(
+        snapshot: WardrobeSyncSnapshot,
+        remote: WardrobeSyncSnapshot?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+    ): DriveSyncResult<DriveManifest> {
         upserts += snapshot
         upsertRemotes += remote
         return upsertResult ?: DriveSyncResult.Success(DriveManifest.fromSnapshot(snapshot))

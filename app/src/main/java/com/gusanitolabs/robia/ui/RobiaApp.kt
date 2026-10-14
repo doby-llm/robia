@@ -102,6 +102,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1795,11 +1796,7 @@ private fun CloudRestoreProgressOverlay(
     var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
         mutableStateOf(progress.status != CloudRestoreStatus.Running)
     }
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.progressFraction?.coerceIn(0f, 1f) ?: 0f,
-        animationSpec = tween(durationMillis = 450),
-        label = "cloudRestoreProgress",
-    )
+    val stageFraction = progress.stageBarFraction()?.coerceIn(0f, 1f)
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -1837,11 +1834,26 @@ private fun CloudRestoreProgressOverlay(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        progress.progressFraction?.let { fraction ->
-                            CloudRestoreProgressBar(
-                                progress = animatedProgress.coerceAtMost(fraction.coerceIn(0f, 1f)),
-                            )
-                        } ?: CircularProgressIndicator()
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (stageFraction != null) {
+                                // Keyed per stage: a new stage starts at its own value, never animating down from 100%.
+                                key(progress.phase) {
+                                    val animatedProgress by animateFloatAsState(
+                                        targetValue = stageFraction,
+                                        animationSpec = tween(durationMillis = 450),
+                                        label = "cloudRestoreProgress",
+                                    )
+                                    CloudRestoreProgressBar(progress = animatedProgress)
+                                }
+                            } else {
+                                CircularProgressIndicator()
+                            }
+                        }
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = stringResource(progress.phase.labelRes),
@@ -1887,21 +1899,22 @@ private fun CloudRestoreProgressOverlay(
                                 modifier = Modifier.padding(top = 4.dp),
                             )
                         }
-                        eta?.let { estimate ->
-                            Text(
-                                text = when (estimate) {
+                        // Always composed, so the line keeps its height when the estimate appears or disappears.
+                        Text(
+                            text = eta?.let { estimate ->
+                                when (estimate) {
                                     RestoreEta.LessThanMinute -> stringResource(R.string.cloud_restore_eta_less_than_minute)
                                     is RestoreEta.AboutMinutes -> stringResource(
                                         R.string.cloud_restore_eta_about_minutes,
                                         estimate.minutes,
                                     )
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
+                                }
+                            } ?: " ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
                         Text(
                             text = statusText,
                             style = MaterialTheme.typography.bodySmall,

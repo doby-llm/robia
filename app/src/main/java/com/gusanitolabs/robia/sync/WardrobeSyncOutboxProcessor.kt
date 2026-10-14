@@ -681,7 +681,10 @@ class WardrobeSyncOutboxProcessor(
             SyncRunResult.Retry
         } finally {
             isProcessing.value = false
-            if (!keepTerminalProgress) restoreProgress.value = null
+            // A restore still Running has no terminal outcome left to show: the restored wardrobe is applied and WorkManager retries the upload.
+            // Terminal failures stay visible for the user to read.
+            val restoreStillRunning = restoreProgress.value?.status == CloudRestoreStatus.Running
+            if (!keepTerminalProgress || restoreStillRunning) restoreProgress.value = null
         }
     }
 
@@ -1041,7 +1044,13 @@ class WardrobeSyncOutboxProcessor(
             completedWork = RESTORE_STEP_UPLOAD_STARTED,
         )
 
-        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot)) {
+        // Photo progress only updates the overlay state; it adds no sync-log lines, one per photo would flood the log.
+        val onPhotoProgress = { completedPhotos: Int, totalPhotos: Int ->
+            restoreProgress.value = restoreProgress.value?.copy(
+                uploadProgress = RestoreUploadProgress(completedPhotos, totalPhotos),
+            )
+        }
+        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot, onPhotoProgress)) {
             is DriveSyncResult.Success -> {
                 diagnostics.recordFinalUploadSucceeded()
                 settingsRepository.setLastKnownRemoteRevision(uploadResult.value.revision)

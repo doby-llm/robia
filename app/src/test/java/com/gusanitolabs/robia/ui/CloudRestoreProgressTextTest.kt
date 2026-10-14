@@ -4,6 +4,8 @@ import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
 import com.gusanitolabs.robia.sync.RestoreByteProgress
+import com.gusanitolabs.robia.sync.RestoreItemProgress
+import com.gusanitolabs.robia.sync.RestoreUploadProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -102,15 +104,108 @@ class CloudRestoreProgressTextTest {
     }
 
     @Test
-    fun etaEstimator_hidesPreviouslyValidEstimateAfterAStalledSample() {
+    fun etaEstimator_keepsPreviouslyValidEstimateAfterAStalledSample() {
         val state = RestoreEtaState()
             .updated(restoreProgress(completedBytes = 0L, totalBytes = 20_971_520L), 0L)
             .updated(restoreProgress(completedBytes = 2_097_152L, totalBytes = 20_971_520L), 2_000L)
             .updated(restoreProgress(completedBytes = 2_097_152L, totalBytes = 20_971_520L), 4_000L)
 
-        assertNull(
+        assertEquals(
+            RestoreEta.LessThanMinute,
             state.estimate(restoreProgress(completedBytes = 2_097_152L, totalBytes = 20_971_520L)),
         )
+    }
+
+    @Test
+    fun etaEstimator_showsNoNullFrameWhileBytesAreUnchanged() {
+        val first = RestoreEtaState()
+            .updated(restoreProgress(completedBytes = 0L, totalBytes = 125_829_120L), 0L)
+            .updated(restoreProgress(completedBytes = 2_097_152L, totalBytes = 125_829_120L), 2_000L)
+        val stalledProgress = restoreProgress(completedBytes = 2_097_152L, totalBytes = 125_829_120L)
+        val stalled = first.updated(stalledProgress, 3_000L)
+
+        assertEquals(first.estimate(stalledProgress), stalled.estimate(stalledProgress))
+        assertEquals(RestoreEta.AboutMinutes(2L), stalled.estimate(stalledProgress))
+    }
+
+    @Test
+    fun etaEstimator_changesShownValueAtMostEveryFiveSecondsAndNeverIncreases() {
+        val total = 10_000_000L
+        val slowStart = RestoreEtaState(
+            anchor = RestoreEtaSample(elapsedRealtimeMillis = 0L, completedBytes = 0L, totalBytes = total),
+            lastSample = RestoreEtaSample(elapsedRealtimeMillis = 0L, completedBytes = 0L, totalBytes = total),
+            bytesPerSecond = 1_000_000.0,
+            shown = RestoreEta.AboutMinutes(10L),
+            shownAtElapsedRealtimeMillis = 0L,
+        )
+        val soonAfter = slowStart.updated(restoreProgress(completedBytes = 1_000_000L, totalBytes = total), 1_000L)
+        val fiveSecondsLater = soonAfter.updated(restoreProgress(completedBytes = 2_000_000L, totalBytes = total), 6_000L)
+
+        assertEquals(RestoreEta.AboutMinutes(10L), soonAfter.estimate(restoreProgress(completedBytes = 1_000_000L, totalBytes = total)))
+        assertEquals(RestoreEta.LessThanMinute, fiveSecondsLater.estimate(restoreProgress(completedBytes = 2_000_000L, totalBytes = total)))
+    }
+
+    @Test
+    fun etaEstimator_neverRaisesAShownEstimate() {
+        val total = 1_000_000L
+        val shownLessThanMinute = RestoreEtaState(
+            anchor = RestoreEtaSample(elapsedRealtimeMillis = 0L, completedBytes = 0L, totalBytes = total),
+            lastSample = RestoreEtaSample(elapsedRealtimeMillis = 1_000L, completedBytes = 100_000L, totalBytes = total),
+            bytesPerSecond = 1_000.0,
+            shown = RestoreEta.LessThanMinute,
+            shownAtElapsedRealtimeMillis = 1_000L,
+        )
+        val slowerNow = shownLessThanMinute.updated(
+            restoreProgress(completedBytes = 101_000L, totalBytes = total),
+            10_000L,
+        )
+
+        assertEquals(RestoreEta.LessThanMinute, slowerNow.estimate(restoreProgress(completedBytes = 101_000L, totalBytes = total)))
+    }
+
+    @Test
+    fun etaFormatting_bucketBoundariesAreStable() {
+        assertEquals(RestoreEta.LessThanMinute, RestoreEta.fromSeconds(59L))
+        assertEquals(RestoreEta.AboutMinutes(1L), RestoreEta.fromSeconds(60L))
+        assertEquals(RestoreEta.AboutMinutes(10L), RestoreEta.fromSeconds(599L))
+        assertEquals(RestoreEta.AboutMinutes(10L), RestoreEta.fromSeconds(600L))
+        assertEquals(RestoreEta.AboutMinutes(15L), RestoreEta.fromSeconds(900L))
+    }
+
+    @Test
+    fun stageBarFraction_usesBytesForDownloadAndItemsWhenSizesAreUnknown() {
+        assertEquals(
+            0.25f,
+            stageProgress(CloudRestorePhase.Downloading, byteProgress = RestoreByteProgress(1_000_000L, 4_000_000L))
+                .stageBarFraction(),
+        )
+        assertEquals(
+            0.5f,
+            stageProgress(
+                CloudRestorePhase.Downloading,
+                itemProgress = RestoreItemProgress(completedItems = 1, totalItems = 2),
+                byteProgress = RestoreByteProgress(1_000_000L, null),
+            ).stageBarFraction(),
+        )
+        assertEquals(
+            1f,
+            stageProgress(
+                CloudRestorePhase.Downloading,
+                itemProgress = RestoreItemProgress(completedItems = 3, totalItems = 3),
+                byteProgress = RestoreByteProgress(3_000_000L, 4_000_000L),
+            ).stageBarFraction(),
+        )
+    }
+
+    @Test
+    fun stageBarFraction_usesPhotosForUploadAndIndeterminateElsewhere() {
+        assertEquals(
+            0.25f,
+            stageProgress(CloudRestorePhase.Uploading, uploadProgress = RestoreUploadProgress(2, 8)).stageBarFraction(),
+        )
+        assertNull(stageProgress(CloudRestorePhase.Uploading).stageBarFraction())
+        assertNull(stageProgress(CloudRestorePhase.Preparing).stageBarFraction())
+        assertNull(stageProgress(CloudRestorePhase.Applying).stageBarFraction())
     }
 
     @Test
@@ -134,6 +229,20 @@ class CloudRestoreProgressTextTest {
             changedTotal.estimate(restoreProgress(completedBytes = 11_010_048L, totalBytes = 22_020_096L)),
         )
     }
+
+    private fun stageProgress(
+        phase: CloudRestorePhase,
+        itemProgress: RestoreItemProgress? = null,
+        byteProgress: RestoreByteProgress? = null,
+        uploadProgress: RestoreUploadProgress? = null,
+    ): CloudRestoreProgress = CloudRestoreProgress(
+        phase = phase,
+        completedWork = 2,
+        totalWork = 8,
+        itemProgress = itemProgress,
+        byteProgress = byteProgress,
+        uploadProgress = uploadProgress,
+    )
 
     private fun restoreProgress(
         completedBytes: Long,

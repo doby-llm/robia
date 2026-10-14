@@ -121,11 +121,13 @@ class GoogleDriveWardrobeRepository(
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> = withAccessToken { accessToken ->
         // Previous photo records: the local cache first, the remote snapshot covers a fresh install.
         val previous = remote?.photos.orEmpty().associate { photo -> photo.garmentId to photo.toLastUploadedPhoto() } +
             lastUploadedPhotos.read()
-        when (val result = photoUploadPipeline().upload(accessToken, snapshot.sortedDeterministically(), remote, previous)) {
+        val photoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = onPhotoProgress ?: { _, _ -> }
+        when (val result = photoUploadPipeline().upload(accessToken, snapshot.sortedDeterministically(), remote, previous, photoProgress)) {
             is DriveSyncResult.Success -> {
                 // The cache only saves re-uploads in the next cycle, so a failed write must not fail this sync.
                 runCatching {
@@ -338,6 +340,7 @@ internal class PhotoUploadPipeline(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
         previous: Map<String, LastUploadedPhoto>,
+        onPhotoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = { _, _ -> },
     ): DriveSyncResult<PhotoUploadOutcome> {
         val index = when (val listing = api.listAll(accessToken)) {
             is DriveApiResult.Success -> DriveFileIndex(listing.value)
@@ -369,7 +372,9 @@ internal class PhotoUploadPipeline(
             kept?.let { record -> uploaded += record }
         }
 
-        for (action in planPhotoUploads(states, previous, index)) {
+        val actions = planPhotoUploads(states, previous, index)
+        onPhotoProgress(0, actions.size)
+        for ((actionIndex, action) in actions.withIndex()) {
             val photo = photosByGarmentId.getValue(action.garmentId)
             when (action) {
                 is PhotoUploadAction.Reuse -> uploaded += photo.withPreviousBlob(action.previous)
@@ -387,6 +392,7 @@ internal class PhotoUploadPipeline(
                     is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(upload.failureCause())
                 }
             }
+            onPhotoProgress(actionIndex + 1, actions.size)
         }
 
         val uploadSnapshot = snapshot.copy(photos = uploaded).sortedDeterministically()
