@@ -24,8 +24,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +58,6 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
-import java.text.Normalizer
 import java.util.Locale
 import java.util.UUID
 
@@ -113,7 +110,6 @@ fun ManageTagsScreen(
     var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
     var pendingRestoreDefault by remember { mutableStateOf<RestoreDefaultTarget?>(null) }
     var selectedTabId by rememberSaveable { mutableStateOf<String?>(null) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
@@ -127,14 +123,6 @@ fun ManageTagsScreen(
         tags.associate { tag -> tag.id to tag.localizedTagLabel(context) }
     }
     val activeTags = tagsByCategory[activeTabId].orEmpty()
-    val searchTerm = searchQuery.foldForSearch()
-    val filteredActiveTags = remember(activeTags, labelsById, searchTerm) {
-        if (searchTerm.isEmpty()) {
-            activeTags
-        } else {
-            activeTags.filter { tag -> (labelsById[tag.id] ?: tag.name).foldForSearch().contains(searchTerm) }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -155,15 +143,6 @@ fun ManageTagsScreen(
                     text = stringResource(R.string.manage_tags_body),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (!isColorsTab) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { query -> searchQuery = query },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.manage_search_tags)) },
-                    singleLine = true,
                 )
             }
         }
@@ -203,18 +182,27 @@ fun ManageTagsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = PaddingValues(start = 24.dp, top = 12.dp, end = 24.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(start = 24.dp, top = 12.dp, end = 24.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (isColorsTab) {
-                item(key = "main-color-palette") {
-                    MainColorPaletteCard(
-                        colors = mainColors,
+                item(key = "section-header:$ColorsTabId") {
+                    MainColorsHeader(
+                        colorCount = mainColors.size,
                         onAddColor = { colorEditorState = ColorEditorState() },
-                        onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
-                        onDeleteColor = { color -> pendingDeleteColor = color },
                         onRestoreDefault = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
                     )
+                }
+                mainColors.forEach { color ->
+                    item(key = "color-row:${color.id}", contentType = "color-row") {
+                        ColorListRow(
+                            color = color,
+                            canEdit = true,
+                            canDelete = mainColors.size > 1,
+                            onEdit = { colorEditorState = ColorEditorState(existingColor = color) },
+                            onDelete = { pendingDeleteColor = color },
+                        )
+                    }
                 }
             } else if (activeCategory != null) {
                 item(key = "section-header:${activeCategory.id}") {
@@ -229,7 +217,7 @@ fun ManageTagsScreen(
                         },
                     )
                 }
-                if (filteredActiveTags.isEmpty()) {
+                if (activeTags.isEmpty()) {
                     item(key = "section-empty:${activeCategory.id}") {
                         Text(
                             text = stringResource(R.string.no_tags_in_category),
@@ -238,7 +226,7 @@ fun ManageTagsScreen(
                         )
                     }
                 } else {
-                    filteredActiveTags.forEach { tag ->
+                    activeTags.forEach { tag ->
                         item(key = "tag-row:${tag.id}", contentType = "tag-row") {
                             TagListRow(
                                 tag = tag,
@@ -413,71 +401,43 @@ private fun TagListRow(
 }
 
 @Composable
-private fun MainColorPaletteCard(
-    colors: List<MainColor>,
+private fun MainColorsHeader(
+    colorCount: Int,
     onAddColor: () -> Unit,
-    onEditColor: (MainColor) -> Unit,
-    onDeleteColor: (MainColor) -> Unit,
     onRestoreDefault: () -> Unit,
 ) {
     val addDescription = stringResource(R.string.content_add_color)
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        Icon(
+            imageVector = Icons.Rounded.LocalOffer,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.main_color_palette_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.color_count, colorCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(
+            modifier = Modifier.semantics { contentDescription = addDescription },
+            onClick = onAddColor,
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.LocalOffer,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.main_color_palette_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = stringResource(R.string.color_count, colors.size),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(
-                    modifier = Modifier.semantics { contentDescription = addDescription },
-                    onClick = onAddColor,
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                }
-                TextButton(onClick = onRestoreDefault) {
-                    Text(stringResource(R.string.restore_default_button))
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                colors.forEach { color ->
-                    key(color.id) {
-                        ColorListRow(
-                            color = color,
-                            canEdit = true,
-                            canDelete = colors.size > 1,
-                            onEdit = { onEditColor(color) },
-                            onDelete = { onDeleteColor(color) },
-                        )
-                    }
-                }
-            }
+            Icon(Icons.Rounded.Add, contentDescription = null)
+        }
+        TextButton(onClick = onRestoreDefault) {
+            Text(stringResource(R.string.restore_default_button))
         }
     }
 }
@@ -895,12 +855,6 @@ private fun GarmentTag.dotColor(): Color = when (categoryId) {
     "location" -> MaterialTheme.colorScheme.inversePrimary
     else -> MaterialTheme.colorScheme.surfaceVariant
 }
-
-private fun String.foldForSearch(): String =
-    Normalizer.normalize(this, Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
-        .lowercase(Locale.ROOT)
-        .trim()
 
 private fun List<GarmentTag>.nextTagSortOrder(): Int =
     (maxOfOrNull(GarmentTag::sortOrder) ?: 0) + 10
