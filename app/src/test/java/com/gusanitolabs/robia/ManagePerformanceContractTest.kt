@@ -16,6 +16,15 @@ class ManagePerformanceContractTest {
     }
 
     @Test
+    fun manageTags_colorsUseKeyedListRowsWithoutCardOrSearchBox() {
+        val manage = source("app/src/main/java/com/gusanitolabs/robia/ui/ManageTagsScreen.kt")
+
+        assertTrue(manage.contains("item(key = \"color-row:"))
+        assertFalse(manage.contains("Card("))
+        assertFalse(manage.contains("manage_search_tags"))
+    }
+
+    @Test
     fun toUiWardrobeItems_isNotComposable() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val declaration = "private fun List<ClothingItem>.toUiWardrobeItems("
