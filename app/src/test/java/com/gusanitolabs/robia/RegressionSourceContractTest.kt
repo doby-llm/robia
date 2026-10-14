@@ -1009,6 +1009,21 @@ class RegressionSourceContractTest {
         }
     }
 
+    @Test
+    fun driveWebpEncoderAndRestoredFileWriterUseTheSpecConstants() {
+        val imageStore = source("app/src/main/java/com/gusanitolabs/robia/media/ClothingImageStore.kt")
+        val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
+
+        assertTrue(imageStore.contains("Bitmap.CompressFormat.WEBP_LOSSY"))
+        assertTrue(imageStore.contains("DRIVE_WEBP_QUALITY = 90"))
+        assertTrue(imageStore.contains("DRIVE_WEBP_MAX_EDGE_PX = 2048"))
+        assertTrue(imageStore.contains("fun encodeDriveWebp("))
+        assertTrue(imageStore.contains("fun writeRestoredImageFile("))
+        assertTrue(imageStore.contains("source.renameTo(target)"))
+        assertTrue(driveRepository.contains("withRetry { streamBlobToFile("))
+        assertTrue(driveRepository.contains("DriveApiResult.StorageFull"))
+    }
+
     private fun source(relativePath: String): String {
         val candidates = listOf(
             Path.of(relativePath),

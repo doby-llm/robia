@@ -29,6 +29,7 @@ import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -57,7 +58,7 @@ class GoogleDriveWardrobeRepository(
             )
             is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveManifest(target = target))
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
@@ -66,7 +67,7 @@ class GoogleDriveWardrobeRepository(
             is DriveApiResult.Success -> hydratePhotoBlobs(accessToken, snapshotResult.value.sortedDeterministically(), progress)
             is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
@@ -91,7 +92,7 @@ class GoogleDriveWardrobeRepository(
                 IllegalStateException("No remote snapshot exists for garment $garmentId."),
             )
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(snapshotResult.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
@@ -113,7 +114,7 @@ class GoogleDriveWardrobeRepository(
                 is DriveApiResult.NotFound -> DriveSyncResult.Failure(
                     IllegalStateException("Drive snapshot upload completed without a readable file."),
                 )
-                is DriveApiResult.Failure -> DriveSyncResult.Failure(result.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(result.failureCause())
             }
         }
 
@@ -129,7 +130,7 @@ class GoogleDriveWardrobeRepository(
                     when (val deleted = api.deleteFile(accessToken, file.id)) {
                         is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
                         is DriveApiResult.Unauthorized -> return@withAccessToken authBlocked()
-                        is DriveApiResult.Failure -> return@withAccessToken DriveSyncResult.Failure(deleted.throwable)
+                        is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return@withAccessToken DriveSyncResult.Failure(deleted.failureCause())
                     }
                 }
                 // Relist after idempotent DELETEs; a backup is deleted only once inventory is empty.
@@ -139,12 +140,12 @@ class GoogleDriveWardrobeRepository(
                     )
                     is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveBackupDeletionResult(listed.value.size))
                     is DriveApiResult.Unauthorized -> authBlocked()
-                    is DriveApiResult.Failure -> DriveSyncResult.Failure(relist.throwable)
+                    is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(relist.failureCause())
                 }
             }
             is DriveApiResult.NotFound -> DriveSyncResult.Success(DriveBackupDeletionResult())
             is DriveApiResult.Unauthorized -> authBlocked()
-            is DriveApiResult.Failure -> DriveSyncResult.Failure(listed.throwable)
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(listed.failureCause())
         }
     }
 
@@ -191,7 +192,7 @@ class GoogleDriveWardrobeRepository(
         const val DRIVE_PHASE_TIMEOUT_MILLIS = 60_000L
     }
 
-    private fun hydratePhotoBlobs(
+    private suspend fun hydratePhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
         progress: DriveRestoreProgressListener?,
@@ -374,7 +375,7 @@ class GoogleDriveWardrobeRepository(
                         ),
                     )
                 }
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(blobResult.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(blobResult.failureCause())
                 is DriveApiResult.Unauthorized -> return authBlocked()
             }
         }
@@ -399,7 +400,7 @@ class GoogleDriveWardrobeRepository(
     }
 
     /** Exact paths are authoritative; legacy paths are only safe when one candidate exists. */
-    private fun fetchPhotoBlob(
+    private suspend fun fetchPhotoBlob(
         accessToken: String,
         photo: GarmentPhotoRecord,
         exactBlobPath: String,
@@ -420,7 +421,7 @@ class GoogleDriveWardrobeRepository(
                 }
                 is DriveApiResult.NotFound -> exactResult
                 is DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
-                is DriveApiResult.Failure -> DriveApiResult.Failure(candidates.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveApiResult.Failure(candidates.failureCause())
             }
             else -> exactResult
         }
@@ -448,7 +449,7 @@ class GoogleDriveWardrobeRepository(
         restoreDiagnosticEvents = restoreDiagnosticEvents,
     )
 
-    private fun uploadPhotoBlobs(
+    private suspend fun uploadPhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
     ): DriveSyncResult<WardrobeSyncSnapshot> {
@@ -480,7 +481,7 @@ class GoogleDriveWardrobeRepository(
                 is DriveApiResult.NotFound -> return DriveSyncResult.Failure(
                     IllegalStateException("Drive photo blob upload completed without a readable file."),
                 )
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(uploadResult.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(uploadResult.failureCause())
             }
             photo.copy(
                 blobPath = blobPath,
@@ -498,7 +499,7 @@ class GoogleDriveWardrobeRepository(
         return DriveSyncResult.Success(snapshot.copy(photos = uploadedPhotos).sortedDeterministically())
     }
 
-    private fun purgeDeletedPhotoBlobs(
+    private suspend fun purgeDeletedPhotoBlobs(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
     ): DriveSyncResult<Unit> {
@@ -512,7 +513,7 @@ class GoogleDriveWardrobeRepository(
                 is DriveApiResult.Success -> prefixCandidates += result.value
                 is DriveApiResult.NotFound -> Unit
                 is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(result.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(result.failureCause())
             }
         }
         val activeBlobPaths = snapshot.photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
@@ -541,6 +542,14 @@ private fun ImageBlob.requireDriveReadable(garmentId: String): ImageBlob {
     return this
 }
 
+// Transient and StorageFull keep the Failure behaviour until S02/S03 refine their callers.
+private fun DriveApiResult<*>.failureCause(): Throwable = when (this) {
+    is DriveApiResult.Failure -> throwable
+    is DriveApiResult.Transient -> cause ?: IOException("Drive request failed temporarily.")
+    DriveApiResult.StorageFull -> IOException("Google Drive storage quota is exceeded.")
+    else -> IllegalStateException("Unexpected Drive result: $this")
+}
+
 private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
         reason = DriveSyncDisabledReason.UserNotConnected,
         message = "Google Drive authorization is required before sync can continue.",
@@ -549,16 +558,25 @@ private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
 
 interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
-    fun fetchBlob(
+    suspend fun fetchBlob(
         accessToken: String,
         blobPath: String,
         onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit = { _, _ -> },
+        fileId: String? = null,
     ): DriveApiResult<DriveBlob>
-    fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>>
-    fun upsertBlob(accessToken: String, blobPath: String, bytes: ByteArray, mimeType: String?): DriveApiResult<Unit>
-    fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit>
-    fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
-    fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit>
+    suspend fun fetchBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long>
+    suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
+    suspend fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>>
+    suspend fun upsertBlob(
+        accessToken: String,
+        blobPath: String,
+        bytes: ByteArray,
+        mimeType: String?,
+        fileId: String? = null,
+    ): DriveApiResult<Unit>
+    suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String? = null): DriveApiResult<Unit>
+    suspend fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>>
+    suspend fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit>
     suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot>
 }
 
@@ -575,6 +593,7 @@ data class DriveFileMetadata(
     val modifiedTime: String? = null,
     val mimeType: String? = null,
     val size: Long? = null,
+    val name: String = "",
 )
 
 sealed interface DriveApiResult<out T> {
@@ -582,12 +601,20 @@ sealed interface DriveApiResult<out T> {
     data object NotFound : DriveApiResult<Nothing>
     data object Unauthorized : DriveApiResult<Nothing>
     data class Failure(val throwable: Throwable) : DriveApiResult<Nothing>
+    data class Transient(val cause: Throwable?) : DriveApiResult<Nothing>
+    data object StorageFull : DriveApiResult<Nothing>
 }
 
 // A full 1,000-item page is treated as overflow, so deletion never traverses unbounded inventory.
 private const val MAX_BACKUP_DELETE_FILES = 1_000
 private const val DRIVE_PROGRESS_CHUNK_BYTES = 32 * 1024
 private const val DRIVE_PROGRESS_THROTTLE_MILLIS = 250L
+private const val DRIVE_DOWNLOAD_BUFFER_BYTES = 64 * 1024
+
+private data class DriveFilesPage(
+    val files: List<DriveFileMetadata>,
+    val nextPageToken: String?,
+)
 
 private fun InputStream.readProgressBytes(
     contentLength: Long?,
@@ -649,12 +676,15 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun fetchBlob(
+    override suspend fun fetchBlob(
         accessToken: String,
         blobPath: String,
         onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit,
+        fileId: String?,
     ): DriveApiResult<DriveBlob> {
-        val file = findFileByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
+        val file = fileId?.let { id -> DriveFileMetadata(id = id, name = blobPath) }
+            ?: findFileByName(accessToken, blobPath)
+            ?: return DriveApiResult.NotFound
         return byteRequest(
             method = "GET",
             url = "https://www.googleapis.com/drive/v3/files/${file.id}?alt=media",
@@ -673,13 +703,37 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun upsertBlob(
+    override suspend fun fetchBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long> {
+        val result = withRetry { streamBlobToFile(accessToken, fileId, target) }
+        if (result !is DriveApiResult.Success) target.delete()
+        return result
+    }
+
+    override suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>> {
+        val files = mutableListOf<DriveFileMetadata>()
+        var pageToken: String? = null
+        do {
+            val pageUrl = "https://www.googleapis.com/drive/v3/files" +
+                "?spaces=appDataFolder&fields=nextPageToken,files(id,name,modifiedTime,size)&pageSize=1000" +
+                pageToken?.let { token -> "&pageToken=" + URLEncoder.encode(token, "UTF-8") }.orEmpty()
+            val page = request(method = "GET", url = pageUrl, accessToken = accessToken) { body ->
+                DriveApiResult.Success(parseFilesPage(body))
+            }
+            if (page !is DriveApiResult.Success) return page.failedAs()
+            files += page.value.files
+            pageToken = page.value.nextPageToken
+        } while (pageToken != null)
+        return DriveApiResult.Success(files)
+    }
+
+    override suspend fun upsertBlob(
         accessToken: String,
         blobPath: String,
         bytes: ByteArray,
         mimeType: String?,
+        fileId: String?,
     ): DriveApiResult<Unit> {
-        val existingFileId = findFileIdByName(accessToken, blobPath)
+        val existingFileId = fileId ?: findFileIdByName(accessToken, blobPath)
         val method = if (existingFileId == null) "POST" else "PATCH"
         val url = if (existingFileId == null) {
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
@@ -698,7 +752,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> {
+    override suspend fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> {
         val escapedPrefix = blobPathPrefix.toDriveQueryLiteral()
         val query = "name contains '$escapedPrefix' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
@@ -718,16 +772,16 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
     }
 
-    override fun deleteBlob(accessToken: String, blobPath: String): DriveApiResult<Unit> {
-        val fileId = findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
+    override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {
+        val resolvedFileId = fileId ?: findFileIdByName(accessToken, blobPath) ?: return DriveApiResult.NotFound
         return request(
             method = "DELETE",
-            url = "https://www.googleapis.com/drive/v3/files/$fileId",
+            url = "https://www.googleapis.com/drive/v3/files/$resolvedFileId",
             accessToken = accessToken,
         ) { DriveApiResult.Success(Unit) }
     }
 
-    override fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>> = request(
+    override suspend fun listBackupFiles(accessToken: String): DriveApiResult<List<DriveFileMetadata>> = request(
         method = "GET",
         url = "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime,mimeType,size)&pageSize=$MAX_BACKUP_DELETE_FILES",
         accessToken = accessToken,
@@ -738,17 +792,17 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         })
     }
 
-    override fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit> = request(
+    override suspend fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit> = request(
         method = "DELETE",
         url = "https://www.googleapis.com/drive/v3/files/$fileId",
         accessToken = accessToken,
     ) { DriveApiResult.Success(Unit) }
 
-    private fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
+    private suspend fun findSnapshotFileId(accessToken: String): String? = findFileIdByName(accessToken, SNAPSHOT_FILE_NAME)
 
-    private fun findFileIdByName(accessToken: String, name: String): String? = findFileByName(accessToken, name)?.id
+    private suspend fun findFileIdByName(accessToken: String, name: String): String? = findFileByName(accessToken, name)?.id
 
-    private fun findFileByName(accessToken: String, name: String): DriveFileMetadata? {
+    private suspend fun findFileByName(accessToken: String, name: String): DriveFileMetadata? {
         val escapedName = name.toDriveQueryLiteral()
         val query = "name='$escapedName' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
@@ -765,6 +819,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
                 file?.optString("id")?.takeIf(String::isNotBlank)?.let { id ->
                     DriveFileMetadata(
                         id = id,
+                        name = file.optString("name"),
                         modifiedTime = file.optString("modifiedTime").takeIf(String::isNotBlank),
                         mimeType = file.optString("mimeType").takeIf(String::isNotBlank),
                         size = file.optLong("size").takeIf { it > 0L },
@@ -777,42 +832,71 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
 
     private fun String.toDriveQueryLiteral(): String = replace("\\", "\\\\").replace("'", "\\'")
 
-    private fun <T> request(
+    private suspend fun <T> request(
         method: String,
         url: String,
         accessToken: String,
         parse: (body: String) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = try {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            connectTimeout = CONNECT_TIMEOUT_MILLIS
-            readTimeout = READ_TIMEOUT_MILLIS
+    ): DriveApiResult<T> = withRetry {
+        try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+            }
+            connection.toDriveResult(parse)
+        } catch (throwable: Throwable) {
+            throwable.toFailedDriveResult()
         }
-        connection.toDriveResult(parse)
-    } catch (throwable: Throwable) {
-        DriveApiResult.Failure(throwable)
     }
 
-    private fun <T> byteRequest(
+    private suspend fun <T> byteRequest(
         method: String,
         url: String,
         accessToken: String,
         onProgress: (bytesCopied: Long, totalBytes: Long?) -> Unit = { _, _ -> },
         parse: (bytes: ByteArray, connection: HttpURLConnection) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = try {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
+    ): DriveApiResult<T> = withRetry {
+        try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+            }
+            connection.toDriveByteResult(onProgress, parse)
+        } catch (throwable: Throwable) {
+            throwable.toFailedDriveResult()
+        }
+    }
+
+    /** One streamed GET into [target]; the caller deletes [target] on any non-success result. */
+    private suspend fun streamBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long> = try {
+        val connection = (URL("https://www.googleapis.com/drive/v3/files/$fileId?alt=media").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
             setRequestProperty("Authorization", "Bearer $accessToken")
             connectTimeout = CONNECT_TIMEOUT_MILLIS
             readTimeout = READ_TIMEOUT_MILLIS
         }
-        connection.toDriveByteResult(onProgress, parse)
+        try {
+            if (connection.responseCode in 200..299) {
+                val copiedBytes = connection.inputStream.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output, DRIVE_DOWNLOAD_BUFFER_BYTES) }
+                }
+                DriveApiResult.Success(copiedBytes)
+            } else {
+                val errorBody = connection.errorStream?.bufferedReader()?.use { reader -> reader.readText() }.orEmpty()
+                driveHttpError(connection.responseCode, errorBody)
+            }
+        } finally {
+            connection.disconnect()
+        }
     } catch (throwable: Throwable) {
-        DriveApiResult.Failure(throwable)
+        throwable.toFailedDriveResult()
     }
 
-    private fun <T> multipartRequest(
+    private suspend fun <T> multipartRequest(
         method: String,
         url: String,
         accessToken: String,
@@ -829,7 +913,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         parse = parse,
     )
 
-    private fun <T> multipartRequest(
+    private suspend fun <T> multipartRequest(
         method: String,
         url: String,
         accessToken: String,
@@ -837,31 +921,33 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         body: ByteArray,
         bodyMimeType: String,
         parse: (body: String) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = try {
-        val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
-        val header = buildString {
-            append("--$boundary\r\n")
-            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-            append(metadata)
-            append("\r\n--$boundary\r\n")
-            append("Content-Type: $bodyMimeType\r\n\r\n")
-        }.toByteArray(Charsets.UTF_8)
-        val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-        val payload = header + body + footer
+    ): DriveApiResult<T> = withRetry {
+        try {
+            val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
+            val header = buildString {
+                append("--$boundary\r\n")
+                append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+                append(metadata)
+                append("\r\n--$boundary\r\n")
+                append("Content-Type: $bodyMimeType\r\n\r\n")
+            }.toByteArray(Charsets.UTF_8)
+            val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+            val payload = header + body + footer
 
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            doOutput = true
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
-            setRequestProperty("Content-Length", payload.size.toString())
-            connectTimeout = CONNECT_TIMEOUT_MILLIS
-            readTimeout = READ_TIMEOUT_MILLIS
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                doOutput = true
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+                setRequestProperty("Content-Length", payload.size.toString())
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+            }
+            connection.outputStream.use { output -> output.write(payload) }
+            connection.toDriveResult(parse)
+        } catch (throwable: Throwable) {
+            throwable.toFailedDriveResult()
         }
-        connection.outputStream.use { output -> output.write(payload) }
-        connection.toDriveResult(parse)
-    } catch (throwable: Throwable) {
-        DriveApiResult.Failure(throwable)
     }
 
     private fun <T> HttpURLConnection.toDriveResult(parse: (body: String) -> DriveApiResult<T>): DriveApiResult<T> =
@@ -873,10 +959,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             when (responseCode) {
                 in 200..299 -> parse(body)
-                HttpURLConnection.HTTP_UNAUTHORIZED,
-                HttpURLConnection.HTTP_FORBIDDEN -> DriveApiResult.Unauthorized
-                HttpURLConnection.HTTP_NOT_FOUND -> DriveApiResult.NotFound
-                else -> DriveApiResult.Failure(IOException("Drive API returned HTTP $responseCode: $body"))
+                else -> driveHttpError(responseCode, body)
             }
         } finally {
             disconnect()
@@ -896,14 +979,56 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             when (responseCode) {
                 in 200..299 -> parse(bytes, this)
-                HttpURLConnection.HTTP_UNAUTHORIZED,
-                HttpURLConnection.HTTP_FORBIDDEN -> DriveApiResult.Unauthorized
-                HttpURLConnection.HTTP_NOT_FOUND -> DriveApiResult.NotFound
-                else -> DriveApiResult.Failure(IOException("Drive API returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8)}"))
+                else -> driveHttpError(responseCode, bytes.toString(Charsets.UTF_8))
             }
         } finally {
             disconnect()
         }
+
+    private fun driveHttpError(code: Int, body: String): DriveApiResult<Nothing> {
+        val failure = IOException("Drive API returned HTTP $code: $body")
+        return when (classify(code, body)) {
+            DriveErrorClass.AuthRequired -> DriveApiResult.Unauthorized
+            DriveErrorClass.NotFound -> DriveApiResult.NotFound
+            DriveErrorClass.StorageFull -> DriveApiResult.StorageFull
+            DriveErrorClass.Transient -> DriveApiResult.Transient(failure)
+            is DriveErrorClass.Permanent -> DriveApiResult.Failure(failure)
+        }
+    }
+
+    private fun Throwable.toFailedDriveResult(): DriveApiResult<Nothing> = when (classify(this)) {
+        DriveErrorClass.Transient -> DriveApiResult.Transient(this)
+        else -> DriveApiResult.Failure(this)
+    }
+
+    private fun <R> DriveApiResult<*>.failedAs(): DriveApiResult<R> = when (this) {
+        is DriveApiResult.Failure -> this
+        is DriveApiResult.Transient -> this
+        DriveApiResult.StorageFull -> DriveApiResult.StorageFull
+        DriveApiResult.NotFound -> DriveApiResult.NotFound
+        DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
+        is DriveApiResult.Success -> error("A successful Drive result is not a failure.")
+    }
+
+    private fun parseFilesPage(body: String): DriveFilesPage {
+        val json = JSONObject(body)
+        val files = json.optJSONArray("files") ?: JSONArray()
+        return DriveFilesPage(
+            files = (0 until files.length()).mapNotNull { index ->
+                files.optJSONObject(index)?.let { file ->
+                    file.optString("id").takeIf(String::isNotBlank)?.let { id ->
+                        DriveFileMetadata(
+                            id = id,
+                            name = file.optString("name"),
+                            modifiedTime = file.optString("modifiedTime").takeIf(String::isNotBlank),
+                            size = file.optLong("size").takeIf { it > 0L },
+                        )
+                    }
+                }
+            },
+            nextPageToken = json.optString("nextPageToken").takeIf(String::isNotBlank),
+        )
+    }
 
 
     private companion object {
