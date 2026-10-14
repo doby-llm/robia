@@ -1,7 +1,12 @@
 package com.gusanitolabs.robia.ui
 
+import android.content.ContentValues
+import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.SystemClock
+import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,6 +43,7 @@ import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DeviceThermostat
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -104,11 +110,18 @@ import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
 import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
+import com.gusanitolabs.robia.suggestions.SuggestionCapture
+import com.gusanitolabs.robia.suggestions.SuggestionOutcome
+import com.gusanitolabs.robia.suggestions.SuggestionService
+import com.gusanitolabs.robia.suggestions.diagnosticLines
+import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
@@ -127,8 +140,9 @@ fun AddEditClothingScreen(
     titleRes: Int? = null,
     bodyRes: Int = R.string.add_edit_body,
     saveButtonTextRes: Int = R.string.save_item,
+    suggestionService: SuggestionService,
     onCancel: () -> Unit,
-    onSave: (ClothingItem) -> Unit,
+    onSave: (ClothingItem, SuggestionCapture?) -> Unit,
     onDelete: ((ClothingItem) -> Unit)? = null,
     onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
 ) {
@@ -154,6 +168,8 @@ fun AddEditClothingScreen(
     var photoProcessingStage by rememberSaveable { mutableStateOf<PhotoProcessingStage?>(null) }
     var photoRetrySource by remember { mutableStateOf<PendingPhotoInput?>(null) }
     var developerDiagnostics by remember { mutableStateOf<List<String>>(emptyList()) }
+    var developerExportStatus by remember { mutableStateOf<String?>(null) }
+    var suggestionCapture by remember { mutableStateOf<SuggestionCapture?>(null) }
     var suggestionSourceUri by rememberSaveable { mutableStateOf<String?>(null) }
     var showQuickEdit by rememberSaveable { mutableStateOf(false) }
     var quickEditStatus by rememberSaveable { mutableStateOf<String?>(null) }
@@ -218,8 +234,6 @@ fun AddEditClothingScreen(
         }
     }
 
-    // Reused by TASK-E05 (EmbeddingGemma suggestions).
-    @Suppress("unused")
     fun applyPredictedTags(predictedTagIds: Set<String>, availableTagsSnapshot: List<GarmentTag>): PredictedTagReconciliation {
         val result = reconcilePredictedTags(
             currentTagIds = selectedTagIds,
@@ -232,6 +246,17 @@ fun AddEditClothingScreen(
         modelOwnedTagIds = result.modelOwnedTagIds
         return result
     }
+
+    /** Keeps the capture vector for save and marks the predicted tags. Unavailable leaves everything untouched. */
+    fun applySuggestionOutcome(outcome: SuggestionOutcome, uriString: String) {
+        suggestionCapture = null
+        if (outcome !is SuggestionOutcome.Ready) return
+        suggestionCapture = SuggestionCapture(uriString, outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
+        applyPredictedTags(outcome.predictedTagIds, latestAvailableTags)
+    }
+
+    fun selectedCategoryIdForSuggestions(): String? =
+        latestAvailableTags.firstOrNull { tag -> tag.categoryId == "category" && tag.id in selectedTagIds }?.id
 
     fun updateUserSelectedTagIds(newTagIds: List<String>) {
         val tagsById = latestAvailableTags.associateBy(GarmentTag::id)
@@ -269,6 +294,7 @@ fun AddEditClothingScreen(
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
         suggestionSourceUri = null
+        suggestionCapture = null
         quickEditStatus = null
         photoRetrySource = PendingPhotoInput(
             id = inputId,
@@ -306,6 +332,7 @@ fun AddEditClothingScreen(
         isPhotoProcessing = true
         photoProcessingStage = PhotoProcessingStage.RemovingBackground
         suggestionSourceUri = null
+        suggestionCapture = null
         quickEditStatus = null
         developerDiagnostics = listOf(
             "Photo processing started",
@@ -423,6 +450,17 @@ fun AddEditClothingScreen(
                 if (extracted.isNotEmpty()) {
                     applyExtractedColors(generation, extracted)
                 }
+
+                photoProcessingStage = PhotoProcessingStage.PreparingSuggestions
+                val suggestion = suggestionService.suggestForPhoto(
+                    photoUri = Uri.parse(displayUri),
+                    tags = latestAvailableTags,
+                    selectedCategoryId = selectedCategoryIdForSuggestions(),
+                    excludeGarmentId = existingItem?.id,
+                )
+                if (token != photoProcessingToken) return
+                suggestion.diagnosticLines().forEach { line -> addLine(line) }
+                applySuggestionOutcome(suggestion, displayUri)
         } catch (throwable: CancellationException) {
             addLine("Pipeline cancelled because a newer photo input superseded this one")
             throw throwable
@@ -514,6 +552,17 @@ fun AddEditClothingScreen(
             if (token != photoProcessingToken) return
             if (extracted.isNotEmpty()) applyExtractedColors(generation, extracted)
 
+            photoProcessingStage = PhotoProcessingStage.PreparingSuggestions
+            val suggestion = suggestionService.suggestForPhoto(
+                photoUri = croppedUri,
+                tags = latestAvailableTags,
+                selectedCategoryId = selectedCategoryIdForSuggestions(),
+                excludeGarmentId = existingItem?.id,
+            )
+            if (token != photoProcessingToken) return
+            suggestion.diagnosticLines().forEach { line -> addLine(line) }
+            applySuggestionOutcome(suggestion, croppedUri.toString())
+
             captureStatus = PhotoStatus.QuickEdited
             quickEditStatus = context.getString(R.string.quick_edit_saved_status)
         } catch (throwable: CancellationException) {
@@ -531,6 +580,10 @@ fun AddEditClothingScreen(
                 photoProcessingStage = null
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        suggestionService.preload()
     }
 
     LaunchedEffect(pendingPhotoInput) {
@@ -577,6 +630,7 @@ fun AddEditClothingScreen(
         }
         developerDiagnostics = emptyList()
         suggestionSourceUri = existingItem?.photoUri
+        suggestionCapture = null
     }
 
     val isEditing = existingItem != null
@@ -596,6 +650,19 @@ fun AddEditClothingScreen(
         fitValue != initialFitValue ||
         selectedPrimaryColorId != existingItem?.colorMetrics?.primaryPaletteColorId ||
         selectedSecondaryColorId != existingItem?.colorMetrics?.secondaryPaletteColorId
+
+    fun exportSuggestionInputImage() {
+        val source = canonicalPhotoUri ?: return
+        coroutineScope.launch {
+            val saved = runCatching {
+                val encoded = ImageInputEncoder.encode(context, Uri.parse(source))
+                withContext(Dispatchers.IO) { saveSuggestionInputPng(context, encoded.bytes) }
+            }
+            developerExportStatus = context.getString(
+                if (saved.isSuccess) R.string.developer_export_suggestion_input_saved else R.string.developer_export_suggestion_input_error,
+            )
+        }
+    }
 
     fun requestClose() {
         if (hasUnsavedChanges) {
@@ -863,6 +930,7 @@ fun AddEditClothingScreen(
                                 createdAtEpochMillis = existingItem?.createdAtEpochMillis ?: now,
                                 updatedAtEpochMillis = now,
                             ),
+                            suggestionCapture,
                         )
                     },
                     modifier = Modifier.weight(2f),
@@ -880,6 +948,9 @@ fun AddEditClothingScreen(
                     lines = developerDiagnostics.ifEmpty {
                         listOf(stringResource(R.string.developer_diagnostics_empty))
                     },
+                    exportStatus = developerExportStatus,
+                    exportEnabled = hasUsablePhoto && !isPhotoProcessing,
+                    onExportInputImage = ::exportSuggestionInputImage,
                 )
             }
         }
@@ -889,8 +960,23 @@ fun AddEditClothingScreen(
 @Composable
 private fun DeveloperDiagnosticsSection(
     lines: List<String>,
+    exportStatus: String?,
+    exportEnabled: Boolean,
+    onExportInputImage: () -> Unit,
 ) {
     CardSection(title = stringResource(R.string.developer_diagnostics_title)) {
+        OutlinedButton(onClick = onExportInputImage, enabled = exportEnabled) {
+            Icon(Icons.Rounded.Download, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.developer_export_suggestion_input))
+        }
+        exportStatus?.let { status ->
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             text = lines.joinToString(separator = "\n"),
             style = MaterialTheme.typography.bodySmall,
@@ -2248,16 +2334,47 @@ private enum class PhotoProcessingStage(val labelRes: Int) {
     RemovingBackground(R.string.processing_stage_removing_background),
     CroppingPicture(R.string.processing_stage_cropping_picture),
     ExtractingColor(R.string.processing_stage_extracting_color),
+    PreparingSuggestions(R.string.processing_stage_preparing_suggestions),
     ApplyingQuickEdit(R.string.processing_stage_applying_quick_edit),
 }
 
-private data class PredictedTagReconciliation(
+internal data class PredictedTagReconciliation(
     val selectedTagIds: List<String>,
     val modelOwnedTagIds: List<String>,
     val skippedCategories: Set<String>,
 )
 
-private fun reconcilePredictedTags(
+/** Writes the exact encoder bytes to Pictures/Robia (developer export, TS§3.12). */
+private fun saveSuggestionInputPng(context: Context, png: ByteArray): Uri {
+    val values = ContentValues().apply {
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        put(MediaStore.Images.Media.DISPLAY_NAME, "robia-suggestion-input-$stamp.png")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Robia")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+    }
+    val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    } else {
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    }
+    val resolver = context.contentResolver
+    val target = resolver.insert(collection, values) ?: error("MediaStore insert failed")
+    try {
+        resolver.openOutputStream(target)?.use { output -> output.write(png) } ?: error("Output stream unavailable")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            resolver.update(target, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        }
+    } catch (failure: Exception) {
+        resolver.delete(target, null, null)
+        throw failure
+    }
+    return target
+}
+
+internal fun reconcilePredictedTags(
     currentTagIds: List<String>,
     currentModelOwnedTagIds: List<String>,
     predictedTagIds: Set<String>,
@@ -2276,7 +2393,9 @@ private fun reconcilePredictedTags(
     val modelOwnedIds = currentModelOwnedTagIds.toSet()
     val selected = currentTagIds.filterNot { tagId ->
         val categoryId = tagsById[tagId]?.categoryId
-        categoryId in replacedCategories && (categoryId == "category" || tagId in modelOwnedIds)
+        // A category is replaced only when this photo predicts one, so a low-margin photo keeps the chosen category.
+        categoryId in replacedCategories &&
+            (tagId in modelOwnedIds || (categoryId == "category" && categoryId in categoriesWithPredictions))
     }.toMutableList()
     val nextModelOwned = currentModelOwnedTagIds.filterNot { tagId ->
         tagsById[tagId]?.categoryId in replacedCategories
@@ -2284,7 +2403,7 @@ private fun reconcilePredictedTags(
 
     categoriesWithPredictions.forEach { categoryId ->
         if (categoryId in userOverridden) return@forEach
-        // A new photo generation owns only the detector output for category/occasion.
+        // A new photo generation owns only the suggestion output for category/occasion.
         // Previous model-owned selections are removed first, so trousers -> shirt cannot keep trousers.
         predictedByCategory.getValue(categoryId).forEach { tagId ->
             if (tagId !in selected) selected += tagId

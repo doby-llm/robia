@@ -258,6 +258,10 @@
     <string name="processing_stage_cropping_picture">Bild wird zugeschnitten</string>
     <string name="processing_stage_extracting_color">Farbe wird extrahiert</string>
     <string name="processing_stage_applying_quick_edit">Schnellbearbeitung wird angewendet</string>
+    <string name="processing_stage_preparing_suggestions">Vorschläge werden vorbereitet</string>
+    <string name="developer_export_suggestion_input">Eingabebild exportieren</string>
+    <string name="developer_export_suggestion_input_saved">Eingabebild in Pictures/Robia gespeichert</string>
+    <string name="developer_export_suggestion_input_error">Eingabebild konnte nicht exportiert werden</string>
     <string name="quick_edit_title">Foto schnell bearbeiten</string>
     <string name="quick_edit_brightness">Helligkeit</string>
     <string name="quick_edit_temperature">Temperatur</string>
