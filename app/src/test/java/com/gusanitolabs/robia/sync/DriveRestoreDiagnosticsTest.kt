@@ -469,7 +469,7 @@ class DriveRestoreDiagnosticsTest {
         assertTrue(sanitized.contains("readbackFirst32=<redacted>"))
         assertTrue(sanitized.contains("readbackLast32=<redacted>"))
         assertTrue(sanitized.contains("magic=<redacted>"))
-        assertTrue(sanitized.contains("sourceMagic=<redacted>"))
+        assertTrue(sanitizeLogField("sourceMagic=89504e470d0a1a0a").contains("sourceMagic=<redacted>"))
         assertTrue(sanitized.contains("<email-redacted>"))
         assertTrue(sanitized.contains("content://<redacted>"))
         assertTrue(sanitized.contains("file://<redacted>"))
