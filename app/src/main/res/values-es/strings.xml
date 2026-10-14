@@ -497,4 +497,7 @@
     <string name="tag_no_occasions_badge">Sin ocasiones</string>
     <string name="tag_add_button">Añadir</string>
     <string name="tag_description_counter">%1$d/200</string>
+    <string name="sync_merge_title">¿Combinar con la copia de seguridad de Google Drive?</string>
+    <string name="sync_merge_body">Drive tiene %1$d prendas. Este teléfono tiene %2$d. Tras combinar tendrás %3$d prendas.</string>
+    <string name="sync_merge_confirm">Combinar</string>
 </resources>

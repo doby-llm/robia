@@ -259,9 +259,7 @@ class RegressionSourceContractTest {
         assertTrue(
             processor.contains("launchSyncWork { restoreFreshInstallOnceIfNeeded() }"),
         )
-        assertTrue(
-            processor.contains("launchSyncWork { processPendingGarments() }"),
-        )
+        assertTrue(processor.contains("syncWorkScheduler.requestSync()"))
         assertTrue(processor.contains("scheduledWorkJob?.isActive == true"))
         assertTrue(
             processor.contains("restoreProgress.value = diagnostics.progress"),
@@ -335,11 +333,11 @@ class RegressionSourceContractTest {
         val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
         val repository = source("app/src/main/java/com/gusanitolabs/robia/data/WardrobeRepository.kt")
 
-        assertTrue(processor.contains("withTimeout(SYNC_OPERATION_TIMEOUT_MILLIS)"))
+        // TS§4.5: the whole-cycle timeout and the in-app retry wake-up are gone; WorkManager backoff replaces them.
+        assertFalse(processor.contains("withTimeout(SYNC_OPERATION_TIMEOUT_MILLIS)"))
         assertTrue(processor.contains("withContext(NonCancellable)"))
-        assertTrue(processor.contains("markFailedRetryable(lockedWork, lockedMetadataWork, timeoutMessage)"))
-        assertTrue(processor.contains("scheduleRetryWakeUp"))
-        assertTrue(processor.contains("delay((retryAt - System.currentTimeMillis()).coerceAtLeast(0L))"))
+        assertTrue(processor.contains("releaseClaimedWork(lockedWork, lockedMetadataWork)"))
+        assertFalse(processor.contains("scheduleRetryWakeUp"))
         assertTrue(processor.contains("hasPendingCloudDeletion()"))
         assertTrue(processor.contains("retry rejected reason=cloud_deletion_pending"))
         assertTrue(driveRepository.contains("withTimeout(AUTHORIZATION_TIMEOUT_MILLIS)"))
@@ -354,20 +352,17 @@ class RegressionSourceContractTest {
         assertTrue(dao.contains("retry_attempt_count = MIN(retry_attempt_count + 1, 3)"))
         assertTrue(dao.contains("WHEN 0 THEN 60000 WHEN 1 THEN 300000 ELSE 900000"))
 
-        val retryableFailureMarker = processor
-            .substringAfter("private suspend fun markFailedRetryable(")
-            .substringBefore("private fun DriveSyncConnectionStatus.toWardrobeSyncState")
-        assertTrue(retryableFailureMarker.contains("message: String? = null"))
+        // Transient failures release claimed rows to Queued (pending) instead of FailedRetryable with a counter.
+        val releaseMarker = processor
+            .substringAfter("private suspend fun releaseClaimedWork(")
+            .substringBefore("private fun DriveSyncDisabledReason.toRunResult()")
         assertTrue(
-            retryableFailureMarker.contains(
-                "wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision, message)",
-            ),
+            releaseMarker.contains("wardrobeRepository.releaseGarmentSyncToQueued(item.id, item.revision)"),
         )
         assertTrue(
-            retryableFailureMarker.contains(
-                "wardrobeRepository.markMetadataSyncFailedRetryable(item, message)",
-            ),
+            releaseMarker.contains("wardrobeRepository.releaseMetadataSyncToQueued(item)"),
         )
+        assertFalse(processor.contains("markGarmentSyncFailedRetryable"))
 
         val deletionGuard = processor
             .substringAfter("if (wardrobeRepository.hasPendingCloudDeletion())")
@@ -476,8 +471,9 @@ class RegressionSourceContractTest {
         assertTrue(dao.contains("photo_restore_retry_deadline_epoch_millis >= :now"))
         assertTrue(dao.contains("sync_revision = :revision"))
         assertTrue(snapshotRepository.contains("hasGuardedPhotoRestoreIssues"))
-        assertTrue(processor.contains("!hasGuardedPhotoRestoreIssues.value"))
-        assertTrue(processor.contains("SyncCycleResult.Attention"))
+        // S04 (TS§4.5): guarded photos no longer block uploads; the guarded garment is uploaded from its edit.
+        assertFalse(processor.contains("!hasGuardedPhotoRestoreIssues.value"))
+        assertFalse(processor.contains("SyncCycleResult.Attention"))
     }
 
     @Test
@@ -774,9 +770,11 @@ class RegressionSourceContractTest {
         assertTrue(promptEffect.contains("if (settingsLoaded &&"))
         assertTrue(promptEffect.contains("!settings.cloudSetupPromptInteracted"))
         assertTrue(promptEffect.contains("settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured"))
-        assertTrue(promptEffect.contains("cloudSetupGuard.isFirstRunRecommendation"))
+        assertTrue(promptEffect.contains("isFirstRunCloudSetup"))
         assertTrue(promptEffect.contains("onCloudSetupPromptInteracted()"))
-        assertTrue(promptEffect.contains("CloudSetupDialogMode.RecommendedFirstRun"))
+        assertTrue(promptEffect.contains("showCloudSetupPrompt = true"))
+        assertFalse(app.contains("CloudSetupGuard"))
+        assertFalse(app.contains("LateEnableBlocked"))
     }
 
     @Test

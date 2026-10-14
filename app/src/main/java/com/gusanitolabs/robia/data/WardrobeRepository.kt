@@ -28,12 +28,16 @@ interface WardrobeRepository {
     suspend fun markGarmentSynced(id: String, revision: Long, syncedAtEpochMillis: Long): Boolean
     suspend fun markGarmentSyncFailedRetryable(id: String, revision: Long, message: String? = null, now: Long = System.currentTimeMillis()): Boolean
     suspend fun markGarmentSyncAuthBlocked(id: String, message: String? = null): Boolean
+    /** Transient failure: the row stays pending as Queued, without attempt counting or backoff. */
+    suspend fun releaseGarmentSyncToQueued(id: String, revision: Long): Boolean
+    suspend fun markGarmentNeedsUserAction(id: String, revision: Long, reasonCode: String): Boolean
     suspend fun claimGarmentPhotoRestoreRetry(id: String, startedAtEpochMillis: Long = System.currentTimeMillis(), now: Long = startedAtEpochMillis): Long?
     suspend fun markGarmentPhotoRestoreFailed(id: String, message: String, now: Long = System.currentTimeMillis()): Boolean
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean
     suspend fun markMetadataSynced(work: PendingMetadataSyncWork, syncedAtEpochMillis: Long): Boolean
     suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWork, message: String? = null): Boolean
     suspend fun markMetadataSyncAuthBlocked(work: PendingMetadataSyncWork, message: String? = null): Boolean
+    suspend fun releaseMetadataSyncToQueued(work: PendingMetadataSyncWork): Boolean
 }
 
 data class PendingGarmentSyncWork(

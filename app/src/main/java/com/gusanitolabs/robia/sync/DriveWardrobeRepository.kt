@@ -92,6 +92,7 @@ data class DriveManifest(
     val revision: Long = 0L,
     val target: DriveSyncTarget = DriveSyncTarget(),
     val photoUploadFailures: List<PhotoUploadFailure> = emptyList(),
+    val writerDeviceId: String? = null,
 ) {
     companion object {
         fun fromSnapshot(snapshot: WardrobeSyncSnapshot): DriveManifest = DriveManifest(
@@ -101,6 +102,7 @@ data class DriveManifest(
             updatedAtEpochMillis = snapshot.metadata.generatedAtEpochMillis,
             revision = snapshot.metadata.revision,
             target = snapshot.metadata.target,
+            writerDeviceId = snapshot.metadata.writerDeviceId,
         )
     }
 }

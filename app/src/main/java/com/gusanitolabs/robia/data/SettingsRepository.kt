@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
@@ -11,6 +12,7 @@ import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 interface SettingsRepository {
     val settings: Flow<RobiaSettings>
@@ -27,6 +29,14 @@ interface SettingsRepository {
     suspend fun setModelPromptShown(shown: Boolean)
     val modelMobileDataApproved: Flow<Boolean>
     suspend fun setModelMobileDataApproved(approved: Boolean)
+    /** Stable id of this install, written into exported snapshots as the writer; created on first read. */
+    suspend fun deviceId(): String
+    /** Revision of the Drive snapshot this phone last saw or uploaded; 0 when never connected. */
+    val lastKnownRemoteRevision: Flow<Long>
+    suspend fun setLastKnownRemoteRevision(revision: Long)
+    /** True while a newer backup from another phone blocks uploads until the user chooses. */
+    val syncConflict: Flow<Boolean>
+    suspend fun setSyncConflict(conflict: Boolean)
 }
 
 class DataStoreSettingsRepository(
@@ -109,6 +119,29 @@ class DataStoreSettingsRepository(
         dataStore.edit { preferences -> preferences[modelMobileDataApprovedKey] = approved }
     }
 
+    override suspend fun deviceId(): String {
+        val preferences = dataStore.edit { preferences ->
+            if (preferences[deviceIdKey].isNullOrBlank()) preferences[deviceIdKey] = UUID.randomUUID().toString()
+        }
+        return preferences[deviceIdKey].orEmpty()
+    }
+
+    override val lastKnownRemoteRevision: Flow<Long> = dataStore.data.map { preferences ->
+        preferences[lastKnownRemoteRevisionKey] ?: 0L
+    }
+
+    override suspend fun setLastKnownRemoteRevision(revision: Long) {
+        dataStore.edit { preferences -> preferences[lastKnownRemoteRevisionKey] = revision }
+    }
+
+    override val syncConflict: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[syncConflictKey] ?: false
+    }
+
+    override suspend fun setSyncConflict(conflict: Boolean) {
+        dataStore.edit { preferences -> preferences[syncConflictKey] = conflict }
+    }
+
     private fun String?.toLanguagePreference(): LanguagePreference =
         LanguagePreference.entries.firstOrNull { it.storageValue == this } ?: LanguagePreference.System
 
@@ -128,5 +161,8 @@ class DataStoreSettingsRepository(
         val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
         val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
         val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
+        val deviceIdKey = stringPreferencesKey("sync_device_id")
+        val lastKnownRemoteRevisionKey = longPreferencesKey("sync_last_known_remote_revision")
+        val syncConflictKey = booleanPreferencesKey("sync_conflict")
     }
 }

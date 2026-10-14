@@ -163,6 +163,7 @@ import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
+import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -301,33 +302,6 @@ private data class BrowseFilterState(
 
     private fun selectedPaletteColors(paletteColors: List<MainColor>): List<MainColor> =
         paletteColors.filter { color -> color.id in selectedPaletteColorIds }
-}
-
-private data class CloudSetupGuard(
-    val garmentCount: Int,
-    val customTagCount: Int,
-    val customCategoryCount: Int,
-    val customColorCount: Int,
-    val taggedGarmentCount: Int,
-    val pendingOperationCount: Int,
-    val hasConflictingAccountBinding: Boolean,
-) {
-    val hasUnsafeLocalState: Boolean
-        get() = garmentCount > 0 ||
-            customTagCount > 0 ||
-            customCategoryCount > 0 ||
-            customColorCount > 0 ||
-            taggedGarmentCount > 0 ||
-            pendingOperationCount > 0 ||
-            hasConflictingAccountBinding
-
-    val isFirstRunRecommendation: Boolean
-        get() = !hasUnsafeLocalState
-}
-
-private enum class CloudSetupDialogMode {
-    RecommendedFirstRun,
-    LateEnableBlocked,
 }
 
 private val bottomDestinations = listOf(
@@ -662,7 +636,7 @@ private fun RobiaShell(
     var showColorReviewDiscardDialog by remember { mutableStateOf(false) }
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
-    var cloudSetupDialogMode by remember { mutableStateOf<CloudSetupDialogMode?>(null) }
+    var showCloudSetupPrompt by remember { mutableStateOf(false) }
     var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
     val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
     val items = remember(context, clothingItems, syncState, needsWardrobeUiModels) {
@@ -677,31 +651,29 @@ private fun RobiaShell(
     }
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
-    val cloudSetupGuard = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
-        CloudSetupGuard(
-            garmentCount = clothingItems.size,
-            customTagCount = availableTags.count(DefaultTags::isCustomOrModifiedDefault),
-            customCategoryCount = tagCategories.count(DefaultTags::isCustomOrModifiedDefault),
-            customColorCount = mainColors.count(DefaultTags::isCustomOrModifiedDefault),
-            taggedGarmentCount = clothingItems.count { item -> item.tags.isNotEmpty() },
-            pendingOperationCount = syncState.pendingOperationCount,
-            hasConflictingAccountBinding = syncState.hasConflictingAccountBinding,
-        )
+    // Only an untouched phone is recommended to set up Drive at first run; connecting later goes through the merge summary.
+    val isFirstRunCloudSetup = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
+        clothingItems.isEmpty() &&
+            availableTags.none(DefaultTags::isCustomOrModifiedDefault) &&
+            tagCategories.none(DefaultTags::isCustomOrModifiedDefault) &&
+            mainColors.none(DefaultTags::isCustomOrModifiedDefault) &&
+            syncState.pendingOperationCount == 0 &&
+            !syncState.hasConflictingAccountBinding
     }
 
     LaunchedEffect(
         settingsLoaded,
         settings.driveSyncConnectionStatus,
         settings.cloudSetupPromptInteracted,
-        cloudSetupGuard.isFirstRunRecommendation,
+        isFirstRunCloudSetup,
     ) {
         if (settingsLoaded &&
             !settings.cloudSetupPromptInteracted &&
             settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
-            cloudSetupGuard.isFirstRunRecommendation
+            isFirstRunCloudSetup
         ) {
             onCloudSetupPromptInteracted()
-            cloudSetupDialogMode = CloudSetupDialogMode.RecommendedFirstRun
+            showCloudSetupPrompt = true
         }
     }
 
@@ -709,10 +681,10 @@ private fun RobiaShell(
     val cloudSetupPromptPending = settingsLoaded &&
         !settings.cloudSetupPromptInteracted &&
         settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
-        cloudSetupGuard.isFirstRunRecommendation
-    LaunchedEffect(modelPromptShown, modelState, cloudSetupDialogMode, cloudSetupPromptPending) {
+        isFirstRunCloudSetup
+    LaunchedEffect(modelPromptShown, modelState, showCloudSetupPrompt, cloudSetupPromptPending) {
         // A null preference means not loaded yet, so the prompt waits; the cloud-setup prompt goes first.
-        if (cloudSetupDialogMode == null &&
+        if (!showCloudSetupPrompt &&
             !cloudSetupPromptPending &&
             shouldShowModelPrompt(promptShown = modelPromptShown ?: true, state = modelState)
         ) {
@@ -959,13 +931,13 @@ private fun RobiaShell(
 
     fun dismissCloudSetupPrompt() {
         onCloudSetupPromptInteracted()
-        cloudSetupDialogMode = null
+        showCloudSetupPrompt = false
     }
 
     fun confirmCloudSetupPrompt() {
         onCloudSetupPromptInteracted()
-        cloudSetupDialogMode = null
-        if (!cloudSetupGuard.hasUnsafeLocalState) {
+        showCloudSetupPrompt = false
+        if (isFirstRunCloudSetup) {
             onRequestCloudSetup()
         }
     }
@@ -1058,16 +1030,18 @@ private fun RobiaShell(
         )
     }
 
-    cloudSetupDialogMode?.let { mode ->
+    if (showCloudSetupPrompt) {
         CloudSetupDialog(
-            mode = mode,
-            guard = cloudSetupGuard,
-            onDismiss = if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
-                ::dismissCloudSetupPrompt
-            } else {
-                { cloudSetupDialogMode = null }
-            },
+            onDismiss = ::dismissCloudSetupPrompt,
             onConfirmSetup = ::confirmCloudSetupPrompt,
+        )
+    }
+
+    syncState.pendingMergeSummary?.let { summary ->
+        MergeConfirmationDialog(
+            summary = summary,
+            onConfirm = { scope.launch { syncGateway.confirmMerge() } },
+            onCancel = { scope.launch { syncGateway.cancelMerge() } },
         )
     }
 
@@ -1222,7 +1196,7 @@ private fun RobiaShell(
             driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
             pendingGarmentSyncCount = pendingGarmentSyncCount,
             cloudSetupSummaryRes = settings.driveSyncConnectionStatus.cloudSetupSummaryRes(
-                canAttemptCloudSetup = !cloudSetupGuard.hasUnsafeLocalState,
+                canAttemptCloudSetup = isFirstRunCloudSetup,
                 pendingGarmentSyncCount = pendingGarmentSyncCount,
             ),
             developerModeUnlocked = settings.developerModeUnlocked,
@@ -1616,67 +1590,46 @@ private fun cloudQueueSummaryText(
 
 @Composable
 private fun CloudSetupDialog(
-    mode: CloudSetupDialogMode,
-    guard: CloudSetupGuard,
     onDismiss: () -> Unit,
     onConfirmSetup: () -> Unit,
 ) {
-    val titleRes = when (mode) {
-        CloudSetupDialogMode.RecommendedFirstRun -> R.string.cloud_setup_prompt_title
-        CloudSetupDialogMode.LateEnableBlocked -> R.string.cloud_setup_late_blocked_title
-    }
-    val bodyRes = when (mode) {
-        CloudSetupDialogMode.RecommendedFirstRun -> R.string.cloud_setup_prompt_body
-        CloudSetupDialogMode.LateEnableBlocked -> R.string.cloud_setup_late_blocked_body
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(titleRes)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(bodyRes))
-                if (mode == CloudSetupDialogMode.LateEnableBlocked) {
-                    Text(
-                        text = stringResource(
-                            R.string.cloud_setup_blocked_detail,
-                            guard.garmentCount,
-                            guard.customTagCount + guard.customCategoryCount,
-                            guard.customColorCount,
-                            guard.pendingOperationCount,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (guard.hasConflictingAccountBinding) {
-                        Text(
-                            text = stringResource(R.string.cloud_setup_account_conflict),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            }
-        },
+        title = { Text(stringResource(R.string.cloud_setup_prompt_title)) },
+        text = { Text(stringResource(R.string.cloud_setup_prompt_body)) },
         confirmButton = {
-            TextButton(
-                onClick = if (mode == CloudSetupDialogMode.RecommendedFirstRun) onConfirmSetup else onDismiss,
-            ) {
-                Text(
-                    stringResource(
-                        if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
-                            R.string.cloud_setup_set_up
-                        } else {
-                            R.string.done
-                        },
-                    ),
-                )
-            }
+            TextButton(onClick = onConfirmSetup) { Text(stringResource(R.string.cloud_setup_set_up)) }
         },
         dismissButton = {
-            if (mode == CloudSetupDialogMode.RecommendedFirstRun) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.not_now)) }
-            }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.not_now)) }
+        },
+    )
+}
+
+@Composable
+private fun MergeConfirmationDialog(
+    summary: MergeSummary,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.sync_merge_title)) },
+        text = {
+            Text(
+                stringResource(
+                    R.string.sync_merge_body,
+                    summary.remoteGarmentCount,
+                    summary.localGarmentCount,
+                    summary.mergedGarmentCount,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.sync_merge_confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

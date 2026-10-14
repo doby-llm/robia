@@ -33,14 +33,23 @@ import com.gusanitolabs.robia.data.local.WardrobeDao
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import java.util.Base64
 
+/** Local snapshot operations the sync processor needs; JVM tests fake this seam instead of Room. */
+interface WardrobeSnapshotStore {
+    suspend fun exportSnapshot(generatedAtEpochMillis: Long = System.currentTimeMillis()): WardrobeSyncSnapshot
+    suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult
+    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult
+    suspend fun hasGuardedPhotoRestoreIssues(): Boolean
+    suspend fun replaceLocalWithRemote(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult
+}
+
 /** Builds deterministic snapshots of the full local wardrobe graph for Drive sync. */
 class LocalWardrobeSyncSnapshotRepository(
     private val database: RobiaDatabase,
     private val wardrobeDao: WardrobeDao,
     private val tagDao: TagDao,
     private val syncTombstoneDao: SyncTombstoneDao,
-) {
-    suspend fun exportSnapshot(generatedAtEpochMillis: Long = System.currentTimeMillis()): WardrobeSyncSnapshot {
+) : WardrobeSnapshotStore {
+    override suspend fun exportSnapshot(generatedAtEpochMillis: Long): WardrobeSyncSnapshot {
         val items = wardrobeDao.getAllItemsForSync()
             .map { itemWithTags -> itemWithTags.item }
             .filterNot(ClothingItemEntity::isArchived)
@@ -95,7 +104,7 @@ class LocalWardrobeSyncSnapshotRepository(
      * Targeted guarded-photo retry uses [applyRestoredPhoto] instead of this bulk import because it
      * must resolve exactly one pre-existing guarded row that has already been claimed as Running.
      */
-    suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
+    override suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
         val deterministicSnapshot = snapshot.sortedDeterministically().withoutTombstonedTaxonomy()
         val remotePhotoByGarmentId = deterministicSnapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
         val guardedPhotoByGarmentId = deterministicSnapshot.photos
@@ -140,7 +149,7 @@ class LocalWardrobeSyncSnapshotRepository(
     }
 
     /** Persists only the successfully rehydrated image; garment metadata remains untouched. */
-    suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult =
+    override suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult =
         database.withTransaction {
             val rowBefore = wardrobeDao.restoredPhotoApplyState(photo.garmentId)
             val restoredUri = photo.restoredLocalUri?.takeIf(String::isNotBlank)
@@ -200,7 +209,20 @@ class LocalWardrobeSyncSnapshotRepository(
             }
         }
 
-    suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
+    override suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
+
+    /**
+     * "Use backup": the caller has already fetched and decoded [snapshot], so nothing is cleared before this
+     * point. Clearing and importing share one Room transaction; any exception rolls both back and leaves the
+     * local wardrobe untouched. Local photo files are deliberately not deleted here.
+     */
+    override suspend fun replaceLocalWithRemote(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult =
+        database.withTransaction {
+            database.embeddingDao().deleteEverything()
+            wardrobeDao.deleteAllItemTagRefs()
+            wardrobeDao.deleteAllItems()
+            importSnapshot(snapshot)
+        }
 }
 
 data class ImportSnapshotResult(
