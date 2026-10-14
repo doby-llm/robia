@@ -164,25 +164,6 @@ object ClothingImageStore {
         )
     }
 
-    fun writeRestoredImageBlob(
-        context: Context,
-        bytes: ByteArray,
-        blobPath: String,
-        mimeType: String?,
-    ): Uri {
-        val imageFile = createImageFile(
-            context = context,
-            prefix = "drive-${blobPath.substringAfterLast('/').substringBeforeLast('.').ifBlank { "photo" }}",
-            extension = mimeType.toImageExtension() ?: blobPath.substringAfterLast('.', "jpg"),
-        )
-        imageFile.outputStream().use { output -> output.write(bytes) }
-        return FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            imageFile,
-        )
-    }
-
     fun extractNearestPaletteColors(
         context: Context,
         imageUri: Uri,
@@ -624,13 +605,6 @@ private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
 
 fun ByteArray.magicHex(maxBytes: Int = 12): String =
     take(maxBytes.coerceAtLeast(0)).joinToString(separator = "") { byte -> "%02x".format(byte) }
-
-private fun String?.toImageExtension(): String? = when (this?.lowercase()) {
-    "image/jpeg", "image/jpg" -> "jpg"
-    "image/png" -> "png"
-    "image/webp" -> "webp"
-    else -> null
-}
 
 data class PaletteColorDiagnostics(
     val width: Int? = null,

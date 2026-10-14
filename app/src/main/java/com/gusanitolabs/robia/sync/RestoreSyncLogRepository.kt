@@ -3,10 +3,14 @@ package com.gusanitolabs.robia.sync
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /** Developer-mode-only, bounded diagnostic event log stored in app-private files. */
@@ -15,6 +19,8 @@ interface RestoreSyncLogRepository {
     fun setEnabled(enabled: Boolean)
     fun append(event: RestoreSyncLogEvent)
     fun clear()
+    /** Writes any buffered lines now. Restore calls this when it ends. */
+    suspend fun flush()
 }
 
 object NoOpRestoreSyncLogRepository : RestoreSyncLogRepository {
@@ -22,6 +28,16 @@ object NoOpRestoreSyncLogRepository : RestoreSyncLogRepository {
     override fun setEnabled(enabled: Boolean) = Unit
     override fun append(event: RestoreSyncLogEvent) = Unit
     override fun clear() = Unit
+    override suspend fun flush() = Unit
+}
+
+/** Writes one batch of log text. [append] false replaces the whole file, which is how trimming happens. */
+internal fun interface RestoreSyncLogFileWriter {
+    fun write(file: File, text: String, append: Boolean)
+}
+
+internal val DefaultRestoreSyncLogFileWriter = RestoreSyncLogFileWriter { file, text, append ->
+    if (append) file.appendText(text, Charsets.UTF_8) else file.writeText(text, Charsets.UTF_8)
 }
 
 data class RestoreSyncLogEvent(
@@ -82,17 +98,37 @@ data class RestoreSyncLogEvent(
     }
 }
 
-class FileRestoreSyncLogRepository(
-    context: Context,
+class FileRestoreSyncLogRepository internal constructor(
+    private val logFile: File,
     private val maxEvents: Int = DEFAULT_MAX_EVENTS,
     private val maxBytes: Int = DEFAULT_MAX_BYTES,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val flushIntervalMs: Long = DEFAULT_FLUSH_INTERVAL_MILLIS,
+    private val flushLines: Int = DEFAULT_FLUSH_LINES,
+    private val fileWriter: RestoreSyncLogFileWriter = DefaultRestoreSyncLogFileWriter,
 ) : RestoreSyncLogRepository {
-    // Keep the established file name so enabling the generalized event log does not orphan the
-    // existing bounded restore/sync history or create a second diagnostics file.
-    private val logFile = File(context.filesDir, "developer_restore_sync.log")
+    constructor(
+        context: Context,
+        maxEvents: Int = DEFAULT_MAX_EVENTS,
+        maxBytes: Int = DEFAULT_MAX_BYTES,
+        scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    ) : this(
+        // Keep the established file name so enabling the generalized event log does not orphan the
+        // existing bounded restore/sync history or create a second diagnostics file.
+        logFile = File(context.filesDir, LOG_FILE_NAME),
+        maxEvents = maxEvents,
+        maxBytes = maxBytes,
+        scope = scope,
+    )
+
+    // enabled, pending, flushJob and flushRequested change only under enabledLock.
     private val enabledLock = Any()
+    // Serializes file reads and writes so a flush never interleaves with another.
+    private val writeMutex = Mutex()
     private val mutableText = MutableStateFlow("")
+    private val pending = ArrayList<String>()
+    private var flushJob: Job? = null
+    private var flushRequested = false
     @Volatile private var enabled = false
 
     override val text: Flow<String> = mutableText
@@ -120,14 +156,44 @@ class FileRestoreSyncLogRepository(
     override fun append(event: RestoreSyncLogEvent) {
         if (!enabled) return
         val line = event.toLogLine()
-        scope.launch {
+        synchronized(enabledLock) {
+            if (!enabled) return@synchronized
+            pending += line
+            if (flushJob == null) {
+                flushJob = scope.launch {
+                    delay(flushIntervalMs)
+                    flush()
+                }
+            }
+            if (pending.size >= flushLines && !flushRequested) {
+                flushRequested = true
+                scope.launch { flush() }
+            }
+        }
+    }
+
+    override suspend fun flush() {
+        writeMutex.withLock {
+            val batch = synchronized(enabledLock) {
+                flushRequested = false
+                flushJob = null
+                pending.toList().also { pending.clear() }
+            }
+            if (batch.isEmpty()) return@withLock
             runCatching {
+                val rawLines = readLines()
+                val existing = boundedDiagnosticLogLines(rawLines, maxEvents, maxBytes)
+                val combined = existing + batch
+                val bounded = boundedDiagnosticLogLines(combined, maxEvents, maxBytes)
+                logFile.parentFile?.mkdirs()
+                // Appending is only safe when nothing was trimmed; otherwise rewrite the file once.
+                if (rawLines.size == existing.size && bounded.size == combined.size) {
+                    fileWriter.write(logFile, batch.joinToString(separator = "") { line -> "$line\n" }, append = true)
+                } else {
+                    fileWriter.write(logFile, bounded.joinToString(separator = "\n", postfix = "\n"), append = false)
+                }
                 synchronized(enabledLock) {
-                    if (!enabled) return@synchronized
-                    val lines = boundedDiagnosticLogLines(readBoundedLines() + line, maxEvents, maxBytes)
-                    logFile.parentFile?.mkdirs()
-                    logFile.writeText(lines.joinToString(separator = "\n", postfix = "\n"), Charsets.UTF_8)
-                    mutableText.value = readLogText(lines)
+                    if (enabled) mutableText.value = readLogText(bounded)
                 }
             }
         }
@@ -135,6 +201,8 @@ class FileRestoreSyncLogRepository(
 
     override fun clear() {
         synchronized(enabledLock) {
+            pending.clear()
+            flushRequested = false
             runCatching {
                 if (logFile.exists()) logFile.delete()
             }
@@ -155,6 +223,9 @@ class FileRestoreSyncLogRepository(
     internal companion object {
         const val DEFAULT_MAX_EVENTS = 500
         const val DEFAULT_MAX_BYTES = 256 * 1024
+        const val DEFAULT_FLUSH_INTERVAL_MILLIS = 2_000L
+        const val DEFAULT_FLUSH_LINES = 50
+        const val LOG_FILE_NAME = "developer_restore_sync.log"
     }
 }
 

@@ -564,7 +564,11 @@ class WardrobeSyncOutboxProcessor(
                         )
                     ) {
                         SyncDirection.UploadLocalSnapshot -> syncUploadLocalSnapshot(localSnapshot)
-                        SyncDirection.RestoreRemoteThenUpload -> syncRestoreRemoteThenUpload(localSnapshot)
+                        SyncDirection.RestoreRemoteThenUpload -> try {
+                            syncRestoreRemoteThenUpload(localSnapshot)
+                        } finally {
+                            withContext(NonCancellable) { restoreSyncLogRepository.flush() }
+                        }
                         SyncDirection.SkipEmptyLocalUpload -> SyncCycleResult.NoBackup
                     }
                 }
@@ -804,6 +808,14 @@ class WardrobeSyncOutboxProcessor(
                 completedWork = RESTORE_TOTAL_STEPS,
             )
             return SyncCycleResult.NoBackup
+        }
+        if (mergedSnapshot.equivalentForUpload(remoteSnapshot)) {
+            diagnostics.recordFinalUploadSkipped("remote_equivalent")
+            restoreProgress.value = diagnostics.progress(
+                phase = CloudRestorePhase.Complete,
+                completedWork = RESTORE_TOTAL_STEPS,
+            )
+            return SyncCycleResult.Success(importResult.guardedPhotoCount)
         }
 
         diagnostics.recordFinalUploadAttempted()
