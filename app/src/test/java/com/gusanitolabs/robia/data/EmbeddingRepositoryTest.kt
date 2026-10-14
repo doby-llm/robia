@@ -10,12 +10,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.sql.Connection
+import java.sql.DriverManager
 
 class EmbeddingRepositoryTest {
     private val dao = InMemoryEmbeddingDao()
@@ -94,6 +98,105 @@ class EmbeddingRepositoryTest {
         assertEquals(setOf("garment-2" to EmbeddingKind.IMAGE), dao.rows.keys)
     }
 
+    /**
+     * V-D03 on sqlite-jdbc. [upsertEmbeddingLikeDao] runs the INSERT ... ON CONFLICT upsert that
+     * EmbeddingDao.upsert performs; the DAO itself needs Room, which does not run in JVM tests.
+     */
+    @Test
+    fun upsertLeavesGarmentRowUnchangedInSqlite() {
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->
+            createTableFromSchema(connection, "clothing_items")
+            createTableFromSchema(connection, "garment_embeddings")
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    INSERT INTO clothing_items (
+                        id, name, notes, is_favorite, is_archived, created_at_epoch_millis, updated_at_epoch_millis,
+                        sync_status, sync_revision, retry_attempt_count, photo_restore_guarded
+                    ) VALUES ('garment-1', 'Shirt', '', 0, 0, 1, 1000, 'Synced', 7, 0, 0)
+                    """.trimIndent(),
+                )
+            }
+            val garmentBefore = garmentRow(connection, "garment-1")
+
+            upsertEmbeddingLikeDao(connection, "garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION) { 1f })
+            upsertEmbeddingLikeDao(connection, "garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION) { 2f })
+
+            val garmentAfter = garmentRow(connection, "garment-1")
+            assertEquals(garmentBefore, garmentAfter)
+            assertEquals(1000L, garmentAfter["updated_at_epoch_millis"])
+            assertEquals(7L, garmentAfter["sync_revision"])
+            assertEquals("Synced", garmentAfter["sync_status"])
+            assertEquals(
+                listOf(1L to 1),
+                queryLongs(connection, "SELECT COUNT(*), MAX(pending_upload) FROM garment_embeddings"),
+            )
+        }
+    }
+
+    private fun createTableFromSchema(connection: Connection, tableName: String) {
+        val entities = JSONObject(File(SCHEMA_13).readText()).getJSONObject("database").getJSONArray("entities")
+        val entity = (0 until entities.length())
+            .map { index -> entities.getJSONObject(index) }
+            .single { it.getString("tableName") == tableName }
+        connection.createStatement().use { statement ->
+            statement.execute(entity.getString("createSql").replace("\${TABLE_NAME}", tableName))
+        }
+    }
+
+    private fun upsertEmbeddingLikeDao(connection: Connection, garmentId: String, kind: String, vector: FloatArray) {
+        connection.prepareStatement(
+            """
+            INSERT INTO garment_embeddings (
+                garment_id, kind, model_id, recipe_id, dim, vector, input_hash,
+                computed_at_epoch_millis, duration_millis, pending_upload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (garment_id, kind) DO UPDATE SET
+                model_id = excluded.model_id,
+                recipe_id = excluded.recipe_id,
+                dim = excluded.dim,
+                vector = excluded.vector,
+                input_hash = excluded.input_hash,
+                computed_at_epoch_millis = excluded.computed_at_epoch_millis,
+                duration_millis = excluded.duration_millis,
+                pending_upload = excluded.pending_upload
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, garmentId)
+            statement.setString(2, kind)
+            statement.setString(3, EmbeddingRecipe.MODEL_ID)
+            statement.setString(4, EmbeddingRecipe.RECIPE_ID)
+            statement.setInt(5, EmbeddingRecipe.DIMENSION)
+            statement.setBytes(6, vector.toLeBytes())
+            statement.setString(7, "hash")
+            statement.setLong(8, 1_234L)
+            statement.setLong(9, 42L)
+            statement.setInt(10, 1)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun garmentRow(connection: Connection, garmentId: String): Map<String, Any?> =
+        connection.prepareStatement("SELECT * FROM clothing_items WHERE id = ?").use { statement ->
+            statement.setString(1, garmentId)
+            statement.executeQuery().use { rs ->
+                assertTrue(rs.next())
+                (1..rs.metaData.columnCount).associate { column -> rs.metaData.getColumnName(column) to rs.getObject(column) }
+            }
+        }
+
+    private fun queryLongs(connection: Connection, sql: String): List<Pair<Long, Int>> =
+        connection.createStatement().use { statement ->
+            statement.executeQuery(sql).use { rs ->
+                buildList {
+                    while (rs.next()) add(rs.getLong(1) to rs.getInt(2))
+                }
+            }
+        }
+
+    private companion object {
+        const val SCHEMA_13 = "schemas/com.gusanitolabs.robia.data.local.RobiaDatabase/13.json"
+    }
 }
 
 /** Keyed by (garmentId, kind) like the real table's primary key. Unused DAO queries fail loudly. */

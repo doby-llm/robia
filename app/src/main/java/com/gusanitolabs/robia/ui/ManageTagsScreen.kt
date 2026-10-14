@@ -604,6 +604,8 @@ private fun TagEditorDialog(
                             name = trimmedName,
                             sortOrder = existing?.sortOrder ?: categoryTags.nextTagSortOrder(),
                             isSystem = existing?.isSystem ?: false,
+                            description = existing?.description,
+                            suggestOccasions = existing?.suggestOccasions ?: true,
                         ),
                     )
                 },
