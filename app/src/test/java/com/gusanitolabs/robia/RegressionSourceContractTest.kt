@@ -35,7 +35,7 @@ class RegressionSourceContractTest {
         assertTrue(app.contains("R.string.batch_keep_original_accept"))
         assertTrue(app.contains("onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview)"))
 
-        assertTrue(strings.contains("name=\"batch_save_items\">Save %1$d items"))
+        assertTrue(strings.contains("name=\"batch_save_items\">Save %1\$d items"))
         assertTrue(strings.contains("name=\"batch_helper_summary\""))
         assertTrue(strings.contains("name=\"batch_save_result\""))
         assertTrue(strings.contains("name=\"batch_keep_original_accept\">Keep original and accept"))
@@ -1003,7 +1003,7 @@ class RegressionSourceContractTest {
 
     private fun assertIncreasing(vararg indices: Int) {
         assertTrue("Expected every source marker to be present", indices.all { it >= 0 })
-        indices.zipWithNext().forEach { (left, right) ->
+        indices.toList().zipWithNext().forEach { (left, right) ->
             assertTrue("Expected source markers to preserve UI order", left < right)
         }
     }
@@ -1013,7 +1013,7 @@ class RegressionSourceContractTest {
             Path.of(relativePath),
             Path.of("..").resolve(relativePath),
         )
-        return Files.readString(candidates.first(Files::exists))
+        return candidates.first { Files.exists(it) }.toFile().readText()
     }
 
     private fun queryBeforeMethod(source: String, methodNeedle: String): String =
