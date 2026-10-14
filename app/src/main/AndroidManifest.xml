@@ -7,6 +7,7 @@
          Disable Android Auto Backup and device transfer so local wardrobe data is not
          copied by the platform outside that user-controlled Drive sync path. -->
     <application
+        android:name=".RobiaApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
