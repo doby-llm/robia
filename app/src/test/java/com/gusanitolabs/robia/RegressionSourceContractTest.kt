@@ -35,7 +35,7 @@ class RegressionSourceContractTest {
         assertTrue(app.contains("R.string.batch_keep_original_accept"))
         assertTrue(app.contains("onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview)"))
 
-        assertTrue(strings.contains("name=\"batch_save_items\">Save %1$d items"))
+        assertTrue(strings.contains("name=\"batch_save_items\">Save %1\$d items"))
         assertTrue(strings.contains("name=\"batch_helper_summary\""))
         assertTrue(strings.contains("name=\"batch_save_result\""))
         assertTrue(strings.contains("name=\"batch_keep_original_accept\">Keep original and accept"))
@@ -372,7 +372,7 @@ class RegressionSourceContractTest {
         val deletionGuard = processor
             .substringAfter("if (wardrobeRepository.hasPendingCloudDeletion())")
             .substringBefore("val retryRevision")
-        assertTrue(deletionGuard.contains("correlationId = UUID.randomUUID().toString()"))
+        assertTrue(deletionGuard.contains("correlationId = retryCorrelationId"))
         assertTrue(deletionGuard.contains("phase = null"))
         assertTrue(deletionGuard.contains("status = null"))
     }
@@ -505,8 +505,8 @@ class RegressionSourceContractTest {
         assertTrue(snapshotRepository.contains("restoredUri == null -> \"restored_uri_absent\""))
         assertTrue(snapshotRepository.contains("\"import_guarded:\$guardedReason\""))
         assertTrue(snapshotRepository.contains("rowsUpdated == 1 && persisted"))
-        assertTrue(snapshotRepository.contains("rowAfter?.photoUri == restoredUri"))
-        assertTrue(snapshotRepository.contains("!rowAfter.photoRestoreGuarded"))
+        assertTrue(snapshotRepository.contains("row.photoUri == restoredUri"))
+        assertTrue(snapshotRepository.contains("!row.photoRestoreGuarded"))
         assertTrue(snapshotRepository.contains("rowBefore.zeroUpdateReason(expectedRevision, persisted)"))
         listOf(
             "garment_not_found",
@@ -584,7 +584,8 @@ class RegressionSourceContractTest {
             itemDetailScreen.indexOf("val retryPhotoContentDescription") < itemDetailScreen.indexOf("LazyColumn("),
         )
         assertTrue(retryButton.contains("contentDescription = retryPhotoContentDescription"))
-        assertTrue(retryButton.contains("Text(stringResource(R.string.cloud_restore_retry_photo))"))
+        assertTrue(retryButton.contains("Text(retryActionText)"))
+        assertTrue(app.contains("else -> stringResource(R.string.cloud_restore_retry_photo)"))
     }
 
     @Test
@@ -977,7 +978,7 @@ class RegressionSourceContractTest {
         assertTrue(summary.contains("meminfo-after.txt"))
         assertTrue(workflow.contains("for image_stage in resolve decode bind first_draw in_flight_wait placeholder_visible eviction; do"))
         assertTrue(workflow.contains("stage=\${image_stage}([[:space:]]|$)"))
-        assertTrue(summary.contains("stage=(?:resolve|decode|bind|first_draw|in_flight_wait|placeholder_visible|eviction)"))
+        assertTrue(summary.contains("rf\"stage=(?:{'|'.join(REQUIRED_IMAGE_STAGES)})(?: |\$)\""))
         assertTrue(summary.contains("IMAGE_STAGE_NAME_PATTERN"))
         assertTrue(summary.contains("missing required image stages"))
         assertTrue(!workflow.contains("thumbnail_stage"))
@@ -1003,7 +1004,7 @@ class RegressionSourceContractTest {
 
     private fun assertIncreasing(vararg indices: Int) {
         assertTrue("Expected every source marker to be present", indices.all { it >= 0 })
-        indices.zipWithNext().forEach { (left, right) ->
+        indices.toList().zipWithNext().forEach { (left, right) ->
             assertTrue("Expected source markers to preserve UI order", left < right)
         }
     }
@@ -1013,7 +1014,7 @@ class RegressionSourceContractTest {
             Path.of(relativePath),
             Path.of("..").resolve(relativePath),
         )
-        return Files.readString(candidates.first(Files::exists))
+        return candidates.first { Files.exists(it) }.toFile().readText()
     }
 
     private fun queryBeforeMethod(source: String, methodNeedle: String): String =
