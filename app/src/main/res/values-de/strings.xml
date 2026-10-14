@@ -143,7 +143,6 @@
     <string name="garment_sync_synced">Synchronisiert</string>
     <string name="garment_sync_all_synced">Alle Cloud-Änderungen sind synchronisiert</string>
     <string name="garment_sync_last_synced_at">Zuletzt synchronisiert: %1$s</string>
-    <string name="garment_sync_failed_retryable">Synchronisierung fehlgeschlagen — erneut versuchen/Details</string>
     <string name="garment_sync_auth_blocked">Cloud-Anmeldung erforderlich</string>
     <string name="garment_sync_pending_count_one">1 Änderung wartet auf Synchronisierung</string>
     <string name="garment_sync_pending_count_many">%1$d Änderungen warten auf Synchronisierung</string>
@@ -497,7 +496,33 @@
     <string name="tag_no_occasions_badge">Keine Anlässe</string>
     <string name="tag_add_button">Hinzufügen</string>
     <string name="tag_description_counter">%1$d/200</string>
-    <string name="sync_merge_title">Mit der Google-Drive-Sicherung zusammenführen?</string>
-    <string name="sync_merge_body">Drive enthält %1$d Kleidungsstücke. Dieses Telefon hat %2$d. Nach dem Zusammenführen sind es %3$d Kleidungsstücke.</string>
+    <string name="sync_merge_title">Mit deiner Drive-Sicherung zusammenführen?</string>
+    <string name="sync_merge_body">Drive: %1$d · Dieses Handy: %2$d → %3$d Kleidungsstücke</string>
     <string name="sync_merge_confirm">Zusammenführen</string>
+    <!-- TASK-S05 -->
+    <string name="sync_status_pending">Wartet auf Upload</string>
+    <string name="sync_status_uploading">Wird hochgeladen…</string>
+    <string name="sync_status_pending_help">Wird automatisch hochgeladen, sobald eine Verbindung besteht, auch wenn du die App schließt.</string>
+    <string name="sync_attention_sign_in_title">Erneut bei Google Drive anmelden</string>
+    <string name="sync_attention_sign_in_body">Deine Änderungen sind auf diesem Handy sicher. Robia braucht erneut die Berechtigung, um sie zu sichern.</string>
+    <string name="sync_attention_sign_in_action">Anmelden</string>
+    <string name="sync_attention_drive_full_title">Google Drive ist voll</string>
+    <string name="sync_attention_drive_full_body">Gib Speicher in deinem Google-Konto frei und versuche es erneut.</string>
+    <string name="sync_attention_open_storage">Speicher verwalten</string>
+    <string name="sync_action_retry">Erneut versuchen</string>
+    <string name="sync_attention_photo_lost_title">Foto konnte nicht wiederhergestellt werden</string>
+    <string name="sync_attention_photo_lost_body">Das Kleidungsstück ist gespeichert, nur das Foto fehlt.</string>
+    <string name="sync_attention_keep_without_photo">Ohne Foto behalten</string>
+    <string name="sync_attention_retry_photo">Foto erneut versuchen</string>
+    <string name="sync_attention_photo_upload_title">Einige Fotos konnten nicht gesichert werden</string>
+    <string name="sync_attention_photo_upload_body">Deine Kleidungsstücke sind auf diesem Handy gespeichert. Ein Foto wurde nicht zu Google Drive hochgeladen. Tippe auf Erneut versuchen, um es noch einmal zu versuchen.</string>
+    <string name="sync_attention_conflict_title">Ein anderes Handy hat deine Sicherung aktualisiert</string>
+    <string name="sync_attention_conflict_body">Um keine Änderungen zu verlieren, hat Robia die Sicherung pausiert. Wähle, welche Version du behalten möchtest.</string>
+    <string name="sync_conflict_use_backup">Sicherung verwenden (ersetzt dieses Handy)</string>
+    <string name="sync_conflict_keep_phone">Dieses Handy behalten (überschreibt die Sicherung)</string>
+    <string name="sync_merge_help">Ist ein Kleidungsstück an beiden Orten, gewinnt die neueste Änderung.</string>
+    <string name="sync_details">Details</string>
+    <string name="sync_use_backup_confirm_title">Kleidungsstücke auf diesem Handy ersetzen?</string>
+    <string name="sync_use_backup_confirm_body">Die Kleidungsstücke und Fotos auf diesem Handy werden durch die Google-Drive-Sicherung ersetzt. Änderungen, die nur auf diesem Handy existieren, gehen verloren.</string>
+    <string name="sync_use_backup_confirm_action">Ersetzen</string>
 </resources>

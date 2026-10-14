@@ -38,6 +38,10 @@ interface WardrobeRepository {
     suspend fun guardedPhotoRetryCandidateIds(now: Long = System.currentTimeMillis()): List<String>
     /** Garments parked for the user with a given reason code (for example `drive_full`). */
     fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int>
+    /** Explicit Retry: releases garments parked with [reasonCode] to Queued; returns how many were released. */
+    suspend fun releaseNeedsUserActionToQueued(reasonCode: String): Int
+    /** "Keep without photo": clears the guard of one guarded garment without a local photo. */
+    suspend fun keepGarmentWithoutRestoredPhoto(id: String, now: Long = System.currentTimeMillis()): Boolean
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean
     suspend fun markMetadataSynced(work: PendingMetadataSyncWork, syncedAtEpochMillis: Long): Boolean
     suspend fun markMetadataSyncFailedRetryable(work: PendingMetadataSyncWork, message: String? = null): Boolean

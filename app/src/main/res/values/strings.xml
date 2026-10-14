@@ -143,7 +143,6 @@
     <string name="garment_sync_synced">Synced</string>
     <string name="garment_sync_all_synced">All cloud changes synced</string>
     <string name="garment_sync_last_synced_at">Last synced: %1$s</string>
-    <string name="garment_sync_failed_retryable">Sync failed — retry/details</string>
     <string name="garment_sync_auth_blocked">Cloud sign-in required</string>
     <string name="garment_sync_pending_count_one">1 change waiting to sync</string>
     <string name="garment_sync_pending_count_many">%1$d changes waiting to sync</string>
@@ -497,7 +496,33 @@
     <string name="tag_no_occasions_badge">No occasions</string>
     <string name="tag_add_button">Add</string>
     <string name="tag_description_counter">%1$d/200</string>
-    <string name="sync_merge_title">Merge with the Google Drive backup?</string>
-    <string name="sync_merge_body">Drive has %1$d garments. This phone has %2$d. After merging you will have %3$d garments.</string>
-    <string name="sync_merge_confirm">Merge</string>
+    <string name="sync_merge_title">Combine with your Drive backup?</string>
+    <string name="sync_merge_body">Drive: %1$d · This phone: %2$d → %3$d garments</string>
+    <string name="sync_merge_confirm">Combine</string>
+    <!-- TASK-S05 -->
+    <string name="sync_status_pending">Pending upload</string>
+    <string name="sync_status_uploading">Uploading…</string>
+    <string name="sync_status_pending_help">It will upload by itself when there is a connection, even if you close the app.</string>
+    <string name="sync_attention_sign_in_title">Sign in to Google Drive again</string>
+    <string name="sync_attention_sign_in_body">Your changes are safe on this phone. Robia needs permission again to back them up.</string>
+    <string name="sync_attention_sign_in_action">Sign in</string>
+    <string name="sync_attention_drive_full_title">Google Drive is full</string>
+    <string name="sync_attention_drive_full_body">Free up space in your Google account, then retry.</string>
+    <string name="sync_attention_open_storage">Manage storage</string>
+    <string name="sync_action_retry">Retry</string>
+    <string name="sync_attention_photo_lost_title">Photo could not be recovered</string>
+    <string name="sync_attention_photo_lost_body">The garment is saved; only its photo is missing.</string>
+    <string name="sync_attention_keep_without_photo">Keep without photo</string>
+    <string name="sync_attention_retry_photo">Retry photo</string>
+    <string name="sync_attention_photo_upload_title">Some photos couldn\'t be backed up</string>
+    <string name="sync_attention_photo_upload_body">Your garments are saved on this phone. A photo didn\'t upload to Google Drive. Tap Retry to try again.</string>
+    <string name="sync_attention_conflict_title">Another phone updated your backup</string>
+    <string name="sync_attention_conflict_body">To avoid losing changes, Robia paused the backup. Choose which version to keep.</string>
+    <string name="sync_conflict_use_backup">Use backup (replace this phone)</string>
+    <string name="sync_conflict_keep_phone">Keep this phone (overwrite backup)</string>
+    <string name="sync_merge_help">If a garment is in both places, the most recent edit wins.</string>
+    <string name="sync_details">Details</string>
+    <string name="sync_use_backup_confirm_title">Replace the garments on this phone?</string>
+    <string name="sync_use_backup_confirm_body">The garments and photos on this phone will be replaced by the Google Drive backup. Changes that exist only on this phone will be lost.</string>
+    <string name="sync_use_backup_confirm_action">Replace</string>
 </resources>

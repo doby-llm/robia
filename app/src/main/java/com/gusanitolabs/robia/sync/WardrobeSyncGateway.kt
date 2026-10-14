@@ -21,6 +21,8 @@ interface WardrobeSyncGateway {
     /** Merge on connect: apply the merge shown in [WardrobeSyncState.pendingMergeSummary] and upload it. */
     suspend fun confirmMerge()
     suspend fun cancelMerge()
+    /** Attention "Keep without photo": clears the photo guard of one garment only. No remote blob is deleted. */
+    suspend fun keepWithoutPhoto(garmentId: String)
 }
 
 object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
@@ -32,6 +34,7 @@ object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
     override suspend fun keepThisPhone() = Unit
     override suspend fun confirmMerge() = Unit
     override suspend fun cancelMerge() = Unit
+    override suspend fun keepWithoutPhoto(garmentId: String) = Unit
 }
 
 /** Testable queue-only gateway that never talks to Google services. */
@@ -57,6 +60,7 @@ class RecordingWardrobeSyncGateway(
     override suspend fun keepThisPhone() = Unit
     override suspend fun confirmMerge() = Unit
     override suspend fun cancelMerge() = Unit
+    override suspend fun keepWithoutPhoto(garmentId: String) = Unit
 }
 
 data class WardrobeSyncState(
@@ -272,6 +276,16 @@ sealed interface WardrobeSyncOperation {
     data class UpsertTaxonomy(
         val touchedEntityIds: Set<String>,
         override val localOperationId: String = operationId("taxonomy_upsert", touchedEntityIds.sorted().joinToString("_")),
+        override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    ) : WardrobeSyncOperation
+
+    /**
+     * Explicit Retry from a [SyncAttentionKind.DriveFull] or [SyncAttentionKind.PhotoUploadFailed] card only.
+     * Automatic cycles never release these rows; see TS§4.5 and PLAN-CHANGE 8.
+     */
+    data class RetryAttention(
+        val kind: SyncAttentionKind,
+        override val localOperationId: String = operationId("attention_retry", kind.name),
         override val createdAtEpochMillis: Long = System.currentTimeMillis(),
     ) : WardrobeSyncOperation
 
