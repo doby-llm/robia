@@ -30,6 +30,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
   5. R8 rules per TS§5.3.
   6. CI: JDK 21, Gradle 8.14.3 (or minimum required), run `testDebugUnitTest assembleDebug assembleStaging`, upload `robia-debug-apk` + `robia-staging-apk`, print fingerprints of both. Keep the TFLite drift steps for now (removed in B02).
   7. Room schema files are not committed today (`app/schemas` is absent on main). Add a CI step uploading `app/schemas` as artifact `room-schemas`; after the first green run, `gh run download <run-id> -n room-schemas -D app/schemas` and commit `app/schemas/com.gusanitolabs.robia.data.local.RobiaDatabase/12.json` in this PR (needed by D01's migration test).
+- **Test repair (PLAN-CHANGE 1):** may adapt/@Ignore the 8 pre-existing failing unit tests under `app/src/test/` per `decision-log.md` PLAN-CHANGE 1; no app code, no new libraries.
 - **Out of scope:** any app code change; removing TFLite (B02).
 - **Fallback (pre-approved):** if AGP 8.13.2 fails with Kotlin 2.4.21, use latest stable AGP 9.x + its minimum Gradle; document in receipt. If Compose BOM 2024.12.01 fails to compile with Kotlin 2.4 Compose plugin, bump to `2026.09.00` only.
 - **Acceptance:** V-B01, V-B02. **Done when:** PR CI green with both APK artifacts; `12.json` committed; `aapt2 dump badging` output of both pasted in the receipt.
