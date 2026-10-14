@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robia · Informe de sugerencias (EmbeddingGemma 2)</title>
+<style>
+  :root{--bg:#f9f9f9;--card:#fff;--ink:#1a1c1c;--muted:#4f4442;--primary:#332421;--champ:#f1dcc9;--terra:#a56639;--line:#d2c3c0;--err:#ba1a1a;--ok:#3f6b3a}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/20px Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:20px 20px 8px} h1{font-size:22px;line-height:28px;margin:0 0 4px} h2{font-size:16px;margin:0 0 8px}
+  .sub,.small{color:var(--muted)} .small{font-size:12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin:10px 20px}
+  .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  label.ctl{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;color:var(--muted)}
+  select,button,input{font:inherit} select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  button{padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+  button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .stats{display:flex;flex-wrap:wrap;gap:10px} .stat{background:var(--bg);border-radius:12px;padding:8px 12px;min-width:140px}
+  .stat b{display:block;font-size:20px;line-height:26px}
+  table{border-collapse:collapse;width:100%} th,td{text-align:left;padding:4px 8px;border-bottom:1px solid #eee;font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:6px 20px 40px}
+  .card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .card.good{border-color:var(--ok)} .card.bad{border-color:var(--err)}
+  .imgwrap{position:relative;background:#f3f3f4;border-radius:12px;display:flex;justify-content:center;align-items:center;height:230px}
+  .imgwrap img{max-width:100%;max-height:230px;border-radius:12px}
+  .imgwrap span{position:absolute;bottom:6px;right:8px;font-size:11px;background:rgba(255,255,255,.85);border-radius:6px;padding:1px 6px;color:var(--muted)}
+  .imgwrap em{position:absolute;top:6px;left:8px;font-style:normal;font-weight:700;color:var(--err)}
+  .pred{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chip{background:var(--champ);border-radius:999px;padding:3px 10px;font-weight:600}
+  .chip.none{background:#eee;color:var(--muted);font-weight:500} .chip.occ{background:#f6eadf;font-weight:500}
+  .bars{display:flex;flex-direction:column;gap:3px}
+  .bar{display:grid;grid-template-columns:100px 1fr 56px;gap:6px;align-items:center;font-size:12px}
+  .bar .track{height:8px;background:#eee;border-radius:4px;overflow:hidden} .bar .fill{height:100%;background:var(--terra)}
+  .bar.top .fill{background:var(--primary)} .bar.ref div:first-child{font-weight:700;text-decoration:underline}
+  .bar .val{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .fb{display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:8px}
+  .fb select{flex:1;min-width:140px}
+  .occfb{display:flex;gap:4px;flex-wrap:wrap} .occfb button{padding:2px 8px;font-size:12px;border-radius:999px}
+  .occfb button.on{background:var(--champ);border-color:var(--terra)}
+  details summary{cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>Robia · Informe de sugerencias</h1>
+  <div class="sub">EmbeddingGemma 2 (texto + imagen, 440M) en la Raspberry Pi con LiteRT-LM, el mismo motor que usaría el móvil. Tus 142 fotos de “Robia clothes”.</div>
+</header>
+
+<div class="panel">
+  <details open>
+    <summary>Cómo leer y usar este informe</summary>
+    <ul class="small">
+      <li><b>Etiquetas provisionales:</b> tus fotos venían sin etiquetas, así que les he puesto una categoría provisional mirándolas (“Hermes: …”). No son la verdad: corrígelas. Si no estoy seguro aparece “(dudosa)” y esa foto no cuenta en los porcentajes hasta que la revises.</li>
+      <li><b>Método “Solo texto”:</b> compara la foto con un texto por categoría (“a shirt: collared top…”). Es lo que funciona sin ningún ejemplo, con un armario vacío o con una categoría recién creada.</li>
+      <li><b>Método “Por ejemplos”:</b> compara la foto con las prendas tuyas que ya tienen esa categoría (las 3 más parecidas). La foto evaluada nunca se usa como ejemplo de sí misma. Sin entrenar nada: aprende de lo que ya etiquetaste y mejora con cada corrección.</li>
+      <li><b>Combinado:</b> suma las dos señales; si una categoría no tiene ejemplos, solo cuenta el texto.</li>
+      <li><b>Sin predecir:</b> si la primera no gana a la segunda por el margen elegido, la app no marcaría nada.</li>
+      <li><b>Imagen:</b> foto original con su fondo, solo girada y reducida a 1024 px. Sin recorte de fondo; en la app el modelo recibirá el recorte de Robia, así que el resultado real puede ser algo mejor.</li>
+      <li><b>Tu revisión:</b> “✓ Correcta” confirma la categoría de referencia; el desplegable la cambia; los botones de abajo marcan occasions. Se guarda en este navegador. “Exportar” genera un JSON que me puedes mandar para calibrar.</li>
+      <li><b>Nombre y notas:</b> estas fotos no tienen nombre ni notas, así que aquí solo se prueba la imagen.</li>
+    </ul>
+  </details>
+</div>
+
+<div class="panel">
+  <div class="controls">
+    <label class="ctl">Método
+      <select id="method"><option value="combined">Combinado (recomendado)</option><option value="text">Solo texto</option><option value="knn">Por ejemplos de tu armario</option></select></label>
+    <label class="ctl">Texto de cada categoría
+      <select id="recipe"><option value="desc">Descripción (“a shirt: collared top…”)</option><option value="name">Solo el nombre (“Shirts”)</option></select></label>
+    <label class="ctl">Etiquetas de referencia
+      <select id="refsrc"><option value="both">Tu revisión + provisionales de Hermes</option><option value="mine">Solo tu revisión</option></select></label>
+    <label class="ctl">Margen mínimo para marcar categoría: <span id="marginV"></span>
+      <input id="margin" type="range" min="0" max="1" step="0.01" value="0.25"></label>
+    <label class="ctl">Mostrar
+      <select id="filter"><option value="all">Todas</option><option value="wrong">Con error</option><option value="unpred">Sin predecir</option><option value="unmarked">Sin revisar por ti</option><option value="amb">Dudosas</option></select></label>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Resumen</h2>
+  <div class="stats" id="stats"></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="primary" id="export">Exportar mi revisión (JSON)</button>
+    <label class="small" style="display:flex;align-items:center;gap:6px">Importar <input type="file" id="import" accept="application/json"></label>
+    <button id="reset">Borrar mi revisión</button>
+  </div>
+  <details style="margin-top:10px"><summary>Comparativa de métodos (misma referencia)</summary><table id="cmp"></table>
+    <div class="small">“Acierto 1.ª opción”: la mejor sugerencia coincide con la referencia. “Marcadas”: cuántas superan el margen. “Acierto al marcar”: de las marcadas, cuántas son correctas.</div></details>
+  <details style="margin-top:6px"><summary>Errores más frecuentes</summary><table id="conf"></table></details>
+  <details style="margin-top:6px"><summary>Rendimiento en la Raspberry Pi</summary><table id="perf"></table>
+    <div class="small" style="margin-top:6px">“Tokens de imagen” = nivel de detalle con el que el modelo mira la foto. Uso 140: con 70 es 2,5× más rápido pero cambia el ranking. La Pi 5 es varias veces más lenta que el Poco F3; lo mediremos en el móvil.</div></details>
+  <details style="margin-top:6px"><summary>Textos internos de cada etiqueta</summary><table id="labelTexts"></table></details>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const D = /*__DATA__*/null;
+const STORE = "robia-precision-v2";
+const $ = id => document.getElementById(id);
+const fmt = (x, d = 3) => (x >= 0 ? "" : "−") + Math.abs(x).toFixed(d);
+let review = JSON.parse(localStorage.getItem(STORE) || "{}");
+const save = () => localStorage.setItem(STORE, JSON.stringify(review));
+const CAT = D.categories, OCC = D.occasions, NC = CAT.length;
+const catIdx = Object.fromEntries(CAT.map((c, i) => [c.id, i]));
+
+function dec(q) { const bin = atob(q.b), n = bin.length / 2, out = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; out[i] = v * q.s; }
+  let s = 0; for (const x of out) s += x * x; s = Math.sqrt(s); for (let i = 0; i < n; i++) out[i] /= s; return out; }
+const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+const VEC = {}; for (const v of D.variants) VEC[v] = D.rows.map(r => dec(r.v[v]));
+const LAB = {}; for (const [k, arr] of Object.entries(D.labels)) LAB[k] = arr.map(dec);
+const GRAM = {}; for (const v of D.variants) { const V = VEC[v]; GRAM[v] = V.map(a => V.map(b => dot(a, b))); }
+const TXT = {}; for (const v of D.variants) for (const rcp of ["desc", "name"]) for (const g of ["category", "occasion"])
+  TXT[`${v}|${rcp}|${g}`] = VEC[v].map(a => LAB[`${rcp}__${g}`].map(l => dot(a, l)));
+
+const S = () => ({method: $("method").value, variant: "raw", recipe: $("recipe").value, refsrc: $("refsrc").value,
+  margin: +$("margin").value, filter: $("filter").value});
+const MARGIN_SCALE = {text: 0.04, knn: 0.06, combined: 2.0};
+
+function refOf(i, s) {
+  const r = D.rows[i], mine = review[r.stem] || {};
+  if (mine.category === "__other") return null;
+  if (mine.category) return {cat: mine.category, src: "mine"};
+  if (s.refsrc === "both" && !r.prov.ambiguous) return {cat: r.prov.category, src: "prov"};
+  return null;
+}
+const z = a => { const m = a.reduce((x, y) => x + y, 0) / a.length; const sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length) || 1; return a.map(x => (x - m) / sd); };
+function catScores(i, s, refs) {
+  const text = TXT[`${s.variant}|${s.recipe}|category`][i];
+  if (s.method === "text") return text;
+  const G = GRAM[s.variant][i], per = Array.from({length: NC}, () => []);
+  refs.forEach((rf, j) => { if (rf && j !== i) per[catIdx[rf.cat]].push(G[j]); });
+  const knn = per.map(l => l.length ? l.sort((a, b) => b - a).slice(0, 3).reduce((x, y) => x + y, 0) / Math.min(3, l.length) : null);
+  if (s.method === "knn") return knn.map(x => x == null ? -1 : x);
+  const zt = z(text), have = knn.map(x => x != null), kz = have.some(Boolean) ? z(knn.filter(x => x != null)) : [];
+  let k = 0; return zt.map((t, c) => have[c] ? t + kz[k++] : t);
+}
+function predict(i, s, refs) {
+  const sc = catScores(i, s, refs), ranked = sc.map((v, c) => ({v, l: CAT[c]})).sort((a, b) => b.v - a.v);
+  const margin = ranked[0].v - ranked[1].v, thr = s.margin * MARGIN_SCALE[s.method];
+  const occ = TXT[`${s.variant}|${s.recipe}|occasion`][i].map((v, c) => ({v, l: OCC[c]})).sort((a, b) => b.v - a.v);
+  return {ranked, margin, cat: margin >= thr ? ranked[0].l : null, occ: occ.filter((o, k) => k < 2 && occ[0].v - o.v <= 0.01), occRanked: occ, thr};
+}
+function evaluate(s) {
+  const refs = D.rows.map((_, i) => refOf(i, s));
+  let n = 0, top1 = 0, top3 = 0, marked = 0, markedOk = 0; const conf = {}, preds = [];
+  D.rows.forEach((r, i) => { const p = predict(i, s, refs); preds.push(p); if (p.cat) marked++;
+    const rf = refs[i]; if (!rf) return; n++;
+    if (p.ranked[0].l.id === rf.cat) top1++; else { const k = `${CAT[catIdx[rf.cat]].name} → ${p.ranked[0].l.name}`; conf[k] = (conf[k] || 0) + 1; }
+    if (p.ranked.slice(0, 3).some(x => x.l.id === rf.cat)) top3++;
+    if (p.cat && rf) { markedOk += p.cat.id === rf.cat ? 1 : 0; } });
+  const markedWithRef = preds.filter((p, i) => p.cat && refs[i]).length;
+  return {refs, preds, n, top1, top3, marked, markedOk, markedWithRef, conf};
+}
+const pct = (a, b) => b ? Math.round(100 * a / b) + "%" : "—";
+function bars(list, n, topId, refId) {
+  const lo = Math.min(...list.map(x => x.v)), hi = list[0].v;
+  return list.slice(0, n).map(x => `<div class="bar ${x.l.id === topId ? "top" : ""} ${x.l.id === refId ? "ref" : ""}"><div>${x.l.name}</div><div class="track"><div class="fill" style="width:${hi === lo ? 100 : Math.max(4, 100 * (x.v - lo) / (hi - lo))}%"></div></div><div class="val">${fmt(x.v)}</div></div>`).join("");
+}
+function render() {
+  const s = S(); $("marginV").textContent = (s.margin * MARGIN_SCALE[s.method]).toFixed(3);
+  const ev = evaluate(s), reviewed = Object.values(review).filter(r => r.category).length;
+  $("stats").innerHTML = [["Fotos", D.rows.length], ["Con referencia", ev.n], ["Revisadas por ti", reviewed],
+    ["Acierto 1.ª opción", pct(ev.top1, ev.n)], ["Correcta entre 3 primeras", pct(ev.top3, ev.n)],
+    ["Marcadas (superan margen)", `${ev.marked} (${pct(ev.marked, D.rows.length)})`], ["Acierto al marcar", pct(ev.markedOk, ev.markedWithRef)]]
+    .map(([k, v]) => `<div class="stat"><span class="small">${k}</span><b>${v}</b></div>`).join("");
+  $("cmp").innerHTML = "<tr><th>Método</th><th>Acierto 1.ª</th><th>Entre 3 primeras</th><th>Marcadas</th><th>Acierto al marcar</th></tr>" +
+    [["text", "Solo texto"], ["knn", "Por ejemplos"], ["combined", "Combinado"]].map(([m, name]) => { const e = evaluate({...s, method: m});
+      return `<tr><td>${name}</td><td>${pct(e.top1, e.n)}</td><td>${pct(e.top3, e.n)}</td><td>${pct(e.marked, D.rows.length)}</td><td>${pct(e.markedOk, e.markedWithRef)}</td></tr>`; }).join("");
+  $("conf").innerHTML = "<tr><th>Referencia → sugerida</th><th>Fotos</th></tr>" + Object.entries(ev.conf).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+  const cards = [];
+  D.rows.forEach((r, i) => { const p = ev.preds[i], rf = ev.refs[i], mine = review[r.stem] || {};
+    const wrong = rf && p.ranked[0].l.id !== rf.cat;
+    if (s.filter === "wrong" && !wrong) return; if (s.filter === "unpred" && p.cat) return;
+    if (s.filter === "unmarked" && mine.category) return; if (s.filter === "amb" && !(r.prov.ambiguous && !mine.category)) return;
+    cards.push(card(r, i, p, rf, mine, s, wrong)); });
+  $("grid").innerHTML = cards.join("") || `<div class="panel">No hay fotos con este filtro.</div>`;
+  attach();
+}
+function card(r, i, p, rf, mine, s, wrong) {
+  const img = r.tr, provName = CAT[catIdx[r.prov.category]].name;
+  const refTxt = mine.category ? `Tú: <b>${mine.category === "__other" ? "Otra" : CAT[catIdx[mine.category]].name}</b>` : `Hermes: ${provName}${r.prov.ambiguous ? " (dudosa)" : ""}`;
+  const opts = `<option value="">Cambiar categoría…</option>` + CAT.map(c => `<option value="${c.id}" ${mine.category === c.id ? "selected" : ""}>${c.name}</option>`).join("") + `<option value="__other" ${mine.category === "__other" ? "selected" : ""}>Otra / ninguna</option>`;
+  return `<div class="card ${rf ? (wrong ? "bad" : "good") : ""}">
+    <div class="imgwrap" data-i="${i}"><em>#${r.n}</em><img loading="lazy" src="${img}" alt="#${r.n}"></div>
+    <div class="pred">${p.cat ? `<span class="chip">${p.cat.name}</span>` : `<span class="chip none">Sin predecir</span>`}${p.occ.map(o => `<span class="chip occ">${o.l.name}</span>`).join("")}</div>
+    <div class="small">${refTxt} · margen con la 2.ª: ${fmt(p.margin, 3)} (mínimo ${p.thr.toFixed(3)})</div>
+    <div class="small">Categoría (top 5, subrayada la de referencia)</div><div class="bars">${bars(p.ranked, 5, p.cat && p.cat.id, rf && rf.cat)}</div>
+    <div class="small">Occasion (solo texto)</div><div class="bars">${bars(p.occRanked, 3, null, null)}</div>
+    <div class="fb"><button data-ok="${i}">✓ Correcta</button><select data-cat="${r.stem}">${opts}</select></div>
+    <div class="occfb">${OCC.map(o => `<button data-occ="${o.id}" data-stem="${r.stem}" class="${(mine.occasions || []).includes(o.id) ? "on" : ""}">${o.name}</button>`).join("")}</div>
+  </div>`;
+}
+function attach() {
+  document.querySelectorAll("[data-ok]").forEach(el => el.onclick = () => { const r = D.rows[+el.dataset.ok];
+    review[r.stem] = {...(review[r.stem] || {}), category: (review[r.stem] || {}).category || r.prov.category}; save(); render(); });
+  document.querySelectorAll("[data-cat]").forEach(el => el.onchange = () => { const st = el.dataset.cat;
+    review[st] = {...(review[st] || {}), category: el.value || undefined}; save(); render(); });
+  document.querySelectorAll("[data-occ]").forEach(el => el.onclick = () => { const st = el.dataset.stem, id = el.dataset.occ, cur = new Set((review[st] || {}).occasions || []);
+    cur.has(id) ? cur.delete(id) : cur.add(id); review[st] = {...(review[st] || {}), occasions: [...cur]}; save(); render(); });
+}
+["method", "recipe", "refsrc", "margin", "filter"].forEach(id => $(id).addEventListener("input", render));
+$("export").onclick = () => { const out = {version: 2, settings: S(), review: Object.fromEntries(Object.entries(review).map(([k, v]) => [k, {...v, n: (D.rows.find(r => r.stem === k) || {}).n}]))};
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], {type: "application/json"})); a.download = "robia-revision.json"; a.click(); };
+$("import").onchange = async e => { const f = e.target.files[0]; if (!f) return; const j = JSON.parse(await f.text()); review = j.review || j; save(); render(); };
+$("reset").onclick = () => { if (confirm("¿Borrar tu revisión guardada en este navegador?")) { review = {}; save(); render(); } };
+$("perf").innerHTML = "<tr><th>Tokens de imagen</th><th>Fotos medidas</th><th>Mediana por foto</th><th>Percentil 90</th></tr>" +
+  D.perf.map(p => `<tr><td>${p.vt}${p.vt === 140 ? " (usado aquí)" : ""}</td><td>${p.n}</td><td>${p.median} s</td><td>${p.p90 == null ? "—" : p.p90 + " s"}</td></tr>`).join("") +
+  `<tr><td colspan="4" class="small">Memoria máxima del proceso en la Pi: ~${D.maxRss} MB. Medido con la Pi también ocupada en otras tareas.</td></tr>`;
+$("labelTexts").innerHTML = "<tr><th>Etiqueta</th><th>Texto interno (inglés, no visible para el usuario)</th></tr>" + [...CAT, ...OCC].map(l => `<tr><td>${l.name}</td><td>${l.desc}</td></tr>`).join("");
+render();
+</script>
+</body>
+</html>
