@@ -18,13 +18,15 @@ class DriveSyncSchedulerTest {
     @Test
     fun savingAGarmentRequestsTheUniqueSyncWorkOnce() = runBlocking {
         val scheduler = FakeSyncWorkScheduler()
-        val wardrobe = FakeWardrobeRepository().apply { addQueued("garment-1") }
+        // Added after startup: a garment that is already pending at startup also requests a run.
+        val wardrobe = FakeWardrobeRepository()
         val processor = newTestProcessor(
             wardrobe = wardrobe,
             snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("garment-1")),
             drive = FakeDriveWardrobeRepository(),
             scheduler = scheduler,
         )
+        wardrobe.addQueued("garment-1")
 
         processor.enqueue(WardrobeSyncOperation.UpsertGarments(touchedGarmentIds = setOf("garment-1")))
 
