@@ -366,7 +366,9 @@ internal class PhotoUploadPipeline(
                 is PhotoUploadAction.Reuse -> uploaded += photo.withPreviousBlob(action.previous)
                 is PhotoUploadAction.CopyRemote -> {
                     protectedGarmentIds += action.garmentId
-                    remoteByGarmentId[action.garmentId]?.let { record -> uploaded += record }
+                    val kept = remoteByGarmentId[action.garmentId]
+                        ?: previous[action.garmentId]?.let { known -> photo.withPreviousBlob(known) }
+                    kept?.let { record -> uploaded += record }
                 }
                 is PhotoUploadAction.Fail -> keepPreviousRecord(photo)
                 is PhotoUploadAction.Upload -> when (val upload = uploadChanged(accessToken, photo, action.sourceHash, index)) {

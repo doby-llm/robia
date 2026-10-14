@@ -54,6 +54,34 @@ class GuardedIsolationTest {
     }
 
     @Test
+    fun guardedGarmentWithoutRemoteRecordKeepsPreviousBlobAndNeverPurgesIt() = runBlocking {
+        val previousBlobPath = "photos/g1/fedcba9876543210.webp"
+        api.files[previousBlobPath] = "older".toByteArray()
+        val previous = LastUploadedPhoto(
+            garmentId = "g1",
+            sourceHash = "previous-source-hash",
+            blobPath = previousBlobPath,
+            contentHash = "previous-content-hash",
+            byteSize = 5L,
+            mimeType = "image/webp",
+        )
+        val guarded = localPhoto("g1").copy(localUri = "", restoreFailureCategory = "local_photo_missing")
+
+        val result = phone.pipeline(api).upload(
+            "token",
+            WardrobeSyncSnapshot(photos = listOf(guarded)),
+            remote = null,
+            previous = mapOf("g1" to previous),
+        )
+
+        val uploaded = (result as DriveSyncResult.Success).value.uploadedPhotos
+        assertEquals(listOf(previousBlobPath), uploaded.map { it.blobPath })
+        assertEquals("previous-content-hash", uploaded.single().contentHash)
+        assertEquals(0, api.blobUploads.get())
+        assertTrue(api.files.containsKey(previousBlobPath))
+    }
+
+    @Test
     fun permanentPhotoFailureKeepsPreviousRecordAndContinues() = runBlocking {
         api.files[remoteBlobPath] = "remote".toByteArray()
         phone.sources[localPhoto("g2").localUri] = "pixels-g2"

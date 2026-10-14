@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
+import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
 import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
@@ -14,14 +15,13 @@ import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
  * never a reason to upload during restore, and a metadata-only difference is not user data.
  */
 internal fun WardrobeSyncSnapshot.equivalentForUpload(other: WardrobeSyncSnapshot): Boolean =
-    equivalenceKey() == other.equivalenceKey()
+    equivalenceKey() == other.equivalenceKey() && photosEquivalent(sortedDeterministically().photos, other.sortedDeterministically().photos)
 
 private data class SnapshotEquivalenceKey(
     val taxonomies: WardrobeTaxonomySnapshot,
     val garments: List<GarmentSyncRecord>,
     val garmentTags: List<GarmentTagMappingRecord>,
     val garmentColors: List<GarmentColorMappingRecord>,
-    val photos: List<Pair<String, String?>>,
     val tombstones: List<SyncTombstoneRecord>,
 )
 
@@ -32,7 +32,17 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
         garments = sorted.garments.map { garment -> garment.copy(embeddings = emptyList()) },
         garmentTags = sorted.garmentTags,
         garmentColors = sorted.garmentColors,
-        photos = sorted.photos.map { photo -> photo.garmentId to (photo.sourceHash ?: photo.contentHash) },
         tombstones = sorted.tombstones,
     )
 }
+
+/**
+ * Local photos carry only [GarmentPhotoRecord.contentHash] until they are uploaded, while remote photos also carry
+ * [GarmentPhotoRecord.sourceHash]. A pair is the same image when both source hashes are set and equal, or content hashes match.
+ */
+private fun photosEquivalent(local: List<GarmentPhotoRecord>, remote: List<GarmentPhotoRecord>): Boolean =
+    local.size == remote.size && local.zip(remote).all { (localPhoto, remotePhoto) ->
+        localPhoto.garmentId == remotePhoto.garmentId &&
+            (localPhoto.sourceHash != null && localPhoto.sourceHash == remotePhoto.sourceHash ||
+                localPhoto.contentHash == remotePhoto.contentHash)
+    }
