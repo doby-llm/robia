@@ -167,6 +167,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 - **Acceptance:** CI green; V-Z11 in Z01 (Manu: Colors looks like the other tabs, bottom scroll ends at the last item, no height jump).
 
 ## TASK-S07 — Cloud backup upload stage (Manu request, PLAN-CHANGE 11)
+- **PLAN-CHANGE 12:** scope, order and files fixed in decision-log.md PLAN-CHANGE 12 (restored photos not re-uploaded, honest photo text, Finishing label, visible Blocked/Failure).
 - **Predecessors:** S06 · **Successors:** Z01
 - **Files:** investigate first; likely `sync/WardrobeSyncOutboxProcessor.kt`, `sync/GoogleDriveWardrobeRepository.kt`, `ui/CloudRestoreProgressText.kt`, `ui/RobiaApp.kt` (overlay only). Independent review required.
 - **In scope:** find why "Updating cloud backup" takes about 3 minutes with a constant-rate bar and never finishes (app restart shows the data), make progress honest and finish cleanly; make the "N out of 12 steps" text truthful or replace it with a real count.
