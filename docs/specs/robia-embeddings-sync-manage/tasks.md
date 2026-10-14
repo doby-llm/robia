@@ -22,6 +22,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 - **Predecessors:** G-APPROVAL · **Successors:** all
 - **Files:** `gradle/libs.versions.toml`, `build.gradle.kts`, `app/build.gradle.kts`, `app/proguard-rules.pro`, `.github/workflows/android-apk.yml`, `.github/workflows/android-performance-baseline.yml` (JDK/gradle version lines only), `README.md` (CI artifacts section).
 - **In scope:**
+  0. Fix the broken "Set up Android SDK" step (`packages: 'platform-tools'`), see `briefs/TASK-B01.md` step 0. Every later task depends on this.
   1. Versions per TS§5.1 (Kotlin 2.4.21, KSP 2.3.12, AGP 8.13.2, Room 2.8.4). Add catalog entries (not yet used): `litertlm = "0.18.0"` → `com.google.ai.edge.litertlm:litertlm-android`; `work = "2.11.2"` → `androidx.work:work-runtime-ktx`; `lifecycle-process` → `androidx.lifecycle:lifecycle-process` (version.ref `lifecycleRuntimeKtx`).
   2. Add the dependency `implementation(libs.litertlm.android)` now (proves linkage).
   3. JDK 21 + `kotlin { compilerOptions { jvmTarget = JvmTarget.JVM_21 } }`.
