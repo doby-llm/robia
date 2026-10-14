@@ -1013,6 +1013,8 @@ private suspend fun restoreOnePhoto(
     }
 }
 
+// Exact paths are authoritative; a legacy path is only used when exactly one candidate exists.
+// exact_blob_not_found: ambiguous candidates deliberately stay in terminal attention.
 private fun DriveFileIndex.resolveFileId(blobPath: String, garmentId: String): String? =
     idOf(blobPath) ?: namesWithPrefix(DriveFolderNaming.photoBlobPrefix(garmentId))
         .singleOrNull()
