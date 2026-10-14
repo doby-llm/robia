@@ -23,6 +23,10 @@ interface SettingsRepository {
     suspend fun pauseSyncForDriveBackupDeletion()
     suspend fun markCloudSetupPromptInteracted()
     suspend fun markDriveFreshInstallRestoreAttempted()
+    val modelPromptShown: Flow<Boolean>
+    suspend fun setModelPromptShown(shown: Boolean)
+    val modelMobileDataApproved: Flow<Boolean>
+    suspend fun setModelMobileDataApproved(approved: Boolean)
 }
 
 class DataStoreSettingsRepository(
@@ -89,6 +93,22 @@ class DataStoreSettingsRepository(
         dataStore.edit { preferences -> preferences[driveFreshInstallRestoreAttemptedKey] = true }
     }
 
+    override val modelPromptShown: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[modelPromptShownKey] ?: false
+    }
+
+    override suspend fun setModelPromptShown(shown: Boolean) {
+        dataStore.edit { preferences -> preferences[modelPromptShownKey] = shown }
+    }
+
+    override val modelMobileDataApproved: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[modelMobileDataApprovedKey] ?: false
+    }
+
+    override suspend fun setModelMobileDataApproved(approved: Boolean) {
+        dataStore.edit { preferences -> preferences[modelMobileDataApprovedKey] = approved }
+    }
+
     private fun String?.toLanguagePreference(): LanguagePreference =
         LanguagePreference.entries.firstOrNull { it.storageValue == this } ?: LanguagePreference.System
 
@@ -106,5 +126,7 @@ class DataStoreSettingsRepository(
         val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
         val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
         val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
+        val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
+        val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
     }
 }
