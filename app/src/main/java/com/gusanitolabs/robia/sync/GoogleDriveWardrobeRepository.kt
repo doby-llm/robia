@@ -430,9 +430,9 @@ internal class PhotoUploadPipeline(
                 IllegalStateException("Drive photo blob upload completed without a readable file."),
             )
             is DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
-            is DriveApiResult.Failure -> upload
-            is DriveApiResult.Transient -> upload
-            DriveApiResult.StorageFull -> upload
+            is DriveApiResult.Failure -> DriveApiResult.Failure(upload.throwable)
+            is DriveApiResult.Transient -> DriveApiResult.Transient(upload.cause)
+            DriveApiResult.StorageFull -> DriveApiResult.StorageFull
         }
     }
 
