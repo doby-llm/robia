@@ -100,6 +100,7 @@ data class CloudRestoreProgress(
     val diagnostics: CloudRestoreDiagnostics? = null,
     val itemProgress: RestoreItemProgress? = null,
     val byteProgress: RestoreByteProgress? = null,
+    val uploadProgress: RestoreUploadProgress? = null,
 ) {
     val remainingWork: Int
         get() = (totalWork - completedWork).coerceAtLeast(0)
@@ -111,6 +112,11 @@ data class CloudRestoreProgress(
 data class RestoreItemProgress(
     val completedItems: Int,
     val totalItems: Int,
+)
+
+data class RestoreUploadProgress(
+    val completedPhotos: Int,
+    val totalPhotos: Int,
 )
 
 data class RestoreByteProgress(

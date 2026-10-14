@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
 import com.gusanitolabs.robia.sync.RestoreByteProgress
@@ -11,7 +12,8 @@ private const val BYTES_PER_MEGABYTE = 1_000_000.0
 private const val MIN_ETA_SAMPLE_DURATION_MILLIS = 2_000L
 private const val MIN_ETA_PROGRESS_BYTES = 64L * 1024L
 private const val MAX_ETA_SECONDS = 24L * 60L * 60L
-private const val MAX_ETA_SAMPLE_COUNT = 4
+private const val ETA_RATE_SMOOTHING = 0.2
+private const val ETA_MIN_CHANGE_INTERVAL_MILLIS = 5_000L
 
 internal data class RestoreByteProgressText(
     val completedMegabytes: String,
@@ -32,12 +34,21 @@ internal data class RestoreEtaSample(
     val totalBytes: Long,
 )
 
+/**
+ * Smoothed download-rate estimate. The rate is seeded from the cumulative transfer since the first
+ * sample that passed 2 s and 64 KB, then updated by EWMA. Samples without new bytes keep the last
+ * rate, and the shown value changes at most every 5 s and never increases.
+ */
 internal data class RestoreEtaState(
-    val samples: List<RestoreEtaSample> = emptyList(),
+    val anchor: RestoreEtaSample? = null,
+    val lastSample: RestoreEtaSample? = null,
+    val bytesPerSecond: Double? = null,
+    val shown: RestoreEta? = null,
+    val shownAtElapsedRealtimeMillis: Long? = null,
 ) {
     fun updated(progress: CloudRestoreProgress, elapsedRealtimeMillis: Long): RestoreEtaState {
         val byteProgress = progress.byteProgress
-        val totalBytes = byteProgress?.totalBytes
+        val totalBytes = byteProgress?.totalBytes?.takeIf { it > 0L }
         if (
             progress.status != CloudRestoreStatus.Running ||
             byteProgress == null ||
@@ -52,62 +63,102 @@ internal data class RestoreEtaState(
             completedBytes = byteProgress.completedBytes.coerceAtLeast(0L),
             totalBytes = totalBytes,
         )
-        val previousSample = samples.lastOrNull()
-        if (
-            previousSample != null &&
-            (sample.completedBytes < previousSample.completedBytes || sample.totalBytes != previousSample.totalBytes)
+        val base = if (
+            anchor == null ||
+            lastSample == null ||
+            anchor.totalBytes != totalBytes ||
+            sample.completedBytes < lastSample.completedBytes ||
+            sample.elapsedRealtimeMillis <= lastSample.elapsedRealtimeMillis
         ) {
-            return copy(samples = listOf(sample))
+            RestoreEtaState(anchor = sample, lastSample = sample)
+        } else {
+            this
         }
-        val nextSamples = (samples + sample)
-            .distinctBy(RestoreEtaSample::elapsedRealtimeMillis)
-            .takeLast(MAX_ETA_SAMPLE_COUNT)
+        val start = base.anchor ?: sample
+        val previous = base.lastSample ?: sample
+        val newBytes = sample.completedBytes - previous.completedBytes
+        val smoothedRate = base.bytesPerSecond
+        val rate = when {
+            newBytes <= 0L -> smoothedRate
+            smoothedRate == null -> {
+                val elapsed = sample.elapsedRealtimeMillis - start.elapsedRealtimeMillis
+                val transferred = sample.completedBytes - start.completedBytes
+                if (elapsed >= MIN_ETA_SAMPLE_DURATION_MILLIS && transferred >= MIN_ETA_PROGRESS_BYTES) {
+                    transferred * 1_000.0 / elapsed
+                } else {
+                    null
+                }
+            }
+            else -> {
+                val instantaneous = newBytes * 1_000.0 / (sample.elapsedRealtimeMillis - previous.elapsedRealtimeMillis)
+                ETA_RATE_SMOOTHING * instantaneous + (1 - ETA_RATE_SMOOTHING) * smoothedRate
+            }
+        }?.takeIf { it > 0.0 }
 
-        return copy(samples = nextSamples)
+        val remainingBytes = totalBytes - sample.completedBytes
+        val candidate = rate?.let { bytesPerSecond ->
+            ceil(remainingBytes / bytesPerSecond).roundToLong()
+                .takeIf { it in 1L..MAX_ETA_SECONDS }
+                ?.let(RestoreEta::fromSeconds)
+        }
+        val current = base.shown
+        val shownAt = base.shownAtElapsedRealtimeMillis
+        val changeAllowed = shownAt == null || elapsedRealtimeMillis - shownAt >= ETA_MIN_CHANGE_INTERVAL_MILLIS
+        val shouldShowCandidate = candidate != null &&
+            (current == null || (candidate.rank <= current.rank && candidate != current && changeAllowed))
+
+        return base.copy(
+            lastSample = sample,
+            bytesPerSecond = rate,
+            shown = if (shouldShowCandidate) candidate else current,
+            shownAtElapsedRealtimeMillis = if (shouldShowCandidate) elapsedRealtimeMillis else shownAt,
+        )
     }
 
+    /** The last shown estimate. It is retained across updates that carry no new bytes, so the line never blinks out. */
     fun estimate(progress: CloudRestoreProgress): RestoreEta? {
         val byteProgress = progress.byteProgress ?: return null
         val totalBytes = byteProgress.totalBytes?.takeIf { it > 0L } ?: return null
         if (progress.status != CloudRestoreStatus.Running || byteProgress.completedBytes >= totalBytes) return null
-
-        val latest = samples.lastOrNull() ?: return null
-        if (latest.completedBytes != byteProgress.completedBytes || latest.totalBytes != totalBytes) return null
-        val previous = samples.dropLast(1).lastOrNull() ?: return null
-        if (
-            latest.elapsedRealtimeMillis <= previous.elapsedRealtimeMillis ||
-            latest.completedBytes <= previous.completedBytes
-        ) {
-            return null
-        }
-        val baseline = samples.firstOrNull { sample ->
-            sample.elapsedRealtimeMillis < latest.elapsedRealtimeMillis &&
-                sample.completedBytes < latest.completedBytes
-        } ?: return null
-        val elapsedMillis = latest.elapsedRealtimeMillis - baseline.elapsedRealtimeMillis
-        val downloadedBytes = latest.completedBytes - baseline.completedBytes
-        if (elapsedMillis < MIN_ETA_SAMPLE_DURATION_MILLIS || downloadedBytes < MIN_ETA_PROGRESS_BYTES) return null
-
-        val remainingBytes = totalBytes - byteProgress.completedBytes.coerceIn(0L, totalBytes)
-        if (remainingBytes <= 0L) return null
-
-        val bytesPerSecond = downloadedBytes * 1_000.0 / elapsedMillis
-        if (bytesPerSecond <= 0.0) return null
-
-        val seconds = ceil(remainingBytes / bytesPerSecond).roundToLong()
-        return seconds.takeIf { it in 1L..MAX_ETA_SECONDS }?.let(RestoreEta::fromSeconds)
+        return shown
     }
 }
 
 internal sealed interface RestoreEta {
-    data object LessThanMinute : RestoreEta
-    data class AboutMinutes(val minutes: Long) : RestoreEta
+    /** Ordering key: a shown estimate may only stay or drop, never rise. */
+    val rank: Long
+
+    data object LessThanMinute : RestoreEta {
+        override val rank: Long = 0L
+    }
+
+    data class AboutMinutes(val minutes: Long) : RestoreEta {
+        override val rank: Long get() = minutes
+    }
 
     companion object {
-        fun fromSeconds(seconds: Long): RestoreEta = if (seconds < 60L) {
-            LessThanMinute
-        } else {
-            AboutMinutes(minutes = ((seconds + 30L) / 60L).coerceAtLeast(1L))
+        /** Under 60 s: "Less than a minute". Under 10 min: nearest minute. Otherwise: nearest 5 minutes. */
+        fun fromSeconds(seconds: Long): RestoreEta = when {
+            seconds < 60L -> LessThanMinute
+            seconds < 600L -> AboutMinutes(minutes = ((seconds + 30L) / 60L).coerceAtLeast(1L))
+            else -> AboutMinutes(minutes = ((seconds + 150L) / 300L) * 5L)
         }
+    }
+}
+
+/**
+ * Determinate fraction for the bar of the current stage, or null for an indeterminate indicator.
+ * Download: bytes, or items when a size is unknown or every item has finished. Upload: photos.
+ */
+internal fun CloudRestoreProgress.stageBarFraction(): Float? {
+    val itemFraction = itemProgress?.takeIf { it.totalItems > 0 }?.let { items ->
+        items.completedItems.coerceIn(0, items.totalItems).toFloat() / items.totalItems
+    }
+    return when (phase) {
+        CloudRestorePhase.Downloading -> if (itemFraction == 1f) itemFraction else byteProgress?.fraction ?: itemFraction
+        CloudRestorePhase.Uploading -> uploadProgress?.takeIf { it.totalPhotos > 0 }?.let { upload ->
+            upload.completedPhotos.coerceIn(0, upload.totalPhotos).toFloat() / upload.totalPhotos
+        }
+        else -> null
     }
 }

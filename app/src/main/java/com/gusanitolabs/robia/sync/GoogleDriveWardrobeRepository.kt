@@ -338,6 +338,7 @@ internal class PhotoUploadPipeline(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
         previous: Map<String, LastUploadedPhoto>,
+        onPhotoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = { _, _ -> },
     ): DriveSyncResult<PhotoUploadOutcome> {
         val index = when (val listing = api.listAll(accessToken)) {
             is DriveApiResult.Success -> DriveFileIndex(listing.value)
@@ -369,7 +370,9 @@ internal class PhotoUploadPipeline(
             kept?.let { record -> uploaded += record }
         }
 
-        for (action in planPhotoUploads(states, previous, index)) {
+        val actions = planPhotoUploads(states, previous, index)
+        onPhotoProgress(0, actions.size)
+        for ((actionIndex, action) in actions.withIndex()) {
             val photo = photosByGarmentId.getValue(action.garmentId)
             when (action) {
                 is PhotoUploadAction.Reuse -> uploaded += photo.withPreviousBlob(action.previous)
@@ -387,6 +390,7 @@ internal class PhotoUploadPipeline(
                     is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(upload.failureCause())
                 }
             }
+            onPhotoProgress(actionIndex + 1, actions.size)
         }
 
         val uploadSnapshot = snapshot.copy(photos = uploaded).sortedDeterministically()
