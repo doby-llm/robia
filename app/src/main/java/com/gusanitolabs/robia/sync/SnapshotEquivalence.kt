@@ -32,8 +32,7 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
         garments = sorted.garments.map { garment -> garment.copy(embeddings = emptyList()) },
         garmentTags = sorted.garmentTags,
         garmentColors = sorted.garmentColors,
-        // sourceHash does not exist until S03; contentHash is the uploaded-bytes identity for now.
-        photos = sorted.photos.map { photo -> photo.garmentId to photo.contentHash },
+        photos = sorted.photos.map { photo -> photo.garmentId to (photo.sourceHash ?: photo.contentHash) },
         tombstones = sorted.tombstones,
     )
 }

@@ -363,6 +363,18 @@ private fun ClothingItemEntity.toPhotoRecord(): GarmentPhotoRecord? = photoUri?.
         revision = syncRevision,
         updatedAtEpochMillis = updatedAtEpochMillis,
     )
+} ?: if (photoRestoreGuarded) {
+    // Guarded garment without a local photo: upload copies the remote record for it and never purges that blob.
+    GarmentPhotoRecord(
+        garmentId = id,
+        localUri = "",
+        blobPath = DriveFolderNaming.photoBlobPath(id),
+        revision = syncRevision,
+        updatedAtEpochMillis = updatedAtEpochMillis,
+        restoreFailureCategory = "local_photo_missing",
+    )
+} else {
+    null
 }
 
 private fun SyncTombstoneEntity.toSyncRecord(): SyncTombstoneRecord = SyncTombstoneRecord(

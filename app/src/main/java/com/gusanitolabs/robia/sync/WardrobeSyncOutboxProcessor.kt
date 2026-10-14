@@ -682,7 +682,7 @@ class WardrobeSyncOutboxProcessor(
         // normal sync. Leave ordinary work pending until its targeted recovery reaches a terminal success.
         if (snapshotRepository.hasGuardedPhotoRestoreIssues()) return SyncCycleResult.Attention
         // Local edits own the snapshot once the phone has user data; do not fetch stale Drive data here.
-        return when (driveRepository.upsertSnapshot(localSnapshot.sortedDeterministically())) {
+        return when (driveRepository.upsertSnapshot(localSnapshot.sortedDeterministically(), remote = null)) {
             is DriveSyncResult.Success -> SyncCycleResult.Success(guardedPhotoCount = 0)
             is DriveSyncResult.Blocked -> SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
             is DriveSyncResult.Failure -> SyncCycleResult.Failure
@@ -824,7 +824,7 @@ class WardrobeSyncOutboxProcessor(
             completedWork = RESTORE_STEP_UPLOAD_STARTED,
         )
 
-        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot)) {
+        return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot)) {
             is DriveSyncResult.Success -> {
                 diagnostics.recordFinalUploadSucceeded()
                 restoreProgress.value = diagnostics.progress(

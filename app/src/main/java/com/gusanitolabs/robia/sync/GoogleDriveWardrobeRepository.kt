@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.sync
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.common.api.Scope
@@ -104,27 +105,36 @@ class GoogleDriveWardrobeRepository(
         }
     }
 
-    override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot): DriveSyncResult<DriveManifest> =
-        withAccessToken { accessToken ->
-            val deterministicSnapshot = when (val result = uploadPhotoBlobs(accessToken, snapshot.sortedDeterministically())) {
-                is DriveSyncResult.Success -> result.value
-                is DriveSyncResult.Blocked -> return@withAccessToken result
-                is DriveSyncResult.Failure -> return@withAccessToken result
+    private val lastUploadedPhotos by lazy {
+        LastUploadedPhotosStore(File(context.filesDir, "sync/last_uploaded_photos.json"))
+    }
+
+    override suspend fun upsertSnapshot(
+        snapshot: WardrobeSyncSnapshot,
+        remote: WardrobeSyncSnapshot?,
+    ): DriveSyncResult<DriveManifest> = withAccessToken { accessToken ->
+        // Previous photo records: the local cache first, the remote snapshot covers a fresh install.
+        val previous = remote?.photos.orEmpty().associate { photo -> photo.garmentId to photo.toLastUploadedPhoto() } +
+            lastUploadedPhotos.read()
+        when (val result = photoUploadPipeline().upload(accessToken, snapshot.sortedDeterministically(), remote, previous)) {
+            is DriveSyncResult.Success -> {
+                // The cache only saves re-uploads in the next cycle, so a failed write must not fail this sync.
+                runCatching {
+                    lastUploadedPhotos.write(result.value.uploadedPhotos.map(GarmentPhotoRecord::toLastUploadedPhoto))
+                }
+                DriveSyncResult.Success(result.value.manifest)
             }
-            when (val purgeResult = purgeDeletedPhotoBlobs(accessToken, deterministicSnapshot)) {
-                is DriveSyncResult.Success -> Unit
-                is DriveSyncResult.Blocked -> return@withAccessToken purgeResult
-                is DriveSyncResult.Failure -> return@withAccessToken purgeResult
-            }
-            when (val result = api.upsertSnapshot(accessToken, deterministicSnapshot)) {
-                is DriveApiResult.Success -> DriveSyncResult.Success(DriveManifest.fromSnapshot(result.value))
-                is DriveApiResult.Unauthorized -> authBlocked()
-                is DriveApiResult.NotFound -> DriveSyncResult.Failure(
-                    IllegalStateException("Drive snapshot upload completed without a readable file."),
-                )
-                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(result.failureCause())
-            }
+            is DriveSyncResult.Blocked -> result
+            is DriveSyncResult.Failure -> result
         }
+    }
+
+    private fun photoUploadPipeline(): PhotoUploadPipeline = PhotoUploadPipeline(
+        api = api,
+        sourceHashOf = { photo -> photo.localSourceUri().sourceHash16(context) },
+        encode = { photo -> ClothingImageStore.encodeDriveWebp(context, photo.localSourceUri()) },
+        onPurgeDeferred = { message -> Log.w(PHOTO_LOG_TAG, message) },
+    )
 
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = withAccessToken { accessToken ->
         when (val listed = api.listBackupFiles(accessToken)) {
@@ -217,87 +227,7 @@ class GoogleDriveWardrobeRepository(
             is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(restored.failureCause())
         }
     }
-
-    private suspend fun uploadPhotoBlobs(
-        accessToken: String,
-        snapshot: WardrobeSyncSnapshot,
-    ): DriveSyncResult<WardrobeSyncSnapshot> {
-        val uploadedPhotos = snapshot.photos.map { photo ->
-            val blobPath = photo.blobPath.takeIf(String::isNotBlank) ?: return DriveSyncResult.Failure(
-                IllegalStateException("Garment photo ${photo.garmentId} is missing a Drive blob path."),
-            )
-            if (photo.restoreFailureCategory != null && photo.restoredLocalUri.isNullOrBlank()) {
-                return@map photo
-            }
-            val sourceUri = photo.restoredLocalUri?.takeIf(String::isNotBlank) ?: photo.localUri
-            val blob = runCatching { ClothingImageStore.readCanonicalDriveImageBlob(context, Uri.parse(sourceUri)) }
-                .getOrElse { throwable ->
-                    return DriveSyncResult.Failure(
-                        IllegalStateException(
-                            "Garment photo ${photo.garmentId} could not be canonicalized for Drive upload: " +
-                                (throwable.message ?: throwable::class.java.simpleName),
-                            throwable,
-                        ),
-                    )
-                }
-                ?: return DriveSyncResult.Failure(
-                    IllegalStateException("Garment photo ${photo.garmentId} could not be read for Drive upload."),
-                )
-            val verifiedBlob = blob.requireDriveReadable(photo.garmentId)
-            when (val uploadResult = api.upsertBlob(accessToken, blobPath, verifiedBlob.bytes, verifiedBlob.mimeType)) {
-                is DriveApiResult.Success -> Unit
-                is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.NotFound -> return DriveSyncResult.Failure(
-                    IllegalStateException("Drive photo blob upload completed without a readable file."),
-                )
-                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(uploadResult.failureCause())
-            }
-            photo.copy(
-                blobPath = blobPath,
-                mimeType = verifiedBlob.mimeType,
-                contentHash = verifiedBlob.contentHash,
-                byteSize = verifiedBlob.byteSize,
-                byteMagic = verifiedBlob.byteMagic,
-                decodedWidth = verifiedBlob.decodedWidth,
-                decodedHeight = verifiedBlob.decodedHeight,
-                restoredLocalUri = null,
-                restoreFailureCategory = null,
-                restoreFailureMessage = null,
-            )
-        }
-        return DriveSyncResult.Success(snapshot.copy(photos = uploadedPhotos).sortedDeterministically())
-    }
-
-    private suspend fun purgeDeletedPhotoBlobs(
-        accessToken: String,
-        snapshot: WardrobeSyncSnapshot,
-    ): DriveSyncResult<Unit> {
-        val deletedGarmentIds = snapshot.tombstones
-            .filter { it.entityType in PHOTO_TOMBSTONE_ENTITY_TYPES }
-            .map { it.entityId }
-            .distinct()
-        val prefixCandidates = mutableListOf<String>()
-        deletedGarmentIds.forEach { garmentId ->
-            when (val result = api.listBlobPathsWithPrefix(accessToken, DriveFolderNaming.photoBlobPrefix(garmentId))) {
-                is DriveApiResult.Success -> prefixCandidates += result.value
-                is DriveApiResult.NotFound -> Unit
-                is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(result.failureCause())
-            }
-        }
-        val activeBlobPaths = snapshot.photos.mapNotNull { it.blobPath.takeIf(String::isNotBlank) }.toSet()
-        val purgeCandidates = (snapshot.deletedPhotoBlobPurgeCandidates() + prefixCandidates)
-            .filterNot(activeBlobPaths::contains)
-            .distinct()
-        purgeCandidates.forEach { blobPath ->
-            when (val result = api.deleteBlob(accessToken, blobPath)) {
-                is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
-                is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(result.failureCause())
-            }
-        }
-        return DriveSyncResult.Success(Unit)
-    }
+}
 
 private fun ImageBlob.requireDriveReadable(garmentId: String): ImageBlob {
     val width = decodedWidth
@@ -323,7 +253,255 @@ private fun <T> authBlocked(): DriveSyncResult<T> = DriveSyncResult.Blocked(
         reason = DriveSyncDisabledReason.UserNotConnected,
         message = "Google Drive authorization is required before sync can continue.",
     )
+
+/** What the local photo of one garment looks like to the upload planner. */
+internal sealed interface LocalPhotoState {
+    val garmentId: String
+
+    /** Local bytes are readable; [sourceHash] is the first 16 hex digits of their SHA-256. */
+    data class Readable(override val garmentId: String, val sourceHash: String) : LocalPhotoState
+
+    /** Local bytes are missing (guarded restore): the remote record is kept and its blobs are never purged. */
+    data class Guarded(override val garmentId: String) : LocalPhotoState
+
+    /** Local bytes exist but cannot be read: a per-photo failure, not a cycle failure. */
+    data class Unreadable(override val garmentId: String) : LocalPhotoState
 }
+
+internal sealed interface PhotoUploadAction {
+    val garmentId: String
+
+    /** Local bytes unchanged and the previous blob is still in Drive: reuse it without encode or upload. */
+    data class Reuse(override val garmentId: String, val previous: LastUploadedPhoto) : PhotoUploadAction
+
+    /** Encode to WebP and upload under the key derived from the WebP bytes. */
+    data class Upload(override val garmentId: String, val sourceHash: String) : PhotoUploadAction
+
+    /** Keep the remote record unchanged and protect its blobs. */
+    data class CopyRemote(override val garmentId: String) : PhotoUploadAction
+
+    /** Permanent per-photo failure: keep the previous record and protect its blobs. */
+    data class Fail(override val garmentId: String) : PhotoUploadAction
+}
+
+/**
+ * Per-photo decision of TS§4.2 steps 2–3. Pure: no Drive or Android calls.
+ * A legacy key is never reused, so every legacy blob is re-uploaded under a short key.
+ */
+internal fun planPhotoUploads(
+    local: List<LocalPhotoState>,
+    previous: Map<String, LastUploadedPhoto>,
+    index: DriveFileIndex,
+): List<PhotoUploadAction> = local.map { state ->
+    val known = previous[state.garmentId]
+    when (state) {
+        is LocalPhotoState.Guarded -> PhotoUploadAction.CopyRemote(state.garmentId)
+        is LocalPhotoState.Unreadable -> PhotoUploadAction.Fail(state.garmentId)
+        is LocalPhotoState.Readable ->
+            if (known != null && known.sourceHash == state.sourceHash && !PhotoBlobKeys.isLegacyKey(known.blobPath) &&
+                index.idOf(known.blobPath) != null
+            ) {
+                PhotoUploadAction.Reuse(state.garmentId, known)
+            } else {
+                PhotoUploadAction.Upload(state.garmentId, state.sourceHash)
+            }
+    }
+}
+
+/** Result of one snapshot upload: the manifest (with per-photo failures) and the photo records it carries. */
+internal data class PhotoUploadOutcome(
+    val manifest: DriveManifest,
+    val uploadedPhotos: List<GarmentPhotoRecord>,
+)
+
+/**
+ * Upload order of TS§4.2 and §4.5: changed photos → snapshot JSON → purge of replaced blobs.
+ * Android work (source hash, WebP encode) is injected so the decision and purge logic run on the JVM.
+ */
+internal class PhotoUploadPipeline(
+    private val api: DriveSnapshotApi,
+    private val sourceHashOf: (GarmentPhotoRecord) -> String,
+    private val encode: (GarmentPhotoRecord) -> ImageBlob,
+    private val onPurgeDeferred: (String) -> Unit = {},
+) {
+    suspend fun upload(
+        accessToken: String,
+        snapshot: WardrobeSyncSnapshot,
+        remote: WardrobeSyncSnapshot?,
+        previous: Map<String, LastUploadedPhoto>,
+    ): DriveSyncResult<PhotoUploadOutcome> {
+        val index = when (val listing = api.listAll(accessToken)) {
+            is DriveApiResult.Success -> DriveFileIndex(listing.value)
+            is DriveApiResult.NotFound -> DriveFileIndex(emptyList())
+            is DriveApiResult.Unauthorized -> return authBlocked()
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull ->
+                return DriveSyncResult.Failure(listing.failureCause())
+        }
+        val remoteByGarmentId = remote?.photos.orEmpty().associateBy(GarmentPhotoRecord::garmentId)
+        val states: List<LocalPhotoState> = snapshot.photos.map { photo ->
+            when {
+                photo.isGuardedLocalPhoto() -> LocalPhotoState.Guarded(photo.garmentId)
+                else -> runCatching { sourceHashOf(photo) }.fold(
+                    onSuccess = { hash -> LocalPhotoState.Readable(photo.garmentId, hash) },
+                    onFailure = { LocalPhotoState.Unreadable(photo.garmentId) },
+                )
+            }
+        }
+        val photosByGarmentId = snapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
+        val uploaded = mutableListOf<GarmentPhotoRecord>()
+        val failures = mutableListOf<PhotoUploadFailure>()
+        val protectedGarmentIds = mutableSetOf<String>()
+
+        fun keepPreviousRecord(photo: GarmentPhotoRecord) {
+            protectedGarmentIds += photo.garmentId
+            failures += PhotoUploadFailure(photo.garmentId)
+            val kept = remoteByGarmentId[photo.garmentId]
+                ?: previous[photo.garmentId]?.let { known -> photo.withPreviousBlob(known) }
+            kept?.let { record -> uploaded += record }
+        }
+
+        for (action in planPhotoUploads(states, previous, index)) {
+            val photo = photosByGarmentId.getValue(action.garmentId)
+            when (action) {
+                is PhotoUploadAction.Reuse -> uploaded += photo.withPreviousBlob(action.previous)
+                is PhotoUploadAction.CopyRemote -> {
+                    protectedGarmentIds += action.garmentId
+                    remoteByGarmentId[action.garmentId]?.let { record -> uploaded += record }
+                }
+                is PhotoUploadAction.Fail -> keepPreviousRecord(photo)
+                is PhotoUploadAction.Upload -> when (val upload = uploadChanged(accessToken, photo, action.sourceHash, index)) {
+                    is DriveApiResult.Success -> uploaded += upload.value
+                    is DriveApiResult.Failure, is DriveApiResult.NotFound -> keepPreviousRecord(photo)
+                    is DriveApiResult.Unauthorized -> return authBlocked()
+                    is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(upload.failureCause())
+                }
+            }
+        }
+
+        val uploadSnapshot = snapshot.copy(photos = uploaded).sortedDeterministically()
+        return when (val result = api.upsertSnapshot(accessToken, uploadSnapshot)) {
+            is DriveApiResult.Success -> {
+                purgeReplacedPhotoBlobs(accessToken, uploadSnapshot, protectedGarmentIds, index)
+                DriveSyncResult.Success(
+                    PhotoUploadOutcome(
+                        manifest = DriveManifest.fromSnapshot(result.value).copy(photoUploadFailures = failures),
+                        uploadedPhotos = uploaded,
+                    ),
+                )
+            }
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.NotFound -> DriveSyncResult.Failure(
+                IllegalStateException("Drive snapshot upload completed without a readable file."),
+            )
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(result.failureCause())
+        }
+    }
+
+    /** Encodes and uploads one changed photo. A [DriveApiResult.Failure] is per-photo; Transient and StorageFull stop the cycle. */
+    private suspend fun uploadChanged(
+        accessToken: String,
+        photo: GarmentPhotoRecord,
+        sourceHash: String,
+        index: DriveFileIndex,
+    ): DriveApiResult<GarmentPhotoRecord> {
+        val blob = try {
+            encode(photo).requireDriveReadable(photo.garmentId)
+        } catch (error: Exception) {
+            return DriveApiResult.Failure(error)
+        }
+        val blobPath = PhotoBlobKeys.driveKey(photo.garmentId, PhotoBlobKeys.hash16(blob.bytes))
+        return when (val upload = api.upsertBlob(accessToken, blobPath, blob.bytes, blob.mimeType, index.idOf(blobPath))) {
+            is DriveApiResult.Success -> DriveApiResult.Success(
+                photo.copy(
+                    blobPath = blobPath,
+                    mimeType = blob.mimeType,
+                    contentHash = blob.contentHash,
+                    byteSize = blob.byteSize,
+                    byteMagic = blob.byteMagic,
+                    decodedWidth = blob.decodedWidth,
+                    decodedHeight = blob.decodedHeight,
+                    sourceHash = sourceHash,
+                    restoredLocalUri = null,
+                    restoreFailureCategory = null,
+                    restoreFailureMessage = null,
+                ),
+            )
+            is DriveApiResult.NotFound -> DriveApiResult.Failure(
+                IllegalStateException("Drive photo blob upload completed without a readable file."),
+            )
+            is DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
+            is DriveApiResult.Failure -> upload
+            is DriveApiResult.Transient -> upload
+            DriveApiResult.StorageFull -> upload
+        }
+    }
+
+    /**
+     * Deletes blobs that the uploaded snapshot no longer references, for swept garments only.
+     * Guarded and failed garments are protected. Best effort: a failed delete is retried next cycle.
+     */
+    private suspend fun purgeReplacedPhotoBlobs(
+        accessToken: String,
+        snapshot: WardrobeSyncSnapshot,
+        protectedGarmentIds: Set<String>,
+        index: DriveFileIndex,
+    ) {
+        val activeBlobPaths = snapshot.photos.mapNotNull { photo -> photo.blobPath.takeIf(String::isNotBlank) }.toSet()
+        val sweptGarmentIds = (
+            snapshot.photos.map(GarmentPhotoRecord::garmentId) +
+                snapshot.tombstones.filter { tombstone -> tombstone.entityType in PHOTO_TOMBSTONE_ENTITY_TYPES }
+                    .map(SyncTombstoneRecord::entityId)
+            ).distinct()
+        val candidates = (
+            snapshot.deletedPhotoBlobPurgeCandidates() +
+                sweptGarmentIds.flatMap { garmentId -> index.namesWithPrefix(DriveFolderNaming.photoBlobPrefix(garmentId)) }
+            ).distinct()
+            .filterNot(activeBlobPaths::contains)
+            .filterNot { blobPath ->
+                protectedGarmentIds.any { garmentId -> blobPath.startsWith(DriveFolderNaming.photoBlobPrefix(garmentId)) }
+            }
+        candidates.forEach { blobPath ->
+            val fileId = index.idOf(blobPath) ?: return@forEach
+            when (api.deleteBlob(accessToken, blobPath, fileId)) {
+                is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
+                else -> onPurgeDeferred("An old photo blob could not be deleted; the next sync retries it.")
+            }
+        }
+    }
+}
+
+internal fun GarmentPhotoRecord.isGuardedLocalPhoto(): Boolean =
+    restoreFailureCategory != null && restoredLocalUri.isNullOrBlank()
+
+private fun GarmentPhotoRecord.localSourceUri(): Uri = Uri.parse(restoredLocalUri?.takeIf(String::isNotBlank) ?: localUri)
+
+private fun GarmentPhotoRecord.withPreviousBlob(previous: LastUploadedPhoto): GarmentPhotoRecord = copy(
+    blobPath = previous.blobPath,
+    mimeType = previous.mimeType,
+    contentHash = previous.contentHash,
+    byteSize = previous.byteSize,
+    sourceHash = previous.sourceHash,
+    restoredLocalUri = null,
+    restoreFailureCategory = null,
+    restoreFailureMessage = null,
+)
+
+/** First 16 hex digits of the SHA-256 of the bytes behind this URI, streamed without decoding the photo. */
+private fun Uri.sourceHash16(context: Context): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    val input = context.contentResolver.openInputStream(this) ?: throw IOException("Unable to open photo for hashing.")
+    input.use { stream ->
+        val buffer = ByteArray(DRIVE_DOWNLOAD_BUFFER_BYTES)
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }.take(16)
+}
+
+private const val PHOTO_LOG_TAG = "DriveWardrobeRepository"
 
 interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
@@ -1373,6 +1551,7 @@ internal object DriveSnapshotJson {
         .put("byteSize", record.byteSize)
         .put("revision", record.revision)
         .put("updatedAtEpochMillis", record.updatedAtEpochMillis)
+        .apply { record.sourceHash?.let { sourceHash -> put("sourceHash", sourceHash) } }
 
     private fun tombstoneToJson(record: SyncTombstoneRecord): JSONObject = JSONObject()
         .put("entityType", record.entityType)
@@ -1472,6 +1651,7 @@ internal object DriveSnapshotJson {
             mimeType = json.optNullableString("mimeType"),
             contentHash = json.optNullableString("contentHash"),
             byteSize = json.optNullableLong("byteSize"),
+            sourceHash = json.optNullableString("sourceHash")?.takeIf(String::isNotBlank),
             revision = json.optLong("revision"),
             updatedAtEpochMillis = json.optLong("updatedAtEpochMillis"),
         )

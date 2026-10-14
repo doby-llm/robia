@@ -25,6 +25,8 @@ class FakeDriveSnapshotApi(
     val blobUploads = AtomicInteger(0)
     val snapshotUploads = AtomicInteger(0)
     val maxInFlight = AtomicInteger(0)
+    /** When set, the next snapshot JSON upload fails with this result (V-S03c). */
+    var snapshotFailure: DriveApiResult<Nothing>? = null
     private val inFlight = AtomicInteger(0)
 
     override suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot> = DriveApiResult.NotFound
@@ -85,6 +87,7 @@ class FakeDriveSnapshotApi(
 
     override suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot> {
         snapshotUploads.incrementAndGet()
+        snapshotFailure?.let { failure -> return failure }
         return DriveApiResult.Success(snapshot)
     }
 
