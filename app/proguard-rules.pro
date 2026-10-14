@@ -1,1 +1,6 @@
-# Robia currently has no additional release-time keep rules.
+-keep class com.google.ai.edge.litertlm.** { *; }
+-keepclassmembers class com.google.ai.edge.litertlm.** { native <methods>; }
+-keep class com.google.gson.** { *; }
+-keepattributes Signature, *Annotation*, InnerClasses, EnclosingMethod
+-dontwarn com.google.ai.edge.litertlm.**
+-keep class kotlin.Metadata { *; }
