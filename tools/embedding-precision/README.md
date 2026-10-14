@@ -61,7 +61,7 @@ the rankings, marks and selections are identical.
 
 ## Golden fixture format
 
-- `modelId`, `recipeId`, `visionTokens`: `embeddinggemma-2-text-vision-440m@e301f74d`, `eg2-r1`, `140`.
+- `modelId`, `recipeId`, `visionTokens`: `embeddinggemma-2-text-vision-440m@e301f74d`, `eg2-r1-vt70`, `70` (the app's current recipe; `eg2-r1` and `140` for the original recipe).
 - `labels[]`: `{tagId, text, b64}`. The 19 categories then the 6 occasions. `text` = `task: classification | text: ` + description. `b64` = float32 little-endian, 768 values.
 - `garments[]`: `{id: "g1".."g6", category, image_b64}`. The 6 photos are 2 dresses, 1 shorts, 1 skirt, 1 accessory and 1 blouse: the lowest photo index of each category among the unambiguous provisional labels.
 - `expected.{text,combined}.{category,occasion}[]`: one entry per garment with `mode` (`TEXT` or `COMBINED`), `ranked` (`[tagId, score]`, score desc, tagId asc), and for categories `margin` and `marked`; for occasions `g12`, `g23`, `selected` and `reason`. Scores are rounded to 6 decimals.
