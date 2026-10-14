@@ -1,6 +1,6 @@
 # Requirements — robia-embeddings-sync-manage
 
-Revision: 1 · Base commit: `origin/main` = `791dacdb976f2c46075ba5862037c579bc91b413` · Status: awaiting approval.
+Revision: 1 · Base commit: `origin/main` = `791dacdb976f2c46075ba5862037c579bc91b413` · Status: approved 2026-10-14.
 
 IDs are stable. `REQ-*` = functional, `NFR-*` = non-functional. Decisions are in `decision-log.md` (`DEC-*`).
 

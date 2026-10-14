@@ -1,6 +1,6 @@
 # robia-embeddings-sync-manage
 
-**Status:** mockups approved 2026-10-14; package awaiting `APROBADO` (revision 1) · **Base:** `origin/main` `791dacd` · **Owner:** Manu · **Planner:** Hermes
+**Status:** APPROVED 2026-10-14 (revision 1) · ready for execution · **Base:** `origin/main` `791dacd` · **Owner:** Manu · **Planner:** Hermes
 
 Replace the TFLite classifier with on-device EmbeddingGemma 2 suggestions (category, occasion, review flow, semantic search), make Google Drive sync robust and fast with actionable errors, and redesign Manage without scroll lag.
 
@@ -15,6 +15,8 @@ Replace the TFLite classifier with on-device EmbeddingGemma 2 suggestions (categ
 | `tasks.md` | bounded worker tasks with files, scope, tests, acceptance |
 | `verification-matrix.md` | frozen acceptance rows (CI / Pi / Device) |
 | `handoff.md` | execution handoff to the Kanban orchestrator |
+| `PROMPT_WORKER.md` | short copy-paste prompt for the implementing model (one task per run) |
+| `briefs/TASK-*.md` | per-task goal + step-by-step implementation guide |
 | `mockups/*.html` | Earth & Steel mobile mockups (light theme) |
 | `diagrams/` | Archify architecture/dependency diagram sources |
 | `artifacts/planning-review-v1.pdf` | Spanish review packet |

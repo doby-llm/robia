@@ -3,6 +3,7 @@
 Revision 1. Status of all tasks: `Ready` once G-APPROVAL passes (except where a gate is listed).
 
 ## Rules for every worker (read first)
+0. Read `briefs/<TASK-ID>.md` first: it states the goal and the step-by-step implementation. This file stays authoritative for files, scope and acceptance.
 1. Start from latest `origin/main`; branch `feat/<task-id-lowercase>-<slug>`; one PR per task; PR title `TASK-XXX: <title>`; PR body links this file and lists acceptance rows with evidence.
 2. Touch **only** the files listed under "Files". If another file must change, stop and report (it is a planning change), except: imports, `strings.xml` in all three locales (`values`, `values-es`, `values-de`) and test files under `app/src/test/`.
 3. Never build Android locally on the Raspberry Pi. Push and use CI: `gh pr checks <n> --watch` (repo `doby-llm/robia`). Read failing logs with `gh run view <id> --log-failed`.
@@ -147,7 +148,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 - **Predecessors:** G-APPROVAL (no code deps) · **Successors:** E04
 - **Runs on:** the Raspberry Pi (Python), not CI. Python via `uv` (`pyproject.toml` + `uv.lock`), `UV_CACHE_DIR=/tmp/uv-cache`.
 - **Files:** `app/src/main/assets/benchmark/garment_vector.b64`, new `tools/embedding-precision/` (`pyproject.toml`, `uv.lock`, `README.md`, `labels.py`, `embed.py`, `report.py`, `report_template.html`, `contact_sheets.py`, `download_drive.py`, `probe_search.py`, new `export_fixture.py`, new `make_benchmark_image.py`), `app/src/test/resources/suggestions/golden-scores.json`, `app/src/main/assets/benchmark/garment.png`, `.gitignore` (ignore `tools/embedding-precision/data/`).
-- **Source:** copy scripts from `~/.hermes/cache/scratch/robia-precision/scripts/` (planner's workspace; the planner hands them over in the handoff). Remove any `cut` variant code. Data dir argument instead of hard-coded paths. **No photos, no Drive credentials, no personal names committed.**
+- **Source:** copy scripts from `~/.local/share/robia-planning/precision-data/scripts/` (see `briefs/TASK-E02.md`). Remove any `cut` variant code. Data dir argument instead of hard-coded paths. **No photos, no Drive credentials, no personal names committed.**
 - **`export_fixture.py`:** picks 6 stems (2 dresses, 1 shorts, 1 skirt, 1 accessory, 1 blouse — from provisional labels), writes JSON `{modelId, recipeId, labels:[{tagId, text, b64}], garments:[{id:"g1".."g6", category, image_b64}], expected:{text:{category:[{garment, ranked:[[tagId,score]...], margin, marked}], occasion:[…]}, combined:{…}}}`. In COMBINED mode garments g1..g6 are each other's examples (exclude self). Scores rounded to 6 decimals.
 - **`make_benchmark_image.py`:** draws a synthetic 512×512 garment silhouette on transparent background (PNG, no personal data) and writes its reference IMAGE vector (same recipe: white composite, ≤1024, 140 tokens) as base64 float32 LE to `garment_vector.b64`.
 - **Label text check:** run `probe_search.py` once with garment TEXT prefix `title: none | text: ` vs none for name "Red summer dress" (synthetic) and record which ranks the matching image higher; if `title: none` is not better, keep it anyway (doc format) and note it — no change to the recipe.

@@ -1,6 +1,6 @@
 # Robia — Qué quedará implementado (resumen para humanos)
 
-Paquete: `docs/specs/robia-embeddings-sync-manage/` · Revisión 1 · Estado: pendiente de aprobación.
+Paquete: `docs/specs/robia-embeddings-sync-manage/` · Revisión 1 · Estado: aprobado el 14-10-2026.
 
 Este documento explica, sin jerga, qué cambiará en Robia cuando se completen todas las tareas. Los detalles técnicos están en los demás documentos del paquete.
 
