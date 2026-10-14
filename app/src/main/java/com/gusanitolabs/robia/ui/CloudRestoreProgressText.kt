@@ -146,6 +146,30 @@ internal sealed interface RestoreEta {
     }
 }
 
+/** The line under the phase label. The fixed 12-step count only describes milestones, so real work shows real counts. */
+internal sealed interface RestoreStepLine {
+    data object Hidden : RestoreStepLine
+    data class Steps(val remaining: Int, val total: Int) : RestoreStepLine
+    data class PhotosUploaded(val completed: Int, val total: Int) : RestoreStepLine
+    data object Finishing : RestoreStepLine
+}
+
+/**
+ * Downloading shows its own photo and byte lines. Uploading counts photos, and reads "Finishing" once the
+ * photo loop is done and the snapshot upload (the tail) is still running.
+ */
+internal fun CloudRestoreProgress.stepLine(): RestoreStepLine = when (phase) {
+    CloudRestorePhase.Downloading -> RestoreStepLine.Hidden
+    CloudRestorePhase.Uploading -> uploadProgress?.let { upload ->
+        if (upload.completedPhotos >= upload.totalPhotos) {
+            RestoreStepLine.Finishing
+        } else {
+            RestoreStepLine.PhotosUploaded(upload.completedPhotos, upload.totalPhotos)
+        }
+    } ?: RestoreStepLine.Hidden
+    else -> RestoreStepLine.Steps(remaining = remainingWork, total = totalWork)
+}
+
 /**
  * Determinate fraction for the bar of the current stage, or null for an indeterminate indicator.
  * Download: bytes, or items when a size is unknown or every item has finished. Upload: photos.
