@@ -145,6 +145,18 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 
 ---
 
+## TASK-S06 — Sync progress UX (requested by Manu, PLAN-CHANGE 6)
+- **Reqs:** REQ-S09 (clarity of sync state) · investigation notes in `decision-log.md` PLAN-CHANGE 6
+- **Predecessors:** S04, S05 · **Successors:** Z01
+- **Files:** `ui/CloudRestoreProgressText.kt`, `ui/RobiaApp.kt` (`CloudRestoreProgressOverlay`, `CloudRestoreProgressBar` only), `sync/WardrobeSyncGateway.kt` (add an upload progress field to the restore progress state), `sync/WardrobeSyncOutboxProcessor.kt` (forward the upload progress only), `sync/GoogleDriveWardrobeRepository.kt` (`PhotoUploadPipeline`: progress callback with photos done and total, nothing else), strings (only if a new label is needed, EN/ES/DE, section `<!-- TASK-S06 -->`), tests.
+- **In scope:**
+  1. ETA text: estimate in the same composition (no one-frame null while bytes are unchanged), smoothed rate (cumulative since the first sample after 2 s and 64 KB, or EWMA alpha 0.2), shown value changes at most every 5 s, buckets (under 60 s "Less than a minute", under 10 min nearest minute, else nearest 5 min), never moves backwards, fixed reserved line height so nothing shifts.
+  2. Bars: the photo download stage shows a determinate bar from bytes (items when any size is unknown or photos failed); the upload stage shows a determinate bar from photos done over total when photos are uploaded; the other stages (prepare, snapshot fetch, validate/merge, apply) show an indeterminate indicator with their step label. The bar animates smoothly between updates (animated value, no jumps).
+  3. Every terminal outcome (success, failure, blocked, cancelled, timeout) clears or finalizes the overlay state; add a test that enumerates the outcomes.
+- **Out of scope:** removing the whole-cycle timeout and WorkManager (S04), new sync behaviour, new strings beyond one stage label if truly needed.
+- **Tests (JVM):** no null frame while bytes are unchanged; bucket boundary 59/60 s; displayed ETA never moves backwards; fraction falls back to items when bytes are unknown; upload progress forwarded from the pipeline; terminal outcomes clear the overlay; update `CloudRestoreProgressTextTest.hidesPreviouslyValidEstimateAfterAStalledSample` on purpose.
+- **Acceptance:** V-S12 (the tests above, CI) and V-Z05 in Z01 (Manu, slow Wi-Fi: ETA line never disappears, text changes at most every 5 s, bar advances at each photo, no layout shift, bar does not look stuck after the download).
+
 ## TASK-E02 — Precision tool in repo + golden fixture
 - **Reqs:** REQ-E04 (parity), REQ-E05/E06 (test data) · TS§3.1, §3.6
 - **Predecessors:** G-APPROVAL (no code deps) · **Successors:** E04

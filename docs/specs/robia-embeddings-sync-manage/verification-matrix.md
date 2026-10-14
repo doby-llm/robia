@@ -64,3 +64,5 @@ Evidence levels: **CI** (GitHub Actions on the task PR), **Pi** (Raspberry Pi to
 ## Review policy
 - Each task: one consolidated review against its rows (spec + quality together); one remediation batch; final check. High-risk tasks with a second independent review: S03 (Drive deletion) and D01 (migration).
 - Reviewers report only failed/missing rows; new ideas go to a follow-up list, not into the task.
+| V-S12 | REQ-S09 | S06 | CI | ETA text stable (no null frame, buckets, monotonic), per-stage bars from bytes/items/upload photos, every terminal outcome clears the overlay | `CloudRestoreProgressTextTest`, `SyncProgressOutcomesTest`, `UploadProgressForwardingTest` |
+| V-Z05 | REQ-S09 | S06 | Device | slow Wi-Fi: ETA line never disappears, changes at most every 5 s, bar advances per photo, no layout shift, no frozen-looking bar after download | Manu's answers |

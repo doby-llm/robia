@@ -35,6 +35,7 @@ E02 precision tool + golden fixture (no deps)
 
 S04 needs S02, S03, D01, B03
 S05 sync attention UX (needs S04)
+S06 sync progress UX (needs S04, S05)
 E05 capture integration (needs E01+G-DEVICE-1, D01, E04, B02)
 E06 backfill + embeddings in Drive (needs E05, S04)
 E07 model download UX (needs E01)
@@ -57,8 +58,8 @@ Edge reasons:
 ## Concurrency and file leases
 Parallel lanes after B01: {B02, B03, D01, S01, E02, E04*} (*E04 after E02).
 Shared hot files must have **one writer at a time** (task holds the lease from branch creation to merge; next task rebases on main):
-- `ui/RobiaApp.kt`: B02 → M01 → S05 → E05 → E07 → E08 → E09 → E10 (order of leasing; non-conflicting tasks wait).
-- `sync/WardrobeSyncOutboxProcessor.kt`: S02 → S03 → S04 → E06.
+- `ui/RobiaApp.kt`: B02 → M01 → S05 → S06 → E05 → E07 → E08 → E09 → E10 (order of leasing; non-conflicting tasks wait).
+- `sync/WardrobeSyncOutboxProcessor.kt`: S02 → S03 → S04 → S06 → E06.
 - `sync/GoogleDriveWardrobeRepository.kt`: D01 (only `DriveSnapshotJson` encode/decode) → S01 → S02 → S03.
 - `res/values*/strings.xml`: append-only per task in the section `<!-- TASK-XXX -->`; conflicts resolved by rebase.
 - `gradle/libs.versions.toml`, `app/build.gradle.kts`: B01, then E01 (lifecycle-process), S04 (work), D01 (sqlite-jdbc test dep).
