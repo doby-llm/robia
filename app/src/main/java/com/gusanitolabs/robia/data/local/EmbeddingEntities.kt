@@ -24,5 +24,5 @@ data class GarmentEmbeddingEntity(
     @ColumnInfo(name = "input_hash") val inputHash: String,
     @ColumnInfo(name = "computed_at_epoch_millis") val computedAtEpochMillis: Long,
     @ColumnInfo(name = "duration_millis") val durationMillis: Long,
-    @ColumnInfo(name = "pending_upload") val pendingUpload: Boolean = true,
+    @ColumnInfo(name = "pending_upload", defaultValue = "1") val pendingUpload: Boolean = true,
 )
