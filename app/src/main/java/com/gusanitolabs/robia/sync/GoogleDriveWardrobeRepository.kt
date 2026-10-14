@@ -524,7 +524,7 @@ class GoogleDriveWardrobeRepository(
             when (val result = api.deleteBlob(accessToken, blobPath)) {
                 is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
                 is DriveApiResult.Unauthorized -> return authBlocked()
-                is DriveApiResult.Failure -> return DriveSyncResult.Failure(result.throwable)
+                is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(result.failureCause())
             }
         }
         return DriveSyncResult.Success(Unit)
