@@ -124,8 +124,8 @@ class EmbeddingRepositoryTest {
 
             val garmentAfter = garmentRow(connection, "garment-1")
             assertEquals(garmentBefore, garmentAfter)
-            assertEquals(1000L, garmentAfter["updated_at_epoch_millis"])
-            assertEquals(7L, garmentAfter["sync_revision"])
+            assertEquals(1000L, (garmentAfter.getValue("updated_at_epoch_millis") as Number).toLong())
+            assertEquals(7L, (garmentAfter.getValue("sync_revision") as Number).toLong())
             assertEquals("Synced", garmentAfter["sync_status"])
             assertEquals(
                 listOf(1L to 1),
