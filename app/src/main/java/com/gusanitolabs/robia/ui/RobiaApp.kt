@@ -167,8 +167,12 @@ import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -369,6 +373,9 @@ fun RobiaApp(
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    val app = LocalContext.current.applicationContext as RobiaApplication
+    val modelState by app.modelStore.state.collectAsState()
+    val modelPromptShown by settingsRepository.modelPromptShown.collectAsState(initial = null)
     LaunchedEffect(tagRepository) {
         tagRepository.seedDefaultsIfNeeded()
     }
@@ -400,6 +407,11 @@ fun RobiaApp(
                 scope.launch { settingsRepository.markCloudSetupPromptInteracted() }
             },
             onRequestCloudSetup = onRequestCloudSetup,
+            modelState = modelState,
+            modelPromptShown = modelPromptShown,
+            onModelPromptShown = {
+                scope.launch { settingsRepository.setModelPromptShown(true) }
+            },
             onRequestCloudManualSync = {
                 scope.launch {
                     // Explicit Backup again is the only path that re-enables sync after deletion.
@@ -598,6 +610,9 @@ private fun RobiaShell(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
+    modelState: ModelState = ModelState.NotDownloaded,
+    modelPromptShown: Boolean? = null,
+    onModelPromptShown: () -> Unit = {},
     onRequestCloudManualSync: () -> Unit = {},
     onRequestCloudRestoreRetry: () -> Unit = {},
     onRequestCloudBackupDeletion: () -> Unit = {},
@@ -687,6 +702,21 @@ private fun RobiaShell(
         ) {
             onCloudSetupPromptInteracted()
             cloudSetupDialogMode = CloudSetupDialogMode.RecommendedFirstRun
+        }
+    }
+
+    var showModelPrompt by remember { mutableStateOf(false) }
+    val cloudSetupPromptPending = settingsLoaded &&
+        !settings.cloudSetupPromptInteracted &&
+        settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
+        cloudSetupGuard.isFirstRunRecommendation
+    LaunchedEffect(modelPromptShown, modelState, cloudSetupDialogMode, cloudSetupPromptPending) {
+        // A null preference means not loaded yet, so the prompt waits; the cloud-setup prompt goes first.
+        if (cloudSetupDialogMode == null &&
+            !cloudSetupPromptPending &&
+            shouldShowModelPrompt(promptShown = modelPromptShown ?: true, state = modelState)
+        ) {
+            showModelPrompt = true
         }
     }
 
@@ -1041,6 +1071,20 @@ private fun RobiaShell(
         )
     }
 
+    if (showModelPrompt) {
+        ModelPromptDialog(
+            onLater = {
+                showModelPrompt = false
+                onModelPromptShown()
+            },
+            onDownloadNow = {
+                showModelPrompt = false
+                onModelPromptShown()
+                startModelDownload(context)
+            },
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
@@ -1297,6 +1341,10 @@ private fun SettingsScreen(
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
     val modelState by app.modelStore.state.collectAsState()
+    val modelWorkQueued by remember(context) {
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(ModelDownloadWorker.WORK_NAME)
+            .map { infos -> infos.any { info -> info.state == WorkInfo.State.ENQUEUED } }
+    }.collectAsState(initial = false)
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var benchmarkText by remember { mutableStateOf<String?>(null) }
@@ -1308,6 +1356,32 @@ private fun SettingsScreen(
         contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            SmartSuggestionsSettingsSection(
+                state = settingsModelState(modelState, modelWorkQueued),
+                onDownload = { startModelDownload(context) },
+                onUseMobileData = {
+                    scope.launch {
+                        app.settingsRepository.setModelMobileDataApproved(true)
+                        startModelDownload(context, allowMobileData = true, restart = true)
+                    }
+                },
+                onCancel = { cancelModelDownload(context) },
+                onDelete = {
+                    scope.launch {
+                        cancelModelDownload(context)
+                        app.embeddingEngineHolder.unload()
+                        app.modelStore.delete()
+                    }
+                },
+                onRetry = {
+                    scope.launch {
+                        val approved = app.settingsRepository.modelMobileDataApproved.first()
+                        startModelDownload(context, allowMobileData = approved, restart = true)
+                    }
+                },
+            )
+        }
         item {
             SettingsSection(title = stringResource(R.string.language)) {
                 ListItem(
@@ -1356,27 +1430,6 @@ private fun SettingsScreen(
                             supportingContent = { Text(stringResource(R.string.restore_sync_log_summary)) },
                             leadingContent = { Icon(Icons.Rounded.Share, contentDescription = null) },
                             modifier = Modifier.clickable(onClick = onRestoreSyncLogClick),
-                        )
-                        Divider()
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.dev_download_model)) },
-                            supportingContent = {
-                                Text(
-                                    text = when (val state = modelState) {
-                                        ModelState.NotDownloaded -> stringResource(R.string.dev_model_not_downloaded)
-                                        ModelState.WaitingForWifi -> stringResource(R.string.dev_model_waiting_wifi)
-                                        is ModelState.Downloading -> stringResource(
-                                            R.string.dev_model_downloading,
-                                            state.bytes / 1_048_576,
-                                            state.total / 1_048_576,
-                                        )
-                                        ModelState.Verifying -> stringResource(R.string.dev_model_verifying)
-                                        is ModelState.Ready -> stringResource(R.string.dev_model_ready)
-                                        is ModelState.Failed -> stringResource(R.string.dev_model_failed, state.reason.toString())
-                                    },
-                                )
-                            },
-                            modifier = Modifier.clickable { ModelDownloadWorker.enqueue(context) },
                         )
                         Divider()
                         ListItem(
@@ -1492,7 +1545,7 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsSection(
+internal fun SettingsSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
