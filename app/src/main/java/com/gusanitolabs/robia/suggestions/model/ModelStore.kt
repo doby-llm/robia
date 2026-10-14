@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.suggestions.model
 
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -88,7 +89,13 @@ class ModelStore(
      * Returns the final state; the same state is published to [state].
      */
     suspend fun download(allowMetered: Boolean = false): ModelState = lock.withLock {
-        publish(downloadLocked(allowMetered))
+        try {
+            publish(downloadLocked(allowMetered))
+        } catch (cancelled: CancellationException) {
+            // Cancelled by the user or WorkManager; the partial file stays so the next download resumes.
+            publish(ModelState.NotDownloaded)
+            throw cancelled
+        }
     }
 
     /** Removes the model, its checksum sidecar and any partial file. Callers release the engine first. */
