@@ -195,7 +195,7 @@ Spec references: `technical-specification.md` §N = TS§N; decisions DEC-NNN in 
 ## TASK-E07 — Model download UX
 - **Reqs:** REQ-E01 (UI) · mockup `mockups/model-download.html`
 - **Predecessors:** E01 · **Successors:** Z01
-- **Files:** new `ui/ModelDownloadUi.kt` (first-launch dialog, mobile-data confirm dialog, Settings section row with states), `ui/RobiaApp.kt` (show prompt once when `model_prompt_shown == false` and model not Ready; Settings section "Smart suggestions"), strings (copy from mockup).
+- **Files:** `suggestions/model/ModelStore.kt` (catch cancellation in `download()` -> publish `NotDownloaded`, keep `.part`; PLAN-CHANGE 3), new `ui/ModelDownloadUi.kt` (first-launch dialog, mobile-data confirm dialog, Settings section row with states), `ui/RobiaApp.kt` (show prompt once when `model_prompt_shown == false` and model not Ready; Settings section "Smart suggestions"), strings (copy from mockup).
 - **Acceptance:** V-E07 (prompt shown once: unit test on the predicate), visual in Z01.
 
 ## TASK-E08 — Tag description, suggest-occasions switch, review flow
