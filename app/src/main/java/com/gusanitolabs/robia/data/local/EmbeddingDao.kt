@@ -31,6 +31,10 @@ interface EmbeddingDao {
     @Query("DELETE FROM garment_embeddings WHERE garment_id = :garmentId")
     suspend fun deleteAll(garmentId: String)
 
+    /** Forced snapshot replace only ("Use backup"); the snapshot's own embeddings are imported in the same transaction. */
+    @Query("DELETE FROM garment_embeddings")
+    suspend fun deleteEverything(): Int
+
     @Query("UPDATE garment_embeddings SET pending_upload = 0 WHERE garment_id = :garmentId AND kind = :kind")
     suspend fun markUploaded(garmentId: String, kind: String)
 

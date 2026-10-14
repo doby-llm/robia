@@ -19,6 +19,7 @@ import com.gusanitolabs.robia.suggestions.engine.EmbeddingEngineHolder
 import com.gusanitolabs.robia.suggestions.engine.LiteRtNativeEmbedder
 import com.gusanitolabs.robia.suggestions.model.HttpModelSource
 import com.gusanitolabs.robia.suggestions.model.ModelStore
+import com.gusanitolabs.robia.sync.DriveSyncScheduler
 import com.gusanitolabs.robia.sync.FileRestoreSyncLogRepository
 import com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository
 import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
@@ -84,6 +85,7 @@ class RobiaApplication : Application() {
                 driveScope = Scope(DRIVE_APPDATA_SCOPE),
             ),
             restoreSyncLogRepository = restoreSyncLogRepository,
+            syncWorkScheduler = DriveSyncScheduler(applicationContext),
             scope = appScope,
         )
     }

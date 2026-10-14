@@ -5,6 +5,7 @@ import com.gusanitolabs.robia.core.model.DriveSyncTarget
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
+import java.io.IOException
 
 /**
  * Credential-free Drive contract. All cloud data is scoped to the authorized user's appDataFolder.
@@ -13,6 +14,8 @@ interface DriveWardrobeRepository {
     val target: DriveSyncTarget
     suspend fun fetchManifest(): DriveSyncResult<DriveManifest>
     suspend fun fetchSnapshot(progress: DriveRestoreProgressListener? = null): DriveSyncResult<WardrobeSyncSnapshot>
+    /** The remote snapshot JSON only: photo records without blobs, for keeping a guarded or failed photo's record. */
+    suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot>
     suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener? = null): DriveSyncResult<GarmentPhotoRecord>
     suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest>
     /** Deletes only Robia's remote appDataFolder backup; it never changes local clothes. */
@@ -25,6 +28,7 @@ class NotConfiguredDriveWardrobeRepository(
 ) : DriveWardrobeRepository {
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
+    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> = notConfigured()
     override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> = notConfigured()
     override suspend fun upsertSnapshot(snapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot?): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = notConfigured()
@@ -42,6 +46,8 @@ class InMemoryDriveWardrobeRepository(
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = DriveSyncResult.Success(manifest)
     override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> =
+        DriveSyncResult.Success(snapshot.sortedDeterministically())
+    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> =
         DriveSyncResult.Success(snapshot.sortedDeterministically())
     override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> =
         snapshot.photos.firstOrNull { it.garmentId == garmentId }
@@ -92,6 +98,7 @@ data class DriveManifest(
     val revision: Long = 0L,
     val target: DriveSyncTarget = DriveSyncTarget(),
     val photoUploadFailures: List<PhotoUploadFailure> = emptyList(),
+    val writerDeviceId: String? = null,
 ) {
     companion object {
         fun fromSnapshot(snapshot: WardrobeSyncSnapshot): DriveManifest = DriveManifest(
@@ -101,9 +108,13 @@ data class DriveManifest(
             updatedAtEpochMillis = snapshot.metadata.generatedAtEpochMillis,
             revision = snapshot.metadata.revision,
             target = snapshot.metadata.target,
+            writerDeviceId = snapshot.metadata.writerDeviceId,
         )
     }
 }
+
+/** Google Drive reports the account quota is full. Classified by the processor as [SyncAttentionKind.DriveFull]. */
+class DriveStorageFullException : IOException("Google Drive storage quota is exceeded.")
 
 /** A photo whose upload failed permanently; its previous record was kept and its blobs are not purged. */
 data class PhotoUploadFailure(val garmentId: String)

@@ -14,6 +14,13 @@ interface WardrobeSyncGateway {
 
     suspend fun enqueue(operation: WardrobeSyncOperation)
     suspend fun clearRestoreSyncLog()
+    /** Conflict resolution: replace this phone's wardrobe with the newer Drive backup. */
+    suspend fun useBackup()
+    /** Conflict resolution: keep this phone's data and overwrite the newer Drive backup. */
+    suspend fun keepThisPhone()
+    /** Merge on connect: apply the merge shown in [WardrobeSyncState.pendingMergeSummary] and upload it. */
+    suspend fun confirmMerge()
+    suspend fun cancelMerge()
 }
 
 object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
@@ -21,6 +28,10 @@ object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
     override val restoreSyncLogText: Flow<String> = flowOf("")
     override suspend fun enqueue(operation: WardrobeSyncOperation) = Unit
     override suspend fun clearRestoreSyncLog() = Unit
+    override suspend fun useBackup() = Unit
+    override suspend fun keepThisPhone() = Unit
+    override suspend fun confirmMerge() = Unit
+    override suspend fun cancelMerge() = Unit
 }
 
 /** Testable queue-only gateway that never talks to Google services. */
@@ -42,6 +53,10 @@ class RecordingWardrobeSyncGateway(
     }
 
     override suspend fun clearRestoreSyncLog() = Unit
+    override suspend fun useBackup() = Unit
+    override suspend fun keepThisPhone() = Unit
+    override suspend fun confirmMerge() = Unit
+    override suspend fun cancelMerge() = Unit
 }
 
 data class WardrobeSyncState(
@@ -52,6 +67,9 @@ data class WardrobeSyncState(
     val authorizedAccountEmail: String? = null,
     val expectedAccountEmail: String? = null,
     val restoreProgress: CloudRestoreProgress? = null,
+    val attention: List<SyncAttention> = emptyList(),
+    val pendingMergeSummary: MergeSummary? = null,
+    val conflict: Boolean = false,
 ) {
     val canAttemptGoogleDriveSync: Boolean
         get() = connectionStatus == DriveSyncConnectionStatus.Connected

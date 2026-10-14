@@ -497,4 +497,7 @@
     <string name="tag_no_occasions_badge">No occasions</string>
     <string name="tag_add_button">Add</string>
     <string name="tag_description_counter">%1$d/200</string>
+    <string name="sync_merge_title">Merge with the Google Drive backup?</string>
+    <string name="sync_merge_body">Drive has %1$d garments. This phone has %2$d. After merging you will have %3$d garments.</string>
+    <string name="sync_merge_confirm">Merge</string>
 </resources>

@@ -32,7 +32,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -50,16 +49,18 @@ import java.util.UUID
  * Durable Room/DataStore-backed sync outbox processor.
  *
  * Normal sync is local-first: once the local wardrobe contains user data, Room/DataStore remains
- * the source of truth and the processor uploads the local snapshot without fetching Drive first.
- * Drive -> phone restore is reserved for an explicit setup/restore request on a fresh local install.
- * This prevents an empty reinstall from overwriting Drive while avoiding stale cloud overwrites.
+ * the source of truth and the processor uploads the local snapshot. Drive -> phone restore is reserved for
+ * an explicit setup/restore request on a fresh local install; connecting Drive on a phone that already has
+ * garments proposes a merge first. Work is run by [runOnce] from WorkManager ([SyncTrigger.Background]) or
+ * directly after a local change ([SyncTrigger.Foreground]); both share [mutex].
  */
 class WardrobeSyncOutboxProcessor(
     private val settingsRepository: SettingsRepository,
     private val wardrobeRepository: WardrobeRepository,
-    private val snapshotRepository: LocalWardrobeSyncSnapshotRepository,
+    private val snapshotRepository: WardrobeSnapshotStore,
     private val driveRepository: DriveWardrobeRepository,
     private val restoreSyncLogRepository: RestoreSyncLogRepository = NoOpRestoreSyncLogRepository,
+    private val syncWorkScheduler: SyncWorkScheduler = NoOpSyncWorkScheduler,
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : WardrobeSyncGateway {
@@ -67,11 +68,17 @@ class WardrobeSyncOutboxProcessor(
     private val isProcessing = MutableStateFlow(false)
     private val hasGuardedPhotoRestoreIssues = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
+    private val pendingMergeSummary = MutableStateFlow<MergeSummary?>(null)
+    /** Remote revision the pending merge proposal was built from; declining it opens the conflict at this revision. */
+    private var pendingMergeRemoteRevision = 0L
+    private val authBlocked = MutableStateFlow(false)
     private val mutableState = MutableStateFlow(WardrobeSyncState.notConfigured())
     private var scheduledWorkJob: Job? = null
-    private var retryWakeUpJob: Job? = null
     private var hasAttemptedFreshInstallRestore = false
     private var restoreAttemptCounter = 0
+    // Per-cycle outcomes that the cycle result cannot carry. Written and read only while holding [mutex].
+    private var cycleStorageFull = false
+    private var cyclePhotoUploadFailureIds: Set<String> = emptySet()
     private var lastLoggedSettings: RobiaSettings? = null
 
     override val state: Flow<WardrobeSyncState> = mutableState
@@ -85,7 +92,12 @@ class WardrobeSyncOutboxProcessor(
         }
         scope.launch(dispatcher) {
             wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
-            scheduleRetryWakeUp()
+            // Work still pending from a killed process is handed to WorkManager on app start.
+            if (wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
+                wardrobeRepository.pendingMetadataSyncWork().isNotEmpty()
+            ) {
+                syncWorkScheduler.requestSync()
+            }
             combine(
                 settingsRepository.settings,
                 wardrobeRepository.observePendingGarmentSyncCount(),
@@ -94,6 +106,11 @@ class WardrobeSyncOutboxProcessor(
                 wardrobeRepository.observeMetadataSyncAttentionCount(),
                 isProcessing,
                 hasGuardedPhotoRestoreIssues,
+                pendingMergeSummary,
+                settingsRepository.syncConflict,
+                authBlocked,
+                wardrobeRepository.observeGarmentNeedsUserActionCount(DRIVE_FULL_REASON),
+                wardrobeRepository.observeGarmentNeedsUserActionCount(PHOTO_UPLOAD_FAILED_REASON),
             ) { values ->
                 val settings = values[0] as RobiaSettings
                 val pendingCount = values[1] as Int
@@ -110,15 +127,14 @@ class WardrobeSyncOutboxProcessor(
                     attentionOperationCount = attentionCount + metadataAttentionCount,
                     isProcessing = processing,
                     needsPhotoRestoreAttention = photoAttention,
+                    pendingMergeSummary = values[7] as MergeSummary?,
+                    conflict = values[8] as Boolean,
+                    authBlocked = values[9] as Boolean,
+                    driveFullCount = values[10] as Int,
+                    photoUploadFailedCount = values[11] as Int,
                 )
             }.combine(restoreProgress) { inputs, progress ->
-                inputs.connectionStatus.toWardrobeSyncState(
-                    pendingOperationCount = inputs.pendingOperationCount,
-                    attentionOperationCount = inputs.attentionOperationCount,
-                    isProcessing = inputs.isProcessing,
-                    needsPhotoRestoreAttention = inputs.needsPhotoRestoreAttention,
-                    restoreProgress = progress,
-                )
+                inputs.connectionStatus.toWardrobeSyncState(inputs, progress)
             }.collect { nextState ->
                 mutableState.value = nextState
                 scheduleWorkFor(nextState)
@@ -127,20 +143,22 @@ class WardrobeSyncOutboxProcessor(
     }
 
     private fun scheduleWorkFor(nextState: WardrobeSyncState) {
-        when {
-            (nextState.connectionStatus == DriveSyncConnectionStatus.Connected ||
-                nextState.connectionStatus == DriveSyncConnectionStatus.NeedsAttention) &&
-                nextState.pendingOperationCount > 0 &&
-                !isProcessing.value &&
-                !hasGuardedPhotoRestoreIssues.value -> launchSyncWork { processPendingGarments() }
-
-            nextState.connectionStatus == DriveSyncConnectionStatus.Connected &&
-                nextState.pendingOperationCount == 0 &&
-                !isProcessing.value -> launchSyncWork { restoreFreshInstallOnceIfNeeded() }
-
-            nextState.pendingOperationCount > 0 -> launchSyncWork {
-                markBlockedForCurrentSetupState(nextState.connectionStatus)
-            }
+        // Periodic safety net only while Drive is connected; cancelled on disconnect or backup deletion.
+        when (nextState.connectionStatus) {
+            DriveSyncConnectionStatus.Connected,
+            DriveSyncConnectionStatus.Syncing,
+            DriveSyncConnectionStatus.NeedsAttention -> syncWorkScheduler.ensurePeriodic()
+            DriveSyncConnectionStatus.Disconnected,
+            DriveSyncConnectionStatus.Disabled,
+            DriveSyncConnectionStatus.NotConfigured -> syncWorkScheduler.cancelAll()
+        }
+        // Ordinary outbox work is driven by WorkManager and explicit requests, never by this flow.
+        // Only the one-shot fresh-install restore is launched from here.
+        if (nextState.connectionStatus == DriveSyncConnectionStatus.Connected &&
+            nextState.pendingOperationCount == 0 &&
+            !isProcessing.value
+        ) {
+            launchSyncWork { restoreFreshInstallOnceIfNeeded() }
         }
     }
 
@@ -199,20 +217,64 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.Syncing,
                 DriveSyncConnectionStatus.NeedsAttention -> when (operation) {
                     is WardrobeSyncOperation.RetryRestoredPhoto -> retryRestoredPhoto(operation.garmentId)
-                    else -> processPendingGarments(
-                        forceSnapshot = operation.affectedGarmentIds().isEmpty(),
-                        forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
-                    )
+                    else -> {
+                        // WorkManager owns backoff and retries; running now keeps the foreground responsive.
+                        syncWorkScheduler.requestSync()
+                        runCycle(
+                            trigger = SyncTrigger.Foreground,
+                            forceSnapshot = operation.affectedGarmentIds().isEmpty(),
+                            forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
+                        )
+                    }
                 }
-                DriveSyncConnectionStatus.Disconnected -> markOperationAuthBlocked(operation)
+                // Rows stay Queued (pending). Sign-in and setup needs are shown as attention, not as failures.
+                DriveSyncConnectionStatus.Disconnected,
                 DriveSyncConnectionStatus.Disabled,
-                DriveSyncConnectionStatus.NotConfigured -> markOperationSetupRequired(operation)
+                DriveSyncConnectionStatus.NotConfigured -> Unit
             }
         }
     }
 
+    /** Entry point for WorkManager ([SyncTrigger.Background]) and foreground callers. */
+    suspend fun runOnce(trigger: SyncTrigger): SyncRunResult = withContext(dispatcher) {
+        retryGuardedPhotos()
+        runCycle(trigger = trigger, forceSnapshot = false, forceImport = false)
+    }
+
+    /** Guarded photos are retried on every run. Transient download failures do not count toward the attempt cap. */
+    private suspend fun retryGuardedPhotos() {
+        wardrobeRepository.guardedPhotoRetryCandidateIds().forEach { garmentId -> retryRestoredPhoto(garmentId) }
+    }
+
     override suspend fun clearRestoreSyncLog() {
         withContext(dispatcher) { restoreSyncLogRepository.clear() }
+    }
+
+    override suspend fun useBackup() {
+        withContext(dispatcher) {
+            mutex.withLock { runResolution("use_backup") { useBackupLocked() } }
+        }
+    }
+
+    override suspend fun keepThisPhone() {
+        withContext(dispatcher) {
+            val accepted = mutex.withLock { runResolution("keep_this_phone") { acceptRemoteRevisionAsKnown() } }
+            if (accepted == SyncRunResult.Success) {
+                runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
+            }
+        }
+    }
+
+    override suspend fun confirmMerge() {
+        withContext(dispatcher) {
+            runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = true, mergeConfirmed = true)
+        }
+    }
+
+    override suspend fun cancelMerge() {
+        // The phone keeps its data. A declined merge is persisted as a conflict, so no later run (or restart) uploads over the newer backup.
+        pendingMergeSummary.value = null
+        settingsRepository.setSyncConflict(true, pendingMergeRemoteRevision)
     }
 
     private suspend fun deleteCloudBackup() = mutex.withLock {
@@ -408,10 +470,12 @@ class WardrobeSyncOutboxProcessor(
                                 exceptionMessage = result.throwable.message,
                             ),
                         )
-                        wardrobeRepository.markGarmentPhotoRestoreFailed(
-                            garmentId,
-                            "$MISSING_RESTORED_PHOTO_MESSAGE ${result.throwable.message ?: "Drive photo download failed."}",
-                        )
+                        val message = "$MISSING_RESTORED_PHOTO_MESSAGE ${result.throwable.message ?: "Drive photo download failed."}"
+                        if (result.throwable is IOException) {
+                            wardrobeRepository.markGarmentPhotoRestoreTransient(garmentId, message)
+                        } else {
+                            wardrobeRepository.markGarmentPhotoRestoreFailed(garmentId, message)
+                        }
                     }
                 }
             } catch (timeout: TimeoutCancellationException) {
@@ -429,7 +493,7 @@ class WardrobeSyncOutboxProcessor(
                     ),
                 )
                 withContext(NonCancellable) {
-                    wardrobeRepository.markGarmentPhotoRestoreFailed(
+                    wardrobeRepository.markGarmentPhotoRestoreTransient(
                         garmentId,
                         "$MISSING_RESTORED_PHOTO_MESSAGE $PHOTO_RESTORE_RETRY_TIMEOUT_MESSAGE",
                     )
@@ -503,7 +567,7 @@ class WardrobeSyncOutboxProcessor(
             return
         }
 
-        processPendingGarments(forceSnapshot = true, forceImport = true)
+        runCycle(trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true)
 
         // Do not burn the one-shot bootstrap attempt on a retryable Drive/photo failure. Keeping the
         // flag false lets a later explicit retry or reconnect re-enter the restore path instead of
@@ -514,124 +578,278 @@ class WardrobeSyncOutboxProcessor(
         }
     }
 
-    private suspend fun processPendingGarments(
-        forceSnapshot: Boolean = false,
-        forceImport: Boolean = false,
-    ) {
-        mutex.withLock {
-            if (settingsRepository.settings.first().driveSyncConnectionStatus != DriveSyncConnectionStatus.Connected) {
-                return@withLock
+    private suspend fun runCycle(
+        trigger: SyncTrigger,
+        forceSnapshot: Boolean,
+        forceImport: Boolean,
+        mergeConfirmed: Boolean = false,
+    ): SyncRunResult = mutex.withLock {
+        val status = settingsRepository.settings.first().driveSyncConnectionStatus
+        if (status != DriveSyncConnectionStatus.Connected) {
+            return@withLock if (status == DriveSyncConnectionStatus.Disconnected) {
+                SyncRunResult.AuthBlocked
+            } else {
+                SyncRunResult.NeedsUser
             }
+        }
+        // An unresolved conflict or an unconfirmed merge holds every upload until the user chooses.
+        if (!forceImport && settingsRepository.syncConflict.first()) return@withLock SyncRunResult.Conflict
+        if (!mergeConfirmed && pendingMergeSummary.value != null) return@withLock SyncRunResult.NeedsUser
 
-            val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
-            val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
-            if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !forceSnapshot && !forceImport) return@withLock
-            // Never lock ordinary outbox work into Running while a guarded remote photo protects the
-            // current Drive snapshot. Its targeted retry is the only work allowed to resolve that guard.
-            if (hasGuardedPhotoRestoreIssues.value && !forceImport) return@withLock
+        val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
+        val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
+        if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !forceSnapshot && !forceImport) {
+            authBlocked.value = false
+            return@withLock SyncRunResult.Success
+        }
 
-            isProcessing.value = true
-            val lockedWork = pendingWork.filter { work ->
-                wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())
+        cycleStorageFull = false
+        cyclePhotoUploadFailureIds = emptySet()
+        isProcessing.value = true
+        // Claims happen inside the try so a cancellation mid-claim releases every row claimed so far.
+        val lockedWork = mutableListOf<PendingGarmentSyncWork>()
+        val lockedMetadataWork = mutableListOf<PendingMetadataSyncWork>()
+        val syncCorrelationId = UUID.randomUUID().toString().take(8)
+        val syncStartedAt = System.currentTimeMillis()
+        var keepTerminalProgress = false
+        try {
+            pendingWork.forEach { work ->
+                // Listed before the claim: a cancellation after the row turned Running must still release it.
+                lockedWork += work
+                if (!wardrobeRepository.markGarmentSyncing(work.id, work.revision, System.currentTimeMillis())) lockedWork -= work
             }
-            val lockedMetadataWork = pendingMetadataWork.filter { work ->
-                wardrobeRepository.markMetadataSyncing(work)
-            }
-            if (lockedWork.isEmpty() && lockedMetadataWork.isEmpty() && !forceSnapshot && !forceImport) {
-                isProcessing.value = false
-                return@withLock
-            }
-
-            var keepTerminalProgress = false
-            val syncCorrelationId = UUID.randomUUID().toString().take(8)
-            val syncStartedAt = System.currentTimeMillis()
+            pendingMetadataWork.forEach { work -> if (wardrobeRepository.markMetadataSyncing(work)) lockedMetadataWork += work }
             restoreSyncLogRepository.append(
                 RestoreSyncLogEvent(
                     correlationId = syncCorrelationId,
                     category = "sync",
                     phase = null,
                     status = CloudRestoreStatus.Running,
-                    message = "sync started forceSnapshot=$forceSnapshot forceImport=$forceImport garments=${lockedWork.size} metadata=${lockedMetadataWork.size}",
+                    message = "sync started trigger=${trigger.name} forceSnapshot=$forceSnapshot forceImport=$forceImport " +
+                        "garments=${lockedWork.size} metadata=${lockedMetadataWork.size}",
                 ),
             )
-            try {
-                val result = withTimeout(SYNC_OPERATION_TIMEOUT_MILLIS) {
-                    val localSnapshot = snapshotRepository.exportSnapshot()
-                    when (
-                        SyncDirectionPolicy.resolve(
-                            localSnapshot = localSnapshot,
-                            explicitRestoreRequested = forceImport,
-                        )
-                    ) {
-                        SyncDirection.UploadLocalSnapshot -> syncUploadLocalSnapshot(localSnapshot)
-                        SyncDirection.RestoreRemoteThenUpload -> try {
-                            syncRestoreRemoteThenUpload(localSnapshot)
-                        } finally {
-                            withContext(NonCancellable) { restoreSyncLogRepository.flush() }
-                        }
-                        SyncDirection.SkipEmptyLocalUpload -> SyncCycleResult.NoBackup
-                    }
-                }
-                when (result) {
-                    is SyncCycleResult.Success -> {
-                        markSynced(lockedWork, lockedMetadataWork)
-                        recordSyncEnded(syncCorrelationId, syncStartedAt, "success guarded_photos=${result.guardedPhotoCount}")
-                    }
-                    SyncCycleResult.Attention -> {
-                        markFailedRetryable(lockedWork, lockedMetadataWork)
-                        recordSyncEnded(syncCorrelationId, syncStartedAt, "attention")
-                    }
-                    SyncCycleResult.NoBackup -> {
-                        markSynced(lockedWork, lockedMetadataWork)
-                        recordSyncEnded(syncCorrelationId, syncStartedAt, "no_backup")
-                    }
-                    is SyncCycleResult.Blocked -> {
-                        keepTerminalProgress = true
-                        markBlocked(lockedWork, lockedMetadataWork, result.reason)
-                        recordSyncEnded(syncCorrelationId, syncStartedAt, "blocked reason=${result.reason.name}", level = "warn")
-                    }
-                    is SyncCycleResult.Failure -> {
-                        keepTerminalProgress = true
-                        markFailedRetryable(lockedWork, lockedMetadataWork)
-                        recordSyncEnded(syncCorrelationId, syncStartedAt, "failure", level = "error")
-                    }
-                }
-            } catch (timeout: TimeoutCancellationException) {
-                keepTerminalProgress = true
-                recordSyncEnded(syncCorrelationId, syncStartedAt, "timeout", level = "error", throwable = timeout)
-                releaseClaimedWork(
-                    lockedWork = lockedWork,
-                    lockedMetadataWork = lockedMetadataWork,
-                    timeoutMessage = SYNC_OPERATION_TIMEOUT_MESSAGE,
-                    terminalStatus = CloudRestoreStatus.Failed,
-                )
-            } catch (cancellation: CancellationException) {
-                keepTerminalProgress = true
-                recordSyncEnded(syncCorrelationId, syncStartedAt, "interrupted", level = "warn", throwable = cancellation)
-                releaseClaimedWork(
-                    lockedWork = lockedWork,
-                    lockedMetadataWork = lockedMetadataWork,
-                    timeoutMessage = SYNC_INTERRUPTED_MESSAGE,
-                    terminalStatus = CloudRestoreStatus.Interrupted,
-                )
-                throw cancellation
-            } catch (throwable: Throwable) {
-                keepTerminalProgress = true
-                recordSyncEnded(syncCorrelationId, syncStartedAt, "failure", level = "error", throwable = throwable)
-                releaseClaimedWork(
-                    lockedWork = lockedWork,
-                    lockedMetadataWork = lockedMetadataWork,
-                    timeoutMessage = throwable.message ?: SYNC_FAILED_MESSAGE,
-                    terminalStatus = CloudRestoreStatus.Failed,
-                )
-            } finally {
-                isProcessing.value = false
-                if (!keepTerminalProgress) {
-                    restoreProgress.value = null
-                }
-                scheduleRetryWakeUp()
-            }
+            val localSnapshot = snapshotRepository.exportSnapshot()
+            val result = executeDirection(localSnapshot, forceImport, mergeConfirmed)
+            keepTerminalProgress = result != SyncRunResult.Success
+            recordSyncEnded(
+                syncCorrelationId,
+                syncStartedAt,
+                "result=$result",
+                level = if (result == SyncRunResult.Success) "info" else "warn",
+            )
+            settleClaimedWork(result, lockedWork, lockedMetadataWork)
+            authBlocked.value = result == SyncRunResult.AuthBlocked
+            result
+        } catch (cancellation: CancellationException) {
+            withContext(NonCancellable) { releaseClaimedWork(lockedWork, lockedMetadataWork) }
+            recordSyncEnded(syncCorrelationId, syncStartedAt, "interrupted", level = "warn", throwable = cancellation)
+            throw cancellation
+        } catch (throwable: Throwable) {
+            keepTerminalProgress = true
+            releaseClaimedWork(lockedWork, lockedMetadataWork)
+            recordSyncEnded(syncCorrelationId, syncStartedAt, "failure", level = "error", throwable = throwable)
+            SyncRunResult.Retry
+        } finally {
+            isProcessing.value = false
+            if (!keepTerminalProgress) restoreProgress.value = null
         }
+    }
+
+    private suspend fun executeDirection(
+        localSnapshot: WardrobeSyncSnapshot,
+        forceImport: Boolean,
+        mergeConfirmed: Boolean,
+    ): SyncRunResult = when {
+        mergeConfirmed -> restoreThenFlushAndResolveConflict(localSnapshot)
+        // An explicit import on a phone with data must not upload while a conflict is open: the user decides first.
+        forceImport && localSnapshot.hasUserData() && settingsRepository.syncConflict.first() -> SyncRunResult.Conflict
+        else -> when (SyncDirectionPolicy.resolve(localSnapshot, explicitRestoreRequested = forceImport)) {
+            SyncDirection.UploadLocalSnapshot -> uploadLocalSnapshot(localSnapshot)
+            SyncDirection.MergeWithRemote -> proposeMergeOrUpload(localSnapshot)
+            SyncDirection.RestoreRemoteThenUpload -> restoreThenFlushAndResolveConflict(localSnapshot)
+            SyncDirection.SkipEmptyLocalUpload -> SyncRunResult.Success
+        }
+    }
+
+    /** A restore that succeeds resolves the open conflict: the phone now holds the remote data it was asked to take. */
+    private suspend fun restoreThenFlushAndResolveConflict(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
+        val result = restoreThenFlush(localSnapshot)
+        if (result == SyncRunResult.Success) {
+            settingsRepository.setSyncConflict(false)
+            pendingMergeSummary.value = null
+        }
+        return result
+    }
+
+    private suspend fun restoreThenFlush(localSnapshot: WardrobeSyncSnapshot): SyncRunResult = try {
+        restoreRemoteThenUpload(localSnapshot)
+    } finally {
+        withContext(NonCancellable) { restoreSyncLogRepository.flush() }
+    }
+
+    /** Connect on a phone with garments: show the merge first; nothing is uploaded until [confirmMerge]. */
+    private suspend fun proposeMergeOrUpload(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
+        val remote = when (val fetched = driveRepository.fetchSnapshot()) {
+            is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
+            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Failure -> return SyncRunResult.Retry
+        }
+        if (!remote.hasUserData()) return uploadLocalSnapshot(localSnapshot)
+        return proposeMerge(localSnapshot, remote)
+    }
+
+    private fun proposeMerge(localSnapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): SyncRunResult {
+        pendingMergeRemoteRevision = remote.metadata.revision
+        val merged = mergeSnapshots(localSnapshot, remote)
+        pendingMergeSummary.value = MergeSummary(
+            remoteGarmentCount = remote.garments.size,
+            localGarmentCount = localSnapshot.garments.size,
+            mergedGarmentCount = merged.garments.size,
+        )
+        return SyncRunResult.NeedsUser
+    }
+
+    /**
+     * Ordinary upload: the newer-writer check runs on the JSON manifest before anything is uploaded.
+     * Another writer's newer backup with user data is never overwritten: it goes to the merge proposal.
+     */
+    private suspend fun uploadLocalSnapshot(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
+        val deviceId = settingsRepository.deviceId()
+        val lastKnownRevision = settingsRepository.lastKnownRemoteRevision.first()
+        val remoteManifest = when (val fetched = driveRepository.fetchManifest()) {
+            is DriveSyncResult.Success -> fetched.value
+            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Failure -> return SyncRunResult.Retry
+        }
+        val otherWriterBackup = remoteManifest.isNewerWriterThan(deviceId, lastKnownRevision)
+        // The remote JSON (photo records, no blobs) is needed for another writer's data and for keeping guarded or failed photo records.
+        val remote = if (otherWriterBackup || localSnapshot.photos.isNotEmpty()) {
+            when (val fetched = driveRepository.fetchSnapshotRecords()) {
+                is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
+                is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+                is DriveSyncResult.Failure -> return SyncRunResult.Retry
+            }
+        } else {
+            null
+        }
+        if (remote != null && otherWriterBackup && remote.hasUserData()) return proposeMerge(localSnapshot, remote)
+        val snapshot = localSnapshot.withWriter(deviceId).sortedDeterministically()
+        return when (val uploaded = driveRepository.upsertSnapshot(snapshot, remote)) {
+            is DriveSyncResult.Success -> {
+                settingsRepository.setLastKnownRemoteRevision(uploaded.value.revision)
+                cyclePhotoUploadFailureIds = uploaded.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
+                SyncRunResult.Success
+            }
+            is DriveSyncResult.Blocked -> uploaded.reason.toRunResult()
+            is DriveSyncResult.Failure -> uploaded.failureResult()
+        }
+    }
+
+    /** A full Drive parks the garments for the user; any other failure is transient and retried. */
+    private fun DriveSyncResult.Failure.failureResult(): SyncRunResult {
+        if (throwable !is DriveStorageFullException) return SyncRunResult.Retry
+        cycleStorageFull = true
+        return SyncRunResult.NeedsUser
+    }
+
+    /** "Use backup": clears local garments only after the remote snapshot is fetched and decoded. */
+    private suspend fun useBackupLocked(): SyncRunResult {
+        val remote = when (val fetched = driveRepository.fetchSnapshot()) {
+            is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
+            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Failure -> return SyncRunResult.Retry
+        }
+        // An empty remote must never wipe the phone; it keeps the conflict visible instead.
+        if (!remote.hasUserData()) return SyncRunResult.NeedsUser
+        // A newer schema is never applied: the conflict stays unresolved and nothing on the phone is cleared.
+        if (remote.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) return SyncRunResult.NeedsUser
+        snapshotRepository.replaceLocalWithRemote(remote)
+        settingsRepository.setLastKnownRemoteRevision(remote.metadata.revision)
+        settingsRepository.setSyncConflict(false)
+        return SyncRunResult.Success
+    }
+
+    /**
+     * "Keep this phone": accept only the Drive revision the conflict was raised against, then the caller uploads this phone's data.
+     * A newer revision written since then reopens the conflict at that revision: the user sees it again before anything is uploaded.
+     */
+    private suspend fun acceptRemoteRevisionAsKnown(): SyncRunResult {
+        val manifest = when (val fetched = driveRepository.fetchManifest()) {
+            is DriveSyncResult.Success -> fetched.value
+            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Failure -> return SyncRunResult.Retry
+        }
+        val conflictRevision = settingsRepository.syncConflictRemoteRevision.first()
+        if (manifest.revision != conflictRevision) {
+            if (manifest.revision > conflictRevision) settingsRepository.setSyncConflict(true, manifest.revision)
+            return SyncRunResult.Conflict
+        }
+        settingsRepository.setLastKnownRemoteRevision(manifest.revision)
+        settingsRepository.setSyncConflict(false)
+        return SyncRunResult.Success
+    }
+
+    /** Conflict and merge actions: they run outside [runCycle] and never claim outbox rows. */
+    private suspend fun runResolution(label: String, block: suspend () -> SyncRunResult): SyncRunResult {
+        isProcessing.value = true
+        val correlationId = UUID.randomUUID().toString().take(8)
+        val startedAt = System.currentTimeMillis()
+        return try {
+            block().also { result -> recordSyncEnded(correlationId, startedAt, "$label result=$result") }
+        } catch (cancellation: CancellationException) {
+            recordSyncEnded(correlationId, startedAt, "$label interrupted", level = "warn", throwable = cancellation)
+            throw cancellation
+        } catch (throwable: Throwable) {
+            recordSyncEnded(correlationId, startedAt, "$label failure", level = "error", throwable = throwable)
+            SyncRunResult.Retry
+        } finally {
+            isProcessing.value = false
+        }
+    }
+
+    /**
+     * Success marks rows synced, except garments whose photo could not be uploaded (they wait for the user).
+     * A full Drive parks the garments as drive_full. Anything else returns the rows to Queued (still pending).
+     */
+    private suspend fun settleClaimedWork(
+        result: SyncRunResult,
+        lockedWork: List<PendingGarmentSyncWork>,
+        lockedMetadataWork: List<PendingMetadataSyncWork>,
+    ) {
+        when {
+            result == SyncRunResult.Success -> {
+                val (photoFailed, synced) = lockedWork.partition { it.id in cyclePhotoUploadFailureIds }
+                markSynced(synced, lockedMetadataWork)
+                photoFailed.forEach { item ->
+                    wardrobeRepository.markGarmentNeedsUserAction(item.id, item.revision, PHOTO_UPLOAD_FAILED_REASON)
+                }
+            }
+            cycleStorageFull -> {
+                lockedWork.forEach { item ->
+                    wardrobeRepository.markGarmentNeedsUserAction(item.id, item.revision, DRIVE_FULL_REASON)
+                }
+                lockedMetadataWork.forEach { item -> wardrobeRepository.releaseMetadataSyncToQueued(item) }
+            }
+            else -> releaseClaimedWork(lockedWork, lockedMetadataWork)
+        }
+    }
+
+    /** Transient and undecided outcomes return claimed rows to Queued: still pending, no attempt counter, no attention. */
+    private suspend fun releaseClaimedWork(
+        lockedWork: List<PendingGarmentSyncWork>,
+        lockedMetadataWork: List<PendingMetadataSyncWork>,
+    ) {
+        lockedWork.forEach { item -> wardrobeRepository.releaseGarmentSyncToQueued(item.id, item.revision) }
+        lockedMetadataWork.forEach { item -> wardrobeRepository.releaseMetadataSyncToQueued(item) }
+    }
+
+    private fun DriveSyncDisabledReason.toRunResult(): SyncRunResult = when (this) {
+        DriveSyncDisabledReason.UserNotConnected,
+        DriveSyncDisabledReason.AccountBindingConflict -> SyncRunResult.AuthBlocked
+        DriveSyncDisabledReason.GoogleCloudSetupRequired,
+        DriveSyncDisabledReason.OAuthClientMissing,
+        DriveSyncDisabledReason.UnsafeLocalState -> SyncRunResult.NeedsUser
     }
 
     private fun recordSyncEnded(
@@ -656,40 +874,8 @@ class WardrobeSyncOutboxProcessor(
         )
     }
 
-    /** Persists terminal retry state even when the owning coroutine was cancelled. */
-    private suspend fun releaseClaimedWork(
-        lockedWork: List<PendingGarmentSyncWork>,
-        lockedMetadataWork: List<PendingMetadataSyncWork>,
-        timeoutMessage: String,
-        terminalStatus: CloudRestoreStatus,
-    ) = withContext(NonCancellable) {
-        markFailedRetryable(lockedWork, lockedMetadataWork, timeoutMessage)
-        restoreProgress.value = restoreProgress.value?.copy(status = terminalStatus, message = timeoutMessage)
-    }
-
-    /** One delayed wake-up per persisted backoff boundary; never poll or hot-retry. */
-    private fun scheduleRetryWakeUp() {
-        retryWakeUpJob?.cancel()
-        retryWakeUpJob = scope.launch(dispatcher) {
-            val retryAt = wardrobeRepository.nextRunnableSyncRetryEpochMillis() ?: return@launch
-            delay((retryAt - System.currentTimeMillis()).coerceAtLeast(0L))
-            if (!isProcessing.value) processPendingGarments()
-        }
-    }
-
-    private suspend fun syncUploadLocalSnapshot(localSnapshot: WardrobeSyncSnapshot): SyncCycleResult {
-        // A missing restored blob must not be converted into a permanent Drive deletion by a later
-        // normal sync. Leave ordinary work pending until its targeted recovery reaches a terminal success.
-        if (snapshotRepository.hasGuardedPhotoRestoreIssues()) return SyncCycleResult.Attention
-        // Local edits own the snapshot once the phone has user data; do not fetch stale Drive data here.
-        return when (driveRepository.upsertSnapshot(localSnapshot.sortedDeterministically(), remote = null)) {
-            is DriveSyncResult.Success -> SyncCycleResult.Success(guardedPhotoCount = 0)
-            is DriveSyncResult.Blocked -> SyncCycleResult.Blocked(DriveSyncDisabledReason.UserNotConnected)
-            is DriveSyncResult.Failure -> SyncCycleResult.Failure
-        }
-    }
-
-    private suspend fun syncRestoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot): SyncCycleResult {
+    private suspend fun restoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
+        val deviceId = settingsRepository.deviceId()
         val diagnostics = RestoreDiagnosticsTracker(
             attempt = ++restoreAttemptCounter,
             localSnapshot = localSnapshot,
@@ -732,7 +918,7 @@ class WardrobeSyncOutboxProcessor(
                     completedWork = CloudRestorePhase.Downloading.completedRestoreWork,
                     status = CloudRestoreStatus.Failed,
                 )
-                return SyncCycleResult.Blocked(result.reason)
+                return result.reason.toRunResult()
             }
             is DriveSyncResult.Failure -> {
                 diagnostics.recordFailure(result.throwable)
@@ -741,7 +927,7 @@ class WardrobeSyncOutboxProcessor(
                     completedWork = CloudRestorePhase.Downloading.completedRestoreWork,
                     status = result.throwable.restoreFetchFailureStatus(),
                 )
-                return SyncCycleResult.Failure
+                return SyncRunResult.Retry
             }
         }
         diagnostics.event("remote_snapshot_fetched")
@@ -766,10 +952,10 @@ class WardrobeSyncOutboxProcessor(
                 completedWork = CloudRestorePhase.Validating.completedRestoreWork,
                 status = CloudRestoreStatus.Failed,
             )
-            return SyncCycleResult.Failure
+            return SyncRunResult.NeedsUser
         }
 
-        val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot)
+        val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot).withWriter(deviceId)
         diagnostics.event("snapshots_merged")
         restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Validating,
@@ -786,6 +972,7 @@ class WardrobeSyncOutboxProcessor(
             ImportSnapshotResult(restoredGarmentCount = 0, restoredPhotoCount = 0, guardedPhotoCount = 0)
         }
         diagnostics.recordLocalSave(importResult)
+        settingsRepository.setLastKnownRemoteRevision(remoteSnapshot.metadata.revision)
 
         restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,
@@ -799,7 +986,8 @@ class WardrobeSyncOutboxProcessor(
                 completedWork = RESTORE_TOTAL_STEPS,
                 status = CloudRestoreStatus.CompletedWithAttention,
             )
-            return SyncCycleResult.Success(importResult.guardedPhotoCount)
+            // Nothing was uploaded, so the claimed local rows stay pending; the guard is retried on the next run.
+            return SyncRunResult.Retry
         }
         if (!mergedSnapshot.hasUserData()) {
             diagnostics.recordFinalUploadSkipped("no_remote_user_data")
@@ -807,7 +995,7 @@ class WardrobeSyncOutboxProcessor(
                 phase = CloudRestorePhase.Complete,
                 completedWork = RESTORE_TOTAL_STEPS,
             )
-            return SyncCycleResult.NoBackup
+            return SyncRunResult.Success
         }
         if (mergedSnapshot.equivalentForUpload(remoteSnapshot)) {
             diagnostics.recordFinalUploadSkipped("remote_equivalent")
@@ -815,7 +1003,7 @@ class WardrobeSyncOutboxProcessor(
                 phase = CloudRestorePhase.Complete,
                 completedWork = RESTORE_TOTAL_STEPS,
             )
-            return SyncCycleResult.Success(importResult.guardedPhotoCount)
+            return SyncRunResult.Success
         }
 
         diagnostics.recordFinalUploadAttempted()
@@ -827,6 +1015,9 @@ class WardrobeSyncOutboxProcessor(
         return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot)) {
             is DriveSyncResult.Success -> {
                 diagnostics.recordFinalUploadSucceeded()
+                settingsRepository.setLastKnownRemoteRevision(uploadResult.value.revision)
+                // Garments whose photo did not upload wait for the user, exactly as in uploadLocalSnapshot.
+                cyclePhotoUploadFailureIds = uploadResult.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Uploading,
                     completedWork = RESTORE_STEP_FINAL_SYNCED,
@@ -835,65 +1026,27 @@ class WardrobeSyncOutboxProcessor(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
                 )
-                SyncCycleResult.Success(importResult.guardedPhotoCount)
+                SyncRunResult.Success
             }
             is DriveSyncResult.Blocked -> {
                 diagnostics.recordBlocked(uploadResult.reason, uploadResult.message, finalUploadSucceeded = false)
-                // The fresh-install restore is already transactionally applied at this point. A final
-                // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
-                // user on the progress overlay even though the restored wardrobe is safe locally.
+                // The restored wardrobe is applied locally already, so the progress overlay still completes.
+                // The claimed rows are not marked synced: the run reports the block and they stay pending.
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
                 )
-                SyncCycleResult.Success(importResult.guardedPhotoCount)
+                uploadResult.reason.toRunResult()
             }
             is DriveSyncResult.Failure -> {
                 diagnostics.recordFailure(uploadResult.throwable, finalUploadSucceeded = false)
-                // The fresh-install restore is already transactionally applied at this point. A final
-                // cloud refresh is best-effort; surfacing it as a blocking restore failure strands the
-                // user on the progress overlay even though the restored wardrobe is safe locally.
+                // Same as the blocked branch: the local restore stands, but the upload did not happen.
                 restoreProgress.value = diagnostics.progress(
                     phase = CloudRestorePhase.Complete,
                     completedWork = RESTORE_TOTAL_STEPS,
                 )
-                SyncCycleResult.Success(importResult.guardedPhotoCount)
+                uploadResult.failureResult()
             }
-        }
-    }
-
-    private suspend fun markOperationAuthBlocked(operation: WardrobeSyncOperation) {
-        operation.affectedGarmentIds().forEach { id ->
-            wardrobeRepository.markGarmentSyncAuthBlocked(id)
-        }
-        if (operation.affectedGarmentIds().isEmpty()) {
-            wardrobeRepository.pendingMetadataSyncWork().forEach { work -> wardrobeRepository.markMetadataSyncAuthBlocked(work) }
-        }
-    }
-
-    private suspend fun markBlockedForCurrentSetupState(connectionStatus: DriveSyncConnectionStatus) {
-        val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
-        val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
-        when (connectionStatus) {
-            DriveSyncConnectionStatus.Disconnected -> {
-                pendingWork.forEach { work -> wardrobeRepository.markGarmentSyncAuthBlocked(work.id) }
-                pendingMetadataWork.forEach { work -> wardrobeRepository.markMetadataSyncAuthBlocked(work) }
-            }
-            DriveSyncConnectionStatus.Disabled,
-            DriveSyncConnectionStatus.NotConfigured -> markFailedRetryable(pendingWork, pendingMetadataWork)
-            DriveSyncConnectionStatus.Connected,
-            DriveSyncConnectionStatus.Syncing,
-            DriveSyncConnectionStatus.NeedsAttention -> Unit
-        }
-    }
-
-    private suspend fun markOperationSetupRequired(operation: WardrobeSyncOperation) {
-        val workById = wardrobeRepository.pendingGarmentSyncWork().associateBy(PendingGarmentSyncWork::id)
-        operation.affectedGarmentIds().forEach { id ->
-            workById[id]?.let { work -> wardrobeRepository.markGarmentSyncFailedRetryable(work.id, work.revision) }
-        }
-        if (operation.affectedGarmentIds().isEmpty()) {
-            wardrobeRepository.pendingMetadataSyncWork().forEach { work -> wardrobeRepository.markMetadataSyncFailedRetryable(work) }
         }
     }
 
@@ -903,43 +1056,14 @@ class WardrobeSyncOutboxProcessor(
         metadataWork.forEach { item -> wardrobeRepository.markMetadataSynced(item, now) }
     }
 
-    private suspend fun markBlocked(
-        work: List<PendingGarmentSyncWork>,
-        metadataWork: List<PendingMetadataSyncWork>,
-        reason: DriveSyncDisabledReason,
-    ) {
-        when (reason) {
-            DriveSyncDisabledReason.UserNotConnected,
-            DriveSyncDisabledReason.AccountBindingConflict -> {
-                work.forEach { item -> wardrobeRepository.markGarmentSyncAuthBlocked(item.id) }
-                metadataWork.forEach { item -> wardrobeRepository.markMetadataSyncAuthBlocked(item) }
-            }
-            DriveSyncDisabledReason.GoogleCloudSetupRequired,
-            DriveSyncDisabledReason.OAuthClientMissing,
-            DriveSyncDisabledReason.UnsafeLocalState -> markFailedRetryable(work, metadataWork)
-        }
-    }
-
-    private suspend fun markFailedRetryable(
-        work: List<PendingGarmentSyncWork>,
-        metadataWork: List<PendingMetadataSyncWork> = emptyList(),
-        message: String? = null,
-    ) {
-        work.forEach { item -> wardrobeRepository.markGarmentSyncFailedRetryable(item.id, item.revision, message) }
-        metadataWork.forEach { item -> wardrobeRepository.markMetadataSyncFailedRetryable(item, message) }
-    }
-
     private fun DriveSyncConnectionStatus.toWardrobeSyncState(
-        pendingOperationCount: Int,
-        attentionOperationCount: Int,
-        isProcessing: Boolean,
-        needsPhotoRestoreAttention: Boolean,
+        inputs: WardrobeSyncStateInputs,
         restoreProgress: CloudRestoreProgress?,
     ): WardrobeSyncState {
         val displayStatus = when {
-            isProcessing && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.Syncing
-            needsPhotoRestoreAttention && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.NeedsAttention
-            attentionOperationCount > 0 && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.NeedsAttention
+            inputs.isProcessing && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.Syncing
+            inputs.needsPhotoRestoreAttention && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.NeedsAttention
+            inputs.attentionOperationCount > 0 && this == DriveSyncConnectionStatus.Connected -> DriveSyncConnectionStatus.NeedsAttention
             else -> this
         }
         return WardrobeSyncState(
@@ -952,8 +1076,11 @@ class WardrobeSyncOutboxProcessor(
                 DriveSyncConnectionStatus.Syncing,
                 DriveSyncConnectionStatus.NeedsAttention -> null
             },
-            pendingOperationCount = pendingOperationCount,
+            pendingOperationCount = inputs.pendingOperationCount,
             restoreProgress = restoreProgress,
+            attention = inputs.attention(),
+            pendingMergeSummary = inputs.pendingMergeSummary,
+            conflict = inputs.conflict,
         )
     }
 
@@ -972,13 +1099,16 @@ class WardrobeSyncOutboxProcessor(
     }
 }
 
-private sealed interface SyncCycleResult {
-    data class Success(val guardedPhotoCount: Int) : SyncCycleResult
-    data object Attention : SyncCycleResult
-    data object NoBackup : SyncCycleResult
-    data class Blocked(val reason: DriveSyncDisabledReason) : SyncCycleResult
-    data object Failure : SyncCycleResult
+/** Outcome of one sync run. The worker maps [SyncRunResult.Retry] to WorkManager backoff and everything else to success. */
+sealed interface SyncRunResult {
+    data object Success : SyncRunResult
+    data object Retry : SyncRunResult
+    data object AuthBlocked : SyncRunResult
+    data object Conflict : SyncRunResult
+    data object NeedsUser : SyncRunResult
 }
+
+enum class SyncTrigger { Foreground, Background }
 
 private data class WardrobeSyncStateInputs(
     val connectionStatus: DriveSyncConnectionStatus,
@@ -986,17 +1116,43 @@ private data class WardrobeSyncStateInputs(
     val attentionOperationCount: Int,
     val isProcessing: Boolean,
     val needsPhotoRestoreAttention: Boolean,
+    val pendingMergeSummary: MergeSummary?,
+    val conflict: Boolean,
+    val authBlocked: Boolean,
+    val driveFullCount: Int,
+    val photoUploadFailedCount: Int,
 )
 
+private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList {
+    if (authBlocked || (connectionStatus == DriveSyncConnectionStatus.Disconnected && pendingOperationCount > 0)) {
+        add(SyncAttention(SyncAttentionKind.SignInRequired))
+    }
+    if (conflict) add(SyncAttention(SyncAttentionKind.BackupConflict))
+    if (pendingMergeSummary != null) add(SyncAttention(SyncAttentionKind.MergeConfirmation))
+    if (needsPhotoRestoreAttention) add(SyncAttention(SyncAttentionKind.PhotoUnrecoverable))
+    if (driveFullCount > 0) add(SyncAttention(SyncAttentionKind.DriveFull))
+    if (photoUploadFailedCount > 0) add(SyncAttention(SyncAttentionKind.PhotoUploadFailed))
+}
+
+private fun WardrobeSyncSnapshot.withWriter(deviceId: String): WardrobeSyncSnapshot =
+    copy(metadata = metadata.copy(writerDeviceId = deviceId))
+
+/**
+ * Another writer made a backup newer than the last revision this phone saw or uploaded.
+ * A backup written before S04 has no writer id; it counts as another writer (PLAN-CHANGE 7).
+ */
+private fun DriveManifest.isNewerWriterThan(deviceId: String, lastKnownRevision: Long): Boolean =
+    writerDeviceId != deviceId && revision > lastKnownRevision
+
 private const val MAX_RETRY_ATTEMPTS = 3
+private const val DRIVE_FULL_REASON = "drive_full"
+private const val PHOTO_UPLOAD_FAILED_REASON = "photo_upload_failed"
 private const val MAX_RETRY_DIAGNOSTIC_EVENTS = 16
 private const val STALE_RUNNING_TIMEOUT_MILLIS = 15 * 60 * 1000L
-private const val SYNC_OPERATION_TIMEOUT_MILLIS = 2 * 60 * 1000L
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS = 60 * 1000L
-private const val SYNC_OPERATION_TIMEOUT_MESSAGE = "Drive sync timed out. Retry is available after backoff."
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MESSAGE = "Drive photo retry timed out."
 private const val SYNC_INTERRUPTED_MESSAGE = "Drive sync was interrupted. Retry is available after backoff."
-private const val SYNC_FAILED_MESSAGE = "Drive sync failed. Retry is available after backoff."
+
 private class RestoreDiagnosticsTracker(
     private val attempt: Int,
     localSnapshot: WardrobeSyncSnapshot,
@@ -1234,6 +1390,7 @@ private class RestoreDiagnosticsTracker(
 
 private enum class SyncDirection {
     UploadLocalSnapshot,
+    MergeWithRemote,
     RestoreRemoteThenUpload,
     SkipEmptyLocalUpload,
 }
@@ -1244,6 +1401,7 @@ private object SyncDirectionPolicy {
         explicitRestoreRequested: Boolean,
     ): SyncDirection = when {
         explicitRestoreRequested && localSnapshot.isFreshInstallSnapshot() -> SyncDirection.RestoreRemoteThenUpload
+        explicitRestoreRequested && localSnapshot.hasUserData() -> SyncDirection.MergeWithRemote
         localSnapshot.hasUserData() -> SyncDirection.UploadLocalSnapshot
         else -> SyncDirection.SkipEmptyLocalUpload
     }
@@ -1544,3 +1702,4 @@ private const val RESTORE_STEP_UPLOAD_STARTED = 9
 private const val RESTORE_STEP_FINAL_SYNCED = 11
 private const val RESTORE_TOTAL_STEPS = 12
 private const val MAX_DIAGNOSTIC_MESSAGE_CHARS = 1_200
+

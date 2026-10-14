@@ -97,6 +97,12 @@ class LocalWardrobeRepository(
     override suspend fun markGarmentSyncAuthBlocked(id: String, message: String?): Boolean =
         wardrobeDao.markGarmentSyncAuthBlocked(id, message) > 0
 
+    override suspend fun releaseGarmentSyncToQueued(id: String, revision: Long): Boolean =
+        wardrobeDao.releaseGarmentToQueued(id, revision) > 0
+
+    override suspend fun markGarmentNeedsUserAction(id: String, revision: Long, reasonCode: String): Boolean =
+        wardrobeDao.markGarmentNeedsUserAction(id, revision, reasonCode) > 0
+
     override suspend fun claimGarmentPhotoRestoreRetry(id: String, startedAtEpochMillis: Long, now: Long): Long? {
         val revision = wardrobeDao.eligibleGarmentPhotoRestoreRetryRevision(id, now) ?: return null
         return revision.takeIf { wardrobeDao.markGarmentPhotoRestoreRetrying(id, revision, startedAtEpochMillis, now) > 0 }
@@ -104,6 +110,15 @@ class LocalWardrobeRepository(
 
     override suspend fun markGarmentPhotoRestoreFailed(id: String, message: String, now: Long): Boolean =
         wardrobeDao.markGarmentPhotoRestoreFailed(id, message, now) > 0
+
+    override suspend fun markGarmentPhotoRestoreTransient(id: String, message: String): Boolean =
+        wardrobeDao.markGarmentPhotoRestoreTransient(id, message) > 0
+
+    override suspend fun guardedPhotoRetryCandidateIds(now: Long): List<String> =
+        wardrobeDao.guardedPhotoRetryCandidateIds(now)
+
+    override fun observeGarmentNeedsUserActionCount(reasonCode: String): Flow<Int> =
+        wardrobeDao.observeGarmentNeedsUserActionCount(reasonCode)
 
     override suspend fun markMetadataSyncing(work: PendingMetadataSyncWork): Boolean =
         wardrobeDao.markMetadataSyncing(work.toEntity())
@@ -116,6 +131,9 @@ class LocalWardrobeRepository(
 
     override suspend fun markMetadataSyncAuthBlocked(work: PendingMetadataSyncWork, message: String?): Boolean =
         wardrobeDao.markMetadataSyncAuthBlocked(work.toEntity(), message)
+
+    override suspend fun releaseMetadataSyncToQueued(work: PendingMetadataSyncWork): Boolean =
+        wardrobeDao.releaseMetadataToQueued(work.toEntity())
 }
 
 class LocalTagRepository(

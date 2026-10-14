@@ -80,6 +80,15 @@ class GoogleDriveWardrobeRepository(
         }
     }
 
+    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { accessToken ->
+        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
+            is DriveApiResult.Success -> DriveSyncResult.Success(snapshotResult.value.sortedDeterministically())
+            is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
+        }
+    }
+
     override suspend fun retryRestoredPhoto(
         garmentId: String,
         progress: DriveRestoreProgressListener?,
@@ -241,11 +250,11 @@ private fun ImageBlob.requireDriveReadable(garmentId: String): ImageBlob {
     return this
 }
 
-// Transient and StorageFull keep the Failure behaviour until S02/S03 refine their callers.
+// Transient keeps the Failure behaviour; StorageFull is kept distinct so the processor can park items as drive_full.
 private fun DriveApiResult<*>.failureCause(): Throwable = when (this) {
     is DriveApiResult.Failure -> throwable
     is DriveApiResult.Transient -> cause ?: IOException("Drive request failed temporarily.")
-    DriveApiResult.StorageFull -> IOException("Google Drive storage quota is exceeded.")
+    DriveApiResult.StorageFull -> DriveStorageFullException()
     else -> IllegalStateException("Unexpected Drive result: $this")
 }
 
