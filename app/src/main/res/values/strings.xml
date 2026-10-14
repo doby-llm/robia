@@ -465,4 +465,10 @@
         <item>@string/language_spanish</item>
         <item>@string/language_german</item>
     </string-array>
+    <string name="manage_search_tags">Search tags</string>
+    <string name="manage_tab_count">%1$s %2$d</string>
+    <string name="tag_description_label">Description (optional)</string>
+    <string name="tag_no_occasions_badge">No occasions</string>
+    <string name="tag_add_button">Add</string>
+    <string name="tag_description_counter">%1$d/200</string>
 </resources>
