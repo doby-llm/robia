@@ -130,6 +130,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
@@ -156,6 +157,9 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.suggestions.DevBenchmark
+import com.gusanitolabs.robia.suggestions.model.ModelDownloadWorker
+import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -1290,6 +1294,13 @@ private fun SettingsScreen(
     onDeleteBackupClick: () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val app = context.applicationContext as RobiaApplication
+    val modelState by app.modelStore.state.collectAsState()
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var benchmarkText by remember { mutableStateOf<String?>(null) }
+    var benchmarkRunning by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -1345,6 +1356,77 @@ private fun SettingsScreen(
                             supportingContent = { Text(stringResource(R.string.restore_sync_log_summary)) },
                             leadingContent = { Icon(Icons.Rounded.Share, contentDescription = null) },
                             modifier = Modifier.clickable(onClick = onRestoreSyncLogClick),
+                        )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_download_model)) },
+                            supportingContent = {
+                                Text(
+                                    text = when (val state = modelState) {
+                                        ModelState.NotDownloaded -> stringResource(R.string.dev_model_not_downloaded)
+                                        ModelState.WaitingForWifi -> stringResource(R.string.dev_model_waiting_wifi)
+                                        is ModelState.Downloading -> stringResource(
+                                            R.string.dev_model_downloading,
+                                            state.bytes / 1_048_576,
+                                            state.total / 1_048_576,
+                                        )
+                                        ModelState.Verifying -> stringResource(R.string.dev_model_verifying)
+                                        is ModelState.Ready -> stringResource(R.string.dev_model_ready)
+                                        is ModelState.Failed -> stringResource(R.string.dev_model_failed, state.reason.toString())
+                                    },
+                                )
+                            },
+                            modifier = Modifier.clickable { ModelDownloadWorker.enqueue(context) },
+                        )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_model_benchmark)) },
+                            supportingContent = {
+                                val result = benchmarkText
+                                if (benchmarkRunning) {
+                                    Text(stringResource(R.string.dev_benchmark_running))
+                                } else if (result != null) {
+                                    Text(
+                                        text = result,
+                                        fontFamily = FontFamily.Monospace,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                Row {
+                                    TextButton(
+                                        enabled = !benchmarkRunning,
+                                        onClick = {
+                                            benchmarkRunning = true
+                                            scope.launch {
+                                                benchmarkText = try {
+                                                    DevBenchmark(
+                                                        context = context,
+                                                        holder = app.embeddingEngineHolder,
+                                                        syncLog = app.restoreSyncLogRepository,
+                                                    ).measure()
+                                                } catch (failure: Exception) {
+                                                    context.getString(
+                                                        R.string.dev_benchmark_failed,
+                                                        failure.message ?: failure.javaClass.simpleName,
+                                                    )
+                                                } finally {
+                                                    benchmarkRunning = false
+                                                }
+                                            }
+                                        },
+                                    ) {
+                                        Text(stringResource(R.string.dev_run))
+                                    }
+                                    TextButton(
+                                        enabled = benchmarkText != null && !benchmarkRunning,
+                                        onClick = { clipboard.setText(AnnotatedString(benchmarkText.orEmpty())) },
+                                    ) {
+                                        Text(stringResource(R.string.dev_copy))
+                                    }
+                                }
+                            },
                         )
                     }
                 }
