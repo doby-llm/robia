@@ -537,4 +537,40 @@
     <!-- TASK-S07 -->
     <string name="cloud_restore_upload_photos_progress">Fotos werden hochgeladen: %1$d von %2$d</string>
     <string name="cloud_restore_finishing">Wird abgeschlossen…</string>
+    <!-- TASK-E08 -->
+    <string name="tag_description_label">Beschreibung (optional)</string>
+    <string name="tag_description_placeholder">z. B. ein leichtes Oberteil mit Knopfleiste und Kragen</string>
+    <string name="tag_description_helper">Ein kurzer Satz, wie es aussieht. Verbessert Vorschläge.</string>
+    <string name="tag_description_counter">%1$d/200</string>
+    <string name="tag_suggest_occasions_label">Anlässe für diese Kategorie vorschlagen</string>
+    <string name="tag_suggest_occasions_help">Für Dinge ausschalten, die zu jedem Anlass passen, wie Schmuck oder Accessoires.</string>
+    <string name="tag_review_title">Kleidungsstücke prüfen</string>
+    <string name="tag_review_category_noun">Kategorie</string>
+    <string name="tag_review_occasion_noun">Anlass</string>
+    <string name="tag_review_added_header">Neu (%1$s): %2$s</string>
+    <plurals name="tag_review_added_body">
+        <item quantity="one">%1$d Kleidungsstück könnte „%2$s“ sein. Prüfe jeden Vorschlag; ohne deine Bestätigung ändert sich nichts.</item>
+        <item quantity="other">%1$d Kleidungsstücke könnten „%2$s“ sein. Prüfe jeden Vorschlag; ohne deine Bestätigung ändert sich nichts.</item>
+    </plurals>
+    <string name="tag_review_deleted_header">Gelöscht (%1$s): %2$s</string>
+    <plurals name="tag_review_deleted_body">
+        <item quantity="one">%1$d Kleidungsstück hatte sie. Wir schlagen eine andere vor; du kannst sie ändern oder leer lassen.</item>
+        <item quantity="other">%1$d Kleidungsstücke hatten sie. Wir schlagen eine andere vor; du kannst sie ändern oder leer lassen.</item>
+    </plurals>
+    <string name="tag_review_progress">%1$d von %2$d geprüft</string>
+    <string name="tag_review_skipped">%1$d noch ohne Vorschläge (übersprungen)</string>
+    <string name="tag_review_choose">Auswählen</string>
+    <string name="tag_review_choose_manually">Noch keine Vorschläge: manuell auswählen.</string>
+    <string name="tag_review_none">Keine Kategorie</string>
+    <string name="tag_review_none_occasion">Keine</string>
+    <plurals name="tag_review_save">
+        <item quantity="one">%1$d Änderung speichern</item>
+        <item quantity="other">%1$d Änderungen speichern</item>
+    </plurals>
+    <string name="tag_review_nothing">Keine Kleidungsstücke müssen geändert werden</string>
+    <string name="tag_review_needs_model">Lade intelligente Vorschläge herunter, um Kleidungsstücke zu prüfen</string>
+    <string name="tag_review_accepted">Übernommen</string>
+    <string name="tag_review_picker_title">%1$s für „%2$s“</string>
+    <string name="tag_review_discard_title">Prüfung verwerfen?</string>
+    <string name="tag_review_discard_body">Beim Verlassen werden die ausstehenden Änderungen an Kleidungsstücken verworfen. Die Tag-Änderung bleibt erhalten.</string>
 </resources>

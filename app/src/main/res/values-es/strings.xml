@@ -537,4 +537,40 @@
     <!-- TASK-S07 -->
     <string name="cloud_restore_upload_photos_progress">Subiendo fotos %1$d de %2$d</string>
     <string name="cloud_restore_finishing">Finalizando…</string>
+    <!-- TASK-E08 -->
+    <string name="tag_description_label">Descripción (opcional)</string>
+    <string name="tag_description_placeholder">p. ej. una prenda ligera con botones delante y cuello</string>
+    <string name="tag_description_helper">Una frase corta que describa cómo es. Mejora las sugerencias.</string>
+    <string name="tag_description_counter">%1$d/200</string>
+    <string name="tag_suggest_occasions_label">Sugerir ocasiones para esta categoría</string>
+    <string name="tag_suggest_occasions_help">Desactívalo para cosas que combinan con cualquier ocasión, como joyas o accesorios.</string>
+    <string name="tag_review_title">Revisar prendas</string>
+    <string name="tag_review_category_noun">categoría</string>
+    <string name="tag_review_occasion_noun">ocasión</string>
+    <string name="tag_review_added_header">Nueva %1$s: %2$s</string>
+    <plurals name="tag_review_added_body">
+        <item quantity="one">%1$d prenda podría ser “%2$s”. Revisa cada propuesta; no se cambia nada sin tu confirmación.</item>
+        <item quantity="other">%1$d prendas podrían ser “%2$s”. Revisa cada propuesta; no se cambia nada sin tu confirmación.</item>
+    </plurals>
+    <string name="tag_review_deleted_header">%1$s borrada: %2$s</string>
+    <plurals name="tag_review_deleted_body">
+        <item quantity="one">%1$d prenda la tenía. Te proponemos otra; puedes cambiarla o dejarla vacía.</item>
+        <item quantity="other">%1$d prendas la tenían. Te proponemos otra; puedes cambiarla o dejarla vacía.</item>
+    </plurals>
+    <string name="tag_review_progress">Revisadas %1$d de %2$d</string>
+    <string name="tag_review_skipped">%1$d sin sugerencias todavía (se omiten)</string>
+    <string name="tag_review_choose">Elegir</string>
+    <string name="tag_review_choose_manually">Aún sin sugerencias: elige a mano.</string>
+    <string name="tag_review_none">Sin categoría</string>
+    <string name="tag_review_none_occasion">Ninguna</string>
+    <plurals name="tag_review_save">
+        <item quantity="one">Guardar %1$d cambio</item>
+        <item quantity="other">Guardar %1$d cambios</item>
+    </plurals>
+    <string name="tag_review_nothing">Ninguna prenda necesita cambios</string>
+    <string name="tag_review_needs_model">Descarga las sugerencias inteligentes para revisar prendas</string>
+    <string name="tag_review_accepted">Aceptada</string>
+    <string name="tag_review_picker_title">%1$s para “%2$s”</string>
+    <string name="tag_review_discard_title">¿Descartar revisión?</string>
+    <string name="tag_review_discard_body">Al salir se descartan los cambios pendientes en prendas. El cambio de etiqueta se mantiene.</string>
 </resources>

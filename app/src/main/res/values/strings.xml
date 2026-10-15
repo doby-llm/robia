@@ -537,4 +537,40 @@
     <!-- TASK-S07 -->
     <string name="cloud_restore_upload_photos_progress">Uploading photos %1$d of %2$d</string>
     <string name="cloud_restore_finishing">Finishing…</string>
+    <!-- TASK-E08 -->
+    <string name="tag_description_label">Description (optional)</string>
+    <string name="tag_description_placeholder">e.g. a light top with buttons down the front and a collar</string>
+    <string name="tag_description_helper">One short sentence describing what it looks like. Helps suggestions.</string>
+    <string name="tag_description_counter">%1$d/200</string>
+    <string name="tag_suggest_occasions_label">Suggest occasions for this category</string>
+    <string name="tag_suggest_occasions_help">Turn off for things that go with any occasion, like jewelry or accessories.</string>
+    <string name="tag_review_title">Review garments</string>
+    <string name="tag_review_category_noun">category</string>
+    <string name="tag_review_occasion_noun">occasion</string>
+    <string name="tag_review_added_header">New %1$s: %2$s</string>
+    <plurals name="tag_review_added_body">
+        <item quantity="one">%1$d garment could be “%2$s”. Review each proposal; nothing changes without your confirmation.</item>
+        <item quantity="other">%1$d garments could be “%2$s”. Review each proposal; nothing changes without your confirmation.</item>
+    </plurals>
+    <string name="tag_review_deleted_header">Deleted %1$s: %2$s</string>
+    <plurals name="tag_review_deleted_body">
+        <item quantity="one">%1$d garment had it. We suggest another one; you can change it or leave it empty.</item>
+        <item quantity="other">%1$d garments had it. We suggest another one; you can change it or leave it empty.</item>
+    </plurals>
+    <string name="tag_review_progress">Reviewed %1$d of %2$d</string>
+    <string name="tag_review_skipped">%1$d without suggestions yet (skipped)</string>
+    <string name="tag_review_choose">Choose</string>
+    <string name="tag_review_choose_manually">No suggestions yet: choose manually.</string>
+    <string name="tag_review_none">No category</string>
+    <string name="tag_review_none_occasion">None</string>
+    <plurals name="tag_review_save">
+        <item quantity="one">Save %1$d change</item>
+        <item quantity="other">Save %1$d changes</item>
+    </plurals>
+    <string name="tag_review_nothing">No garments need changes</string>
+    <string name="tag_review_needs_model">Download smart suggestions to review garments</string>
+    <string name="tag_review_accepted">Accepted</string>
+    <string name="tag_review_picker_title">%1$s for “%2$s”</string>
+    <string name="tag_review_discard_title">Discard review?</string>
+    <string name="tag_review_discard_body">Exiting discards the pending garment changes. The tag change stays.</string>
 </resources>
