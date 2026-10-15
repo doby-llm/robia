@@ -26,16 +26,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,7 +54,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
@@ -116,7 +112,8 @@ internal fun ColorReviewScreen(
     onRequestDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
-    val reviewItems = remember(items, changeSet.id) {
+    // Pinned at review start so a later sync emission neither restarts the scan nor drops accepted items.
+    val reviewItems = remember(changeSet.id) {
         if (changeSet.requiresCommitOnSave) items.filterNot(ClothingItem::isArchived) else items.filter(ClothingItem::isEligibleForColorReview)
     }
     val candidates = remember(changeSet.id) { mutableStateListOf<ColorReviewCandidate>() }
@@ -125,11 +122,13 @@ internal fun ColorReviewScreen(
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var pickerTarget by remember(changeSet.id) { mutableStateOf<ColorReviewPickerTarget?>(null) }
 
-    LaunchedEffect(changeSet.id, reviewItems) {
+    LaunchedEffect(changeSet.id) {
         candidates.clear()
         acceptedItems.clear()
         processedCount = 0
         isScanning = true
+        val paletteIds = changeSet.afterPalette.map(MainColor::id).toSet()
+        val firstPaletteId = changeSet.afterPalette.firstOrNull()?.id
         reviewItems.forEach { item ->
             val needsManualRemap = item.needsManualPaletteRemap(changeSet)
             val imageUri = item.photoUri?.takeIf(String::isNotBlank)?.let(Uri::parse)
@@ -143,22 +142,33 @@ internal fun ColorReviewScreen(
             } else {
                 item.colorMetrics
             }
-            if (needsManualRemap || item.isAffectedBy(changeSet, proposedMetrics)) {
+            val current = item.colorMetrics
+            val primaryTargetId = colorReviewTargetId(
+                proposedId = proposedMetrics.primaryPaletteColorId,
+                currentId = current.primaryPaletteColorId,
+                paletteIds = paletteIds,
+                fallbackId = firstPaletteId,
+            )
+            val secondaryTargetId = colorReviewTargetId(
+                proposedId = proposedMetrics.secondaryPaletteColorId,
+                currentId = current.secondaryPaletteColorId,
+                paletteIds = paletteIds,
+                fallbackId = null,
+            )
+            if (needsManualRemap || colorReviewNeedsProposal(
+                    currentPrimaryId = current.primaryPaletteColorId,
+                    currentSecondaryId = current.secondaryPaletteColorId,
+                    targetPrimaryId = primaryTargetId,
+                    targetSecondaryId = secondaryTargetId,
+                    paletteIds = paletteIds,
+                )
+            ) {
                 candidates += ColorReviewCandidate(
                     item = item,
                     proposedMetrics = proposedMetrics,
-                    editablePrimaryColorId = item.initialReviewColorId(
-                        changeSet = changeSet,
-                        proposedColorId = proposedMetrics.primaryPaletteColorId,
-                        currentColorId = item.colorMetrics.primaryPaletteColorId,
-                        allowNoColor = false,
-                    ),
-                    editableSecondaryColorId = item.initialReviewColorId(
-                        changeSet = changeSet,
-                        proposedColorId = proposedMetrics.secondaryPaletteColorId,
-                        currentColorId = item.colorMetrics.secondaryPaletteColorId,
-                        allowNoColor = true,
-                    ),
+                    editablePrimaryColorId = primaryTargetId,
+                    editableSecondaryColorId = secondaryTargetId,
+                    hasConcreteTarget = colorReviewHasConcreteTarget(current, proposedMetrics, paletteIds),
                 )
             }
             processedCount += 1
@@ -189,6 +199,7 @@ internal fun ColorReviewScreen(
     }
 
     val unresolvedCount = candidates.size
+    val acceptableCount = candidates.count(ColorReviewCandidate::hasConcreteTarget)
     val canFinish = !isScanning && unresolvedCount == 0
     val totalCount = reviewItems.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
@@ -213,16 +224,24 @@ internal fun ColorReviewScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                ColorReviewProgressHeader(
-                    processedCount = processedCount,
-                    totalCount = reviewItems.size,
+                ReviewProgressHeader(
+                    title = stringResource(R.string.color_review_batch_progress),
+                    countText = stringResource(R.string.color_review_scanning_count, processedCount, reviewItems.size),
                     progress = animatedProgress,
                 )
             }
 
             if (!isScanning && candidates.isEmpty() && acceptedItems.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    ColorReviewEmptyCard(hasEligibleItems = reviewItems.isNotEmpty())
+                    val hasEligibleItems = reviewItems.isNotEmpty()
+                    ReviewEmptyCard(
+                        title = stringResource(
+                            if (hasEligibleItems) R.string.color_review_empty_title else R.string.color_review_no_eligible_title,
+                        ),
+                        body = stringResource(
+                            if (hasEligibleItems) R.string.color_review_empty_body else R.string.color_review_no_eligible_body,
+                        ),
+                    )
                 }
             }
 
@@ -251,134 +270,33 @@ internal fun ColorReviewScreen(
 
             if (isScanning || unresolvedCount > 0) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    ColorReviewHelperRow(
+                    ReviewHelperRow(
                         isScanning = isScanning,
-                        unresolvedCount = unresolvedCount,
+                        text = if (isScanning) {
+                            stringResource(R.string.color_review_checking_helper)
+                        } else {
+                            stringResource(R.string.color_review_complete_all_helper, unresolvedCount)
+                        },
                     )
                 }
             }
         }
 
-        Surface(
-            tonalElevation = 3.dp,
-            shadowElevation = 6.dp,
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
-        ) {
-            Button(
-                onClick = { onCommit(changeSet, acceptedItems) },
-                enabled = canFinish,
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth()
-                    .height(56.dp),
-            ) {
-                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(
-                    text = if (acceptedItems.isNotEmpty()) {
-                        stringResource(R.string.color_review_save_accepted_mappings, acceptedItems.size)
-                    } else {
-                        stringResource(R.string.done)
-                    },
-                    modifier = Modifier.padding(start = 10.dp),
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ColorReviewProgressHeader(
-    processedCount: Int,
-    totalCount: Int,
-    progress: Float,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.color_review_batch_progress),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = stringResource(R.string.color_review_scanning_count, processedCount, totalCount),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        LinearProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(CircleShape),
-        )
-    }
-}
-
-@Composable
-private fun ColorReviewHelperRow(
-    isScanning: Boolean,
-    unresolvedCount: Int,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (isScanning) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-        }
-        Text(
-            text = if (isScanning) {
-                stringResource(R.string.color_review_checking_helper)
-            } else {
-                stringResource(R.string.color_review_complete_all_helper, unresolvedCount)
+        // Accept all saves every proposal with a concrete target; manual-choice proposals stay out and remain visible.
+        ReviewBottomBar(
+            label = when {
+                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount)
+                acceptedItems.isNotEmpty() -> stringResource(R.string.color_review_save_accepted_mappings, acceptedItems.size)
+                else -> stringResource(R.string.done)
             },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            enabled = if (acceptableCount > 0) !isScanning else canFinish,
+            onClick = {
+                val concreteItems = candidates
+                    .filter(ColorReviewCandidate::hasConcreteTarget)
+                    .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
+                onCommit(changeSet, acceptedItems.toList() + concreteItems)
+            },
         )
-    }
-}
-
-@Composable
-private fun ColorReviewEmptyCard(hasEligibleItems: Boolean) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Text(
-                text = stringResource(
-                    if (hasEligibleItems) R.string.color_review_empty_title else R.string.color_review_no_eligible_title,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = stringResource(
-                    if (hasEligibleItems) R.string.color_review_empty_body else R.string.color_review_no_eligible_body,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
     }
 }
 
@@ -614,6 +532,8 @@ private data class ColorReviewCandidate(
     val proposedMetrics: ClothingColorMetrics,
     val editablePrimaryColorId: String?,
     val editableSecondaryColorId: String?,
+    // False when a referenced colour has no analyzer target: needs a manual choice and is not part of Accept all.
+    val hasConcreteTarget: Boolean,
 )
 
 private enum class ColorReviewColorRole { Primary, Secondary }
@@ -643,6 +563,31 @@ private fun ColorReviewCandidate.toUpdatedItem(palette: List<MainColor>): Clothi
     )
 }
 
+// Removes a deleted palette colour from a garment that carried it; the other slot is kept.
+internal fun ClothingItem.withoutPaletteColor(colorId: String): ClothingItem {
+    val metrics = colorMetrics
+    var cleared = metrics
+    if (metrics.primaryPaletteColorId == colorId) {
+        cleared = cleared.copy(
+            primaryRawValue = null,
+            primaryDisplayLabel = null,
+            primaryPaletteColorId = null,
+            primaryPaletteColorName = null,
+            primaryPaletteColorHex = null,
+        )
+    }
+    if (metrics.secondaryPaletteColorId == colorId) {
+        cleared = cleared.copy(
+            secondaryRawValue = null,
+            secondaryDisplayLabel = null,
+            secondaryPaletteColorId = null,
+            secondaryPaletteColorName = null,
+            secondaryPaletteColorHex = null,
+        )
+    }
+    return copy(colorMetrics = cleared, updatedAtEpochMillis = System.currentTimeMillis())
+}
+
 internal fun List<PaletteColorMatch>.toColorMetrics(): ClothingColorMetrics {
     val primary = getOrNull(0)?.color
     val secondary = drop(1)
@@ -660,17 +605,6 @@ internal fun List<PaletteColorMatch>.toColorMetrics(): ClothingColorMetrics {
         secondaryPaletteColorName = secondary?.name,
         secondaryPaletteColorHex = secondary?.hex,
     )
-}
-
-private fun ClothingItem.isAffectedBy(
-    changeSet: ColorPaletteChangeSet,
-    proposedMetrics: ClothingColorMetrics,
-): Boolean {
-    val current = colorMetrics
-    val touched = changeSet.touchedColorId
-    val referencesTouchedColor = touched != null &&
-        (current.primaryPaletteColorId == touched || current.secondaryPaletteColorId == touched)
-    return referencesTouchedColor || current.colorReviewSignature() != proposedMetrics.colorReviewSignature()
 }
 
 private fun ClothingItem.needsManualPaletteRemap(changeSet: ColorPaletteChangeSet): Boolean {
@@ -701,26 +635,55 @@ private fun String?.requiresPaletteUpdate(
     return id == touchedColorId || paletteColor.name != snapshotName || paletteColor.hex != snapshotHex
 }
 
-private fun ClothingItem.initialReviewColorId(
-    changeSet: ColorPaletteChangeSet,
-    proposedColorId: String?,
-    currentColorId: String?,
-    allowNoColor: Boolean,
-): String? {
-    val afterPaletteIds = changeSet.afterPalette.map(MainColor::id).toSet()
-    proposedColorId?.takeIf { id -> id in afterPaletteIds }?.let { return it }
-    currentColorId?.takeIf { id -> id in afterPaletteIds }?.let { return it }
-    return if (allowNoColor) null else changeSet.afterPalette.firstOrNull()?.id
+// Resolves the palette colour a garment should carry: the analyzer's proposal first, then its current colour, when either is still in the palette.
+internal fun colorReviewConcreteTargetId(
+    proposedId: String?,
+    currentId: String?,
+    paletteIds: Set<String>,
+): String? = listOf(proposedId, currentId).firstOrNull { id -> id != null && id in paletteIds }
+
+// A garment with no concrete colour keeps no colour, unless it had one; then the first palette colour is only a placeholder for a manual choice.
+internal fun colorReviewTargetId(
+    proposedId: String?,
+    currentId: String?,
+    paletteIds: Set<String>,
+    fallbackId: String?,
+): String? = colorReviewConcreteTargetId(proposedId, currentId, paletteIds)
+    ?: fallbackId.takeIf { currentId != null }
+
+// A garment is listed only when its resolved colour ids differ from the stored ones, or a stored id is no longer in the palette.
+// Unchanged garments and weak or absent secondaries that resolve to the same ids produce no row.
+internal fun colorReviewNeedsProposal(
+    currentPrimaryId: String?,
+    currentSecondaryId: String?,
+    targetPrimaryId: String?,
+    targetSecondaryId: String?,
+    paletteIds: Set<String>,
+): Boolean {
+    val referencedIds = listOfNotNull(currentPrimaryId, currentSecondaryId)
+    if (referencedIds.any { id -> id !in paletteIds }) return true
+    return currentPrimaryId != targetPrimaryId || currentSecondaryId != targetSecondaryId
 }
 
-private fun ClothingColorMetrics.colorReviewSignature(): List<String?> = listOf(
-    primaryPaletteColorId,
-    primaryPaletteColorName,
-    primaryPaletteColorHex,
-    secondaryPaletteColorId,
-    secondaryPaletteColorName,
-    secondaryPaletteColorHex,
-)
+// Accept all takes only proposals where every colour the garment currently has resolves to a palette colour.
+internal fun colorReviewHasConcreteTarget(
+    current: ClothingColorMetrics,
+    proposed: ClothingColorMetrics,
+    paletteIds: Set<String>,
+): Boolean {
+    val primaryResolved = colorReviewConcreteTargetId(
+        proposedId = proposed.primaryPaletteColorId,
+        currentId = current.primaryPaletteColorId,
+        paletteIds = paletteIds,
+    ) != null
+    val secondaryResolved = colorReviewConcreteTargetId(
+        proposedId = proposed.secondaryPaletteColorId,
+        currentId = current.secondaryPaletteColorId,
+        paletteIds = paletteIds,
+    ) != null
+    return (current.primaryPaletteColorId == null || primaryResolved) &&
+        (current.secondaryPaletteColorId == null || secondaryResolved)
+}
 
 private fun ClothingItem.isEligibleForColorReview(): Boolean = !isArchived && !photoUri.isNullOrBlank()
 

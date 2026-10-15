@@ -487,7 +487,7 @@
     <string name="color_review_chip_description">%1$s-Farbe, vorgeschlagen %2$s</string>
     <string name="undo">Rückgängig</string>
     <string name="color_review_discard_title">Farbaktualisierungen verwerfen?</string>
-    <string name="color_review_discard_body">Beim Verlassen werden alle ausstehenden Farbaktualisierungen und Änderungen an der Farbpalette verworfen.</string>
+    <string name="color_review_discard_body">Beim Verlassen werden die ausstehenden Farbzuordnungen verworfen. Bereits gespeicherte Änderungen an der Farbpalette bleiben erhalten.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>
@@ -588,4 +588,6 @@
     <string name="browse_search_in_progress">Suche läuft…</string>
     <string name="browse_similar_caption">Nach Ähnlichkeit sortiert</string>
     <string name="browse_similar_untitled">Kleidungsstück ohne Namen</string>
+    <!-- F03a -->
+    <string name="color_review_accept_all">Alle akzeptieren (%1$d)</string>
 </resources>
