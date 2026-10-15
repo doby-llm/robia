@@ -150,11 +150,11 @@ interface WardrobeDao {
 
     @Transaction
     suspend fun releaseMetadataToQueued(work: PendingMetadataSyncWorkEntity): Boolean {
-        val updated = when (work.entityType) {
-            "tag_category", "category" -> releaseTagCategoryToQueued(work.id, work.revision)
-            "garment_tag", "tag" -> releaseGarmentTagToQueued(work.id, work.revision)
-            "main_color", "palette_color", "color" -> releaseMainColorToQueued(work.id, work.revision)
-            else -> releaseTombstoneToQueued(work.id, work.revision)
+        val updated = when (work.metadataSyncTable()) {
+            MetadataSyncTable.TagCategory -> releaseTagCategoryToQueued(work.id, work.revision)
+            MetadataSyncTable.GarmentTag -> releaseGarmentTagToQueued(work.id, work.revision)
+            MetadataSyncTable.MainColor -> releaseMainColorToQueued(work.id, work.revision)
+            MetadataSyncTable.Tombstone -> releaseTombstoneToQueued(work.id, work.revision)
         }
         return updated > 0
     }
@@ -207,11 +207,11 @@ interface WardrobeDao {
     suspend fun markMetadataSyncing(work: PendingMetadataSyncWorkEntity): Boolean =
         claimMetadataSync(work, System.currentTimeMillis()) > 0
 
-    private suspend fun claimMetadataSync(work: PendingMetadataSyncWorkEntity, startedAtEpochMillis: Long): Int = when (work.entityType) {
-        "tag_category", "category" -> claimTagCategoryMetadataSync(work.id, work.revision, startedAtEpochMillis)
-        "garment_tag", "tag" -> claimGarmentTagMetadataSync(work.id, work.revision, startedAtEpochMillis)
-        "main_color", "palette_color", "color" -> claimMainColorMetadataSync(work.id, work.revision, startedAtEpochMillis)
-        else -> claimTombstoneMetadataSync(work.id, work.revision, startedAtEpochMillis)
+    private suspend fun claimMetadataSync(work: PendingMetadataSyncWorkEntity, startedAtEpochMillis: Long): Int = when (work.metadataSyncTable()) {
+        MetadataSyncTable.TagCategory -> claimTagCategoryMetadataSync(work.id, work.revision, startedAtEpochMillis)
+        MetadataSyncTable.GarmentTag -> claimGarmentTagMetadataSync(work.id, work.revision, startedAtEpochMillis)
+        MetadataSyncTable.MainColor -> claimMainColorMetadataSync(work.id, work.revision, startedAtEpochMillis)
+        MetadataSyncTable.Tombstone -> claimTombstoneMetadataSync(work.id, work.revision, startedAtEpochMillis)
     }
 
     @Transaction
@@ -240,22 +240,22 @@ interface WardrobeDao {
         clearDirty: Boolean = false,
         message: String? = null,
         matchRevision: Boolean = true,
-    ): Int = when (work.entityType) {
-        "tag_category", "category" -> updateTagCategorySyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
-        "garment_tag", "tag" -> updateGarmentTagSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
-        "main_color", "palette_color", "color" -> updateMainColorSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
-        else -> updateTombstoneSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+    ): Int = when (work.metadataSyncTable()) {
+        MetadataSyncTable.TagCategory -> updateTagCategorySyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+        MetadataSyncTable.GarmentTag -> updateGarmentTagSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+        MetadataSyncTable.MainColor -> updateMainColorSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
+        MetadataSyncTable.Tombstone -> updateTombstoneSyncStatus(work.id, work.revision, status, syncedAtEpochMillis, clearDirty, message, matchRevision)
     }
 
     private suspend fun updateMetadataSyncFailedRetryable(
         work: PendingMetadataSyncWorkEntity,
         message: String?,
         now: Long,
-    ): Int = when (work.entityType) {
-        "tag_category", "category" -> updateTagCategorySyncFailedRetryable(work.id, work.revision, message, now)
-        "garment_tag", "tag" -> updateGarmentTagSyncFailedRetryable(work.id, work.revision, message, now)
-        "main_color", "palette_color", "color" -> updateMainColorSyncFailedRetryable(work.id, work.revision, message, now)
-        else -> updateTombstoneSyncFailedRetryable(work.id, work.revision, message, now)
+    ): Int = when (work.metadataSyncTable()) {
+        MetadataSyncTable.TagCategory -> updateTagCategorySyncFailedRetryable(work.id, work.revision, message, now)
+        MetadataSyncTable.GarmentTag -> updateGarmentTagSyncFailedRetryable(work.id, work.revision, message, now)
+        MetadataSyncTable.MainColor -> updateMainColorSyncFailedRetryable(work.id, work.revision, message, now)
+        MetadataSyncTable.Tombstone -> updateTombstoneSyncFailedRetryable(work.id, work.revision, message, now)
     }
 
     @Query("UPDATE tag_categories SET sync_status = 'Running', sync_started_at_epoch_millis = :startedAtEpochMillis WHERE id = :id AND sync_revision = :revision")
@@ -613,3 +613,13 @@ data class RestoredPhotoApplyStateEntity(
     val syncDirtyAtEpochMillis: Long?,
     val photoUri: String?,
 )
+
+/** Table a metadata sync row is claimed, settled and released in. Decided from the row's entity type alone (see [metadataSyncTable]). */
+internal enum class MetadataSyncTable { TagCategory, GarmentTag, MainColor, Tombstone }
+
+internal fun PendingMetadataSyncWorkEntity.metadataSyncTable(): MetadataSyncTable = when (entityType) {
+    "tag_category", "category" -> MetadataSyncTable.TagCategory
+    "garment_tag", "tag" -> MetadataSyncTable.GarmentTag
+    "main_color", "palette_color", "color" -> MetadataSyncTable.MainColor
+    else -> MetadataSyncTable.Tombstone
+}
