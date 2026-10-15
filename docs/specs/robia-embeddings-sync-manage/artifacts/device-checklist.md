@@ -1,7 +1,7 @@
 # Z01 - Device checklist (Poco F3, Xiaomi M2012K11AG, API 33)
 
-APK: latest `main` staging build. Run 38710418285, artifact robia-staging-apk (id 11960139373):
-https://github.com/doby-llm/robia/actions/runs/38710418285/artifacts/11960139373
+APK: latest `main` staging build (includes F01-F03b). Run 38726721207, artifact robia-staging-apk (id 11968930169):
+https://github.com/doby-llm/robia/actions/runs/38726721207/artifacts/11968930169
 Install it over the current app (same CI signing key). If Android reports a signature conflict, do NOT uninstall: that deletes local data.
 
 Phone charging, battery saver off, other apps closed. Mark each row PASS / FAIL and write what you saw.
@@ -28,6 +28,11 @@ ID collisions in verification-matrix.md are resolved here: V-Z05b = sync progres
 
 ## C. Screens vs approved mockups
 - [ ] V-Z10 Sync attention cards, merge/conflict dialogs, Manage and Review screens match the approved mockups (side-by-side screenshots). Result:
+
+## D. Feedback fixes (email of 2026-10-15)
+- [ ] V-Z13 (F01) Browse: search "dress" shows "Searching..." then "Sorted by similarity", grid jumps to the top and the most similar garments come first. Item detail > similar garments: the chip has a clothing icon (no empty quotes) and a similarity caption. Save a new item: you land on Browse with the new item first, search/filters cleared (no "No garments yet" screen). Result:
+- [ ] V-Z14 (F02) Edit the default tag "Dresses": the Description box shows its default text (English); saving without changes does not mark it as modified; no big blank gap above "Suggest occasions for this category". After finishing or discarding any review you are back in Manage on the same tab. Result:
+- [ ] V-Z15 (F03a/F03b) Colours: delete Yellow: a prompt offers the review; "Not now" keeps it deleted (also from garments that had it); accept: scan with progress, only real changes listed (no "Black, Brown" -> "Black, Brown"), "Accept all (N)" saves. Tags: add/edit/delete a category and delete the occasion "Dressed-up": prompt first, scan screen with progress, garments appear as found, "Accept all (N)", "From -> To" never breaks onto a second line, progress bar moves smoothly (the dot at the end of the bar may remain). Result:
 
 ## Return
 Paste the results (a copy of this list with PASS/FAIL and notes is enough). Z01 is then closed by recording them in the tracking issue.
