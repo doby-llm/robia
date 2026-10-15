@@ -113,6 +113,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -210,6 +211,7 @@ import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
@@ -610,8 +612,70 @@ internal fun cloudSyncIndicator(state: WardrobeSyncState, developerMode: Boolean
     )
 }
 
-private val CloudSyncHeadline.isCloudActive: Boolean
-    get() = this != CloudSyncHeadline.NotConfigured && this != CloudSyncHeadline.Disabled
+/** Browse shows the cloud icon only while syncing or when the user has to act; synced, waiting and idle states show nothing. */
+internal val CloudSyncHeadline.showsBrowseIndicator: Boolean
+    get() = this == CloudSyncHeadline.Syncing || this == CloudSyncHeadline.Attention || this == CloudSyncHeadline.Error
+
+/** One change of the processing flag, [atMs] on the elapsed-realtime clock. */
+internal data class SyncActivitySample(val atMs: Long, val processing: Boolean)
+
+internal const val SYNC_INDICATOR_HOLD_MS = 1_500L
+
+/**
+ * Whether the Syncing indicator shows at [nowMs]: at once while processing, and for [holdMs] after the last processing run
+ * ends, so back-to-back cycles do not blink. [samples] are processing-flag changes in time order; an idle stretch that
+ * never followed a run does not show anything.
+ */
+internal fun syncIndicatorShowing(
+    samples: List<SyncActivitySample>,
+    nowMs: Long,
+    holdMs: Long = SYNC_INDICATOR_HOLD_MS,
+): Boolean {
+    var processing = false
+    var sawRun = false
+    var idleSinceMs: Long? = null
+    for (sample in samples) {
+        if (sample.atMs > nowMs) break
+        processing = sample.processing
+        if (processing) {
+            sawRun = true
+            idleSinceMs = null
+        } else if (sawRun && idleSinceMs == null) {
+            idleSinceMs = sample.atMs
+        }
+    }
+    return processing || (idleSinceMs != null && nowMs - idleSinceMs < holdMs)
+}
+
+/** The processing flag as the UI holds it. Keeps the last two changes: that is all [syncIndicatorShowing] needs. */
+@Composable
+private fun rememberSyncIndicatorShowing(processing: Boolean): Boolean {
+    val changes = remember { mutableStateListOf<SyncActivitySample>() }
+    var nowMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(processing) {
+        changes.add(SyncActivitySample(SystemClock.elapsedRealtime(), processing))
+        while (changes.size > 2) changes.removeAt(0)
+        nowMs = SystemClock.elapsedRealtime()
+        if (!processing) {
+            // A new run cancels this effect, so the hold only ends after a full idle stretch.
+            delay(SYNC_INDICATOR_HOLD_MS)
+            nowMs = SystemClock.elapsedRealtime()
+        }
+    }
+    return processing || syncIndicatorShowing(changes.toList(), nowMs)
+}
+
+/** The indicator every cloud surface reads (Browse, Settings, setup summary): [cloudSyncIndicator] with Syncing held. */
+@Composable
+private fun rememberCloudSyncIndicator(state: WardrobeSyncState, developerMode: Boolean): CloudSyncIndicator {
+    val indicator = cloudSyncIndicator(state = state, developerMode = developerMode)
+    val showing = rememberSyncIndicatorShowing(processing = indicator.headline == CloudSyncHeadline.Syncing)
+    return if (showing && indicator.headline != CloudSyncHeadline.Syncing) {
+        indicator.copy(headline = CloudSyncHeadline.Syncing, attention = false)
+    } else {
+        indicator
+    }
+}
 
 @Composable
 private fun LocalizedRobiaContent(
@@ -853,6 +917,10 @@ private fun RobiaShell(
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
     val selectedHasImageVector = selectedItem != null && vectors[selectedItem.id]?.image != null
+    val cloudIndicator = rememberCloudSyncIndicator(
+        state = syncState,
+        developerMode = settings.developerModeUnlocked && settings.developerModeEnabled,
+    )
     // Only an untouched phone is recommended to set up Drive at first run; connecting later goes through the merge summary.
     val isFirstRunCloudSetup = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
         clothingItems.isEmpty() &&
@@ -1515,10 +1583,8 @@ private fun RobiaShell(
             syncState = syncState,
             currentLanguage = settings.languagePreference,
             driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
-            cloudSetupSummaryRes = cloudSyncIndicator(
-                state = syncState,
-                developerMode = settings.developerModeUnlocked && settings.developerModeEnabled,
-            ).setupSummaryRes(canAttemptCloudSetup = isFirstRunCloudSetup),
+            cloudSetupSummaryRes = cloudIndicator.setupSummaryRes(canAttemptCloudSetup = isFirstRunCloudSetup),
+            cloudSync = cloudIndicator,
             developerModeUnlocked = settings.developerModeUnlocked,
             driveBackupDeletionState = settings.driveBackupDeletionState,
             onRouteSelected = { route ->
@@ -1665,6 +1731,7 @@ private fun SettingsScreen(
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
     syncState: WardrobeSyncState,
     @StringRes cloudSetupSummaryRes: Int,
+    cloudIndicator: CloudSyncIndicator,
     developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
@@ -1686,7 +1753,6 @@ private fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var benchmarkText by remember { mutableStateOf<String?>(null) }
     var benchmarkRunning by remember { mutableStateOf(false) }
-    val cloudIndicator = cloudSyncIndicator(state = syncState, developerMode = developerModeEnabled)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -2553,6 +2619,7 @@ private fun RobiaNavHost(
     currentLanguage: LanguagePreference,
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
     @StringRes cloudSetupSummaryRes: Int,
+    cloudSync: CloudSyncIndicator,
     developerModeUnlocked: Boolean,
     driveBackupDeletionState: com.gusanitolabs.robia.core.model.DriveBackupDeletionState,
     onRouteSelected: (RobiaRoute) -> Unit,
@@ -2617,7 +2684,7 @@ private fun RobiaNavHost(
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             activeFilterCount = filters.activeFilterCount,
-            cloudSync = cloudSyncIndicator(state = syncState, developerMode = developerModeEnabled),
+            cloudSync = cloudSync,
             selectedItemIds = selectedBrowseItemIds,
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
@@ -2752,6 +2819,7 @@ private fun RobiaNavHost(
             driveSyncConnectionStatus = driveSyncConnectionStatus,
             syncState = syncState,
             cloudSetupSummaryRes = cloudSetupSummaryRes,
+            cloudIndicator = cloudSync,
             developerModeUnlocked = developerModeUnlocked,
             developerModeEnabled = developerModeEnabled,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
@@ -2775,6 +2843,7 @@ private fun RobiaNavHost(
                 driveSyncConnectionStatus = driveSyncConnectionStatus,
                 syncState = syncState,
                 cloudSetupSummaryRes = cloudSetupSummaryRes,
+                cloudIndicator = cloudSync,
                 developerModeUnlocked = developerModeUnlocked,
                 developerModeEnabled = developerModeEnabled,
                 onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
@@ -3026,7 +3095,7 @@ private fun FilterBar(
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
             Spacer(modifier = Modifier.weight(1f))
-            if (cloudSync.headline.isCloudActive) {
+            if (cloudSync.headline.showsBrowseIndicator) {
                 CloudSyncStatusIcon(indicator = cloudSync)
             }
         }
