@@ -15,7 +15,11 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -118,6 +122,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -198,6 +203,7 @@ import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.SyncAttention
 import com.gusanitolabs.robia.sync.SyncAttentionKind
+import com.gusanitolabs.robia.sync.SyncRunResult
 import com.gusanitolabs.robia.sync.WardrobeSyncGateway
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
@@ -382,7 +388,6 @@ fun RobiaApp(
         loadedClothingItems.orEmpty()
     }
     val wardrobeItemsLoading = !performanceFixtureMode && loadedClothingItems == null
-    val pendingGarmentSyncCount by wardrobeRepository.observePendingGarmentSyncCount().collectAsState(initial = 0)
     val tagCategories by tagRepository.observeCategories().collectAsState(initial = emptyList())
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
@@ -418,7 +423,6 @@ fun RobiaApp(
             settingsLoaded = settingsLoaded,
             syncState = displaySyncState,
             restoreSyncLogText = restoreSyncLogText,
-            pendingGarmentSyncCount = pendingGarmentSyncCount,
             clothingItems = clothingItems,
             wardrobeItemsLoading = wardrobeItemsLoading,
             tagCategories = tagCategories,
@@ -562,9 +566,52 @@ private fun WardrobeSyncState.reconcileWithSettings(
     this
 }
 
-private val WardrobeSyncState.hasVisibleSyncActivity: Boolean
-    get() = connectionStatus == DriveSyncConnectionStatus.Syncing ||
-        restoreProgress?.status == CloudRestoreStatus.Running
+/**
+ * One headline for every cloud-sync surface: the Browse icon, the Settings lines and the developer card all read from here,
+ * so they cannot contradict each other. [Syncing] means the processor is running or a restore is in progress.
+ */
+internal enum class CloudSyncHeadline { Synced, Syncing, Pending, Attention, Error, Disabled, NotConfigured }
+
+internal data class CloudSyncIndicator(
+    val headline: CloudSyncHeadline,
+    /** Garments plus metadata still waiting; the same count as [WardrobeSyncState.pendingOperationCount]. */
+    val pendingCount: Int,
+    /** The user must act (sign in, conflict, merge, attention items) or the last cycle needs sign-in. */
+    val attention: Boolean,
+    /** Developer mode only: the class and message of the last failed cycle. */
+    val detail: String? = null,
+)
+
+internal fun cloudSyncIndicator(state: WardrobeSyncState, developerMode: Boolean): CloudSyncIndicator {
+    val pending = state.pendingOperationCount.coerceAtLeast(0)
+    val needsUserAction = state.connectionStatus == DriveSyncConnectionStatus.NeedsAttention ||
+        state.attention.isNotEmpty() ||
+        state.conflict ||
+        state.pendingMergeSummary != null
+    val headline = when {
+        state.connectionStatus == DriveSyncConnectionStatus.NotConfigured -> CloudSyncHeadline.NotConfigured
+        state.connectionStatus == DriveSyncConnectionStatus.Disabled -> CloudSyncHeadline.Disabled
+        state.connectionStatus == DriveSyncConnectionStatus.Syncing ||
+            state.restoreProgress?.status == CloudRestoreStatus.Running -> CloudSyncHeadline.Syncing
+        state.connectionStatus == DriveSyncConnectionStatus.Disconnected ||
+            state.lastCycle?.result == SyncRunResult.AuthBlocked -> CloudSyncHeadline.Error
+        needsUserAction -> CloudSyncHeadline.Attention
+        pending > 0 -> CloudSyncHeadline.Pending
+        else -> CloudSyncHeadline.Synced
+    }
+    val detail = state.lastCycle
+        ?.takeIf { developerMode && it.errorClass != null }
+        ?.let { cycle -> listOfNotNull(cycle.errorClass, cycle.errorMessage).joinToString(": ") }
+    return CloudSyncIndicator(
+        headline = headline,
+        pendingCount = pending,
+        attention = headline == CloudSyncHeadline.Attention || headline == CloudSyncHeadline.Error,
+        detail = detail,
+    )
+}
+
+private val CloudSyncHeadline.isCloudActive: Boolean
+    get() = this != CloudSyncHeadline.NotConfigured && this != CloudSyncHeadline.Disabled
 
 @Composable
 private fun LocalizedRobiaContent(
@@ -641,7 +688,6 @@ private fun RobiaShell(
     settingsLoaded: Boolean,
     syncState: WardrobeSyncState,
     restoreSyncLogText: String,
-    pendingGarmentSyncCount: Int,
     clothingItems: List<ClothingItem>,
     wardrobeItemsLoading: Boolean,
     tagCategories: List<TagCategory>,
@@ -1469,11 +1515,10 @@ private fun RobiaShell(
             syncState = syncState,
             currentLanguage = settings.languagePreference,
             driveSyncConnectionStatus = settings.driveSyncConnectionStatus,
-            pendingGarmentSyncCount = pendingGarmentSyncCount,
-            cloudSetupSummaryRes = settings.driveSyncConnectionStatus.cloudSetupSummaryRes(
-                canAttemptCloudSetup = isFirstRunCloudSetup,
-                pendingGarmentSyncCount = pendingGarmentSyncCount,
-            ),
+            cloudSetupSummaryRes = cloudSyncIndicator(
+                state = syncState,
+                developerMode = settings.developerModeUnlocked && settings.developerModeEnabled,
+            ).setupSummaryRes(canAttemptCloudSetup = isFirstRunCloudSetup),
             developerModeUnlocked = settings.developerModeUnlocked,
             driveBackupDeletionState = settings.driveBackupDeletionState,
             onRouteSelected = { route ->
@@ -1618,7 +1663,7 @@ private fun SettingsScreen(
     innerPadding: PaddingValues,
     currentLanguage: LanguagePreference,
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
-    pendingGarmentSyncCount: Int,
+    syncState: WardrobeSyncState,
     @StringRes cloudSetupSummaryRes: Int,
     developerModeUnlocked: Boolean,
     developerModeEnabled: Boolean,
@@ -1641,6 +1686,7 @@ private fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var benchmarkText by remember { mutableStateOf<String?>(null) }
     var benchmarkRunning by remember { mutableStateOf(false) }
+    val cloudIndicator = cloudSyncIndicator(state = syncState, developerMode = developerModeEnabled)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -1806,14 +1852,16 @@ private fun SettingsScreen(
                     supportingContent = {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                text = stringResource(driveSyncConnectionStatus.statusLabelRes),
+                                text = stringResource(cloudIndicator.headline.labelRes),
                                 style = MaterialTheme.typography.labelMedium,
                             )
-                            Text(
-                                text = cloudQueueSummaryText(driveSyncConnectionStatus, pendingGarmentSyncCount),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            cloudIndicator.queueSummaryText()?.let { summary ->
+                                Text(
+                                    text = summary,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             Text(
                                 text = stringResource(cloudSetupSummaryRes),
                                 style = MaterialTheme.typography.labelSmall,
@@ -1828,9 +1876,14 @@ private fun SettingsScreen(
                             }
                         }
                     },
-                    leadingContent = { Icon(driveSyncConnectionStatus.settingsIcon, contentDescription = null) },
+                    leadingContent = { Icon(cloudIndicator.headline.icon, contentDescription = null) },
                     modifier = Modifier.clickable(onClick = onCloudSetupClick),
                 )
+            }
+        }
+        if (developerModeEnabled) {
+            item {
+                DeveloperCloudSyncCard(syncState = syncState, indicator = cloudIndicator)
             }
         }
     }
@@ -1859,51 +1912,158 @@ internal fun SettingsSection(
 }
 
 @StringRes
-private fun DriveSyncConnectionStatus.cloudSetupSummaryRes(
-    canAttemptCloudSetup: Boolean,
-    pendingGarmentSyncCount: Int,
-): Int = when (this) {
-    DriveSyncConnectionStatus.NotConfigured -> if (canAttemptCloudSetup) {
+private fun CloudSyncIndicator.setupSummaryRes(canAttemptCloudSetup: Boolean): Int = when (headline) {
+    CloudSyncHeadline.NotConfigured -> if (canAttemptCloudSetup) {
         R.string.cloud_setup_recommended_summary
     } else {
         R.string.cloud_setup_late_blocked_summary
     }
-    DriveSyncConnectionStatus.Disabled -> R.string.cloud_setup_late_blocked_summary
-    DriveSyncConnectionStatus.Disconnected -> R.string.garment_sync_auth_blocked
-    DriveSyncConnectionStatus.Connected -> if (pendingGarmentSyncCount > 0) {
-        R.string.garment_sync_queued
-    } else {
-        R.string.cloud_setup_configured_summary
-    }
-    DriveSyncConnectionStatus.Syncing -> R.string.garment_sync_syncing
-    DriveSyncConnectionStatus.NeedsAttention -> R.string.cloud_setup_configured_summary
+    CloudSyncHeadline.Disabled -> R.string.cloud_setup_late_blocked_summary
+    CloudSyncHeadline.Error -> R.string.garment_sync_auth_blocked
+    CloudSyncHeadline.Syncing -> R.string.garment_sync_syncing
+    CloudSyncHeadline.Pending -> R.string.garment_sync_queued
+    CloudSyncHeadline.Synced,
+    CloudSyncHeadline.Attention -> R.string.cloud_setup_configured_summary
 }
 
-private val DriveSyncConnectionStatus.settingsIcon: ImageVector
+private val CloudSyncHeadline.labelRes: Int
     get() = when (this) {
-        DriveSyncConnectionStatus.Connected -> Icons.Rounded.CloudDone
-        DriveSyncConnectionStatus.Syncing -> Icons.Rounded.CloudUpload
-        DriveSyncConnectionStatus.NeedsAttention -> Icons.Rounded.Error
-        DriveSyncConnectionStatus.Disabled,
-        DriveSyncConnectionStatus.NotConfigured,
-        DriveSyncConnectionStatus.Disconnected -> Icons.Rounded.CloudOff
+        CloudSyncHeadline.Synced -> R.string.cloud_sync_headline_synced
+        CloudSyncHeadline.Syncing -> R.string.drive_sync_status_syncing
+        CloudSyncHeadline.Pending -> R.string.cloud_sync_headline_pending
+        CloudSyncHeadline.Attention -> R.string.drive_sync_status_needs_attention
+        CloudSyncHeadline.Error -> R.string.drive_sync_status_disconnected
+        CloudSyncHeadline.Disabled -> R.string.drive_sync_status_disabled
+        CloudSyncHeadline.NotConfigured -> R.string.drive_sync_status_not_configured
     }
 
+private val CloudSyncHeadline.icon: ImageVector
+    get() = when (this) {
+        CloudSyncHeadline.Synced -> Icons.Rounded.CloudDone
+        CloudSyncHeadline.Syncing,
+        CloudSyncHeadline.Pending -> Icons.Rounded.CloudUpload
+        CloudSyncHeadline.Attention -> Icons.Rounded.Error
+        CloudSyncHeadline.Error,
+        CloudSyncHeadline.Disabled,
+        CloudSyncHeadline.NotConfigured -> Icons.Rounded.CloudOff
+    }
+
+/** Null hides the line: a syncing or attention state with nothing pending says nothing here rather than "synced". */
 @Composable
-private fun cloudQueueSummaryText(
-    driveSyncConnectionStatus: DriveSyncConnectionStatus,
-    pendingGarmentSyncCount: Int,
-): String = when {
-    pendingGarmentSyncCount <= 0 && driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured ->
-        stringResource(R.string.garment_sync_cloud_setup_required)
-    pendingGarmentSyncCount <= 0 && driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled ->
-        stringResource(R.string.garment_sync_saved_device)
-    pendingGarmentSyncCount <= 0 -> stringResource(R.string.garment_sync_all_synced)
-    driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured ||
-        driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled ->
-        stringResource(R.string.garment_sync_local_changes_saved, pendingGarmentSyncCount)
-    pendingGarmentSyncCount == 1 -> stringResource(R.string.garment_sync_pending_count_one)
-    else -> stringResource(R.string.garment_sync_pending_count_many, pendingGarmentSyncCount)
+private fun CloudSyncIndicator.queueSummaryText(): String? = when {
+    headline == CloudSyncHeadline.Synced -> stringResource(R.string.garment_sync_all_synced)
+    pendingCount <= 0 -> null
+    headline == CloudSyncHeadline.NotConfigured || headline == CloudSyncHeadline.Disabled ->
+        stringResource(R.string.garment_sync_local_changes_saved, pendingCount)
+    pendingCount == 1 -> stringResource(R.string.garment_sync_pending_count_one)
+    else -> stringResource(R.string.garment_sync_pending_count_many, pendingCount)
+}
+
+/** Browse indicator: a cloud icon that pulses while syncing, tinted when the user has to act. Same source as Settings. */
+@Composable
+private fun CloudSyncStatusIcon(indicator: CloudSyncIndicator) {
+    val description = stringResource(indicator.headline.labelRes)
+    val tint = if (indicator.attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.semantics { contentDescription = description },
+    ) {
+        if (indicator.headline == CloudSyncHeadline.Syncing) {
+            PulsingCloudIcon(tint = tint)
+            Text(
+                text = stringResource(R.string.drive_sync_status_syncing),
+                style = MaterialTheme.typography.labelSmall,
+                color = tint,
+            )
+        } else {
+            Icon(
+                imageVector = indicator.headline.icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulsingCloudIcon(tint: Color) {
+    val pulse by rememberInfiniteTransition(label = "cloud-sync-pulse").animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "cloud-sync-pulse-alpha",
+    )
+    Icon(
+        imageVector = Icons.Rounded.CloudUpload,
+        contentDescription = null,
+        tint = tint,
+        modifier = Modifier.size(22.dp).alpha(pulse),
+    )
+}
+
+/** Developer mode only: the last cycle, what was pending and whether the processor is running, read from the same state. */
+@Composable
+private fun DeveloperCloudSyncCard(syncState: WardrobeSyncState, indicator: CloudSyncIndicator) {
+    val cycle = syncState.lastCycle
+    val timeFormat = remember { DateFormat.getTimeInstance(DateFormat.MEDIUM) }
+    val processing = indicator.headline == CloudSyncHeadline.Syncing
+    SettingsSection(title = stringResource(R.string.dev_cloud_title)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.dev_cloud_pending, indicator.pendingCount),
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
+                text = stringResource(
+                    R.string.dev_cloud_processing,
+                    stringResource(if (processing) R.string.dev_cloud_yes else R.string.dev_cloud_no),
+                ),
+                style = MaterialTheme.typography.labelSmall,
+            )
+            if (cycle == null) {
+                Text(
+                    text = stringResource(R.string.dev_cloud_no_cycle),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.dev_cloud_started, timeFormat.format(Date(cycle.startedAtEpochMillis))),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(
+                    text = stringResource(R.string.dev_cloud_ended, timeFormat.format(Date(cycle.endedAtEpochMillis))),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.dev_cloud_result,
+                        cycle.result?.javaClass?.simpleName ?: stringResource(R.string.dev_cloud_cancelled),
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(
+                    text = stringResource(R.string.dev_cloud_pending_at_start, cycle.pendingAtStart),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                indicator.detail?.let { detail ->
+                    Text(
+                        text = stringResource(R.string.dev_cloud_error, detail),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2331,16 +2491,6 @@ private val CloudRestorePhase.labelRes: Int
         CloudRestorePhase.Complete -> R.string.cloud_restore_phase_complete
     }
 
-private val DriveSyncConnectionStatus.statusLabelRes: Int
-    get() = when (this) {
-        DriveSyncConnectionStatus.Disabled -> R.string.drive_sync_status_disabled
-        DriveSyncConnectionStatus.NotConfigured -> R.string.drive_sync_status_not_configured
-        DriveSyncConnectionStatus.Disconnected -> R.string.drive_sync_status_disconnected
-        DriveSyncConnectionStatus.Connected -> R.string.drive_sync_status_connected
-        DriveSyncConnectionStatus.Syncing -> R.string.drive_sync_status_syncing
-        DriveSyncConnectionStatus.NeedsAttention -> R.string.drive_sync_status_needs_attention
-    }
-
 private val com.gusanitolabs.robia.core.model.DriveBackupDeletionState.statusRes: Int
     get() = when (this) {
         com.gusanitolabs.robia.core.model.DriveBackupDeletionState.None -> R.string.drive_backup_deletion_status_none
@@ -2402,7 +2552,6 @@ private fun RobiaNavHost(
     syncState: WardrobeSyncState,
     currentLanguage: LanguagePreference,
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
-    pendingGarmentSyncCount: Int,
     @StringRes cloudSetupSummaryRes: Int,
     developerModeUnlocked: Boolean,
     driveBackupDeletionState: com.gusanitolabs.robia.core.model.DriveBackupDeletionState,
@@ -2468,7 +2617,7 @@ private fun RobiaNavHost(
             hasItemsInWardrobe = totalItemCount > 0,
             hasActiveFilters = filters.hasActiveFilters,
             activeFilterCount = filters.activeFilterCount,
-            showSyncActivity = syncState.hasVisibleSyncActivity,
+            cloudSync = cloudSyncIndicator(state = syncState, developerMode = developerModeEnabled),
             selectedItemIds = selectedBrowseItemIds,
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
@@ -2601,7 +2750,7 @@ private fun RobiaNavHost(
             innerPadding = innerPadding,
             currentLanguage = currentLanguage,
             driveSyncConnectionStatus = driveSyncConnectionStatus,
-            pendingGarmentSyncCount = pendingGarmentSyncCount,
+            syncState = syncState,
             cloudSetupSummaryRes = cloudSetupSummaryRes,
             developerModeUnlocked = developerModeUnlocked,
             developerModeEnabled = developerModeEnabled,
@@ -2624,7 +2773,7 @@ private fun RobiaNavHost(
                 innerPadding = innerPadding,
                 currentLanguage = currentLanguage,
                 driveSyncConnectionStatus = driveSyncConnectionStatus,
-                pendingGarmentSyncCount = pendingGarmentSyncCount,
+                syncState = syncState,
                 cloudSetupSummaryRes = cloudSetupSummaryRes,
                 developerModeUnlocked = developerModeUnlocked,
                 developerModeEnabled = developerModeEnabled,
@@ -2659,7 +2808,7 @@ private fun BrowseWardrobeScreen(
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
-    showSyncActivity: Boolean,
+    cloudSync: CloudSyncIndicator,
     selectedItemIds: Set<String>,
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
@@ -2706,7 +2855,7 @@ private fun BrowseWardrobeScreen(
             FilterBar(
                 hasActiveFilters = hasActiveFilters,
                 activeFilterCount = activeFilterCount,
-                showSyncActivity = showSyncActivity,
+                cloudSync = cloudSync,
                 onFiltersClick = onFiltersClick,
                 searchQuery = searchQuery,
                 onSearchQueryChange = onSearchQueryChange,
@@ -2833,7 +2982,7 @@ private const val GRID_PREFETCH_ITEM_COUNT = 6
 private fun FilterBar(
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
-    showSyncActivity: Boolean,
+    cloudSync: CloudSyncIndicator,
     onFiltersClick: () -> Unit,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
@@ -2877,14 +3026,8 @@ private fun FilterBar(
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
             Spacer(modifier = Modifier.weight(1f))
-            if (showSyncActivity) {
-                val syncDescription = stringResource(R.string.content_cloud_sync_active)
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .semantics { contentDescription = syncDescription },
-                    strokeWidth = 2.dp,
-                )
+            if (cloudSync.headline.isCloudActive) {
+                CloudSyncStatusIcon(indicator = cloudSync)
             }
         }
         if (searchInProgress) {
@@ -4666,7 +4809,6 @@ private fun RobiaAppPreview() {
             settingsLoaded = true,
             syncState = WardrobeSyncState.notConfigured(),
             restoreSyncLogText = "",
-            pendingGarmentSyncCount = 0,
             clothingItems = emptyList(),
             wardrobeItemsLoading = false,
             tagCategories = emptyList(),
