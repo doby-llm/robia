@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.sync.fakes.FakeSettingsRepository
 import com.gusanitolabs.robia.sync.fakes.FakeSyncWorkScheduler
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeRepository
+import com.gusanitolabs.robia.sync.fakes.newTestProcessor
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
