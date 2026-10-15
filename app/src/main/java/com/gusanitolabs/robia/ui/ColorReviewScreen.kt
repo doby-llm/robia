@@ -146,31 +146,27 @@ internal fun ColorReviewScreen(
                 item.colorMetrics
             }
             val current = item.colorMetrics
-            val primaryTargetId = colorReviewTargetId(
-                proposedId = proposedMetrics.primaryPaletteColorId,
-                currentId = current.primaryPaletteColorId,
+            val pair = colorReviewPair(
+                proposedPrimaryId = proposedMetrics.primaryPaletteColorId,
+                currentPrimaryId = current.primaryPaletteColorId,
+                proposedSecondaryId = proposedMetrics.secondaryPaletteColorId,
+                currentSecondaryId = current.secondaryPaletteColorId,
                 paletteIds = paletteIds,
-                fallbackId = firstPaletteId,
-            )
-            val secondaryTargetId = colorReviewTargetId(
-                proposedId = proposedMetrics.secondaryPaletteColorId,
-                currentId = current.secondaryPaletteColorId,
-                paletteIds = paletteIds,
-                fallbackId = null,
+                fallbackPrimaryId = firstPaletteId,
             )
             if (needsManualRemap || colorReviewNeedsProposal(
                     currentPrimaryId = current.primaryPaletteColorId,
                     currentSecondaryId = current.secondaryPaletteColorId,
-                    targetPrimaryId = primaryTargetId,
-                    targetSecondaryId = secondaryTargetId,
+                    targetPrimaryId = pair.primaryId,
+                    targetSecondaryId = pair.secondaryId,
                     paletteIds = paletteIds,
                 )
             ) {
                 candidates += ColorReviewCandidate(
                     item = item,
                     proposedMetrics = proposedMetrics,
-                    editablePrimaryColorId = primaryTargetId,
-                    editableSecondaryColorId = secondaryTargetId,
+                    editablePrimaryColorId = pair.primaryId,
+                    editableSecondaryColorId = pair.secondaryId,
                     hasConcreteTarget = colorReviewHasConcreteTarget(current, proposedMetrics, paletteIds),
                 )
             }
@@ -660,6 +656,29 @@ internal fun colorReviewTargetId(
 ): String? = colorReviewConcreteTargetId(proposedId, currentId, paletteIds)
     ?: fallbackId.takeIf { currentId != null }
 
+internal data class ColorReviewPair(val primaryId: String?, val secondaryId: String?)
+
+// Primary and secondary are never equal. The secondary is the analyzer's proposal, then the current one, but only while it differs from the resolved primary; otherwise it is dropped.
+internal fun colorReviewPair(
+    proposedPrimaryId: String?,
+    currentPrimaryId: String?,
+    proposedSecondaryId: String?,
+    currentSecondaryId: String?,
+    paletteIds: Set<String>,
+    fallbackPrimaryId: String?,
+): ColorReviewPair {
+    val primaryId = colorReviewTargetId(
+        proposedId = proposedPrimaryId,
+        currentId = currentPrimaryId,
+        paletteIds = paletteIds,
+        fallbackId = fallbackPrimaryId,
+    )
+    val secondaryId = listOf(proposedSecondaryId, currentSecondaryId).firstOrNull { id ->
+        id != null && id in paletteIds && id != primaryId
+    }
+    return ColorReviewPair(primaryId = primaryId, secondaryId = secondaryId)
+}
+
 // A garment is listed only when its resolved colour ids differ from the stored ones, or a stored id is no longer in the palette.
 // Unchanged garments and weak or absent secondaries that resolve to the same ids produce no row.
 internal fun colorReviewNeedsProposal(
@@ -674,7 +693,8 @@ internal fun colorReviewNeedsProposal(
     return currentPrimaryId != targetPrimaryId || currentSecondaryId != targetSecondaryId
 }
 
-// Accept all takes only proposals where every colour the garment currently has resolves to a palette colour.
+// Accept all takes only proposals where the primary the garment currently has resolves to a palette colour.
+// A secondary never blocks: it either resolves to a palette colour or is dropped, and a dropped secondary is a valid outcome.
 internal fun colorReviewHasConcreteTarget(
     current: ClothingColorMetrics,
     proposed: ClothingColorMetrics,
@@ -685,13 +705,7 @@ internal fun colorReviewHasConcreteTarget(
         currentId = current.primaryPaletteColorId,
         paletteIds = paletteIds,
     ) != null
-    val secondaryResolved = colorReviewConcreteTargetId(
-        proposedId = proposed.secondaryPaletteColorId,
-        currentId = current.secondaryPaletteColorId,
-        paletteIds = paletteIds,
-    ) != null
-    return (current.primaryPaletteColorId == null || primaryResolved) &&
-        (current.secondaryPaletteColorId == null || secondaryResolved)
+    return current.primaryPaletteColorId == null || primaryResolved
 }
 
 private fun ClothingItem.isEligibleForColorReview(): Boolean = !isArchived && !photoUri.isNullOrBlank()
