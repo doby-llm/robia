@@ -14,15 +14,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
@@ -62,6 +65,7 @@ import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
+import java.util.Locale
 import java.util.UUID
 
 private const val TAG_REVIEW_THUMBNAIL_MAX_EDGE_PX = 384
@@ -74,11 +78,30 @@ internal data class TagReviewCandidate(
     val proposal: ReviewProposal,
 )
 
-/** The change set plus the garments as they were before the change was saved (deleted tags are already gone from them). */
+/** The change set plus the garments as they were before the change was saved (a deleted tag is still on them). */
 internal data class TagReviewRequest(
     val changeSet: TagChangeSet,
     val garments: List<ClothingItem>,
 )
+
+/**
+ * Garments the change affects, for the header. A deletion counts the garments that carried a deleted tag, known before
+ * the scan. Add and rename only know it as the scan runs, so they count the proposals found so far.
+ */
+internal fun affectedGarmentCount(changeSet: TagChangeSet, garments: List<ClothingItem>, proposalCount: Int): Int =
+    if (changeSet.operation == TagOperation.Deleted) {
+        garments.count { garment -> garment.tags.any { tag -> tag.id in changeSet.touchedTagIds } }
+    } else {
+        proposalCount
+    }
+
+/** Picker label for a tag: the localized label, else the stored name, else the id, never blank. */
+internal fun tagPickerLabel(tagId: String, name: String, labelsById: Map<String, String>): String =
+    labelsById[tagId]?.takeIf(String::isNotBlank) ?: name.takeIf(String::isNotBlank) ?: tagId
+
+/** Picker title: the capitalised kind on its own when the garment has no name, so it never reads `for “”`. */
+internal fun tagReviewPickerTitle(noun: String, garmentName: String, namedTitle: String): String =
+    if (garmentName.isBlank()) noun.replaceFirstChar { char -> char.titlecase(Locale.getDefault()) } else namedTitle
 
 /** Accept all takes every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it. */
 internal fun tagReviewCommitCandidates(
@@ -185,7 +208,11 @@ internal fun TagReviewScreen(
     val labelsById = remember(changeSet.id) {
         (changeSet.beforeTags + changeSet.afterTags).associate { tag -> tag.id to tag.localizedTagLabel(context) }
     }
-    val kindTags = remember(changeSet.id) { changeSet.afterTags.filter { tag -> tag.categoryId == changeSet.categoryId } }
+    val kindTags = remember(changeSet.id) {
+        changeSet.afterTags
+            .filter { tag -> tag.categoryId == changeSet.categoryId }
+            .sortedAlphabetically(label = { tag -> tagPickerLabel(tag.id, tag.name, labelsById) })
+    }
     // Before and after: a deleted tag is still the "current" value of a garment, but it can no longer be picked.
     val kindIds = remember(changeSet.id) {
         (changeSet.beforeTags + changeSet.afterTags)
@@ -199,6 +226,7 @@ internal fun TagReviewScreen(
     val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var scannedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var skippedCount by remember(changeSet.id) { mutableIntStateOf(0) }
+    var isPreparing by remember(changeSet.id) { mutableStateOf(true) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
     var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
@@ -207,15 +235,18 @@ internal fun TagReviewScreen(
     LaunchedEffect(changeSet.id) {
         candidates.clear()
         scannedCount = 0
+        isPreparing = true
         isScanning = true
         modelUnavailable = false
         val scan = try {
             prepareScan(changeSet, garments)
         } catch (unavailable: EmbeddingFailure) {
             modelUnavailable = true
+            isPreparing = false
             isScanning = false
             return@LaunchedEffect
         }
+        isPreparing = false
         skippedCount = scan.skippedCount
         scan.scanEach(garments) { garment, proposal ->
             if (proposal != null) candidates += TagReviewCandidate(garment, proposal)
@@ -238,12 +269,18 @@ internal fun TagReviewScreen(
         candidates.firstOrNull { candidate -> candidate.item.id == garmentId }?.let { candidate ->
             val current = edits[garmentId] ?: candidate.proposal.proposed
             TagReviewPickerDialog(
-                title = stringResource(
-                    R.string.tag_review_picker_title,
-                    stringResource(
+                title = tagReviewPickerTitle(
+                    noun = stringResource(
                         if (changeSet.categoryId == TAG_KIND_OCCASION) R.string.tag_review_occasion_noun else R.string.tag_review_category_noun,
                     ),
-                    candidate.item.name,
+                    garmentName = candidate.item.name,
+                    namedTitle = stringResource(
+                        R.string.tag_review_picker_title,
+                        stringResource(
+                            if (changeSet.categoryId == TAG_KIND_OCCASION) R.string.tag_review_occasion_noun else R.string.tag_review_category_noun,
+                        ),
+                        candidate.item.name,
+                    ),
                 ),
                 options = kindTags,
                 selectedIds = current.filterTo(mutableSetOf()) { id -> id in kindIds },
@@ -274,14 +311,18 @@ internal fun TagReviewScreen(
                 TagReviewHeader(
                     changeSet = changeSet,
                     labelsById = labelsById,
-                    garmentCount = garments.size,
+                    affectedCount = affectedGarmentCount(changeSet, garments, candidates.size),
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 ReviewProgressHeader(
                     title = stringResource(R.string.tag_review_scan_title),
-                    countText = stringResource(R.string.tag_review_scanning_count, scannedCount, garments.size),
-                    progress = animatedProgress,
+                    countText = if (isPreparing) {
+                        stringResource(R.string.tag_review_preparing)
+                    } else {
+                        stringResource(R.string.tag_review_scanning_count, scannedCount, garments.size)
+                    },
+                    progress = if (isPreparing) 0f else animatedProgress,
                 )
             }
 
@@ -361,7 +402,7 @@ internal fun TagReviewScreen(
 private fun TagReviewHeader(
     changeSet: TagChangeSet,
     labelsById: Map<String, String>,
-    garmentCount: Int,
+    affectedCount: Int,
 ) {
     val context = LocalContext.current
     val noun = stringResource(
@@ -382,9 +423,9 @@ private fun TagReviewHeader(
         )
         Text(
             text = when {
-                !isDeleted -> context.resources.getQuantityString(R.plurals.tag_review_added_body, garmentCount, garmentCount, touchedNames)
-                changeSet.categoryId == TAG_KIND_OCCASION -> context.resources.getQuantityString(R.plurals.tag_review_deleted_occasion_body, garmentCount, garmentCount)
-                else -> context.resources.getQuantityString(R.plurals.tag_review_deleted_body, garmentCount, garmentCount)
+                !isDeleted -> context.resources.getQuantityString(R.plurals.tag_review_added_body, affectedCount, affectedCount, touchedNames)
+                changeSet.categoryId == TAG_KIND_OCCASION -> context.resources.getQuantityString(R.plurals.tag_review_deleted_occasion_body, affectedCount, affectedCount)
+                else -> context.resources.getQuantityString(R.plurals.tag_review_deleted_body, affectedCount, affectedCount)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -417,15 +458,28 @@ private fun TagReviewCandidateCard(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // Stacked, never side by side: "From" and "-> To" each take the full card width, so long names
-                // ellipsize instead of wrapping letter by letter and resizing the card.
-                Text(
-                    text = currentLabels.joinToString().ifEmpty { stringResource(R.string.tag_review_none) },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                // Two full-width pills stacked, "From" above "To", joined by a down arrow. Long names ellipsize on one line.
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = currentLabels.joinToString().ifEmpty { stringResource(R.string.tag_review_none) },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+                Icon(
+                    Icons.Rounded.ArrowDownward,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(16.dp),
                 )
                 Surface(
                     onClick = onPick,
@@ -436,13 +490,7 @@ private fun TagReviewCandidateCard(
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(
-                            Icons.Rounded.ArrowForward,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
                         Text(
                             text = if (proposedLabels.isEmpty()) {
                                 stringResource(if (isChooseManually) R.string.tag_review_choose else R.string.tag_review_none)
@@ -453,6 +501,7 @@ private fun TagReviewCandidateCard(
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -529,7 +578,12 @@ private fun TagReviewPickerDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            // Scrolls: a long category list must stay reachable on a small screen, the dialog itself does not scroll.
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 TagReviewPickerRow(
                     label = stringResource(if (multiChoice) R.string.tag_review_none_occasion else R.string.tag_review_none),
                     selected = selection.isEmpty(),
@@ -541,7 +595,7 @@ private fun TagReviewPickerDialog(
                 options.forEach { tag ->
                     val isSelected = tag.id in selection
                     TagReviewPickerRow(
-                        label = labelsById[tag.id] ?: tag.name,
+                        label = tagPickerLabel(tag.id, tag.name, labelsById),
                         selected = isSelected,
                         multiChoice = multiChoice,
                         onClick = {
@@ -589,6 +643,11 @@ private fun TagReviewPickerRow(
         } else {
             RadioButton(selected = selected, onClick = null)
         }
-        Text(text = label, modifier = Modifier.padding(start = 8.dp))
+        Text(
+            text = label,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
+        )
     }
 }

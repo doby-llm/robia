@@ -1344,8 +1344,12 @@ private fun MetadataShellCard(
     }
 }
 
-private fun List<GarmentTag>.forCategory(categoryId: String): List<GarmentTag> =
-    filter { tag -> tag.categoryId == categoryId }.sortedWith(compareBy<GarmentTag> { it.sortOrder }.thenBy { it.name })
+@Composable
+private fun List<GarmentTag>.forCategory(categoryId: String): List<GarmentTag> {
+    val context = LocalContext.current
+    return filter { tag -> tag.categoryId == categoryId }
+        .sortedAlphabetically(label = { tag -> tag.localizedTagLabel(context) })
+}
 
 private fun List<String>.toggleTag(
     tag: GarmentTag,
