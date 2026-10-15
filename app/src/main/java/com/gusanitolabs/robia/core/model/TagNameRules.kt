@@ -16,6 +16,12 @@ object TagNameRules {
             .lowercase(Locale.ROOT)
     }
 
+    /**
+     * Key for auto-merge only. Accents are kept, so 'Mantel' and 'Mäntel' stay different tags: a merge drops a row and its
+     * description, so it must not treat two different words as one.
+     */
+    fun dedupeKey(name: String): String = name.trim().replace(whitespace, " ").lowercase(Locale.ROOT)
+
     /** True when [candidate] equals any of [existingLabels] after normalisation. Empty candidates never conflict. */
     fun conflicts(candidate: String, existingLabels: Iterable<String>): Boolean {
         val key = normalize(candidate)

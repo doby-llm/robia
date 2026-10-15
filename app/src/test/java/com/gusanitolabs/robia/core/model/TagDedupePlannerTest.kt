@@ -137,4 +137,84 @@ class TagDedupePlannerTest {
         )
         assertEquals(merges, TagDedupePlanner.plan(union.reversed()))
     }
+
+    @Test
+    fun tombstonedBuiltInGhostIsNeverMergedInto() {
+        // Another device deleted 'Dresses'; this device still has the row at revision 0 (a ghost). Both rows survive.
+        val merges = TagDedupePlanner.plan(
+            listOf(
+                DedupeTag("category-dresses", "category", "Dresses", syncRevision = 0L),
+                DedupeTag("custom-dresses", "category", "Dresses", syncRevision = 40L),
+            ),
+            tombstoneRevisionById = mapOf("category-dresses" to 10L),
+        )
+
+        assertTrue(merges.isEmpty())
+    }
+
+    @Test
+    fun restoredBuiltInNewerThanItsTombstoneStillTakesMerges() {
+        val merges = TagDedupePlanner.plan(
+            listOf(
+                DedupeTag("category-dresses", "category", "Dresses", syncRevision = 50L),
+                DedupeTag("custom-dresses", "category", "Dresses", syncRevision = 40L),
+            ),
+            tombstoneRevisionById = mapOf("category-dresses" to 10L),
+        )
+
+        assertEquals(listOf(TagMerge(dropId = "custom-dresses", keepId = "category-dresses")), merges)
+    }
+
+    @Test
+    fun ghostSkipDoesNotStopMergesInOtherGroups() {
+        val merges = TagDedupePlanner.plan(
+            listOf(
+                DedupeTag("category-dresses", "category", "Dresses", syncRevision = 0L),
+                DedupeTag("custom-dresses", "category", "Dresses", syncRevision = 40L),
+                DedupeTag("custom-a", "occasion", "Gala"),
+                DedupeTag("custom-b", "occasion", "Gala"),
+            ),
+            tombstoneRevisionById = mapOf("category-dresses" to 10L),
+        )
+
+        assertEquals(listOf(TagMerge(dropId = "custom-b", keepId = "custom-a")), merges)
+    }
+
+    @Test
+    fun diacriticsKeepTagsDistinctForAutoMerge() {
+        val merges = TagDedupePlanner.plan(
+            listOf(
+                DedupeTag("custom-mantel", "category", "Mantel"),
+                DedupeTag("custom-mantel-accent", "category", "Mäntel"),
+            ),
+        )
+
+        assertTrue(merges.isEmpty())
+    }
+
+    @Test
+    fun caseAndSpacingStillMergeForAutoMerge() {
+        val merges = TagDedupePlanner.plan(
+            listOf(
+                DedupeTag("custom-a", "category", "Mäntel"),
+                DedupeTag("custom-b", "category", "  mäntel  "),
+            ),
+        )
+
+        assertEquals(listOf(TagMerge(dropId = "custom-b", keepId = "custom-a")), merges)
+    }
+
+    @Test
+    fun systemRowWithUnknownIdCountsAsBuiltInAndIsNeverDropped() {
+        // A row left over from an older version: is_system = 1 but not in DefaultTags. It must not be dropped.
+        val merges = TagDedupePlanner.plan(
+            listOf(
+                DedupeTag("legacy-dresses", "category", "Dresses", isSystem = true),
+                DedupeTag("legacy-dresses-2", "category", "Dresses", isSystem = true),
+                DedupeTag("custom-dresses", "category", "Dresses"),
+            ),
+        )
+
+        assertEquals(listOf(TagMerge(dropId = "custom-dresses", keepId = "legacy-dresses")), merges)
+    }
 }

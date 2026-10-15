@@ -6,7 +6,10 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.gusanitolabs.robia.core.model.DedupeTag
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
+import com.gusanitolabs.robia.core.model.TagDedupePlanner
+import com.gusanitolabs.robia.core.model.TagMerge
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -516,20 +519,27 @@ interface TagDao {
     @Query("SELECT id FROM garment_tags WHERE id IN (:ids)")
     suspend fun existingTagIds(ids: List<String>): List<String>
 
+    @Query("SELECT * FROM sync_tombstones WHERE entity_type = 'garment_tag'")
+    suspend fun garmentTagTombstones(): List<SyncTombstoneEntity>
+
     /**
      * Moves every garment on a dropped duplicate to its kept tag, then deletes the duplicate with its tombstone.
-     * The plan was read before this transaction, so a merge whose drop or keep row has gone is skipped here: the keep id
-     * must exist for the repointed references to satisfy the foreign key. Returns the drop ids that were deleted.
+     * The plan was read before this transaction, so the plan is run again here on the live rows and tombstones. Only a
+     * merge that the fresh plan still approves is applied: a renamed row, a row that has gone, or a keep that became a
+     * ghost is skipped and the next launch plans again. Returns the drop ids that were deleted.
      */
     @Transaction
     suspend fun applyTagMerges(
-        keepIdByDropId: Map<String, String>,
+        plannedMerges: List<TagMerge>,
         tombstoneByDropId: Map<String, SyncTombstoneEntity>,
     ): List<String> {
-        val liveIds = existingTagIds((keepIdByDropId.keys + keepIdByDropId.values).toList()).toSet()
-        val liveKeepIdByDropId = keepIdByDropId.filter { (dropId, keepId) -> dropId in liveIds && keepId in liveIds }
-        val repointedRefs = liveKeepIdByDropId.flatMap { (dropId, keepId) ->
-            itemRefsForTag(dropId).map { ref -> ClothingItemTagCrossRef(ref.clothingItemId, keepId) }
+        val approved = TagDedupePlanner.plan(
+            tagsForDedupe(null).map(GarmentTagEntity::toDedupeTag),
+            garmentTagTombstones().associate { tombstone -> tombstone.entityId to tombstone.revision },
+        ).toSet()
+        val merges = plannedMerges.filter { merge -> merge in approved }
+        val repointedRefs = merges.flatMap { merge ->
+            itemRefsForTag(merge.dropId).map { ref -> ClothingItemTagCrossRef(ref.clothingItemId, merge.keepId) }
         }
         if (repointedRefs.isNotEmpty()) {
             insertItemTagRefs(repointedRefs)
@@ -546,11 +556,19 @@ interface TagDao {
                 },
             )
         }
-        return liveKeepIdByDropId.keys.filter { dropId ->
+        return merges.map(TagMerge::dropId).filter { dropId ->
             deleteEditableTagAndReferences(dropId, tombstoneByDropId.getValue(dropId)) > 0
         }
     }
 }
+
+internal fun GarmentTagEntity.toDedupeTag(): DedupeTag = DedupeTag(
+    id = id,
+    categoryId = categoryId,
+    name = name,
+    isSystem = isSystem,
+    syncRevision = syncRevision,
+)
 
 @Dao
 interface SyncTombstoneDao {

@@ -21,6 +21,19 @@ class TagNameRulesTest {
     }
 
     @Test
+    fun conflicts_foldsDiacriticsSoEditorBlocksAccentedDuplicate() {
+        // The editor's validation is non-destructive, so it still folds accents; only the auto-merge key does not.
+        assertTrue(TagNameRules.conflicts("Mantel", listOf("Mäntel")))
+    }
+
+    @Test
+    fun dedupeKey_keepsAccentsButIgnoresCaseAndExtraSpaces() {
+        assertEquals("mäntel", TagNameRules.dedupeKey("  Mäntel "))
+        assertEquals("main closet", TagNameRules.dedupeKey("Main    Closet"))
+        assertFalse(TagNameRules.dedupeKey("Mantel") == TagNameRules.dedupeKey("Mäntel"))
+    }
+
+    @Test
     fun conflicts_doesNotMatchDifferentNamesOrBlankCandidates() {
         assertFalse(TagNameRules.conflicts("Skirts", listOf("Dresses")))
         assertFalse(TagNameRules.conflicts("   ", listOf("")))

@@ -3,7 +3,6 @@ package com.gusanitolabs.robia.data
 import android.util.Log
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
-import com.gusanitolabs.robia.core.model.DedupeTag
 import com.gusanitolabs.robia.core.model.DefaultTagSeeds
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -24,6 +23,7 @@ import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
+import com.gusanitolabs.robia.data.local.toDedupeTag
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -222,9 +222,7 @@ class LocalTagRepository(
     }
 
     override suspend fun seedDefaultsIfNeeded(): Set<String> {
-        val deletedTagIds = syncTombstoneDao?.getAllForSync().orEmpty()
-            .filter { tombstone -> tombstone.entityType == "garment_tag" }
-            .mapTo(mutableSetOf()) { tombstone -> tombstone.entityId }
+        val deletedTagIds = garmentTagTombstoneRevisions().keys
         tagDao.seedCategories(DefaultTags.categories.map(TagCategory::toEntity))
         tagDao.seedTags(DefaultTagSeeds.withoutDeleted(DefaultTags.tags, deletedTagIds).map(GarmentTag::toEntity))
         if (tagDao.mainColorCount() == 0) {
@@ -240,12 +238,13 @@ class LocalTagRepository(
      */
     private suspend fun mergeDuplicateTags(categoryId: String?): Set<String> {
         val merges = TagDedupePlanner.plan(
-            tagDao.tagsForDedupe(categoryId).map { tag -> DedupeTag(id = tag.id, categoryId = tag.categoryId, name = tag.name) },
+            tagDao.tagsForDedupe(categoryId).map(GarmentTagEntity::toDedupeTag),
+            garmentTagTombstoneRevisions(),
         )
         if (merges.isEmpty()) return emptySet()
         val droppedIds = try {
             tagDao.applyTagMerges(
-                keepIdByDropId = merges.associate { merge -> merge.dropId to merge.keepId },
+                plannedMerges = merges,
                 tombstoneByDropId = merges.associate { merge ->
                     merge.dropId to syncTombstone(entityType = "garment_tag", entityId = merge.dropId)
                 },
@@ -260,6 +259,11 @@ class LocalTagRepository(
             .filter { merge -> merge.dropId in droppedIds }
             .flatMapTo(mutableSetOf()) { merge -> listOf(merge.dropId, merge.keepId) }
     }
+
+    /** Deleted garment tag ids with their tombstone revision: a built-in with one is not seeded again, and a ghost is not merged into. */
+    private suspend fun garmentTagTombstoneRevisions(): Map<String, Long> = syncTombstoneDao?.getAllForSync().orEmpty()
+        .filter { tombstone -> tombstone.entityType == "garment_tag" }
+        .associate { tombstone -> tombstone.entityId to tombstone.revision }
 }
 
 private const val DEDUPE_LOG_TAG = "TagDedupe"
