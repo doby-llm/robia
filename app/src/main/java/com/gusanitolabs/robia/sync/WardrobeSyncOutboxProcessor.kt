@@ -70,6 +70,10 @@ class WardrobeSyncOutboxProcessor(
     private val embeddingRepository: EmbeddingRepository? = null,
     /** Called after a restore imported the remote garments, so the backfill can fill vectors that the backup lacked. */
     private val onRestoreImported: () -> Unit = {},
+    /** Monotonic milliseconds for the request rate guard; wall-clock changes must not stretch a deferral. */
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    /** Waits out a deferred request; injected so tests release it deterministically. */
+    private val awaitDeferredRequest: suspend (delayMillis: Long) -> Unit = { delayMillis -> delay(delayMillis) },
 ) : WardrobeSyncGateway {
     private val mutex = Mutex()
     private val isProcessing = MutableStateFlow(false)
@@ -94,7 +98,7 @@ class WardrobeSyncOutboxProcessor(
     private var lastLoggedSettings: RobiaSettings? = null
     /** Serialises [requestSync]; held only for the decision and the enqueue, never across a cycle. */
     private val syncRequestMutex = Mutex()
-    /** When the last WorkManager request was enqueued by this process; null before the first one. Guarded by [syncRequestMutex]. */
+    /** [monotonicMillis] when this process last enqueued a WorkManager request; null before the first one. Guarded by [syncRequestMutex]. */
     private var lastSyncRequestAt: Long? = null
     /** The one deferred request that later requests merge into. Guarded by [syncRequestMutex]. */
     private var deferredSyncRequest: Job? = null
@@ -112,9 +116,11 @@ class WardrobeSyncOutboxProcessor(
             wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
             // Only guarded claims older than the photo retry timeout are dead (a live retry is bounded by that timeout).
             wardrobeRepository.recoverStaleGuardedPhotoSyncWork(System.currentTimeMillis() - PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS)
-            // Work still pending from a killed process is handed to WorkManager on app start.
+            // Work still pending from a killed process is handed to WorkManager on app start. A deferred request dies with
+            // the process, so pending vectors are re-requested here too.
             if (wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
-                wardrobeRepository.pendingMetadataSyncWork().isNotEmpty()
+                wardrobeRepository.pendingMetadataSyncWork().isNotEmpty() ||
+                embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
             ) {
                 requestSync("init")
             }
@@ -277,7 +283,7 @@ class WardrobeSyncOutboxProcessor(
      */
     private suspend fun requestSync(reason: String) {
         syncRequestMutex.withLock {
-            val now = System.currentTimeMillis()
+            val now = monotonicMillis()
             val pendingEmbeddings = embeddingRepository?.pendingUploadKeys()?.size ?: 0
             val decision = shouldRequestSync(
                 pendingGarments = wardrobeRepository.pendingGarmentSyncWork().size,
@@ -301,10 +307,10 @@ class WardrobeSyncOutboxProcessor(
     private fun deferRequest(reason: String, delayMillis: Long) {
         logRequest("sync request deferred reason=$reason delay_ms=$delayMillis")
         deferredSyncRequest = scope.launch(dispatcher) {
-            delay(delayMillis)
+            awaitDeferredRequest(delayMillis)
             syncRequestMutex.withLock {
                 deferredSyncRequest = null
-                enqueueRequest("deferred:$reason", System.currentTimeMillis())
+                enqueueRequest("deferred:$reason", monotonicMillis())
             }
         }
     }
@@ -826,7 +832,11 @@ class WardrobeSyncOutboxProcessor(
             SyncDirection.UploadLocalSnapshot -> uploadLocalSnapshot(localSnapshot)
             SyncDirection.MergeWithRemote -> proposeMergeOrUpload(localSnapshot)
             SyncDirection.RestoreRemoteThenUpload -> restoreThenFlushAndResolveConflict(localSnapshot)
-            SyncDirection.SkipEmptyLocalUpload -> SyncRunResult.Success
+            SyncDirection.SkipEmptyLocalUpload -> {
+                // No garment carries these vectors, so nothing will ever upload them: clear them, or they keep every cycle alive.
+                if (!localSnapshot.hasUserData()) markExportedEmbeddingsUploaded()
+                SyncRunResult.Success
+            }
         }
     }
 

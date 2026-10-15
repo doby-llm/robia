@@ -46,6 +46,19 @@ class SyncRequestPolicyTest {
         )
     }
 
+    /** Finding 1: a clock that moved back must not stretch the wait past one interval. */
+    @Test
+    fun clockBehindLastRequestWaitsAtMostOneInterval() {
+        assertEquals(
+            SyncRequestDecision.Defer(delayMillis = interval),
+            decide(embeddings = 1, lastRequestAt = 1_000_000L + 3_600_000L),
+        )
+        assertEquals(
+            SyncRequestDecision.Defer(delayMillis = interval),
+            decide(embeddings = 1, lastRequestAt = 1_000_000L + 1L),
+        )
+    }
+
     @Test
     fun requestWhileDeferredIsWaitingIsCoalescedNotEnqueued() {
         assertEquals(SyncRequestDecision.Coalesce, decide(embeddings = 1, lastRequestAt = 0L, deferredWaiting = true))

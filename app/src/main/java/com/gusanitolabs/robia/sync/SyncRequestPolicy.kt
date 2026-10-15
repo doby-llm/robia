@@ -22,7 +22,8 @@ internal sealed interface SyncRequestDecision {
 
 /**
  * Pure rate guard for [SyncWorkScheduler.requestSync]. A real write is never dropped: a request is only dropped when
- * nothing is pending, and a request is only merged into a deferred one that has not started yet.
+ * nothing is pending, and a request is only merged into a deferred one that has not started yet. [now] and [lastRequestAt]
+ * must come from the same monotonic clock; a delay is never longer than [minIntervalMs], even if the clock went back.
  */
 internal fun shouldRequestSync(
     pendingGarments: Int,
@@ -36,6 +37,6 @@ internal fun shouldRequestSync(
     if (pendingGarments + pendingMetadata + pendingEmbeddings == 0) return SyncRequestDecision.Drop
     if (deferredWaiting) return SyncRequestDecision.Coalesce
     val last = lastRequestAt ?: return SyncRequestDecision.Enqueue
-    val waitMillis = last + minIntervalMs - now
+    val waitMillis = (last + minIntervalMs - now).coerceIn(0L, minIntervalMs)
     return if (waitMillis > 0L) SyncRequestDecision.Defer(waitMillis) else SyncRequestDecision.Enqueue
 }

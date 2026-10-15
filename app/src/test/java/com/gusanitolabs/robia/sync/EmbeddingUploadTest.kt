@@ -13,9 +13,11 @@ import com.gusanitolabs.robia.sync.fakes.FakeSyncWorkScheduler
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeRepository
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeSnapshotStore
 import com.gusanitolabs.robia.sync.fakes.snapshotWithGarments
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -33,15 +35,22 @@ class EmbeddingUploadTest {
 
     private val scheduler = FakeSyncWorkScheduler()
 
-    private fun processor(): WardrobeSyncOutboxProcessor = WardrobeSyncOutboxProcessor(
+    /** The clock and the deferred wait are injected: tests move time and release a deferred run explicitly. */
+    private fun processor(
+        snapshotStore: WardrobeSnapshotStore = store,
+        monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+        awaitDeferredRequest: suspend (Long) -> Unit = { delayMillis -> delay(delayMillis) },
+    ): WardrobeSyncOutboxProcessor = WardrobeSyncOutboxProcessor(
         settingsRepository = FakeSettingsRepository(),
         wardrobeRepository = wardrobe,
-        snapshotRepository = store,
+        snapshotRepository = snapshotStore,
         driveRepository = drive,
         syncWorkScheduler = scheduler,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         dispatcher = Dispatchers.Unconfined,
         embeddingRepository = embeddings,
+        monotonicMillis = monotonicMillis,
+        awaitDeferredRequest = awaitDeferredRequest,
     )
 
     /** Mirrors what the real exportSnapshot returns once [key]'s vector is stored: the garment carries it. */
@@ -101,11 +110,11 @@ class EmbeddingUploadTest {
     }
 
     /**
-     * H01 reproduction: once the cycle that uploaded a pending vector has stored its snapshot, nothing is pending any more.
-     * The next cycle then sends nothing, and no cycle asks for another run on its own.
+     * H01: once the cycle that uploaded a pending vector has stored its snapshot, nothing is pending any more. The next
+     * cycle sends nothing, and a request made after it is dropped rather than enqueued.
      */
     @Test
-    fun secondCycleAfterUploadFindsNothingPendingAndSendsNothing() = runBlocking {
+    fun secondCycleAfterUploadSendsNothingAndLeavesNoRequestToMake() = runBlocking {
         embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
         exportWithVector(embeddings.pendingUploadKeys().single())
         val processor = processor()
@@ -113,9 +122,115 @@ class EmbeddingUploadTest {
         assertEquals(SyncRunResult.Success, processor.runOnce(SyncTrigger.Background, reason = "backfill"))
         assertTrue(embeddings.pendingUploadKeys().isEmpty())
         assertEquals(SyncRunResult.Success, processor.runOnce(SyncTrigger.Background, reason = "periodic"))
-
         assertEquals(1, drive.upserts.size)
+
+        processor.requestSyncInBackground("periodic")
+
         assertEquals(0, scheduler.requestSyncCount)
+    }
+
+    /** H01 finding 2: a deferred run lives only in memory, so init must re-request when only vectors are pending. */
+    @Test
+    fun initRequestsARunWhenOnlyEmbeddingsArePending() = runBlocking {
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+
+        processor()
+
+        assertEquals(listOf("init"), scheduler.requestReasons)
+    }
+
+    /**
+     * H01 finding 3: pending vectors whose garment is gone (no user data) are cleared by one cycle, so they cannot keep
+     * every later cycle alive. Nothing is uploaded for them.
+     */
+    @Test
+    fun orphanPendingVectorsWithNoGarmentsAreClearedByOneCycle() = runBlocking {
+        embeddings.upsert("garment-gone", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        assertEquals(1, embeddings.pendingUploadKeys().size)
+
+        val result = processor(snapshotStore = FakeWardrobeSnapshotStore()).runOnce(SyncTrigger.Background, reason = "backfill")
+
+        assertEquals(SyncRunResult.Success, result)
+        assertTrue(embeddings.pendingUploadKeys().isEmpty())
+        assertEquals(0, drive.upserts.size)
+    }
+
+    /**
+     * H01 finding 4: the first write enqueues at once; a write inside the interval defers one run that starts when the
+     * interval ends. The clock and the wait are driven by the test, so the deferred run is observed, not assumed.
+     */
+    @Test
+    fun writeInsideTheIntervalDefersOneRunForTheRemainder() = runBlocking {
+        var now = 0L
+        val release = CompletableDeferred<Unit>()
+        val waits = mutableListOf<Long>()
+        val processor = processor(
+            monotonicMillis = { now },
+            awaitDeferredRequest = { delayMillis ->
+                waits += delayMillis
+                release.await()
+            },
+        )
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        processor.requestSyncInBackground("backfill")
+        now = 1_000L
+        embeddings.upsert("garment-2", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-2", 6L)
+        processor.requestSyncInBackground("backfill")
+
+        assertEquals(listOf("backfill"), scheduler.requestReasons)
+        assertEquals(listOf(MIN_SYNC_REQUEST_INTERVAL_MILLIS - 1_000L), waits)
+
+        release.complete(Unit)
+
+        assertEquals(listOf("backfill", "deferred:backfill"), scheduler.requestReasons)
+    }
+
+    /** H01 finding 4: a write while the deferred run is still waiting merges into it: one run, not one per write. */
+    @Test
+    fun writesWhileTheDeferredRunWaitsCoalesceIntoIt() = runBlocking {
+        var now = 0L
+        val release = CompletableDeferred<Unit>()
+        val waits = mutableListOf<Long>()
+        val processor = processor(
+            monotonicMillis = { now },
+            awaitDeferredRequest = { delayMillis ->
+                waits += delayMillis
+                release.await()
+            },
+        )
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        processor.requestSyncInBackground("backfill")
+        now = 1_000L
+        embeddings.upsert("garment-2", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-2", 6L)
+        processor.requestSyncInBackground("backfill")
+        now = 2_000L
+        embeddings.upsert("garment-3", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-3", 7L)
+        processor.requestSyncInBackground("backfill")
+
+        assertEquals(listOf("backfill"), scheduler.requestReasons)
+        assertEquals(1, waits.size)
+
+        release.complete(Unit)
+
+        assertEquals(listOf("backfill", "deferred:backfill"), scheduler.requestReasons)
+    }
+
+    /** H01 finding 1: a clock that moved back must not hold the next request for longer than one interval. */
+    @Test
+    fun clockMovingBackwardsDoesNotStretchTheDeferral() = runBlocking {
+        var now = 5_000L
+        val waits = mutableListOf<Long>()
+        val processor = processor(
+            monotonicMillis = { now },
+            awaitDeferredRequest = { delayMillis -> waits += delayMillis },
+        )
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        processor.requestSyncInBackground("backfill")
+        now = 1_000L
+        embeddings.upsert("garment-2", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-2", 6L)
+        processor.requestSyncInBackground("backfill")
+
+        assertEquals(listOf(MIN_SYNC_REQUEST_INTERVAL_MILLIS), waits)
     }
 
     /** H01: a vector saved by the backfill asks for a run, and the run carries the reason into the log line. */
@@ -124,19 +239,6 @@ class EmbeddingUploadTest {
         embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
 
         processor().requestSyncInBackground("backfill")
-
-        assertEquals(listOf("backfill"), scheduler.requestReasons)
-    }
-
-    /** H01: two backfill requests inside the interval become one WorkManager request; the second is deferred, not dropped. */
-    @Test
-    fun backfillRequestsInsideTheIntervalCoalesceIntoOneRun() = runBlocking {
-        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
-        val processor = processor()
-
-        processor.requestSyncInBackground("backfill")
-        embeddings.upsert("garment-2", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-2", 6L)
-        processor.requestSyncInBackground("backfill")
 
         assertEquals(listOf("backfill"), scheduler.requestReasons)
     }
