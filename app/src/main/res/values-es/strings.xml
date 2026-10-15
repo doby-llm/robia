@@ -525,6 +525,15 @@
     <string name="sync_use_backup_confirm_title">¿Reemplazar las prendas de este móvil?</string>
     <string name="sync_use_backup_confirm_body">Las prendas y fotos de este móvil se reemplazarán por la copia de Google Drive. Los cambios que solo existen en este móvil se perderán.</string>
     <string name="sync_use_backup_confirm_action">Reemplazar</string>
+    <string name="sync_merge_plain_body">Combinar mantiene las prendas de los dos sitios: este móvil tiene %2$d, la copia de Drive tiene %1$d y tendrías %3$d. Reemplazar borra las %2$d de este móvil y usa las %1$d de Drive.</string>
+    <string name="sync_merge_replace">Reemplazar este móvil por la copia</string>
+    <string name="sync_merge_combining">Combinando con Drive...</string>
+    <string name="sync_merge_combined">Combinado con Drive.</string>
+    <string name="sync_merge_combine_failed">La combinación con Drive no se completó. No se ha perdido nada; puedes volver a intentarlo.</string>
+    <string name="sync_merge_result_ok">Vale</string>
+    <string name="sync_keep_phone_confirm_title">¿Sobrescribir la copia de Drive?</string>
+    <string name="sync_keep_phone_confirm_body">La copia de Google Drive se reemplazará por las prendas de este móvil. Los cambios que solo existen en la copia se perderán.</string>
+    <string name="sync_keep_phone_confirm_action">Sobrescribir copia</string>
     <string name="sync_status_parked_help">Guardada en este móvil. No se subirá hasta que pulses Reintentar.</string>
     <!-- TASK-E06 -->
     <plurals name="suggestions_preparing_count">

@@ -53,6 +53,15 @@ class RobiaApplication : Application() {
     /** Whether the device has an internet network right now; the cloud sync indicator shows "Waiting for connection" without one. */
     val online: StateFlow<Boolean> = onlineState.asStateFlow()
 
+    private val cloudAuthorizationInFlightState = MutableStateFlow(false)
+
+    /** True while the Google account chooser or its result is pending; first-run prompts wait behind it. In memory only. */
+    val cloudAuthorizationInFlight: StateFlow<Boolean> = cloudAuthorizationInFlightState.asStateFlow()
+
+    fun setCloudAuthorizationInFlight(inFlight: Boolean) {
+        cloudAuthorizationInFlightState.value = inFlight
+    }
+
     val modelStore by lazy {
         ModelStore(
             rootDir = File(filesDir, "models"),

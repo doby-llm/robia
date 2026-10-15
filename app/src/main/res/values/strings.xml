@@ -525,6 +525,15 @@
     <string name="sync_use_backup_confirm_title">Replace the garments on this phone?</string>
     <string name="sync_use_backup_confirm_body">The garments and photos on this phone will be replaced by the Google Drive backup. Changes that exist only on this phone will be lost.</string>
     <string name="sync_use_backup_confirm_action">Replace</string>
+    <string name="sync_merge_plain_body">Combine keeps the garments from both places: this phone has %2$d, the Drive backup has %1$d, and you would have %3$d. Replace deletes the %2$d on this phone and uses the %1$d from Drive.</string>
+    <string name="sync_merge_replace">Replace this phone with the backup</string>
+    <string name="sync_merge_combining">Combining with Drive...</string>
+    <string name="sync_merge_combined">Combined with Drive.</string>
+    <string name="sync_merge_combine_failed">Combining with Drive did not finish. Nothing was lost; you can try again.</string>
+    <string name="sync_merge_result_ok">OK</string>
+    <string name="sync_keep_phone_confirm_title">Overwrite the Drive backup?</string>
+    <string name="sync_keep_phone_confirm_body">The Drive backup will be replaced with the garments on this phone. Changes that exist only in the backup will be lost.</string>
+    <string name="sync_keep_phone_confirm_action">Overwrite backup</string>
     <string name="sync_status_parked_help">Saved on this phone. It won\'t upload until you tap Retry.</string>
     <!-- TASK-E06 -->
     <plurals name="suggestions_preparing_count">

@@ -525,6 +525,15 @@
     <string name="sync_use_backup_confirm_title">Kleidungsstücke auf diesem Handy ersetzen?</string>
     <string name="sync_use_backup_confirm_body">Die Kleidungsstücke und Fotos auf diesem Handy werden durch die Google-Drive-Sicherung ersetzt. Änderungen, die nur auf diesem Handy existieren, gehen verloren.</string>
     <string name="sync_use_backup_confirm_action">Ersetzen</string>
+    <string name="sync_merge_plain_body">Zusammenführen behält die Kleidungsstücke von beiden Seiten: Dieses Handy hat %2$d, die Drive-Sicherung hat %1$d, danach wären es %3$d. Ersetzen löscht die %2$d auf diesem Handy und übernimmt die %1$d aus Drive.</string>
+    <string name="sync_merge_replace">Dieses Handy durch die Sicherung ersetzen</string>
+    <string name="sync_merge_combining">Wird mit Drive zusammengeführt...</string>
+    <string name="sync_merge_combined">Mit Drive zusammengeführt.</string>
+    <string name="sync_merge_combine_failed">Das Zusammenführen mit Drive wurde nicht abgeschlossen. Es ist nichts verloren gegangen; du kannst es erneut versuchen.</string>
+    <string name="sync_merge_result_ok">OK</string>
+    <string name="sync_keep_phone_confirm_title">Drive-Sicherung überschreiben?</string>
+    <string name="sync_keep_phone_confirm_body">Die Google-Drive-Sicherung wird durch die Kleidungsstücke auf diesem Handy ersetzt. Änderungen, die nur in der Sicherung existieren, gehen verloren.</string>
+    <string name="sync_keep_phone_confirm_action">Sicherung überschreiben</string>
     <string name="sync_status_parked_help">Auf diesem Handy gespeichert. Es wird erst hochgeladen, wenn du Erneut versuchen tippst.</string>
     <!-- TASK-E06 -->
     <plurals name="suggestions_preparing_count">
