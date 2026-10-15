@@ -534,4 +534,7 @@
         <item quantity="one">Preparando sugerencias para %d prenda…</item>
         <item quantity="other">Preparando sugerencias para %d prendas…</item>
     </plurals>
+    <!-- TASK-S07 -->
+    <string name="cloud_restore_upload_photos_progress">Subiendo fotos %1$d de %2$d</string>
+    <string name="cloud_restore_finishing">Finalizando…</string>
 </resources>

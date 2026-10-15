@@ -1898,12 +1898,31 @@ private fun CloudRestoreProgressOverlay(
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center,
                         )
-                        Text(
-                            text = stringResource(R.string.cloud_restore_remaining, progress.remainingWork, progress.totalWork),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
+                        when (val stepLine = progress.stepLine()) {
+                            RestoreStepLine.Hidden -> Unit
+                            is RestoreStepLine.Steps -> Text(
+                                text = stringResource(R.string.cloud_restore_remaining, stepLine.remaining, stepLine.total),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                            is RestoreStepLine.PhotosUploaded -> Text(
+                                text = stringResource(
+                                    R.string.cloud_restore_upload_photos_progress,
+                                    stepLine.completed,
+                                    stepLine.total,
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                            RestoreStepLine.Finishing -> Text(
+                                text = stringResource(R.string.cloud_restore_finishing),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                         progress.itemProgress?.let { itemProgress ->
                             Text(
                                 text = stringResource(

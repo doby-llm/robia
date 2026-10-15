@@ -309,8 +309,8 @@ internal fun planPhotoUploads(
         is LocalPhotoState.Guarded -> PhotoUploadAction.CopyRemote(state.garmentId)
         is LocalPhotoState.Unreadable -> PhotoUploadAction.Fail(state.garmentId)
         is LocalPhotoState.Readable ->
-            if (known != null && known.sourceHash == state.sourceHash && !PhotoBlobKeys.isLegacyKey(known.blobPath) &&
-                index.idOf(known.blobPath) != null
+            if (known != null && (known.sourceHash == state.sourceHash || known.holdsLocalBytes(state.sourceHash)) &&
+                !PhotoBlobKeys.isLegacyKey(known.blobPath) && index.idOf(known.blobPath) != null
             ) {
                 PhotoUploadAction.Reuse(state.garmentId, known)
             } else {
@@ -318,6 +318,13 @@ internal fun planPhotoUploads(
             }
     }
 }
+
+/**
+ * True when the local bytes are the bytes of this blob. A restored photo is the blob's WebP, so its local hash never
+ * equals the original [LastUploadedPhoto.sourceHash]; its first 16 digits do equal the blob's content hash.
+ * An edited photo has other bytes and is uploaded. An unknown content hash is never a match.
+ */
+private fun LastUploadedPhoto.holdsLocalBytes(sourceHash16: String): Boolean = contentHash?.take(16) == sourceHash16
 
 /** Result of one snapshot upload: the manifest (with per-photo failures) and the photo records it carries. */
 internal data class PhotoUploadOutcome(

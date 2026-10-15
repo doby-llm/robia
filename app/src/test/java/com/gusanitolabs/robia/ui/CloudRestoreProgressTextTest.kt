@@ -230,6 +230,26 @@ class CloudRestoreProgressTextTest {
         )
     }
 
+    @Test
+    fun stepLine_countsRealPhotosAndSaysFinishingAfterTheLastPhoto() {
+        // Upload milestones from the photo loop, then the snapshot tail with every photo done.
+        val upload = listOf(0, 1, 3).map { completed ->
+            stageProgress(CloudRestorePhase.Uploading, uploadProgress = RestoreUploadProgress(completed, 3)).stepLine()
+        }
+
+        assertEquals(
+            listOf(
+                RestoreStepLine.PhotosUploaded(0, 3),
+                RestoreStepLine.PhotosUploaded(1, 3),
+                RestoreStepLine.Finishing,
+            ),
+            upload,
+        )
+        assertEquals(RestoreStepLine.Hidden, stageProgress(CloudRestorePhase.Uploading).stepLine())
+        assertEquals(RestoreStepLine.Hidden, stageProgress(CloudRestorePhase.Downloading).stepLine())
+        assertEquals(RestoreStepLine.Steps(remaining = 6, total = 8), stageProgress(CloudRestorePhase.Preparing).stepLine())
+    }
+
     private fun stageProgress(
         phase: CloudRestorePhase,
         itemProgress: RestoreItemProgress? = null,
