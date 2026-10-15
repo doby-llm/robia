@@ -40,7 +40,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +56,7 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import java.util.Locale
@@ -106,12 +106,13 @@ fun ManageTagsScreen(
     onDeleteMainColor: (MainColor) -> Unit,
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
+    selectedTabId: String?,
+    onSelectedTabIdChange: (String?) -> Unit,
 ) {
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
     var pendingDeleteColor by remember { mutableStateOf<MainColor?>(null) }
     var pendingRestoreDefault by remember { mutableStateOf<RestoreDefaultTarget?>(null) }
-    var selectedTabId by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
@@ -159,7 +160,7 @@ fun ManageTagsScreen(
                 val categoryCount = tagsByCategory[category.id].orEmpty().size
                 Tab(
                     selected = activeTabId == category.id,
-                    onClick = { selectedTabId = category.id },
+                    onClick = { onSelectedTabIdChange(category.id) },
                     text = {
                         Text(stringResource(R.string.manage_tab_count, category.localizedName(), categoryCount))
                     },
@@ -167,7 +168,7 @@ fun ManageTagsScreen(
             }
             Tab(
                 selected = isColorsTab,
-                onClick = { selectedTabId = ColorsTabId },
+                onClick = { onSelectedTabIdChange(ColorsTabId) },
                 text = {
                     Text(
                         stringResource(
@@ -516,6 +517,12 @@ private fun ColorListRow(
     }
 }
 
+/** Null when the text is blank or equals the built-in default, so an unchanged default stays unmodified. */
+internal fun storedTagDescription(input: String, defaultDescription: String?): String? {
+    val trimmed = input.trim()
+    return trimmed.takeIf { it.isNotEmpty() && it != defaultDescription }
+}
+
 @Composable
 private fun TagEditorDialog(
     state: TagEditorState,
@@ -524,7 +531,9 @@ private fun TagEditorDialog(
     onSave: (GarmentTag) -> Unit,
 ) {
     var name by remember(state) { mutableStateOf(state.existingTag?.name.orEmpty()) }
-    var description by remember(state) { mutableStateOf(state.existingTag?.description.orEmpty()) }
+    // A default tag shows its built-in description; saving the unchanged text stores null so the default is not marked as modified.
+    val defaultDescription = state.existingTag?.id?.let(EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS::get)
+    var description by remember(state) { mutableStateOf(state.existingTag?.description ?: defaultDescription.orEmpty()) }
     var suggestOccasions by remember(state) { mutableStateOf(state.existingTag?.suggestOccasions ?: true) }
     val trimmedName = name.trim()
     val editingTagId = state.existingTag?.id
@@ -543,7 +552,7 @@ private fun TagEditorDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -602,7 +611,7 @@ private fun TagEditorDialog(
                             name = trimmedName,
                             sortOrder = existing?.sortOrder ?: categoryTags.nextTagSortOrder(),
                             isSystem = existing?.isSystem ?: false,
-                            description = description.trim().takeIf(String::isNotEmpty),
+                            description = storedTagDescription(description, defaultDescription),
                             suggestOccasions = suggestOccasions,
                         ),
                     )
