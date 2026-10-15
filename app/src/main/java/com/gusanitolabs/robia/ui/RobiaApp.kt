@@ -695,6 +695,8 @@ private fun RobiaShell(
     var similarToGarmentId by rememberSaveable { mutableStateOf<String?>(null) }
     // Set by saving a new garment: Browse shows the newest first until the user leaves Browse.
     var browseNewestFirst by rememberSaveable { mutableStateOf(false) }
+    // Hoisted so Manage keeps its open tab when a tag or colour review returns to it.
+    var manageTagsTabId by rememberSaveable { mutableStateOf<String?>(null) }
     val batchDrafts = remember(initialPerformanceBatchFixtureUris) {
         mutableStateListOf<BatchDraftItem>().apply {
             initialPerformanceBatchFixtureUris.forEachIndexed { index, uri ->
@@ -1046,7 +1048,7 @@ private fun RobiaShell(
         if (updatedItems.isNotEmpty()) onSaveItems(updatedItems, emptyMap())
         activeTagReview = null
         showTagReviewDiscardDialog = false
-        replaceRoute(RobiaRoute.Browse)
+        replaceRoute(RobiaRoute.ManageTags)
     }
 
     fun requestTagReviewDiscard() {
@@ -1057,7 +1059,7 @@ private fun RobiaShell(
     fun discardTagReview() {
         activeTagReview = null
         showTagReviewDiscardDialog = false
-        replaceRoute(RobiaRoute.Browse)
+        replaceRoute(RobiaRoute.ManageTags)
     }
 
     fun commitColorReview(changeSet: ColorPaletteChangeSet, updatedItems: List<ClothingItem>) {
@@ -1069,7 +1071,7 @@ private fun RobiaShell(
         activeColorReviewChangeSet = null
         pendingColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
-        replaceRoute(RobiaRoute.Browse)
+        replaceRoute(RobiaRoute.ManageTags)
     }
 
     fun requestColorReviewDiscard() {
@@ -1088,7 +1090,7 @@ private fun RobiaShell(
         pendingColorReviewChangeSet = null
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
-        replaceRoute(RobiaRoute.Browse)
+        replaceRoute(RobiaRoute.ManageTags)
     }
 
     fun handleSettingsClick() {
@@ -1547,12 +1549,14 @@ private fun RobiaShell(
             onRestoreDefaultTags = ::restoreDefaultTagsAndOfferReview,
             onRestoreDefaultMainColors = ::restoreDefaultMainColorsAndStartReview,
             tagReviewPlan = activeTagReview,
+            manageTagsTabId = manageTagsTabId,
+            onManageTagsTabIdChange = { manageTagsTabId = it },
             onCommitTagReview = ::commitTagReview,
             onRequestTagReviewDiscard = ::requestTagReviewDiscard,
             onCommitColorReview = ::commitColorReview,
             onCloseColorReview = {
                 activeColorReviewChangeSet = null
-                replaceRoute(RobiaRoute.Browse)
+                replaceRoute(RobiaRoute.ManageTags)
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
             onClearRestoreSyncLog = onClearRestoreSyncLog,
@@ -2420,6 +2424,8 @@ private fun RobiaNavHost(
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
     tagReviewPlan: TagReviewPlan?,
+    manageTagsTabId: String?,
+    onManageTagsTabIdChange: (String?) -> Unit,
     onCommitTagReview: (List<ClothingItem>) -> Unit,
     onRequestTagReviewDiscard: () -> Unit,
     onClearRestoreSyncLog: () -> Unit,
@@ -2484,6 +2490,8 @@ private fun RobiaNavHost(
             onDeleteMainColor = onDeleteMainColor,
             onRestoreDefaultTags = onRestoreDefaultTags,
             onRestoreDefaultMainColors = onRestoreDefaultMainColors,
+            selectedTabId = manageTagsTabId,
+            onSelectedTabIdChange = onManageTagsTabIdChange,
         )
         RobiaRoute.ColorReview -> colorReviewChangeSet?.let { changeSet ->
             ColorReviewScreen(
