@@ -84,7 +84,7 @@
     <string name="drive_sync_status_not_configured">Nicht konfiguriert</string>
     <string name="drive_sync_status_disconnected">Google-Konto getrennt</string>
     <string name="drive_sync_status_syncing">Synchronisierung läuft…</string>
-    <string name="drive_sync_status_needs_attention">Synchronisierung benötigt Aufmerksamkeit</string>
+    <string name="drive_sync_status_needs_attention">Synchronisierung pausiert: Aufmerksamkeit nötig</string>
     <string name="developer_mode">Entwicklermodus</string>
     <string name="developer_mode_summary">Diagnosen beim Hinzufügen und Wiederherstellen anzeigen</string>
     <string name="developer_mode_unlocked">Entwicklermodus freigeschaltet</string>
@@ -603,7 +603,9 @@
     <!-- G03 -->
     <string name="cloud_sync_headline_synced">Synchronisiert</string>
     <string name="cloud_sync_headline_pending">Wartet auf Synchronisierung</string>
+    <string name="cloud_sync_headline_waiting">Warte auf Verbindung</string>
     <string name="dev_cloud_title">Cloud-Synchronisierung (Entwickler)</string>
+    <string name="dev_cloud_status">Status: %1$s</string>
     <string name="dev_cloud_pending">Ausstehende Änderungen: %1$d</string>
     <string name="dev_cloud_processing">Läuft: %1$s</string>
     <string name="dev_cloud_yes">ja</string>
@@ -613,6 +615,11 @@
     <string name="dev_cloud_ended">Ende: %1$s</string>
     <string name="dev_cloud_result">Ergebnis: %1$s</string>
     <string name="dev_cloud_cancelled">abgebrochen</string>
+    <string name="dev_cloud_result_success">erfolgreich</string>
+    <string name="dev_cloud_result_retry">erneuter Versuch geplant</string>
+    <string name="dev_cloud_result_auth_blocked">Anmeldung erforderlich</string>
+    <string name="dev_cloud_result_conflict">Konflikt mit dem Backup</string>
+    <string name="dev_cloud_result_needs_user">braucht deine Entscheidung</string>
     <string name="dev_cloud_pending_at_start">Ausstehend beim Start: %1$d</string>
     <string name="dev_cloud_error">Letzter Fehler: %1$s</string>
 </resources>
