@@ -1,7 +1,7 @@
 # Z01 - Device checklist (Poco F3, Xiaomi M2012K11AG, API 33)
 
-APK: latest `main` staging build (includes F01-F03b, G01-G04, H01-H06). Run 38774274147, artifact robia-staging-apk (id 11992763611):
-https://github.com/doby-llm/robia/actions/runs/38774274147/artifacts/11992763611
+APK: latest `main` staging build (includes J01-J04). Run 38799053446, artifact robia-staging-apk (id 12003662471):
+https://github.com/doby-llm/robia/actions/runs/38799053446/artifacts/12003662471
 Install it over the current app (same CI signing key). If Android reports a signature conflict, do NOT uninstall: that deletes local data.
 
 Phone charging, battery saver off, other apps closed. Mark each row PASS / FAIL and write what you saw.
@@ -45,6 +45,14 @@ ID collisions in verification-matrix.md are resolved here: V-Z05b = sync progres
 - [ ] V-Z21 (H05) Reviews (tags and colours): accepting a card makes it fade away discreetly; 'Accept all (N)' counts accepted + remaining; category picker shows a bottom fade and 'N options' while it scrolls; back arrow (top left) asks 'Discard changes? This undoes the action you just made'; Discard undoes the change (try: delete a tag with garments, discard, the tag and its garments are back; add a tag, discard, it is gone) and returns to Manage. Result:
 - [ ] V-Z22 (H06) Delete the embeddings model in Settings: the search bar disappears and only a sparkle icon remains right of Filters; tapping it explains Smart suggestions and offers download; after the download the search bar appears (with a gentle animation). Result:
 - [ ] V-Z23 (H01/H02) Cloud icon shows ONLY while syncing ('Syncing...', no blinking between back-to-back cycles) or for attention/error; nothing when idle. Leave the app open 2 min after editing tags: no endless 'Syncing...' loop. If it loops, paste the sync log (it now has a reason= per cycle) and screenshot the developer card. Result:
+
+## G. Feedback 4 fixes (J01-J04), after Manu's A-F results
+- [ ] V-Z24 (J01/J02) Settings: tag/colour deletions end with 'All cloud changes synced', pending 0 and no icon; the old '5 pending' drains on the first cycle. Developer card shows a readable Result (e.g. Success), not 'c3'. Result:
+- [ ] V-Z25 (J02) Airplane mode with a pending edit: Settings, Browse icon and developer card say 'Waiting for connection' (calm, no endless 'Syncing'); the garment sheet says 'Waiting for connection'; turning data on drains it. Result:
+- [ ] V-Z26 (J03) Delete 'Dresses', Restore defaults: the review now proposes the dresses (if not, paste the log line of the scan). Edit a tag description: the review is offered. Accept the last card: the screen closes by itself. Tap outside the 'Review garments / Not now' box: the delete is undone (tag and its garments back); 'Not now' keeps it. Editor gap slightly bigger. Result:
+- [ ] V-Z27 (J04) First launch (clear app data or fresh install): one prompt at a time, cloud setup first, Smart suggestions only after. Result:
+- [ ] V-Z28 (J04) Merge dialog: buttons stacked, no overlap; Combine closes it and the Browse card shows 'Combining...' then done/failed (fails by itself after 90 s); Not now/outside tap keeps the proposal as a card; 'Keep this phone' asks to confirm overwrite. Result:
+- [ ] V-Z29 (J04) Browse and Advanced filters: no blank space at the end of the scroll. Result:
 
 ## Return
 Paste the results (a copy of this list with PASS/FAIL and notes is enough). Z01 is then closed by recording them in the tracking issue.
