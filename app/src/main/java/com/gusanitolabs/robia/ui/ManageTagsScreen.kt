@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,6 +64,7 @@ import java.util.UUID
 
 private const val DefaultCustomColorHex = "#A8644E"
 private const val ColorsTabId = "colors"
+private const val TagDescriptionMaxLength = 200
 
 private data class NeutralColorPreset(
     @StringRes val nameRes: Int,
@@ -522,6 +524,8 @@ private fun TagEditorDialog(
     onSave: (GarmentTag) -> Unit,
 ) {
     var name by remember(state) { mutableStateOf(state.existingTag?.name.orEmpty()) }
+    var description by remember(state) { mutableStateOf(state.existingTag?.description.orEmpty()) }
+    var suggestOccasions by remember(state) { mutableStateOf(state.existingTag?.suggestOccasions ?: true) }
     val trimmedName = name.trim()
     val editingTagId = state.existingTag?.id
     val hasDuplicateName = trimmedName.isNotEmpty() && categoryTags.any { tag ->
@@ -539,18 +543,52 @@ private fun TagEditorDialog(
             )
         },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                singleLine = true,
-                isError = hasDuplicateName,
-                label = { Text(stringResource(R.string.tag_name_label)) },
-                supportingText = {
-                    if (hasDuplicateName) {
-                        Text(stringResource(R.string.tag_name_duplicate))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    isError = hasDuplicateName,
+                    label = { Text(stringResource(R.string.tag_name_label)) },
+                    supportingText = {
+                        if (hasDuplicateName) {
+                            Text(stringResource(R.string.tag_name_duplicate))
+                        }
+                    },
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it.take(TagDescriptionMaxLength) },
+                    minLines = 2,
+                    label = { Text(stringResource(R.string.tag_description_label)) },
+                    placeholder = { Text(stringResource(R.string.tag_description_placeholder)) },
+                    supportingText = {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(stringResource(R.string.tag_description_helper))
+                            Text(stringResource(R.string.tag_description_counter, description.length))
+                        }
+                    },
+                )
+                if (state.categoryId == "category") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.tag_suggest_occasions_label),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = stringResource(R.string.tag_suggest_occasions_help),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = suggestOccasions, onCheckedChange = { suggestOccasions = it })
                     }
-                },
-            )
+                }
+            }
         },
         confirmButton = {
             Button(
@@ -564,8 +602,8 @@ private fun TagEditorDialog(
                             name = trimmedName,
                             sortOrder = existing?.sortOrder ?: categoryTags.nextTagSortOrder(),
                             isSystem = existing?.isSystem ?: false,
-                            description = existing?.description,
-                            suggestOccasions = existing?.suggestOccasions ?: true,
+                            description = description.trim().takeIf(String::isNotEmpty),
+                            suggestOccasions = suggestOccasions,
                         ),
                     )
                 },
