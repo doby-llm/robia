@@ -777,16 +777,16 @@ class RegressionSourceContractTest {
         assertTrue(settingsRepository.contains("preferences[cloudSetupPromptInteractedKey] = true"))
         assertTrue(settingsRepository.contains("override suspend fun markCloudSetupPromptInteracted()"))
 
-        val promptEffect = app
-            .substringAfter("LaunchedEffect(\n        settingsLoaded,")
-            .substringBefore("LaunchedEffect(items)")
+        val promptQueue = app
+            .substringAfter("val cloudSetupPromptPending = settingsLoaded &&")
+            .substringBefore("val queuedFirstRunPrompt")
 
-        assertTrue(promptEffect.contains("if (settingsLoaded &&"))
-        assertTrue(promptEffect.contains("!settings.cloudSetupPromptInteracted"))
-        assertTrue(promptEffect.contains("settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured"))
-        assertTrue(promptEffect.contains("isFirstRunCloudSetup"))
-        assertTrue(promptEffect.contains("onCloudSetupPromptInteracted()"))
-        assertTrue(promptEffect.contains("showCloudSetupPrompt = true"))
+        assertTrue(promptQueue.contains("!settings.cloudSetupPromptInteracted"))
+        assertTrue(promptQueue.contains("settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured"))
+        assertTrue(promptQueue.contains("isFirstRunCloudSetup"))
+        assertTrue(promptQueue.contains("FirstRunPrompt.CloudSetup !in answeredFirstRunPrompts"))
+        assertTrue(app.contains("onCloudSetupPromptInteracted()"))
+        assertTrue(app.contains("activeFirstRunPrompt = queuedFirstRunPrompt"))
         assertFalse(app.contains("CloudSetupGuard"))
         assertFalse(app.contains("LateEnableBlocked"))
     }
