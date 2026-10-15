@@ -535,7 +535,6 @@
     <string name="cloud_restore_upload_photos_progress">Subiendo fotos %1$d de %2$d</string>
     <string name="cloud_restore_finishing">Finalizando…</string>
     <!-- TASK-E08 -->
-    <string name="tag_description_placeholder">p. ej. una prenda ligera con botones delante y cuello</string>
     <string name="tag_description_helper">Una frase corta que describa cómo es. Mejora las sugerencias.</string>
     <string name="tag_suggest_occasions_label">Sugerir ocasiones para esta categoría</string>
     <string name="tag_suggest_occasions_help">Desactívalo para cosas que combinan con cualquier ocasión, como joyas o accesorios.</string>

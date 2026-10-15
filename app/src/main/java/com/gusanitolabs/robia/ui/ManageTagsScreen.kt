@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.ui
 
+import android.content.Context
+import android.content.res.Configuration
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,11 +54,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.core.model.TagNameRules
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
@@ -539,8 +544,17 @@ private fun TagEditorDialog(
     var suggestOccasions by remember(state) { mutableStateOf(state.existingTag?.suggestOccasions ?: true) }
     val trimmedName = name.trim()
     val editingTagId = state.existingTag?.id
-    val hasDuplicateName = trimmedName.isNotEmpty() && categoryTags.any { tag ->
-        tag.id != editingTagId && tag.name.toNormalizedName() == trimmedName.toNormalizedName()
+    val context = LocalContext.current
+    val siblingLabels = remember(categoryTags, editingTagId) {
+        categoryTags
+            .filterNot { tag -> tag.id == editingTagId }
+            .flatMap { tag -> tag.namesInAllLocales(context) }
+    }
+    val hasDuplicateName = TagNameRules.conflicts(trimmedName, siblingLabels)
+    val nameSupportingText: (@Composable () -> Unit)? = if (hasDuplicateName) {
+        { Text(stringResource(R.string.tag_name_duplicate)) }
+    } else {
+        null
     }
     val canSave = trimmedName.isNotEmpty() && !hasDuplicateName
 
@@ -554,34 +568,39 @@ private fun TagEditorDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    isError = hasDuplicateName,
-                    label = { Text(stringResource(R.string.tag_name_label)) },
-                    supportingText = {
-                        if (hasDuplicateName) {
-                            Text(stringResource(R.string.tag_name_duplicate))
-                        }
-                    },
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it.take(TagDescriptionMaxLength) },
-                    minLines = 2,
-                    label = { Text(stringResource(R.string.tag_description_label)) },
-                    placeholder = { Text(stringResource(R.string.tag_description_placeholder)) },
-                    supportingText = {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(stringResource(R.string.tag_description_helper))
-                            Text(stringResource(R.string.tag_description_counter, description.length))
-                        }
-                    },
-                )
+            Column {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        singleLine = true,
+                        isError = hasDuplicateName,
+                        label = { Text(stringResource(R.string.tag_name_label)) },
+                        supportingText = nameSupportingText,
+                    )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it.take(TagDescriptionMaxLength) },
+                        minLines = 2,
+                        label = { Text(stringResource(R.string.tag_description_label)) },
+                        trailingIcon = { Text(stringResource(R.string.tag_description_counter, description.length)) },
+                    )
+                    // Always visible, one line, no reserved slot: a placeholder disappeared as soon as the user typed.
+                    Text(
+                        text = stringResource(R.string.tag_description_helper),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
                 if (state.categoryId == "category") {
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .heightIn(min = 36.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -647,9 +666,7 @@ private fun ColorEditorDialog(
     var userHasPickedColor by remember(state) { mutableStateOf(false) }
     val trimmedName = name.trim()
     val selectedColorHex = selectedHex.toNormalizedHex()
-    val hasDuplicateName = trimmedName.isNotEmpty() && siblingColors.any { color ->
-        color.name.toNormalizedName() == trimmedName.toNormalizedName()
-    }
+    val hasDuplicateName = TagNameRules.conflicts(trimmedName, siblingColors.map(MainColor::name))
     val hasDuplicateHex = selectedColorHex != null && selectedColorHex in unavailableHexes
     val canSave = trimmedName.isNotEmpty() && selectedColorHex != null && !hasDuplicateName && !hasDuplicateHex
 
@@ -934,8 +951,16 @@ private fun customId(prefix: String, name: String): String {
     return "$prefix-$slug-${UUID.randomUUID()}"
 }
 
-private fun String.toNormalizedName(): String =
-    trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
+/** Stored name plus the label in each supported language, so a Spanish 'Vestidos' conflicts with a stored 'Dresses'. */
+private fun GarmentTag.namesInAllLocales(context: Context): List<String> {
+    val localized = listOf("en", "es", "de").map { language ->
+        val localeConfiguration = Configuration(context.resources.configuration).apply {
+            setLocale(Locale.forLanguageTag(language))
+        }
+        localizedTagLabel(context.createConfigurationContext(localeConfiguration))
+    }
+    return listOf(name) + localized
+}
 
 private fun String.toNormalizedHex(): String? {
     val normalized = trim().removePrefix("#")

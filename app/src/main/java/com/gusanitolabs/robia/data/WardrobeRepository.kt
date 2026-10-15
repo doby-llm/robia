@@ -75,7 +75,7 @@ interface TagRepository {
     )
     suspend fun deleteCustomTag(id: String)
     suspend fun deleteMainColor(id: String)
-    suspend fun restoreDefaultTags(categoryId: String)
+    suspend fun restoreDefaultTags(categoryId: String): Set<String>
     suspend fun resetMainColorsToDefaults()
-    suspend fun seedDefaultsIfNeeded()
+    suspend fun seedDefaultsIfNeeded(): Set<String>
 }

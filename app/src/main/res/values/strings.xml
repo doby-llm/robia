@@ -535,7 +535,6 @@
     <string name="cloud_restore_upload_photos_progress">Uploading photos %1$d of %2$d</string>
     <string name="cloud_restore_finishing">Finishing…</string>
     <!-- TASK-E08 -->
-    <string name="tag_description_placeholder">e.g. a light top with buttons down the front and a collar</string>
     <string name="tag_description_helper">One short sentence describing what it looks like. Helps suggestions.</string>
     <string name="tag_suggest_occasions_label">Suggest occasions for this category</string>
     <string name="tag_suggest_occasions_help">Turn off for things that go with any occasion, like jewelry or accessories.</string>
