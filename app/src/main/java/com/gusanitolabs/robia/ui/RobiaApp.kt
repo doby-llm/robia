@@ -23,6 +23,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +68,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Straighten
@@ -83,6 +85,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -91,6 +94,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -107,6 +111,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -164,6 +169,9 @@ import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.SavedExample
+import com.gusanitolabs.robia.suggestions.SearchController
+import com.gusanitolabs.robia.suggestions.SearchMode
+import com.gusanitolabs.robia.suggestions.SearchResult
 import com.gusanitolabs.robia.suggestions.ReviewPlanner
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -173,6 +181,7 @@ import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import com.gusanitolabs.robia.suggestions.engine.TextImageEmbedder
 import com.gusanitolabs.robia.suggestions.garmentTextInput
 import com.gusanitolabs.robia.suggestions.labelTextFor
+import com.gusanitolabs.robia.suggestions.rankSimilar
 import com.gusanitolabs.robia.suggestions.sha256Hex16
 import com.gusanitolabs.robia.suggestions.model.ModelDownloadWorker
 import com.gusanitolabs.robia.suggestions.model.ModelState
@@ -678,6 +687,8 @@ private fun RobiaShell(
     val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
+    var browseQuery by rememberSaveable { mutableStateOf("") }
+    var similarToGarmentId by rememberSaveable { mutableStateOf<String?>(null) }
     val batchDrafts = remember(initialPerformanceBatchFixtureUris) {
         mutableStateListOf<BatchDraftItem>().apply {
             initialPerformanceBatchFixtureUris.forEachIndexed { index, uri ->
@@ -719,8 +730,42 @@ private fun RobiaShell(
             emptyList()
         }
     }
+    val vectors by app.embeddingRepository
+        .observeVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
+        .collectAsState(initial = emptyMap())
+    val engineAvailable = modelState is ModelState.Ready
+    val searchController = remember(app) {
+        SearchController(embedQuery = { query -> app.embeddingEngineHolder.embedText(EmbeddingRecipe.QUERY_PREFIX + query) })
+    }
+    val searchActive = browseQuery.isNotBlank()
+    val searchItems = remember(clothingItems, filteredItems) {
+        val filteredIds = filteredItems.mapTo(HashSet(), UiWardrobeItem::id)
+        clothingItems.filter { item -> item.id in filteredIds }
+    }
+    var searchResult by remember { mutableStateOf(SearchResult(emptyList(), SearchMode.None)) }
+    LaunchedEffect(browseQuery, searchItems, vectors, engineAvailable) {
+        searchResult = searchController.search(browseQuery, searchItems, vectors, engineAvailable)
+    }
+    LaunchedEffect(searchActive, engineAvailable) {
+        if (searchActive && engineAvailable) app.embeddingEngineHolder.preload()
+    }
+    // Similar garments need the garment's own IMAGE vector; without one the Browse list is the plain search.
+    val similarSource = similarToGarmentId
+        ?.let { id -> items.firstOrNull { item -> item.id == id } }
+        ?.takeIf { item -> vectors[item.id]?.image != null }
+    val searchMode = if (searchActive && similarSource == null) searchResult.mode else SearchMode.None
+    val displayedItems = remember(filteredItems, searchResult, searchActive, similarSource?.id, vectors) {
+        val filteredById = filteredItems.associateBy(UiWardrobeItem::id)
+        when {
+            similarSource != null -> rankSimilar(similarSource.id, filteredItems.map(UiWardrobeItem::id), vectors)
+                .mapNotNull(filteredById::get)
+            searchActive -> searchResult.orderedIds.mapNotNull(filteredById::get)
+            else -> filteredItems
+        }
+    }
     val selectedItem = items.firstOrNull { it.id == selectedItemId }
     val selectedDomainItem = clothingItems.firstOrNull { it.id == selectedItemId }
+    val selectedHasImageVector = selectedItem != null && vectors[selectedItem.id]?.image != null
     // Only an untouched phone is recommended to set up Drive at first run; connecting later goes through the merge summary.
     val isFirstRunCloudSetup = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
         clothingItems.isEmpty() &&
@@ -1377,7 +1422,7 @@ private fun RobiaShell(
             suggestionService = suggestionService,
             currentRoute = currentRoute,
             innerPadding = innerPadding,
-            items = filteredItems,
+            items = displayedItems,
             allItems = items,
             domainItems = clothingItems,
             wardrobeItemsLoading = wardrobeItemsLoading,
@@ -1494,6 +1539,26 @@ private fun RobiaShell(
             onSyncAttentionAction = ::handleAttentionAction,
             onKeepWithoutPhoto = onKeepWithoutPhoto,
             onRetryAttention = onRetryAttention,
+            searchQuery = browseQuery,
+            onSearchQueryChange = { browseQuery = it },
+            searchMode = searchMode,
+            similarToName = similarSource?.name,
+            onClearSimilar = { similarToGarmentId = null },
+            onClearSearch = {
+                browseQuery = ""
+                similarToGarmentId = null
+            },
+            onEnableSmartSuggestions = if (engineAvailable) {
+                null
+            } else {
+                { pushRoute(RobiaRoute.Settings) }
+            },
+            canSeeSimilar = selectedHasImageVector,
+            onSeeSimilarClick = {
+                similarToGarmentId = selectedItemId
+                browseQuery = ""
+                replaceRoute(RobiaRoute.Browse)
+            },
         )
     }
     restoreProgress?.let { progress ->
@@ -2340,6 +2405,15 @@ private fun RobiaNavHost(
     onSyncAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     onKeepWithoutPhoto: (String) -> Unit,
     onRetryAttention: (SyncAttentionKind) -> Unit,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchMode: SearchMode,
+    similarToName: String?,
+    onClearSimilar: () -> Unit,
+    onClearSearch: () -> Unit,
+    onEnableSmartSuggestions: (() -> Unit)?,
+    canSeeSimilar: Boolean,
+    onSeeSimilarClick: () -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -2361,6 +2435,13 @@ private fun RobiaNavHost(
             onAttentionAction = onSyncAttentionAction,
             showSyncDetails = developerModeEnabled,
             onSyncDetailsClick = onRestoreSyncLogClick,
+            searchQuery = searchQuery,
+            onSearchQueryChange = onSearchQueryChange,
+            searchMode = searchMode,
+            similarToName = similarToName,
+            onClearSimilar = onClearSimilar,
+            onClearSearch = onClearSearch,
+            onEnableSmartSuggestions = onEnableSmartSuggestions,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,
@@ -2458,6 +2539,8 @@ private fun RobiaNavHost(
                 onRetryAttention = onRetryAttention,
                 showSyncDetails = developerModeEnabled,
                 onSyncDetailsClick = onRestoreSyncLogClick,
+                canSeeSimilar = canSeeSimilar,
+                onSeeSimilarClick = onSeeSimilarClick,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
@@ -2535,8 +2618,16 @@ private fun BrowseWardrobeScreen(
     onAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     showSyncDetails: Boolean,
     onSyncDetailsClick: () -> Unit,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchMode: SearchMode,
+    similarToName: String?,
+    onClearSimilar: () -> Unit,
+    onClearSearch: () -> Unit,
+    onEnableSmartSuggestions: (() -> Unit)?,
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
+    val searchActive = searchQuery.isNotBlank() || similarToName != null
     val gridState = rememberLazyGridState()
     val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
     val backfillProgress by (backfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
@@ -2559,6 +2650,13 @@ private fun BrowseWardrobeScreen(
                 activeFilterCount = activeFilterCount,
                 showSyncActivity = showSyncActivity,
                 onFiltersClick = onFiltersClick,
+                searchQuery = searchQuery,
+                onSearchQueryChange = onSearchQueryChange,
+                searchMode = searchMode,
+                resultCount = items.size,
+                similarToName = similarToName,
+                onClearSimilar = onClearSimilar,
+                onEnableSmartSuggestions = onEnableSmartSuggestions,
             )
         }
         if (backfillProgress.remaining > 0) {
@@ -2584,8 +2682,11 @@ private fun BrowseWardrobeScreen(
             }
         } else if (items.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                if (hasItemsInWardrobe && hasActiveFilters) {
-                    EmptyFiltersCard(onResetFilters = onResetFilters)
+                if (hasItemsInWardrobe && (hasActiveFilters || searchActive)) {
+                    EmptyFiltersCard(onResetFilters = {
+                        onResetFilters()
+                        onClearSearch()
+                    })
                 } else {
                     EmptyStateCard(onAddClick = onAddClick)
                 }
@@ -2675,6 +2776,13 @@ private fun FilterBar(
     activeFilterCount: Int,
     showSyncActivity: Boolean,
     onFiltersClick: () -> Unit,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchMode: SearchMode,
+    resultCount: Int,
+    similarToName: String?,
+    onClearSimilar: () -> Unit,
+    onEnableSmartSuggestions: (() -> Unit)?,
 ) {
     val filterLabel = if (hasActiveFilters) {
         stringResource(R.string.active_filters_count, activeFilterCount)
@@ -2682,34 +2790,99 @@ private fun FilterBar(
         stringResource(R.string.filters)
     }
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        FilterChip(
-            selected = hasActiveFilters,
-            onClick = onFiltersClick,
-            label = { Text(filterLabel) },
-            leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-        )
-        Spacer(
-            modifier = Modifier
-                .height(24.dp)
-                .width(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant),
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        if (showSyncActivity) {
-            val syncDescription = stringResource(R.string.content_cloud_sync_active)
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(22.dp)
-                    .semantics { contentDescription = syncDescription },
-                strokeWidth = 2.dp,
+        if (similarToName != null) {
+            SimilarGarmentsChip(name = similarToName, onClear = onClearSimilar)
+        } else {
+            BrowseSearchField(query = searchQuery, onQueryChange = onSearchQueryChange)
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            FilterChip(
+                selected = hasActiveFilters,
+                onClick = onFiltersClick,
+                label = { Text(filterLabel) },
+                leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
             )
+            Spacer(
+                modifier = Modifier
+                    .height(24.dp)
+                    .width(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            if (showSyncActivity) {
+                val syncDescription = stringResource(R.string.content_cloud_sync_active)
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .semantics { contentDescription = syncDescription },
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+        when (searchMode) {
+            SearchMode.Semantic -> Text(
+                text = stringResource(R.string.browse_sorted_by_similarity, resultCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SearchMode.Text -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.browse_search_text_only),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                onEnableSmartSuggestions?.let { enable ->
+                    TextButton(onClick = enable) {
+                        Text(stringResource(R.string.browse_search_enable_smart))
+                    }
+                }
+            }
+            SearchMode.None -> Unit
         }
     }
+}
+
+@Composable
+private fun BrowseSearchField(query: String, onQueryChange: (String) -> Unit) {
+    val hint = stringResource(R.string.browse_search_hint)
+    val clearDescription = stringResource(R.string.browse_search_clear)
+
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(percent = 50),
+        placeholder = { Text(hint) },
+        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Rounded.Close, contentDescription = clearDescription)
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SimilarGarmentsChip(name: String, onClear: () -> Unit) {
+    val clearDescription = stringResource(R.string.browse_search_clear)
+
+    FilterChip(
+        selected = true,
+        onClick = onClear,
+        label = { Text(stringResource(R.string.browse_similar_to, name)) },
+        trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = clearDescription) },
+    )
 }
 
 @Composable
@@ -3090,6 +3263,8 @@ private fun ItemDetailScreen(
     onRetryAttention: (SyncAttentionKind) -> Unit,
     showSyncDetails: Boolean,
     onSyncDetailsClick: () -> Unit,
+    canSeeSimilar: Boolean,
+    onSeeSimilarClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -3163,6 +3338,13 @@ private fun ItemDetailScreen(
                     }
                 },
             )
+        }
+        if (canSeeSimilar) {
+            item {
+                FilledTonalButton(onClick = onSeeSimilarClick, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.item_see_similar))
+                }
+            }
         }
         item { GarmentCloudStatusRow(item) }
         item.parkedAttentionKind()?.let { kind ->
