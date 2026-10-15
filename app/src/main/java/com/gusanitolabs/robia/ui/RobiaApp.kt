@@ -1058,6 +1058,13 @@ private fun RobiaShell(
     LaunchedEffect(lastCycle, mergeProposalPending) {
         mergeCombinePhase = nextMergeCombinePhase(mergeCombinePhase, mergeCycleAtTap, lastCycle, mergeProposalPending)
     }
+    // Safety net: no cycle ever finished after the tap (offline, work not scheduled) must not leave 'Combining' forever.
+    LaunchedEffect(mergeCombinePhase) {
+        if (mergeCombinePhase == MergeCombinePhase.Combining) {
+            kotlinx.coroutines.delay(MERGE_COMBINE_TIMEOUT_MS)
+            if (mergeCombinePhase == MergeCombinePhase.Combining) mergeCombinePhase = MergeCombinePhase.Failed
+        }
+    }
 
     LaunchedEffect(items, needsWardrobeUiModels) {
         // Items are empty off the wardrobe routes; pruning then would drop the selection.

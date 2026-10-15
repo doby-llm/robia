@@ -3,6 +3,9 @@ package com.gusanitolabs.robia.ui
 import com.gusanitolabs.robia.sync.SyncCycleSummary
 
 /** What the merge card shows after the user taps Combine. */
+/** How long the card may stay on Combining without a finished cycle before it reports Failed (retry possible). */
+const val MERGE_COMBINE_TIMEOUT_MS = 90_000L
+
 enum class MergeCombinePhase { Idle, Combining, Done, Failed }
 
 /**
