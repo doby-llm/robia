@@ -487,7 +487,7 @@
     <string name="color_review_chip_description">%1$s color, proposed %2$s</string>
     <string name="undo">Undo</string>
     <string name="color_review_discard_title">Discard color updates?</string>
-    <string name="color_review_discard_body">Exiting will discard all pending color updates and palette color changes.</string>
+    <string name="color_review_discard_body">Exiting will discard the pending color mappings. Palette color changes already saved stay.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>
@@ -588,4 +588,6 @@
     <string name="browse_search_in_progress">Searching…</string>
     <string name="browse_similar_caption">Sorted by similarity</string>
     <string name="browse_similar_untitled">Untitled garment</string>
+    <!-- F03a -->
+    <string name="color_review_accept_all">Accept all (%1$d)</string>
 </resources>

@@ -140,6 +140,7 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
+import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -619,10 +620,8 @@ private fun ColorPaletteChangeSet.colorIdsToDeleteForCommit(): List<String> = wh
     ColorPaletteOperation.Edited -> emptyList()
 }
 
-private fun List<ClothingItem>.referencesPaletteColor(colorId: String): Boolean = any { item ->
-    val metrics = item.colorMetrics
-    !item.isArchived && (metrics.primaryPaletteColorId == colorId || metrics.secondaryPaletteColorId == colorId)
-}
+private fun ClothingColorMetrics.referencesPaletteColorId(colorId: String): Boolean =
+    primaryPaletteColorId == colorId || secondaryPaletteColorId == colorId
 
 // Routes that render browse-style wardrobe items; the others skip building them.
 // TagReview joins this set in TASK-E08.
@@ -956,18 +955,10 @@ private fun RobiaShell(
             afterPalette = afterPalette,
             touchedColorId = color.id,
             operation = operation,
-            requiresCommitOnSave = existingColor?.let { previous ->
-                (previous.name != color.name || previous.hex != color.hex) && clothingItems.referencesPaletteColor(color.id)
-            } ?: false,
         )
-        if (changeSet.requiresCommitOnSave) {
-            pendingColorReviewChangeSet = null
-            activeColorReviewChangeSet = changeSet
-            replaceRoute(RobiaRoute.ColorReview)
-        } else {
-            onSaveMainColor(color)
-            pendingColorReviewChangeSet = changeSet
-        }
+        // Save-first: the colour change stands even if the user declines the review.
+        onSaveMainColor(color)
+        pendingColorReviewChangeSet = changeSet
     }
 
     fun deleteMainColorAndOfferReview(color: MainColor) {
@@ -978,16 +969,9 @@ private fun RobiaShell(
             afterPalette = afterPalette,
             touchedColorId = color.id,
             operation = ColorPaletteOperation.Deleted,
-            requiresCommitOnSave = clothingItems.referencesPaletteColor(color.id),
         )
-        if (changeSet.requiresCommitOnSave) {
-            pendingColorReviewChangeSet = null
-            activeColorReviewChangeSet = changeSet
-            replaceRoute(RobiaRoute.ColorReview)
-        } else {
-            onDeleteMainColor(color)
-            pendingColorReviewChangeSet = changeSet
-        }
+        onDeleteMainColor(color)
+        pendingColorReviewChangeSet = changeSet
     }
 
     fun restoreDefaultMainColorsAndStartReview() {
@@ -1062,11 +1046,31 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ManageTags)
     }
 
+    fun clothingItemsWithoutDeletedColor(
+        changeSet: ColorPaletteChangeSet,
+        excludeIds: Set<String>,
+    ): List<ClothingItem> {
+        if (changeSet.operation != ColorPaletteOperation.Deleted) return emptyList()
+        val deletedId = changeSet.touchedColorId ?: return emptyList()
+        return clothingItems
+            .filter { item -> item.id !in excludeIds && item.colorMetrics.referencesPaletteColorId(deletedId) }
+            .map { item -> item.withoutPaletteColor(deletedId) }
+    }
+
+    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
+    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
+        pendingColorReviewChangeSet = null
+        val itemsToSave = clothingItemsWithoutDeletedColor(changeSet, excludeIds = emptySet())
+        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
+    }
+
     fun commitColorReview(changeSet: ColorPaletteChangeSet, updatedItems: List<ClothingItem>) {
         if (changeSet.requiresCommitOnSave) {
             onCommitMainColorChange(changeSet, updatedItems)
-        } else if (updatedItems.isNotEmpty()) {
-            onSaveItems(updatedItems, emptyMap())
+        } else {
+            val acceptedIds = updatedItems.map(ClothingItem::id).toSet()
+            val itemsToSave = updatedItems + clothingItemsWithoutDeletedColor(changeSet, excludeIds = acceptedIds)
+            if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
         }
         activeColorReviewChangeSet = null
         pendingColorReviewChangeSet = null
@@ -1078,16 +1082,10 @@ private fun RobiaShell(
         showColorReviewDiscardDialog = true
     }
 
-    fun discardColorReviewAndRollbackPalette() {
-        val changeSet = activeColorReviewChangeSet ?: return
-        if (!changeSet.requiresCommitOnSave) {
-            val beforeColorIds = changeSet.beforePalette.map(MainColor::id).toSet()
-            changeSet.afterPalette
-                .filterNot { color -> color.id in beforeColorIds }
-                .forEach(onDeleteMainColor)
-            changeSet.beforePalette.forEach(onSaveMainColor)
-        }
-        pendingColorReviewChangeSet = null
+    // The palette change was saved first, so discarding keeps it; only the proposals are dropped.
+    fun discardColorReview() {
+        val changeSet = activeColorReviewChangeSet
+        if (changeSet != null) declineColorReviewProposal(changeSet)
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1225,20 +1223,11 @@ private fun RobiaShell(
     }
 
     if (showColorReviewDiscardDialog) {
-        AlertDialog(
-            onDismissRequest = { showColorReviewDiscardDialog = false },
-            title = { Text(stringResource(R.string.color_review_discard_title)) },
-            text = { Text(stringResource(R.string.color_review_discard_body)) },
-            confirmButton = {
-                TextButton(onClick = ::discardColorReviewAndRollbackPalette) {
-                    Text(stringResource(R.string.discard_changes))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showColorReviewDiscardDialog = false }) {
-                    Text(stringResource(R.string.keep_editing))
-                }
-            },
+        ReviewDiscardDialog(
+            title = stringResource(R.string.color_review_discard_title),
+            body = stringResource(R.string.color_review_discard_body),
+            onConfirm = ::discardColorReview,
+            onDismiss = { showColorReviewDiscardDialog = false },
         )
     }
 
@@ -1262,7 +1251,7 @@ private fun RobiaShell(
 
     pendingColorReviewChangeSet?.let { changeSet ->
         ColorReviewPromptDialog(
-            onDismiss = { pendingColorReviewChangeSet = null },
+            onDismiss = { declineColorReviewProposal(changeSet) },
             onReview = {
                 activeColorReviewChangeSet = changeSet
                 pendingColorReviewChangeSet = null
