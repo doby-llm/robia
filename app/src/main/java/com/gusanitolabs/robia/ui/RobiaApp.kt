@@ -1046,13 +1046,6 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ManageTags)
     }
 
-    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
-    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
-        pendingColorReviewChangeSet = null
-        val itemsToSave = clothingItemsWithoutDeletedColor(changeSet, excludeIds = emptySet())
-        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
-    }
-
     fun clothingItemsWithoutDeletedColor(
         changeSet: ColorPaletteChangeSet,
         excludeIds: Set<String>,
@@ -1062,6 +1055,13 @@ private fun RobiaShell(
         return clothingItems
             .filter { item -> item.id !in excludeIds && item.colorMetrics.referencesPaletteColorId(deletedId) }
             .map { item -> item.withoutPaletteColor(deletedId) }
+    }
+
+    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
+    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
+        pendingColorReviewChangeSet = null
+        val itemsToSave = clothingItemsWithoutDeletedColor(changeSet, excludeIds = emptySet())
+        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
     }
 
     fun commitColorReview(changeSet: ColorPaletteChangeSet, updatedItems: List<ClothingItem>) {
