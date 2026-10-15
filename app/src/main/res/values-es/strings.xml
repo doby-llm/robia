@@ -568,7 +568,7 @@
     <string name="browse_search_hint">Buscar en tu armario</string>
     <string name="browse_search_clear">Borrar búsqueda</string>
     <string name="browse_sorted_by_similarity">Ordenado por parecido · %1$d prendas</string>
-    <string name="browse_search_text_only">Buscando en nombres y notas.</string>
+    <string name="browse_search_text_only">Búsqueda inteligente no disponible, mostrando coincidencias por nombre.</string>
     <string name="browse_search_enable_smart">Activa las sugerencias inteligentes para buscar también por la foto</string>
     <string name="browse_similar_to">Parecidas a “%1$s”</string>
     <string name="item_see_similar">Ver prendas parecidas</string>
@@ -590,6 +590,7 @@
     <string name="tag_review_prompt_confirm">Revisar prendas</string>
     <string name="tag_review_scan_title">Escaneo de prendas</string>
     <string name="tag_review_scanning_count">%1$d / %2$d prendas</string>
+    <string name="tag_review_preparing">Preparando…</string>
     <string name="tag_review_checking_helper">Revisando prendas…</string>
     <string name="tag_review_empty_title">Ninguna prenda necesita cambios</string>
     <string name="tag_review_empty_body">Tus prendas ya encajan con este cambio.</string>

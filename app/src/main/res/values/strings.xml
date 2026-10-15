@@ -568,7 +568,7 @@
     <string name="browse_search_hint">Search your wardrobe</string>
     <string name="browse_search_clear">Clear search</string>
     <string name="browse_sorted_by_similarity">Sorted by similarity · %1$d garments</string>
-    <string name="browse_search_text_only">Searching names and notes.</string>
+    <string name="browse_search_text_only">Smart search unavailable, showing name matches.</string>
     <string name="browse_search_enable_smart">Turn on smart suggestions to also search by photo</string>
     <string name="browse_similar_to">Similar to “%1$s”</string>
     <string name="item_see_similar">See similar garments</string>
@@ -590,6 +590,7 @@
     <string name="tag_review_prompt_confirm">Review garments</string>
     <string name="tag_review_scan_title">Garment scan</string>
     <string name="tag_review_scanning_count">%1$d / %2$d garments</string>
+    <string name="tag_review_preparing">Preparing…</string>
     <string name="tag_review_checking_helper">Checking garments…</string>
     <string name="tag_review_empty_title">No garments need changes</string>
     <string name="tag_review_empty_body">Your garments already match this change.</string>

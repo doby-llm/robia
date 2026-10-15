@@ -53,6 +53,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -69,7 +70,6 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Straighten
@@ -171,6 +171,7 @@ import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import com.gusanitolabs.robia.suggestions.QueryEmbedding
 import com.gusanitolabs.robia.suggestions.SavedExample
 import com.gusanitolabs.robia.suggestions.SearchController
 import com.gusanitolabs.robia.suggestions.SearchMode
@@ -202,7 +203,9 @@ import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -741,20 +744,41 @@ private fun RobiaShell(
         .observeVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
         .collectAsState(initial = emptyMap())
     val engineAvailable = modelState is ModelState.Ready
-    val searchController = remember(app) {
-        SearchController(embedQuery = { query -> app.embeddingEngineHolder.embedText(EmbeddingRecipe.QUERY_PREFIX + query) })
+    // Own supervised scope: a query embedding outlives the search that started it, and its failure must not cancel the screen.
+    val searchScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+    val searchController = remember(app, searchScope) {
+        SearchController(
+            embedQuery = { query -> app.embeddingEngineHolder.embedText(EmbeddingRecipe.QUERY_PREFIX + query) },
+            scope = searchScope,
+        )
     }
     val searchActive = browseQuery.isNotBlank()
     val searchItems = remember(clothingItems, filteredItems) {
         val filteredIds = filteredItems.mapTo(HashSet(), UiWardrobeItem::id)
         clothingItems.filter { item -> item.id in filteredIds }
     }
-    var searchResult by remember { mutableStateOf(SearchResult(emptyList(), SearchMode.None)) }
+    val trimmedQuery = browseQuery.trim()
+    var queryEmbedding by remember { mutableStateOf<QueryEmbedding?>(null) }
     var searchInProgress by remember { mutableStateOf(false) }
-    LaunchedEffect(browseQuery, searchItems, vectors, engineAvailable) {
-        searchInProgress = browseQuery.isNotBlank()
-        searchResult = searchController.search(browseQuery, searchItems, vectors, engineAvailable)
-        searchInProgress = false
+    // Keyed on the query text and the engine only: vector writes from the backfill re-rank below, they never restart this.
+    LaunchedEffect(trimmedQuery, engineAvailable) {
+        queryEmbedding = null
+        if (trimmedQuery.isEmpty()) return@LaunchedEffect
+        searchInProgress = true
+        try {
+            queryEmbedding = QueryEmbedding(trimmedQuery, searchController.queryVector(trimmedQuery, engineAvailable))
+        } finally {
+            searchInProgress = false
+        }
+    }
+    val embedded = queryEmbedding?.takeIf { it.query == trimmedQuery }
+    val searchResult = remember(trimmedQuery, searchItems, vectors, embedded) {
+        // Until the embedding of this query is known (or gave up), the plain list stays visible.
+        if (embedded == null) {
+            SearchResult(emptyList(), SearchMode.None)
+        } else {
+            searchController.rank(trimmedQuery, searchItems, vectors, embedded.vector)
+        }
     }
     LaunchedEffect(currentRoute) {
         if (currentRoute != RobiaRoute.Browse) browseNewestFirst = false
@@ -2916,7 +2940,7 @@ private fun BrowseSearchField(query: String, onQueryChange: (String) -> Unit) {
         singleLine = true,
         shape = RoundedCornerShape(percent = 50),
         placeholder = { Text(hint) },
-        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+        leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
         trailingIcon = {
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
@@ -4113,6 +4137,8 @@ private fun FilterTagChips(
     onTagToggled: (GarmentTag) -> Unit,
     onUnsetToggled: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val sortedTags = tags.sortedAlphabetically(label = { tag -> tag.localizedTagLabel(context) })
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val notSetSelected = categoryId in selectedUnsetTagCategoryIds
         FilterChip(
@@ -4125,7 +4151,7 @@ private fun FilterTagChips(
                 null
             },
         )
-        tags.forEach { tag ->
+        sortedTags.forEach { tag ->
             val selected = tag.id in selectedTagIds
             FilterChip(
                 selected = selected,
@@ -4170,7 +4196,7 @@ private fun ColorPaletteChips(
             )
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                colors.forEach { color ->
+                colors.sortedAlphabetically(label = MainColor::name).forEach { color ->
                     val selected = color.id in selectedColorIds
                     val swatchDescription = stringResource(R.string.content_color_swatch, color.name)
                     FilterChip(

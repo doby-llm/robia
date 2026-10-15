@@ -7,6 +7,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReviewPlannerTest {
@@ -203,6 +204,26 @@ class ReviewPlannerTest {
             ),
             plan,
         )
+    }
+
+    @Test
+    fun scanEachPausesAfterEachGarmentSoTheProgressBarAdvancesOneByOne() = runBlocking {
+        val garments = listOf(garment("gA"), garment("gB"), garment("gC"))
+        val scan = ReviewPlanner.scan(
+            changeSet(TagOperation.Added, "category", "category-skirts"),
+            garments,
+            emptyMap(),
+            labels,
+            listOf(dresses, skirts),
+        )
+        val visited = mutableListOf<String>()
+
+        val startedAt = System.nanoTime()
+        scan.scanEach(garments) { garment, _ -> visited += garment.id }
+        val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals(listOf("gA", "gB", "gC"), visited)
+        assertTrue("three garments must take at least three steps, took $elapsedMillis ms", elapsedMillis >= 3 * 16L)
     }
 
     private fun tag(id: String, categoryId: String, suggestOccasions: Boolean = true) =

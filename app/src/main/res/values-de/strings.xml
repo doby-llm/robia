@@ -568,7 +568,7 @@
     <string name="browse_search_hint">Kleiderschrank durchsuchen</string>
     <string name="browse_search_clear">Suche löschen</string>
     <string name="browse_sorted_by_similarity">Nach Ähnlichkeit sortiert · %1$d Kleidungsstücke</string>
-    <string name="browse_search_text_only">Suche in Namen und Notizen.</string>
+    <string name="browse_search_text_only">Intelligente Suche nicht verfügbar, es werden Namenstreffer angezeigt.</string>
     <string name="browse_search_enable_smart">Aktiviere intelligente Vorschläge, um auch per Foto zu suchen</string>
     <string name="browse_similar_to">Ähnlich wie „%1$s“</string>
     <string name="item_see_similar">Ähnliche Kleidungsstücke</string>
@@ -590,6 +590,7 @@
     <string name="tag_review_prompt_confirm">Kleidungsstücke prüfen</string>
     <string name="tag_review_scan_title">Kleidungs-Scan</string>
     <string name="tag_review_scanning_count">%1$d / %2$d Kleidungsstücke</string>
+    <string name="tag_review_preparing">Wird vorbereitet…</string>
     <string name="tag_review_checking_helper">Kleidungsstücke werden geprüft…</string>
     <string name="tag_review_empty_title">Keine Kleidungsstücke brauchen Änderungen</string>
     <string name="tag_review_empty_body">Deine Kleidungsstücke passen bereits zu dieser Änderung.</string>
