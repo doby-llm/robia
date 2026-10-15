@@ -15,12 +15,17 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1731,11 +1736,8 @@ private fun RobiaShell(
                 browseQuery = ""
                 similarToGarmentId = null
             },
-            onEnableSmartSuggestions = if (engineAvailable) {
-                null
-            } else {
-                { pushRoute(RobiaRoute.Settings) }
-            },
+            modelState = modelState,
+            onOpenSettings = { pushRoute(RobiaRoute.Settings) },
             canSeeSimilar = selectedHasImageVector,
             onSeeSimilarClick = {
                 similarToGarmentId = selectedItemId
@@ -2703,7 +2705,8 @@ private fun RobiaNavHost(
     similarToName: String?,
     onClearSimilar: () -> Unit,
     onClearSearch: () -> Unit,
-    onEnableSmartSuggestions: (() -> Unit)?,
+    modelState: ModelState,
+    onOpenSettings: () -> Unit,
     canSeeSimilar: Boolean,
     onSeeSimilarClick: () -> Unit,
 ) {
@@ -2734,7 +2737,8 @@ private fun RobiaNavHost(
             similarToName = similarToName,
             onClearSimilar = onClearSimilar,
             onClearSearch = onClearSearch,
-            onEnableSmartSuggestions = onEnableSmartSuggestions,
+            modelState = modelState,
+            onOpenSettings = onOpenSettings,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,
@@ -2927,7 +2931,8 @@ private fun BrowseWardrobeScreen(
     similarToName: String?,
     onClearSimilar: () -> Unit,
     onClearSearch: () -> Unit,
-    onEnableSmartSuggestions: (() -> Unit)?,
+    modelState: ModelState,
+    onOpenSettings: () -> Unit,
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
     val searchActive = searchQuery.isNotBlank() || similarToName != null
@@ -2964,7 +2969,8 @@ private fun BrowseWardrobeScreen(
                 resultCount = items.size,
                 similarToName = similarToName,
                 onClearSimilar = onClearSimilar,
-                onEnableSmartSuggestions = onEnableSmartSuggestions,
+                modelState = modelState,
+                onOpenSettings = onOpenSettings,
             )
         }
         if (backfillProgress.remaining > 0) {
@@ -3091,83 +3097,116 @@ private fun FilterBar(
     resultCount: Int,
     similarToName: String?,
     onClearSimilar: () -> Unit,
-    onEnableSmartSuggestions: (() -> Unit)?,
+    modelState: ModelState,
+    onOpenSettings: () -> Unit,
 ) {
     val filterLabel = if (hasActiveFilters) {
         stringResource(R.string.active_filters_count, activeFilterCount)
     } else {
         stringResource(R.string.filters)
     }
+    val searchVisible = browseSearchVisible(modelState)
+    val context = LocalContext.current
+    var showSmartPrompt by rememberSaveable { mutableStateOf(false) }
 
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    // A query typed before the model went missing must not keep filtering while no search field is shown.
+    LaunchedEffect(searchVisible) {
+        if (!searchVisible) onSearchQueryChange("")
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
         if (similarToName != null) {
             SimilarGarmentsChip(name = similarToName, onClear = onClearSimilar)
+            Spacer(modifier = Modifier.height(12.dp))
         } else {
-            BrowseSearchField(query = searchQuery, onQueryChange = onSearchQueryChange)
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            FilterChip(
-                selected = hasActiveFilters,
-                onClick = onFiltersClick,
-                label = { Text(filterLabel) },
-                leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-            )
-            Spacer(
-                modifier = Modifier
-                    .height(24.dp)
-                    .width(1.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            if (cloudSync.headline.showsBrowseIndicator) {
-                CloudSyncStatusIcon(indicator = cloudSync)
+            AnimatedVisibility(
+                visible = searchVisible,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column {
+                    BrowseSearchField(query = searchQuery, onQueryChange = onSearchQueryChange)
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
             }
         }
-        if (searchInProgress) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                FilterChip(
+                    selected = hasActiveFilters,
+                    onClick = onFiltersClick,
+                    label = { Text(filterLabel) },
+                    leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                )
+                if (!searchVisible) {
+                    IconButton(onClick = { showSmartPrompt = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = stringResource(R.string.model_prompt_title),
+                        )
+                    }
+                }
+                Spacer(
+                    modifier = Modifier
+                        .height(24.dp)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant),
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                if (cloudSync.headline.showsBrowseIndicator) {
+                    CloudSyncStatusIcon(indicator = cloudSync)
+                }
+            }
+            if (searchInProgress) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = stringResource(R.string.browse_search_in_progress),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (similarToName != null) {
                 Text(
-                    text = stringResource(R.string.browse_search_in_progress),
+                    text = stringResource(R.string.browse_similar_caption),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-        } else if (similarToName != null) {
-            Text(
-                text = stringResource(R.string.browse_similar_caption),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else when (searchMode) {
-            SearchMode.Semantic -> Text(
-                text = stringResource(R.string.browse_sorted_by_similarity, resultCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            SearchMode.Text -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
+            } else when (searchMode) {
+                SearchMode.Semantic -> Text(
+                    text = stringResource(R.string.browse_sorted_by_similarity, resultCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SearchMode.Text -> Text(
                     text = stringResource(R.string.browse_search_text_only),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                onEnableSmartSuggestions?.let { enable ->
-                    TextButton(onClick = enable) {
-                        Text(stringResource(R.string.browse_search_enable_smart))
-                    }
-                }
+                SearchMode.None -> Unit
             }
-            SearchMode.None -> Unit
         }
+    }
+
+    if (showSmartPrompt) {
+        ModelPromptDialog(
+            onLater = { showSmartPrompt = false },
+            onDownloadNow = {
+                showSmartPrompt = false
+                startModelDownload(context)
+            },
+            onOpenSettings = {
+                showSmartPrompt = false
+                onOpenSettings()
+            },
+        )
     }
 }
 

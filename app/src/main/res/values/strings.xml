@@ -571,7 +571,6 @@
     <string name="browse_search_clear">Clear search</string>
     <string name="browse_sorted_by_similarity">Sorted by similarity · %1$d garments</string>
     <string name="browse_search_text_only">Smart search unavailable, showing name matches.</string>
-    <string name="browse_search_enable_smart">Turn on smart suggestions to also search by photo</string>
     <string name="browse_similar_to">Similar to “%1$s”</string>
     <string name="item_see_similar">See similar garments</string>
     <!-- TASK-E10 -->

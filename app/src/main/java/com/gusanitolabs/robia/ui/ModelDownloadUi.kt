@@ -34,6 +34,9 @@ private const val BYTES_PER_MB = 1_048_576L
 fun shouldShowModelPrompt(promptShown: Boolean, state: ModelState): Boolean =
     !promptShown && state is ModelState.NotDownloaded
 
+/** The Browse search field exists only while the model is Ready; otherwise a sparkle button opens [ModelPromptDialog]. */
+fun browseSearchVisible(state: ModelState): Boolean = state is ModelState.Ready
+
 /** A queued download that WorkManager holds back for network constraints is shown as waiting for Wi-Fi. */
 fun settingsModelState(stored: ModelState, queued: Boolean): ModelState =
     if (stored is ModelState.NotDownloaded && queued) ModelState.WaitingForWifi else stored
@@ -52,6 +55,7 @@ fun cancelModelDownload(context: Context) {
 fun ModelPromptDialog(
     onLater: () -> Unit,
     onDownloadNow: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onLater,
@@ -69,7 +73,13 @@ fun ModelPromptDialog(
             TextButton(onClick = onDownloadNow) { Text(stringResource(R.string.model_prompt_now)) }
         },
         dismissButton = {
-            TextButton(onClick = onLater) { Text(stringResource(R.string.model_prompt_later)) }
+            Row {
+                // Mobile data is chosen in Settings, so a held-back (WaitingForWifi) download points there.
+                onOpenSettings?.let { open ->
+                    TextButton(onClick = open) { Text(stringResource(R.string.settings)) }
+                }
+                TextButton(onClick = onLater) { Text(stringResource(R.string.model_prompt_later)) }
+            }
         },
     )
 }
