@@ -103,7 +103,7 @@ class WardrobeSyncOutboxProcessor(
         }
         scope.launch(dispatcher) {
             wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
-            // Guarded claims are taken outside the mutex, so only claims older than the photo retry timeout are dead.
+            // Only guarded claims older than the photo retry timeout are dead (a live retry is bounded by that timeout).
             wardrobeRepository.recoverStaleGuardedPhotoSyncWork(System.currentTimeMillis() - PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS)
             // Work still pending from a killed process is handed to WorkManager on app start.
             if (wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
@@ -641,7 +641,7 @@ class WardrobeSyncOutboxProcessor(
         if (!mergeConfirmed && pendingMergeSummary.value != null) return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.NeedsUser)
 
         // Held under the mutex, so no claim of this process is live: a Running row now was left by a process that died.
-        // photo_restore_guarded rows are excluded by the query, because their retry claims them outside this mutex.
+        // photo_restore_guarded rows are excluded by the query: they have their own recovery at processor init.
         wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis())
         val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
         val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()

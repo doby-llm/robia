@@ -93,16 +93,17 @@ interface WardrobeDao {
     suspend fun recoverStaleGarmentSyncWork(staleBeforeEpochMillis: Long): Int
 
     /**
-     * The aggregate's garment query. Guarded rows are excluded: their photo retry claims them outside the sync mutex,
-     * so a Running guarded row may be live. Requeuing it here would let an ordinary cycle race that retry.
+     * The aggregate's garment query. Guarded rows are excluded: they belong to the photo-restore retry (which also runs
+     * under the sync mutex) and have their own recovery, so an ordinary cycle must not requeue them as plain uploads.
      */
     @Query("UPDATE clothing_items SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND photo_restore_guarded = 0 AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleUnguardedGarmentSyncWork(staleBeforeEpochMillis: Long): Int
 
     /**
      * A guarded claim older than the photo retry timeout was left by a process that died mid-retry: the retry is bounded by that
-     * timeout. It parks as NeedsUserAction, not Queued, so a retry stays user-triggered; the guard and the remote blob stay in place.
-     * Called at processor init only, since a retry of this process can claim a row outside the sync mutex.
+     * timeout. It parks as NeedsUserAction, not Queued; the guard and the remote blob stay in place. Guarded NeedsUserAction rows are
+     * picked up again by the bounded automatic photo retry on the next background run (retry_attempt_count < 3).
+     * Called at processor init only.
      */
     @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', sync_started_at_epoch_millis = NULL, retry_after_epoch_millis = NULL, sync_failure_message = 'photo_restore_interrupted' WHERE sync_status = 'Running' AND photo_restore_guarded = 1 AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int
