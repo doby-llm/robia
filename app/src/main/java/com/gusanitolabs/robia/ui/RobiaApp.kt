@@ -107,6 +107,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -174,6 +175,7 @@ import com.gusanitolabs.robia.suggestions.SearchMode
 import com.gusanitolabs.robia.suggestions.SearchResult
 import com.gusanitolabs.robia.suggestions.ReviewPlanner
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
+import com.gusanitolabs.robia.suggestions.SuggestionDiagnostics
 import com.gusanitolabs.robia.suggestions.SuggestionService
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
@@ -2541,6 +2543,10 @@ private fun RobiaNavHost(
                 onSyncDetailsClick = onRestoreSyncLogClick,
                 canSeeSimilar = canSeeSimilar,
                 onSeeSimilarClick = onSeeSimilarClick,
+                showDiagnostics = showSuggestionDiagnostics(developerModeUnlocked, developerModeEnabled),
+                diagnosticsGarment = domainItems.firstOrNull { garment -> garment.id == item.id },
+                diagnosticsTags = availableTags,
+                suggestionService = suggestionService,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
@@ -3265,6 +3271,10 @@ private fun ItemDetailScreen(
     onSyncDetailsClick: () -> Unit,
     canSeeSimilar: Boolean,
     onSeeSimilarClick: () -> Unit,
+    showDiagnostics: Boolean,
+    diagnosticsGarment: ClothingItem?,
+    diagnosticsTags: List<GarmentTag>,
+    suggestionService: SuggestionService,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -3274,6 +3284,23 @@ private fun ItemDetailScreen(
     val noShareAppMessage = stringResource(R.string.share_no_app_error)
     val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
     val pdfShareItem = item.toGarmentShareItem()
+    val app = context.applicationContext as RobiaApplication
+    val diagnosticsRecomputeDoneMessage = stringResource(R.string.dev_recompute_embedding_done)
+    val diagnosticsRecomputeErrorMessage = stringResource(R.string.dev_recompute_embedding_error)
+    var suggestionDiagnostics by remember(item.id) { mutableStateOf<SuggestionDiagnostics?>(null) }
+    var suggestionDiagnosticsVersion by remember(item.id) { mutableIntStateOf(0) }
+    var suggestionDiagnosticsStatus by remember(item.id) { mutableStateOf<String?>(null) }
+    val diagnosticsPhotoUri = diagnosticsGarment?.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+
+    LaunchedEffect(showDiagnostics, diagnosticsGarment, diagnosticsTags, suggestionDiagnosticsVersion) {
+        val garment = diagnosticsGarment
+        suggestionDiagnostics = if (showDiagnostics && garment != null) {
+            val rows = app.database.embeddingDao().getForRecipe(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
+            suggestionService.diagnose(garment, diagnosticsTags, rows)
+        } else {
+            null
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -3409,6 +3436,49 @@ private fun ItemDetailScreen(
         }
         item { ColorMetricsCard(item) }
         item { DetailMetadataGrid(item = item, onEditClick = onEditClick) }
+        if (showDiagnostics && diagnosticsGarment != null) {
+            item {
+                SuggestionDiagnosticsCard(
+                    diagnostics = suggestionDiagnostics,
+                    hasPhoto = diagnosticsPhotoUri != null,
+                    statusMessage = suggestionDiagnosticsStatus,
+                    onRecomputeClick = {
+                        diagnosticsPhotoUri?.let { photoUri ->
+                            scope.launch {
+                                val capture = suggestionService.recomputeImage(photoUri)
+                                suggestionDiagnosticsStatus = if (capture == null) {
+                                    diagnosticsRecomputeErrorMessage
+                                } else {
+                                    // Replaces the stored IMAGE vector only now that a fresh one exists; a failed run keeps the old one.
+                                    app.embeddingRepository.upsert(
+                                        diagnosticsGarment.id,
+                                        EmbeddingKind.IMAGE,
+                                        capture.imageVector,
+                                        capture.imageInputHash,
+                                        capture.durationMs,
+                                    )
+                                    suggestionDiagnosticsVersion++
+                                    diagnosticsRecomputeDoneMessage
+                                }
+                            }
+                        }
+                    },
+                    onExportClick = {
+                        diagnosticsPhotoUri?.let { photoUri ->
+                            scope.launch {
+                                val saved = runCatching {
+                                    val encoded = ImageInputEncoder.encode(context, photoUri)
+                                    withContext(Dispatchers.IO) { saveDiagnosticsInputPng(context, encoded.bytes) }
+                                }
+                                suggestionDiagnosticsStatus = context.getString(
+                                    if (saved.isSuccess) R.string.developer_export_suggestion_input_saved else R.string.developer_export_suggestion_input_error,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+        }
         item {
             Button(
                 onClick = onEditClick,

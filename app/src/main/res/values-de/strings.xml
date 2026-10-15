@@ -578,4 +578,10 @@
     <string name="browse_search_enable_smart">Aktiviere intelligente Vorschläge, um auch per Foto zu suchen</string>
     <string name="browse_similar_to">Ähnlich wie „%1$s“</string>
     <string name="item_see_similar">Ähnliche Kleidungsstücke</string>
+    <!-- TASK-E10 -->
+    <string name="dev_suggestion_diagnostics">Vorschlagsdiagnose</string>
+    <string name="dev_diagnostics_unavailable">Die Diagnose braucht das Modell für intelligente Vorschläge und ein gespeichertes Foto-Embedding.</string>
+    <string name="dev_recompute_embedding">Embedding neu berechnen</string>
+    <string name="dev_recompute_embedding_done">Embedding neu berechnet</string>
+    <string name="dev_recompute_embedding_error">Embedding konnte nicht neu berechnet werden. Das bisherige bleibt erhalten.</string>
 </resources>
