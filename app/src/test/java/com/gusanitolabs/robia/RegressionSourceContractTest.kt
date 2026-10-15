@@ -321,7 +321,7 @@ class RegressionSourceContractTest {
 
         val cloudIndicator = app
             .substringAfter("internal fun cloudSyncIndicator(")
-            .substringBefore("private val CloudSyncHeadline.isCloudActive")
+            .substringBefore("internal val CloudSyncHeadline.showsBrowseIndicator")
         assertTrue(cloudIndicator.contains("state.pendingOperationCount"))
         assertTrue(!app.contains("pendingGarmentSyncCount"))
     }
