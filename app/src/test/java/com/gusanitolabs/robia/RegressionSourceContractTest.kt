@@ -259,7 +259,9 @@ class RegressionSourceContractTest {
         assertTrue(
             processor.contains("launchSyncWork { restoreFreshInstallOnceIfNeeded() }"),
         )
-        assertTrue(processor.contains("syncWorkScheduler.requestSync()"))
+        // Every request goes through the guarded private requestSync(reason); only enqueueRequest reaches the scheduler.
+        assertTrue(processor.contains("syncWorkScheduler.requestSync(reason)"))
+        assertTrue(processor.contains("shouldRequestSync("))
         assertTrue(processor.contains("scheduledWorkJob?.isActive == true"))
         assertTrue(
             processor.contains("restoreProgress.value = diagnostics.progress"),

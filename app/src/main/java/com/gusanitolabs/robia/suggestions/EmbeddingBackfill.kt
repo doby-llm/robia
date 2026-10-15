@@ -51,7 +51,8 @@ class EmbeddingBackfill(
     private val loadStoredRows: suspend () -> List<GarmentEmbeddingEntity>,
     private val saveVector: suspend (garmentId: String, kind: String, vector: FloatArray, inputHash: String, durationMs: Long) -> Unit,
     private val deleteVector: suspend (garmentId: String, kind: String) -> Unit,
-    private val requestSync: () -> Unit,
+    /** Asks the sync processor for a run; [reason] is logged with it. */
+    private val requestSync: (reason: String) -> Unit,
     private val clockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     private val _progress = MutableStateFlow(BackfillProgress())
@@ -95,7 +96,7 @@ class EmbeddingBackfill(
     }
 
     private fun flushSync() {
-        if (unsyncedSaves.getAndSet(0) > 0) requestSync()
+        if (unsyncedSaves.getAndSet(0) > 0) requestSync("backfill")
     }
 
     /** Image tasks first, then TEXT tasks; each group is newest garment first. Garments past the attempt limit are left out. */

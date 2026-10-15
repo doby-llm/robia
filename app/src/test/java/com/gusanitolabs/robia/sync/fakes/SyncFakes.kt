@@ -29,7 +29,14 @@ internal const val FAKE_DEVICE_ID = "device-under-test"
 
 private val ATTENTION_STATUSES = setOf("FailedRetryable", "NeedsUserAction", "AuthBlocked")
 
-internal class FakeGarmentRow(val id: String, var revision: Long, var status: String, var failureMessage: String? = null)
+internal class FakeGarmentRow(
+    val id: String,
+    var revision: Long,
+    var status: String,
+    var failureMessage: String? = null,
+    /** Set only for a row seeded as an interrupted claim: [FakeWardrobeRepository.recoverStaleRunningSyncWork] recovers it. */
+    var interruptedClaimStartedAt: Long? = null,
+)
 
 /** In-memory garment sync rows. Only the calls the processor makes are modelled; the rest are not used by sync. */
 internal class FakeWardrobeRepository : WardrobeRepository {
@@ -52,6 +59,12 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     fun addQueued(id: String, revision: Long = 1L) = put(id, revision, "Queued")
 
     fun addSynced(id: String, revision: Long = 1L) = put(id, revision, "Synced")
+
+    /** A claim left Running by a process that was killed, claimed at [startedAtEpochMillis]. */
+    fun addInterruptedClaim(id: String, startedAtEpochMillis: Long, revision: Long = 1L) {
+        rows[id] = FakeGarmentRow(id, revision, "Running", interruptedClaimStartedAt = startedAtEpochMillis)
+        publish()
+    }
 
     fun markGuarded(id: String) {
         guardedIds += id
@@ -101,7 +114,15 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     override suspend fun hasPendingCloudDeletion(): Boolean = pendingCloudDeletion
     override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int {
         staleRecoveryThresholds += staleBeforeEpochMillis
-        return 0
+        val stale = rows.values.filter { row ->
+            row.status == "Running" && (row.interruptedClaimStartedAt ?: Long.MAX_VALUE) <= staleBeforeEpochMillis
+        }
+        stale.forEach { row ->
+            row.status = "Queued"
+            row.interruptedClaimStartedAt = null
+        }
+        publish()
+        return stale.size
     }
     override suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int = 0
     override suspend fun upsertItem(item: ClothingItem) = error("not used by sync tests")
@@ -263,11 +284,13 @@ internal class FakeWardrobeSnapshotStore(
 
 internal class FakeSyncWorkScheduler : SyncWorkScheduler {
     var requestSyncCount = 0
+    val requestReasons = mutableListOf<String>()
     var ensurePeriodicCount = 0
     var cancelAllCount = 0
 
-    override fun requestSync() {
+    override fun requestSync(reason: String) {
         requestSyncCount++
+        requestReasons += reason
     }
 
     override fun ensurePeriodic() {

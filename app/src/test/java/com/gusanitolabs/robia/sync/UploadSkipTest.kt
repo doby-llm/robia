@@ -341,7 +341,7 @@ class UploadSkipTest {
 
         processor.runOnce(SyncTrigger.Foreground)
 
-        // Init recovers at now minus the 15 minute timeout; the cycle recovers at the current time.
+        // Both init and the cycle recover Running rows at the current time.
         val cycleThreshold = wardrobe.staleRecoveryThresholds.last()
         assertTrue(cycleThreshold >= before)
         assertTrue(cycleThreshold <= System.currentTimeMillis())
