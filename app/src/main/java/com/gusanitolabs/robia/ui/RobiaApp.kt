@@ -413,7 +413,9 @@ fun RobiaApp(
     val modelState by app.modelStore.state.collectAsState()
     val modelPromptShown by settingsRepository.modelPromptShown.collectAsState(initial = null)
     LaunchedEffect(tagRepository) {
-        tagRepository.seedDefaultsIfNeeded()
+        val mergedTagIds = tagRepository.seedDefaultsIfNeeded()
+        // A launch-time dedupe removes local rows; enqueue them so the tombstones reach Drive without waiting for the next snapshot.
+        if (mergedTagIds.isNotEmpty()) syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(mergedTagIds))
     }
 
     LocalizedRobiaContent(settings.languagePreference) {
@@ -526,12 +528,12 @@ fun RobiaApp(
             },
             onRestoreDefaultTags = { category ->
                 scope.launch {
-                    tagRepository.restoreDefaultTags(category.id)
+                    val mergedTagIds = tagRepository.restoreDefaultTags(category.id)
                     val restoredTagIds = DefaultTags.tags
                         .filter { tag -> tag.categoryId == category.id }
                         .map(GarmentTag::id)
                         .toSet()
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(restoredTagIds))
+                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(restoredTagIds + mergedTagIds))
                 }
             },
             onRestoreDefaultMainColors = {

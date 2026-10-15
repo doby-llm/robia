@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -581,15 +583,24 @@ private fun TagEditorDialog(
                         onValueChange = { description = it.take(TagDescriptionMaxLength) },
                         minLines = 2,
                         label = { Text(stringResource(R.string.tag_description_label)) },
-                        placeholder = { Text(stringResource(R.string.tag_description_helper)) },
                         trailingIcon = { Text(stringResource(R.string.tag_description_counter, description.length)) },
+                    )
+                    // Always visible, one line, no reserved slot: a placeholder disappeared as soon as the user typed.
+                    Text(
+                        text = stringResource(R.string.tag_description_helper),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
                 if (state.categoryId == "category") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(36.dp),
+                            .padding(top = 4.dp)
+                            .heightIn(min = 36.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {

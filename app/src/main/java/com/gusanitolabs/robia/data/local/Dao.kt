@@ -513,13 +513,22 @@ interface TagDao {
     @Query("SELECT * FROM clothing_items WHERE id IN (:ids)")
     suspend fun clothingItemsByIds(ids: List<String>): List<ClothingItemEntity>
 
-    /** Moves every garment on a dropped duplicate to its kept tag, then deletes the duplicate with its tombstone. */
+    @Query("SELECT id FROM garment_tags WHERE id IN (:ids)")
+    suspend fun existingTagIds(ids: List<String>): List<String>
+
+    /**
+     * Moves every garment on a dropped duplicate to its kept tag, then deletes the duplicate with its tombstone.
+     * The plan was read before this transaction, so a merge whose drop or keep row has gone is skipped here: the keep id
+     * must exist for the repointed references to satisfy the foreign key. Returns the drop ids that were deleted.
+     */
     @Transaction
     suspend fun applyTagMerges(
         keepIdByDropId: Map<String, String>,
         tombstoneByDropId: Map<String, SyncTombstoneEntity>,
-    ) {
-        val repointedRefs = keepIdByDropId.flatMap { (dropId, keepId) ->
+    ): List<String> {
+        val liveIds = existingTagIds((keepIdByDropId.keys + keepIdByDropId.values).toList()).toSet()
+        val liveKeepIdByDropId = keepIdByDropId.filter { (dropId, keepId) -> dropId in liveIds && keepId in liveIds }
+        val repointedRefs = liveKeepIdByDropId.flatMap { (dropId, keepId) ->
             itemRefsForTag(dropId).map { ref -> ClothingItemTagCrossRef(ref.clothingItemId, keepId) }
         }
         if (repointedRefs.isNotEmpty()) {
@@ -537,8 +546,8 @@ interface TagDao {
                 },
             )
         }
-        keepIdByDropId.keys.forEach { dropId ->
-            deleteEditableTagAndReferences(dropId, tombstoneByDropId.getValue(dropId))
+        return liveKeepIdByDropId.keys.filter { dropId ->
+            deleteEditableTagAndReferences(dropId, tombstoneByDropId.getValue(dropId)) > 0
         }
     }
 }
