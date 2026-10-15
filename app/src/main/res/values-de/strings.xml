@@ -565,7 +565,6 @@
     <string name="browse_search_clear">Suche löschen</string>
     <string name="browse_sorted_by_similarity">Nach Ähnlichkeit sortiert · %1$d Kleidungsstücke</string>
     <string name="browse_search_text_only">Intelligente Suche nicht verfügbar, es werden Namenstreffer angezeigt.</string>
-    <string name="browse_search_enable_smart">Aktiviere intelligente Vorschläge, um auch per Foto zu suchen</string>
     <string name="browse_similar_to">Ähnlich wie „%1$s“</string>
     <string name="item_see_similar">Ähnliche Kleidungsstücke</string>
     <!-- TASK-E10 -->
