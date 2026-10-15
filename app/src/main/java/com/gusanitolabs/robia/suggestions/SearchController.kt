@@ -12,6 +12,9 @@ enum class SearchMode { Semantic, Text, None }
 
 data class SearchResult(val orderedIds: List<String>, val mode: SearchMode)
 
+/** Browse order right after a new garment is saved (PLAN-CHANGE 14, F01): newest first. Equal timestamps keep their order. */
+fun sortNewestFirst(ids: List<String>, createdAtOf: (String) -> Long): List<String> = ids.sortedByDescending(createdAtOf)
+
 /**
  * Browse search (TS§3.11, DEC-011). A non-blank query waits [debounceMillis], then ranks the garments that already
  * pass the active filters. It only reads vectors. When the engine is not available, the query embedding fails, or no

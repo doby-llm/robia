@@ -53,6 +53,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
@@ -184,6 +185,7 @@ import com.gusanitolabs.robia.suggestions.engine.TextImageEmbedder
 import com.gusanitolabs.robia.suggestions.garmentTextInput
 import com.gusanitolabs.robia.suggestions.labelTextFor
 import com.gusanitolabs.robia.suggestions.rankSimilar
+import com.gusanitolabs.robia.suggestions.sortNewestFirst
 import com.gusanitolabs.robia.suggestions.sha256Hex16
 import com.gusanitolabs.robia.suggestions.model.ModelDownloadWorker
 import com.gusanitolabs.robia.suggestions.model.ModelState
@@ -691,6 +693,8 @@ private fun RobiaShell(
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     var browseQuery by rememberSaveable { mutableStateOf("") }
     var similarToGarmentId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Set by saving a new garment: Browse shows the newest first until the user leaves Browse.
+    var browseNewestFirst by rememberSaveable { mutableStateOf(false) }
     val batchDrafts = remember(initialPerformanceBatchFixtureUris) {
         mutableStateListOf<BatchDraftItem>().apply {
             initialPerformanceBatchFixtureUris.forEachIndexed { index, uri ->
@@ -745,8 +749,14 @@ private fun RobiaShell(
         clothingItems.filter { item -> item.id in filteredIds }
     }
     var searchResult by remember { mutableStateOf(SearchResult(emptyList(), SearchMode.None)) }
+    var searchInProgress by remember { mutableStateOf(false) }
     LaunchedEffect(browseQuery, searchItems, vectors, engineAvailable) {
+        searchInProgress = browseQuery.isNotBlank()
         searchResult = searchController.search(browseQuery, searchItems, vectors, engineAvailable)
+        searchInProgress = false
+    }
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != RobiaRoute.Browse) browseNewestFirst = false
     }
     LaunchedEffect(searchActive, engineAvailable) {
         if (searchActive && engineAvailable) app.embeddingEngineHolder.preload()
@@ -756,12 +766,16 @@ private fun RobiaShell(
         ?.let { id -> items.firstOrNull { item -> item.id == id } }
         ?.takeIf { item -> vectors[item.id]?.image != null }
     val searchMode = if (searchActive && similarSource == null) searchResult.mode else SearchMode.None
-    val displayedItems = remember(filteredItems, searchResult, searchActive, similarSource?.id, vectors) {
+    val createdAtById = remember(clothingItems) { clothingItems.associate { item -> item.id to item.createdAtEpochMillis } }
+    val displayedItems = remember(filteredItems, searchResult, searchActive, similarSource?.id, vectors, browseNewestFirst, createdAtById) {
         val filteredById = filteredItems.associateBy(UiWardrobeItem::id)
         when {
             similarSource != null -> rankSimilar(similarSource.id, filteredItems.map(UiWardrobeItem::id), vectors)
                 .mapNotNull(filteredById::get)
-            searchActive -> searchResult.orderedIds.mapNotNull(filteredById::get)
+            // Before the first query result exists the plain list stays visible, not an empty "no results" grid.
+            searchActive && searchResult.mode != SearchMode.None -> searchResult.orderedIds.mapNotNull(filteredById::get)
+            browseNewestFirst -> sortNewestFirst(filteredItems.map(UiWardrobeItem::id)) { id -> createdAtById[id] ?: 0L }
+                .mapNotNull(filteredById::get)
             else -> filteredItems
         }
     }
@@ -1465,10 +1479,21 @@ private fun RobiaShell(
             onBrowseSelectionToggle = ::toggleBrowseSelection,
             onCancelAddEdit = ::closeAddEdit,
             onSaveItem = { item, capture ->
+                val isNewGarment = clothingItems.none { existing -> existing.id == item.id }
                 onSaveItem(item, capture)
-                selectedItemId = item.id
-                replaceRoute(RobiaRoute.Browse)
-                pushRoute(RobiaRoute.ItemDetail)
+                if (isNewGarment) {
+                    // The new garment is not in the list yet, so ItemDetail cannot show it: Browse shows it first instead.
+                    browseQuery = ""
+                    similarToGarmentId = null
+                    browseFilters = BrowseFilterState()
+                    browseNewestFirst = true
+                    selectedItemId = null
+                    replaceRoute(RobiaRoute.Browse)
+                } else {
+                    selectedItemId = item.id
+                    replaceRoute(RobiaRoute.Browse)
+                    pushRoute(RobiaRoute.ItemDetail)
+                }
             },
             onDeleteItem = { item -> deleteItemsAndReturnToBrowse(setOf(item.id)) },
             onBatchPhotosSelected = ::startBatchAdd,
@@ -1544,6 +1569,7 @@ private fun RobiaShell(
             searchQuery = browseQuery,
             onSearchQueryChange = { browseQuery = it },
             searchMode = searchMode,
+            searchInProgress = searchInProgress,
             similarToName = similarSource?.name,
             onClearSimilar = { similarToGarmentId = null },
             onClearSearch = {
@@ -2410,6 +2436,7 @@ private fun RobiaNavHost(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     searchMode: SearchMode,
+    searchInProgress: Boolean,
     similarToName: String?,
     onClearSimilar: () -> Unit,
     onClearSearch: () -> Unit,
@@ -2440,6 +2467,7 @@ private fun RobiaNavHost(
             searchQuery = searchQuery,
             onSearchQueryChange = onSearchQueryChange,
             searchMode = searchMode,
+            searchInProgress = searchInProgress,
             similarToName = similarToName,
             onClearSimilar = onClearSimilar,
             onClearSearch = onClearSearch,
@@ -2627,6 +2655,7 @@ private fun BrowseWardrobeScreen(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     searchMode: SearchMode,
+    searchInProgress: Boolean,
     similarToName: String?,
     onClearSimilar: () -> Unit,
     onClearSearch: () -> Unit,
@@ -2638,6 +2667,10 @@ private fun BrowseWardrobeScreen(
     val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
     val backfillProgress by (backfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
 
+    // The search field is the grid's first row and the results reorder the whole grid: start each query at the top.
+    LaunchedEffect(searchQuery, similarToName) {
+        if (searchActive) gridState.scrollToItem(0)
+    }
     BrowseImagePrefetch(items = items, gridState = gridState)
 
     LazyVerticalGrid(
@@ -2659,6 +2692,7 @@ private fun BrowseWardrobeScreen(
                 searchQuery = searchQuery,
                 onSearchQueryChange = onSearchQueryChange,
                 searchMode = searchMode,
+                searchInProgress = searchInProgress,
                 resultCount = items.size,
                 similarToName = similarToName,
                 onClearSimilar = onClearSimilar,
@@ -2785,6 +2819,7 @@ private fun FilterBar(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     searchMode: SearchMode,
+    searchInProgress: Boolean,
     resultCount: Int,
     similarToName: String?,
     onClearSimilar: () -> Unit,
@@ -2833,7 +2868,25 @@ private fun FilterBar(
                 )
             }
         }
-        when (searchMode) {
+        if (searchInProgress) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Text(
+                    text = stringResource(R.string.browse_search_in_progress),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else if (similarToName != null) {
+            Text(
+                text = stringResource(R.string.browse_similar_caption),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else when (searchMode) {
             SearchMode.Semantic -> Text(
                 text = stringResource(R.string.browse_sorted_by_similarity, resultCount),
                 style = MaterialTheme.typography.bodySmall,
@@ -2882,11 +2935,13 @@ private fun BrowseSearchField(query: String, onQueryChange: (String) -> Unit) {
 @Composable
 private fun SimilarGarmentsChip(name: String, onClear: () -> Unit) {
     val clearDescription = stringResource(R.string.browse_search_clear)
+    val untitledName = stringResource(R.string.browse_similar_untitled)
 
     FilterChip(
         selected = true,
         onClick = onClear,
-        label = { Text(stringResource(R.string.browse_similar_to, name)) },
+        label = { Text(stringResource(R.string.browse_similar_to, name.ifBlank { untitledName })) },
+        leadingIcon = { Icon(Icons.Outlined.Checkroom, contentDescription = null) },
         trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = clearDescription) },
     )
 }

@@ -584,4 +584,8 @@
     <string name="dev_recompute_embedding">Recalcular embedding</string>
     <string name="dev_recompute_embedding_done">Embedding recalculado</string>
     <string name="dev_recompute_embedding_error">No se pudo recalcular el embedding. Se mantiene el anterior.</string>
+    <!-- F01 -->
+    <string name="browse_search_in_progress">Buscando…</string>
+    <string name="browse_similar_caption">Ordenado por parecido</string>
+    <string name="browse_similar_untitled">Prenda sin nombre</string>
 </resources>

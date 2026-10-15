@@ -128,6 +128,13 @@ class SearchControllerTest {
         assertEquals(listOf("2"), rankSimilar("1", listOf("1", "2"), vectors))
     }
 
+    @Test
+    fun aNewlySavedGarmentSortsFirstByCreationTime() {
+        val createdAt = mapOf("1" to 10L, "2" to 30L, "3" to 20L)
+
+        assertEquals(listOf("2", "3", "1"), sortNewestFirst(listOf("1", "2", "3")) { id -> createdAt.getValue(id) })
+    }
+
     private class FakeQueryEmbedder(
         private val vector: FloatArray = floatArrayOf(1f, 0f, 0f, 0f),
         private val failure: Exception? = null,
