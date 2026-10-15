@@ -61,8 +61,14 @@ class TagChangeSetTest {
     }
 
     @Test
-    fun deletedOccasionBuildsNoChangeSet() {
-        assertNull(deletedTagChangeSet(before, formal))
+    fun deletedOccasionBuildsDeletedChangeSet() {
+        // PLAN-CHANGE 15 supersedes DEC-010: deleting an occasion is reviewed like a category.
+        val changeSet = deletedTagChangeSet(before, formal)
+
+        assertEquals(TagOperation.Deleted, changeSet?.operation)
+        assertEquals("occasion", changeSet?.categoryId)
+        assertEquals(setOf("occasion-formal"), changeSet?.touchedTagIds)
+        assertEquals(listOf(tops, dresses), changeSet?.afterTags)
     }
 
     @Test

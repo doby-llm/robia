@@ -555,17 +555,11 @@
         <item quantity="one">%1$d prenda la tenía. Te proponemos otra; puedes cambiarla o dejarla vacía.</item>
         <item quantity="other">%1$d prendas la tenían. Te proponemos otra; puedes cambiarla o dejarla vacía.</item>
     </plurals>
-    <string name="tag_review_progress">Revisadas %1$d de %2$d</string>
     <string name="tag_review_skipped">%1$d sin sugerencias todavía (se omiten)</string>
     <string name="tag_review_choose">Elegir</string>
     <string name="tag_review_choose_manually">Aún sin sugerencias: elige a mano.</string>
     <string name="tag_review_none">Sin categoría</string>
     <string name="tag_review_none_occasion">Ninguna</string>
-    <plurals name="tag_review_save">
-        <item quantity="one">Guardar %1$d cambio</item>
-        <item quantity="other">Guardar %1$d cambios</item>
-    </plurals>
-    <string name="tag_review_nothing">Ninguna prenda necesita cambios</string>
     <string name="tag_review_needs_model">Descarga las sugerencias inteligentes para revisar prendas</string>
     <string name="tag_review_accepted">Aceptada</string>
     <string name="tag_review_picker_title">%1$s para “%2$s”</string>
@@ -590,4 +584,19 @@
     <string name="browse_similar_untitled">Prenda sin nombre</string>
     <!-- F03a -->
     <string name="color_review_accept_all">Aceptar todo (%1$d)</string>
+    <!-- F03b -->
+    <string name="tag_review_prompt_title">¿Revisar prendas?</string>
+    <string name="tag_review_prompt_body">Robia puede revisar tus prendas con este cambio. No cambia nada hasta que aceptes.</string>
+    <string name="tag_review_prompt_confirm">Revisar prendas</string>
+    <string name="tag_review_scan_title">Escaneo de prendas</string>
+    <string name="tag_review_scanning_count">%1$d / %2$d prendas</string>
+    <string name="tag_review_checking_helper">Revisando prendas…</string>
+    <string name="tag_review_empty_title">Ninguna prenda necesita cambios</string>
+    <string name="tag_review_empty_body">Tus prendas ya encajan con este cambio.</string>
+    <string name="tag_review_needs_model_body">Robia podrá revisar tus prendas cuando las sugerencias inteligentes estén listas.</string>
+    <string name="tag_review_accept_all">Aceptar todo (%1$d)</string>
+    <plurals name="tag_review_deleted_occasion_body">
+        <item quantity="one">%1$d prenda la tenía. Sus otras ocasiones se mantienen.</item>
+        <item quantity="other">%1$d prendas la tenían. Sus otras ocasiones se mantienen.</item>
+    </plurals>
 </resources>

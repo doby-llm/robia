@@ -3,6 +3,9 @@ package com.gusanitolabs.robia.suggestions
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -113,14 +116,71 @@ class ReviewPlannerTest {
     }
 
     @Test
-    fun deletedOccasionNeverProducesAReview() {
-        val garments = listOf(garment("hA", dresses, business))
-        val vectors = vectorsOf("hA" to floatArrayOf(0f, 0f, 1f, 0f))
-
+    fun deletedOccasionProposesTheCurrentOccasionsMinusTheDeletedOne() {
+        val garments = listOf(
+            garment("hA", dresses, business, formal), // loses business, keeps formal; nothing is forced in
+            garment("hB", dresses, formal), // does not carry business: no proposal
+        )
+        val vectors = vectorsOf("hA" to null, "hB" to floatArrayOf(1f, 0f, 0f, 0f)) // deletion needs no IMAGE vector
         val changeSet = changeSet(TagOperation.Deleted, "occasion", "occasion-business")
 
-        assertEquals(emptyList<ReviewProposal>(), ReviewPlanner.plan(changeSet, garments, vectors, labels, listOf(dresses, formal, everyday)))
+        val plan = ReviewPlanner.plan(changeSet, garments, vectors, labels, listOf(dresses, formal, everyday))
+
+        assertEquals(
+            listOf(
+                ReviewProposal(
+                    "hA",
+                    setOf("category-dresses", "occasion-business", "occasion-formal"),
+                    setOf("category-dresses", "occasion-formal"),
+                    ProposalKind.Suggested,
+                ),
+            ),
+            plan,
+        )
         assertEquals(0, ReviewPlanner.skippedCount(changeSet, garments, vectors))
+    }
+
+    @Test
+    fun scanPlansEachGarmentTheSameWayAsThePlan() {
+        val garments = listOf(garment("gA", shorts), garment("gB", dresses), garment("gC", shorts))
+        val vectors = vectorsOf(
+            "gA" to floatArrayOf(0f, 1f, 0f, 0f),
+            "gB" to floatArrayOf(1f, 0f, 0f, 0f),
+            "gC" to null,
+        )
+        val changeSet = changeSet(TagOperation.Deleted, "category", "category-shorts")
+        val tags = listOf(dresses, skirts)
+
+        val scan = ReviewPlanner.scan(changeSet, garments, vectors, labels, tags)
+
+        assertEquals(
+            ReviewPlanner.plan(changeSet, garments, vectors, labels, tags),
+            garments.mapNotNull(scan::proposalFor),
+        )
+    }
+
+    @Test
+    fun scanEachStopsBeforeTheNextGarmentWhenCancelled() = runBlocking {
+        val garments = listOf(garment("gA", shorts), garment("gB", shorts))
+        val vectors = vectorsOf("gA" to floatArrayOf(1f, 1f, 0f, 0f), "gB" to floatArrayOf(1f, 1f, 0f, 0f))
+        val scan = ReviewPlanner.scan(
+            changeSet(TagOperation.Deleted, "category", "category-shorts"),
+            garments,
+            vectors,
+            labels,
+            listOf(dresses, skirts),
+        )
+        val seen = mutableListOf<String>()
+
+        val job = launch {
+            scan.scanEach(garments) { garment, _ ->
+                seen += garment.id
+                cancel() // navigation or discard: the next garment must not be planned
+            }
+        }
+        job.join()
+
+        assertEquals(listOf("gA"), seen)
     }
 
     @Test

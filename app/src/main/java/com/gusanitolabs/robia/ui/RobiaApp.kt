@@ -685,7 +685,6 @@ private fun RobiaShell(
     val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
-    val tagReviewScope = rememberCoroutineScope()
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
     val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
@@ -716,7 +715,8 @@ private fun RobiaShell(
     var showColorReviewDiscardDialog by remember { mutableStateOf(false) }
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
-    var activeTagReview by remember { mutableStateOf<TagReviewPlan?>(null) }
+    var pendingTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
+    var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
     var showCloudSetupPrompt by remember { mutableStateOf(false) }
     var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
@@ -987,45 +987,28 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ColorReview)
     }
 
-    fun offerTagReview(changeSet: TagChangeSet) {
-        if (app.modelStore.state.value !is ModelState.Ready) {
-            Toast.makeText(context, context.getString(R.string.tag_review_needs_model), Toast.LENGTH_SHORT).show()
-            return
-        }
-        tagReviewScope.launch {
-            val plan = try {
-                planTagReview(app, changeSet, clothingItems)
-            } catch (unavailable: EmbeddingFailure) {
-                Toast.makeText(context, context.getString(R.string.tag_review_needs_model), Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            if (plan.candidates.isEmpty()) {
-                Toast.makeText(context, context.getString(R.string.tag_review_nothing), Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            activeTagReview = plan
-            replaceRoute(RobiaRoute.TagReview)
-        }
-    }
-
-    // The tag change is persisted by the caller first; only the garment proposals wait for the user's confirmation.
+    // Save-first: the change is persisted before the snapshot is offered for review. The snapshot is taken before the
+    // save, because a deleted tag is removed from the garments right away.
     fun saveTagAndOfferReview(tag: GarmentTag) {
+        val garments = clothingItems
         val changeSet = savedTagChangeSet(availableTags, tag)
         onSaveTag(tag)
-        changeSet?.let(::offerTagReview)
+        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
     }
 
     fun deleteTagAndOfferReview(tag: GarmentTag) {
+        val garments = clothingItems
         val changeSet = deletedTagChangeSet(availableTags, tag)
         onDeleteCustomTag(tag)
-        changeSet?.let(::offerTagReview)
+        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
     }
 
     fun restoreDefaultTagsAndOfferReview(category: TagCategory) {
+        val garments = clothingItems
         val defaults = DefaultTags.tags.filter { tag -> tag.categoryId == category.id }
         val changeSet = restoredTagChangeSet(availableTags, category.id, defaults)
         onRestoreDefaultTags(category)
-        changeSet?.let(::offerTagReview)
+        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
     }
 
     fun commitTagReview(updatedItems: List<ClothingItem>) {
@@ -1245,6 +1228,18 @@ private fun RobiaShell(
                 TextButton(onClick = { showTagReviewDiscardDialog = false }) {
                     Text(stringResource(R.string.keep_editing))
                 }
+            },
+        )
+    }
+
+    pendingTagReview?.let { request ->
+        TagReviewPromptDialog(
+            modelReady = app.modelStore.state.value is ModelState.Ready,
+            onDismiss = { pendingTagReview = null },
+            onReview = {
+                activeTagReview = request
+                pendingTagReview = null
+                replaceRoute(RobiaRoute.TagReview)
             },
         )
     }
@@ -1537,7 +1532,8 @@ private fun RobiaShell(
             onDeleteMainColor = ::deleteMainColorAndOfferReview,
             onRestoreDefaultTags = ::restoreDefaultTagsAndOfferReview,
             onRestoreDefaultMainColors = ::restoreDefaultMainColorsAndStartReview,
-            tagReviewPlan = activeTagReview,
+            tagReviewRequest = activeTagReview,
+            prepareTagReviewScan = { changeSet, garments -> prepareTagReviewScan(app, changeSet, garments) },
             manageTagsTabId = manageTagsTabId,
             onManageTagsTabIdChange = { manageTagsTabId = it },
             onCommitTagReview = ::commitTagReview,
@@ -2412,7 +2408,8 @@ private fun RobiaNavHost(
     onCommitColorReview: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
-    tagReviewPlan: TagReviewPlan?,
+    tagReviewRequest: TagReviewRequest?,
+    prepareTagReviewScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
     manageTagsTabId: String?,
     onManageTagsTabIdChange: (String?) -> Unit,
     onCommitTagReview: (List<ClothingItem>) -> Unit,
@@ -2491,10 +2488,11 @@ private fun RobiaNavHost(
                 onRequestDiscard = onRequestColorReviewDiscard,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
-        RobiaRoute.TagReview -> tagReviewPlan?.let { plan ->
+        RobiaRoute.TagReview -> tagReviewRequest?.let { request ->
             TagReviewScreen(
                 innerPadding = innerPadding,
-                plan = plan,
+                request = request,
+                prepareScan = prepareTagReviewScan,
                 onCommit = onCommitTagReview,
                 onRequestDiscard = onRequestTagReviewDiscard,
             )
@@ -4670,32 +4668,27 @@ private fun RobiaAppPreview() {
 }
 
 /**
- * Stores the capture-time IMAGE vector when it belongs to the saved photo, and keeps the TEXT vector in step with
- * name and notes (TS§3.7). Writes only `garment_embeddings`, never the garment row.
+ * Planner state for a tag review scan (DEC-010, superseded by PLAN-CHANGE 15). Label vectors come from the same recipe as
+ * the garment vectors. Throws [EmbeddingFailure] while the model is not ready; the screen shows that state.
  */
-/** Affected garments for a tag change (DEC-010). Label vectors come from the same recipe as the garment vectors. */
-private suspend fun planTagReview(
+private suspend fun prepareTagReviewScan(
     app: RobiaApplication,
     changeSet: TagChangeSet,
     garments: List<ClothingItem>,
-): TagReviewPlan {
-    val activeGarments = garments.filterNot(ClothingItem::isArchived)
+): ReviewPlanner.Scan {
     val vectors = EmbeddingRepository(app.database.embeddingDao())
         .observeVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
         .first()
     val labelVectors = changeSet.afterTags
         .filter { tag -> tag.categoryId == changeSet.categoryId }
         .associate { tag -> tag.id to app.embeddingEngineHolder.embedText(labelTextFor(tag)) }
-    val itemsById = activeGarments.associateBy(ClothingItem::id)
-    val candidates = ReviewPlanner.plan(changeSet, activeGarments, vectors, labelVectors, changeSet.afterTags)
-        .mapNotNull { proposal -> itemsById[proposal.garmentId]?.let { item -> TagReviewCandidate(item, proposal) } }
-    return TagReviewPlan(
-        changeSet = changeSet,
-        candidates = candidates,
-        skippedCount = ReviewPlanner.skippedCount(changeSet, activeGarments, vectors),
-    )
+    return ReviewPlanner.scan(changeSet, garments, vectors, labelVectors, changeSet.afterTags)
 }
 
+/**
+ * Stores the capture-time IMAGE vector when it belongs to the saved photo, and keeps the TEXT vector in step with
+ * name and notes (TS§3.7). Writes only `garment_embeddings`, never the garment row.
+ */
 private suspend fun storeSuggestionVectors(
     app: RobiaApplication,
     embeddingRepository: EmbeddingRepository,

@@ -1,6 +1,8 @@
 package com.gusanitolabs.robia.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,14 +31,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,19 +47,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.suggestions.ProposalKind
+import com.gusanitolabs.robia.suggestions.ReviewPlanner
 import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagOperation
+import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
 import java.util.UUID
 
 private const val TAG_REVIEW_THUMBNAIL_MAX_EDGE_PX = 384
@@ -69,11 +74,19 @@ internal data class TagReviewCandidate(
     val proposal: ReviewProposal,
 )
 
-internal data class TagReviewPlan(
+/** The change set plus the garments as they were before the change was saved (deleted tags are already gone from them). */
+internal data class TagReviewRequest(
     val changeSet: TagChangeSet,
-    val candidates: List<TagReviewCandidate>,
-    val skippedCount: Int,
+    val garments: List<ClothingItem>,
 )
+
+/** Accept all takes every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it. */
+internal fun tagReviewCommitCandidates(
+    candidates: List<TagReviewCandidate>,
+    acceptedIds: Set<String>,
+): List<TagReviewCandidate> = candidates.filter { candidate ->
+    candidate.proposal.kind == ProposalKind.Suggested || candidate.item.id in acceptedIds
+}
 
 /**
  * Change set for a saved tag (TS§3.10). Null for a new tag of another kind, or when the name did not change:
@@ -91,9 +104,9 @@ internal fun savedTagChangeSet(before: List<GarmentTag>, saved: GarmentTag): Tag
     return tagChangeSet(operation, saved.categoryId, setOf(saved.id), before, after)
 }
 
-/** Only category deletions are reviewed; deleting an occasion simply removes it (DEC-010). */
+/** Categories and occasions are both reviewed after a deletion (PLAN-CHANGE 15 supersedes DEC-010). */
 internal fun deletedTagChangeSet(before: List<GarmentTag>, deleted: GarmentTag): TagChangeSet? {
-    if (deleted.categoryId != TAG_KIND_CATEGORY) return null
+    if (deleted.categoryId !in ReviewedTagKinds) return null
     val after = before.filterNot { tag -> tag.id == deleted.id }
     return tagChangeSet(TagOperation.Deleted, deleted.categoryId, setOf(deleted.id), before, after)
 }
@@ -130,19 +143,45 @@ private fun tagChangeSet(
     afterTags = after,
 )
 
+/** Shown after a tag change is saved. Declining keeps the change; accepting opens the scanning review. */
+@Composable
+internal fun TagReviewPromptDialog(
+    modelReady: Boolean,
+    onDismiss: () -> Unit,
+    onReview: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.tag_review_prompt_title)) },
+        text = { Text(stringResource(if (modelReady) R.string.tag_review_prompt_body else R.string.tag_review_needs_model)) },
+        confirmButton = {
+            Button(onClick = onReview, enabled = modelReady) {
+                Text(stringResource(R.string.tag_review_prompt_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.not_now))
+            }
+        },
+    )
+}
+
 /**
- * Review of a category or occasion change. Nothing is written until [onCommit]; leaving the screen discards the
- * garment proposals and keeps the tag change itself.
+ * Review of a category or occasion change. Garments are scanned incrementally on Dispatchers.Default, so the screen
+ * opens at once and proposals appear as they are found. Nothing is written until [onCommit]; leaving the screen
+ * cancels the scan and discards the garment proposals, while the tag change itself stays.
  */
 @Composable
 internal fun TagReviewScreen(
     innerPadding: PaddingValues,
-    plan: TagReviewPlan,
+    request: TagReviewRequest,
+    prepareScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
     onCommit: (List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
-    val changeSet = plan.changeSet
+    val changeSet = request.changeSet
     val labelsById = remember(changeSet.id) {
         (changeSet.beforeTags + changeSet.afterTags).associate { tag -> tag.id to tag.localizedTagLabel(context) }
     }
@@ -153,14 +192,50 @@ internal fun TagReviewScreen(
             .filter { tag -> tag.categoryId == changeSet.categoryId }
             .mapTo(mutableSetOf(), GarmentTag::id)
     }
+    // Pinned per change set: a later sync emission neither restarts the scan nor drops accepted proposals.
+    val garments = remember(changeSet.id) { request.garments.filterNot(ClothingItem::isArchived) }
+    val candidates = remember(changeSet.id) { mutableStateListOf<TagReviewCandidate>() }
     val edits = remember(changeSet.id) { mutableStateMapOf<String, Set<String>>() }
     val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    var scannedCount by remember(changeSet.id) { mutableIntStateOf(0) }
+    var skippedCount by remember(changeSet.id) { mutableIntStateOf(0) }
+    var isScanning by remember(changeSet.id) { mutableStateOf(true) }
+    var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
     var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
+
+    // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
+    LaunchedEffect(changeSet.id) {
+        candidates.clear()
+        scannedCount = 0
+        isScanning = true
+        modelUnavailable = false
+        val scan = try {
+            prepareScan(changeSet, garments)
+        } catch (unavailable: EmbeddingFailure) {
+            modelUnavailable = true
+            isScanning = false
+            return@LaunchedEffect
+        }
+        skippedCount = scan.skippedCount
+        scan.scanEach(garments) { garment, proposal ->
+            if (proposal != null) candidates += TagReviewCandidate(garment, proposal)
+            scannedCount += 1
+        }
+        isScanning = false
+    }
+
+    val totalCount = garments.size.coerceAtLeast(1)
+    val progress = if (isScanning) scannedCount.toFloat() / totalCount.toFloat() else 1f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 300),
+        label = "tagReviewProgress",
+    )
 
     BackHandler { onRequestDiscard() }
 
     pickerGarmentId?.let { garmentId ->
-        plan.candidates.firstOrNull { candidate -> candidate.item.id == garmentId }?.let { candidate ->
+        candidates.firstOrNull { candidate -> candidate.item.id == garmentId }?.let { candidate ->
             val current = edits[garmentId] ?: candidate.proposal.proposed
             TagReviewPickerDialog(
                 title = stringResource(
@@ -199,13 +274,35 @@ internal fun TagReviewScreen(
                 TagReviewHeader(
                     changeSet = changeSet,
                     labelsById = labelsById,
-                    reviewedCount = acceptedIds.size,
-                    totalCount = plan.candidates.size,
-                    skippedCount = plan.skippedCount,
+                    garmentCount = garments.size,
                 )
             }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                ReviewProgressHeader(
+                    title = stringResource(R.string.tag_review_scan_title),
+                    countText = stringResource(R.string.tag_review_scanning_count, scannedCount, garments.size),
+                    progress = animatedProgress,
+                )
+            }
+
+            if (modelUnavailable) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ReviewEmptyCard(
+                        title = stringResource(R.string.tag_review_needs_model),
+                        body = stringResource(R.string.tag_review_needs_model_body),
+                    )
+                }
+            } else if (!isScanning && candidates.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ReviewEmptyCard(
+                        title = stringResource(R.string.tag_review_empty_title),
+                        body = stringResource(R.string.tag_review_empty_body),
+                    )
+                }
+            }
+
             items(
-                items = plan.candidates,
+                items = candidates,
                 key = { candidate -> candidate.item.id },
             ) { candidate ->
                 val garmentId = candidate.item.id
@@ -221,48 +318,42 @@ internal fun TagReviewScreen(
                     },
                 )
             }
-        }
 
-        Surface(
-            tonalElevation = 3.dp,
-            shadowElevation = 6.dp,
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
-        ) {
-            val acceptedCount = acceptedIds.size
-            Button(
-                onClick = {
-                    val now = System.currentTimeMillis()
-                    val updatedItems = plan.candidates
-                        .filter { candidate -> candidate.item.id in acceptedIds }
-                        .map { candidate ->
-                            val proposed = edits[candidate.item.id] ?: candidate.proposal.proposed
-                            candidate.item.copy(
-                                tags = changeSet.afterTags.filter { tag -> tag.id in proposed },
-                                updatedAtEpochMillis = now,
-                            )
-                        }
-                    onCommit(updatedItems)
-                },
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth()
-                    .height(56.dp),
-            ) {
-                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(
-                    text = if (acceptedCount > 0) {
-                        context.resources.getQuantityString(R.plurals.tag_review_save, acceptedCount, acceptedCount)
-                    } else {
-                        stringResource(R.string.done)
-                    },
-                    modifier = Modifier.padding(start = 10.dp),
-                    fontWeight = FontWeight.SemiBold,
-                )
+            if (isScanning || (!modelUnavailable && skippedCount > 0)) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ReviewHelperRow(
+                        isScanning = isScanning,
+                        text = if (isScanning) {
+                            stringResource(R.string.tag_review_checking_helper)
+                        } else {
+                            stringResource(R.string.tag_review_skipped, skippedCount)
+                        },
+                    )
+                }
             }
         }
+
+        // Accept all saves every proposal with a concrete target; manual-choice proposals stay out unless accepted by hand.
+        val commitCandidates = tagReviewCommitCandidates(candidates.toList(), acceptedIds.toSet())
+        ReviewBottomBar(
+            label = if (commitCandidates.isNotEmpty()) {
+                stringResource(R.string.tag_review_accept_all, commitCandidates.size)
+            } else {
+                stringResource(R.string.done)
+            },
+            enabled = !isScanning,
+            onClick = {
+                val now = System.currentTimeMillis()
+                val updatedItems = commitCandidates.map { candidate ->
+                    val proposed = edits[candidate.item.id] ?: candidate.proposal.proposed
+                    candidate.item.copy(
+                        tags = changeSet.afterTags.filter { tag -> tag.id in proposed },
+                        updatedAtEpochMillis = now,
+                    )
+                }
+                onCommit(updatedItems)
+            },
+        )
     }
 }
 
@@ -270,9 +361,7 @@ internal fun TagReviewScreen(
 private fun TagReviewHeader(
     changeSet: TagChangeSet,
     labelsById: Map<String, String>,
-    reviewedCount: Int,
-    totalCount: Int,
-    skippedCount: Int,
+    garmentCount: Int,
 ) {
     val context = LocalContext.current
     val noun = stringResource(
@@ -292,38 +381,13 @@ private fun TagReviewHeader(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = if (isDeleted) {
-                context.resources.getQuantityString(R.plurals.tag_review_deleted_body, totalCount, totalCount)
-            } else {
-                context.resources.getQuantityString(R.plurals.tag_review_added_body, totalCount, totalCount, touchedNames)
+            text = when {
+                !isDeleted -> context.resources.getQuantityString(R.plurals.tag_review_added_body, garmentCount, garmentCount, touchedNames)
+                changeSet.categoryId == TAG_KIND_OCCASION -> context.resources.getQuantityString(R.plurals.tag_review_deleted_occasion_body, garmentCount, garmentCount)
+                else -> context.resources.getQuantityString(R.plurals.tag_review_deleted_body, garmentCount, garmentCount)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.tag_review_progress, reviewedCount, totalCount),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            if (skippedCount > 0) {
-                Text(
-                    text = stringResource(R.string.tag_review_skipped, skippedCount),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        LinearProgressIndicator(
-            progress = { if (totalCount == 0) 0f else reviewedCount.toFloat() / totalCount.toFloat() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(CircleShape),
         )
     }
 }
@@ -353,28 +417,32 @@ private fun TagReviewCandidateCard(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // Stacked, never side by side: "From" and "-> To" each take the full card width, so long names
+                // ellipsize instead of wrapping letter by letter and resizing the card.
+                Text(
+                    text = currentLabels.joinToString().ifEmpty { stringResource(R.string.tag_review_none) },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Surface(
+                    onClick = onPick,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = currentLabels.joinToString().ifEmpty { stringResource(R.string.tag_review_none) },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Icon(
-                        Icons.Rounded.ArrowForward,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Surface(
-                        onClick = onPick,
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.weight(1f),
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
+                        Icon(
+                            Icons.Rounded.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
                         Text(
                             text = if (proposedLabels.isEmpty()) {
                                 stringResource(if (isChooseManually) R.string.tag_review_choose else R.string.tag_review_none)
@@ -383,7 +451,8 @@ private fun TagReviewCandidateCard(
                             },
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
