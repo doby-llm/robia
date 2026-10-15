@@ -529,4 +529,9 @@
     <string name="sync_use_backup_confirm_body">The garments and photos on this phone will be replaced by the Google Drive backup. Changes that exist only on this phone will be lost.</string>
     <string name="sync_use_backup_confirm_action">Replace</string>
     <string name="sync_status_parked_help">Saved on this phone. It won\'t upload until you tap Retry.</string>
+    <!-- TASK-E06 -->
+    <plurals name="suggestions_preparing_count">
+        <item quantity="one">Preparing suggestions for %d garment…</item>
+        <item quantity="other">Preparing suggestions for %d garments…</item>
+    </plurals>
 </resources>

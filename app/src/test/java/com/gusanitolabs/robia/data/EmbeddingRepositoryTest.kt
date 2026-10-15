@@ -200,7 +200,7 @@ class EmbeddingRepositoryTest {
 }
 
 /** Keyed by (garmentId, kind) like the real table's primary key. Unused DAO queries fail loudly. */
-private class InMemoryEmbeddingDao : EmbeddingDao {
+internal class InMemoryEmbeddingDao : EmbeddingDao {
     val rows = linkedMapOf<Pair<String, String>, GarmentEmbeddingEntity>()
     private val state = MutableStateFlow<List<GarmentEmbeddingEntity>>(emptyList())
 

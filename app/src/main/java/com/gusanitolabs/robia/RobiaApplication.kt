@@ -5,19 +5,24 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.gusanitolabs.robia.data.DataStoreSettingsRepository
+import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.LocalTagRepository
 import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
+import com.gusanitolabs.robia.suggestions.EmbeddingBackfill
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingEngineHolder
 import com.gusanitolabs.robia.suggestions.engine.LiteRtNativeEmbedder
 import com.gusanitolabs.robia.suggestions.model.HttpModelSource
+import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.suggestions.model.ModelStore
 import com.gusanitolabs.robia.sync.DriveSyncScheduler
 import com.gusanitolabs.robia.sync.FileRestoreSyncLogRepository
@@ -29,6 +34,8 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.io.File
 
 internal val Context.settingsDataStore by preferencesDataStore(name = "robia_settings")
@@ -63,6 +70,26 @@ class RobiaApplication : Application() {
 
     val tagRepository by lazy { LocalTagRepository(database.tagDao(), database.syncTombstoneDao()) }
 
+    val embeddingRepository by lazy { EmbeddingRepository(database.embeddingDao()) }
+
+    /** Computes missing and stale vectors in the background while the app is open (TS§3.8). */
+    val embeddingBackfill by lazy {
+        EmbeddingBackfill(
+            scope = appScope,
+            embedder = embeddingEngineHolder,
+            isModelReady = { modelStore.state.value is ModelState.Ready },
+            encodeImage = { photoUri -> ImageInputEncoder.encode(this, Uri.parse(photoUri)) },
+            loadGarments = { wardrobeRepository.observeActiveItems().first() },
+            loadStoredRows = { database.embeddingDao().getForRecipe(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID) },
+            saveVector = { garmentId, kind, vector, inputHash, durationMs ->
+                embeddingRepository.upsert(garmentId, kind, vector, inputHash, durationMs)
+            },
+            deleteVector = { garmentId, kind -> embeddingRepository.delete(garmentId, kind) },
+            // Each new vector is pending upload; the sync cycle sends it without changing any garment revision.
+            requestSync = { DriveSyncScheduler(applicationContext).requestSync() },
+        )
+    }
+
     val syncSnapshotRepository by lazy {
         LocalWardrobeSyncSnapshotRepository(
             database = database,
@@ -87,14 +114,26 @@ class RobiaApplication : Application() {
             restoreSyncLogRepository = restoreSyncLogRepository,
             syncWorkScheduler = DriveSyncScheduler(applicationContext),
             scope = appScope,
+            embeddingRepository = embeddingRepository,
+            onRestoreImported = { embeddingBackfill.resume() },
         )
     }
 
     override fun onCreate() {
         super.onCreate()
         ProcessLifecycleOwner.get().lifecycle.addObserver(LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) embeddingEngineHolder.release()
+            when (event) {
+                Lifecycle.Event.ON_START -> embeddingBackfill.resume()
+                Lifecycle.Event.ON_STOP -> {
+                    embeddingBackfill.pause()
+                    embeddingEngineHolder.release()
+                }
+                else -> Unit
+            }
         })
+        appScope.launch {
+            modelStore.state.collect { state -> if (state is ModelState.Ready) embeddingBackfill.resume() }
+        }
     }
 
     override fun onTrimMemory(level: Int) {
