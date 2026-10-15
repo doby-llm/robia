@@ -76,7 +76,12 @@ class CloudSyncHysteresisTest {
 
     @Test
     fun browseIconOnlyForSyncingAndUserActionStates() {
-        val visible = setOf(CloudSyncHeadline.Syncing, CloudSyncHeadline.Attention, CloudSyncHeadline.Error)
+        val visible = setOf(
+            CloudSyncHeadline.Syncing,
+            CloudSyncHeadline.Waiting,
+            CloudSyncHeadline.Attention,
+            CloudSyncHeadline.Error,
+        )
         CloudSyncHeadline.values().forEach { headline ->
             assertEquals(headline.name, headline in visible, headline.showsBrowseIndicator)
         }

@@ -84,7 +84,7 @@
     <string name="drive_sync_status_not_configured">Not configured</string>
     <string name="drive_sync_status_disconnected">Google account disconnected</string>
     <string name="drive_sync_status_syncing">Syncing…</string>
-    <string name="drive_sync_status_needs_attention">Sync needs attention</string>
+    <string name="drive_sync_status_needs_attention">Sync paused: needs attention</string>
     <string name="developer_mode">Developer Mode</string>
     <string name="developer_mode_summary">Show Add Garment and restore diagnostics</string>
     <string name="developer_mode_unlocked">Developer mode unlocked</string>
@@ -603,7 +603,9 @@
     <!-- G03 -->
     <string name="cloud_sync_headline_synced">Synced</string>
     <string name="cloud_sync_headline_pending">Waiting to sync</string>
+    <string name="cloud_sync_headline_waiting">Waiting for connection</string>
     <string name="dev_cloud_title">Cloud sync (developer)</string>
+    <string name="dev_cloud_status">Status: %1$s</string>
     <string name="dev_cloud_pending">Pending changes: %1$d</string>
     <string name="dev_cloud_processing">Processing: %1$s</string>
     <string name="dev_cloud_yes">yes</string>
@@ -613,6 +615,11 @@
     <string name="dev_cloud_ended">Ended: %1$s</string>
     <string name="dev_cloud_result">Result: %1$s</string>
     <string name="dev_cloud_cancelled">cancelled</string>
+    <string name="dev_cloud_result_success">success</string>
+    <string name="dev_cloud_result_retry">retry later</string>
+    <string name="dev_cloud_result_auth_blocked">sign-in required</string>
+    <string name="dev_cloud_result_conflict">backup conflict</string>
+    <string name="dev_cloud_result_needs_user">needs your decision</string>
     <string name="dev_cloud_pending_at_start">Pending at start: %1$d</string>
     <string name="dev_cloud_error">Last error: %1$s</string>
 </resources>

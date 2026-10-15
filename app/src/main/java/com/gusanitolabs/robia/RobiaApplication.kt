@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.datastore.preferences.preferencesDataStore
@@ -34,6 +35,9 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -43,6 +47,11 @@ internal const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.
 
 class RobiaApplication : Application() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val onlineState = MutableStateFlow(false)
+
+    /** Whether the device has an internet network right now; the cloud sync indicator shows "Waiting for connection" without one. */
+    val online: StateFlow<Boolean> = onlineState.asStateFlow()
 
     val modelStore by lazy {
         ModelStore(
@@ -121,6 +130,7 @@ class RobiaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        registerConnectivityCallback()
         ProcessLifecycleOwner.get().lifecycle.addObserver(LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> embeddingBackfill.resume()
@@ -139,6 +149,27 @@ class RobiaApplication : Application() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) embeddingEngineHolder.release()
+    }
+
+    private fun registerConnectivityCallback() {
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        onlineState.value = connectivity.hasActiveInternet()
+        connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            // Each callback re-reads the active network: onLost can arrive after the replacement network was already announced.
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                onlineState.value = connectivity.hasActiveInternet()
+            }
+
+            override fun onLost(network: Network) {
+                onlineState.value = connectivity.hasActiveInternet()
+            }
+        })
+    }
+
+    private fun ConnectivityManager.hasActiveInternet(): Boolean {
+        val network = activeNetwork ?: return false
+        val capabilities = getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun isUnmeteredNetworkActive(): Boolean {

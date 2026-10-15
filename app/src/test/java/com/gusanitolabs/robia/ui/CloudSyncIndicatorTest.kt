@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
@@ -23,6 +24,7 @@ class CloudSyncIndicatorTest {
         val restoring: Boolean,
         val attention: List<SyncAttentionKind>,
         val lastCycleResult: SyncRunResult? = null,
+        val online: Boolean = true,
         val expectedHeadline: CloudSyncHeadline,
         val expectedAttention: Boolean,
     )
@@ -91,6 +93,54 @@ class CloudSyncIndicatorTest {
             status = DriveSyncConnectionStatus.Disabled, pending = 5, restoring = false, attention = emptyList(),
             expectedHeadline = CloudSyncHeadline.Disabled, expectedAttention = false,
         ),
+        Row(
+            name = "offline with changes waits for the connection, not syncing",
+            status = DriveSyncConnectionStatus.Connected, pending = 3, restoring = false, attention = emptyList(),
+            online = false,
+            expectedHeadline = CloudSyncHeadline.Waiting, expectedAttention = false,
+        ),
+        Row(
+            name = "offline while a run is still in flight never says syncing",
+            status = DriveSyncConnectionStatus.Syncing, pending = 2, restoring = false, attention = emptyList(),
+            online = false,
+            expectedHeadline = CloudSyncHeadline.Waiting, expectedAttention = false,
+        ),
+        Row(
+            name = "offline with nothing pending says nothing is waiting",
+            status = DriveSyncConnectionStatus.Syncing, pending = 0, restoring = false, attention = emptyList(),
+            online = false,
+            expectedHeadline = CloudSyncHeadline.Synced, expectedAttention = false,
+        ),
+        Row(
+            name = "offline with an attention item still asks for attention",
+            status = DriveSyncConnectionStatus.Connected, pending = 3, restoring = false,
+            attention = listOf(SyncAttentionKind.DriveFull), online = false,
+            expectedHeadline = CloudSyncHeadline.Attention, expectedAttention = true,
+        ),
+        Row(
+            name = "offline with the account disconnected is an error",
+            status = DriveSyncConnectionStatus.Disconnected, pending = 4, restoring = false, attention = emptyList(),
+            online = false,
+            expectedHeadline = CloudSyncHeadline.Error, expectedAttention = true,
+        ),
+        Row(
+            name = "offline and not configured stays not configured",
+            status = DriveSyncConnectionStatus.NotConfigured, pending = 2, restoring = false, attention = emptyList(),
+            online = false,
+            expectedHeadline = CloudSyncHeadline.NotConfigured, expectedAttention = false,
+        ),
+        Row(
+            name = "online transient retry with changes also waits",
+            status = DriveSyncConnectionStatus.Connected, pending = 2, restoring = false, attention = emptyList(),
+            lastCycleResult = SyncRunResult.Retry,
+            expectedHeadline = CloudSyncHeadline.Waiting, expectedAttention = false,
+        ),
+        Row(
+            name = "online with changes after a successful cycle is pending",
+            status = DriveSyncConnectionStatus.Connected, pending = 2, restoring = false, attention = emptyList(),
+            lastCycleResult = SyncRunResult.Success,
+            expectedHeadline = CloudSyncHeadline.Pending, expectedAttention = false,
+        ),
     )
 
     @Test
@@ -103,7 +153,7 @@ class CloudSyncIndicatorTest {
                 attention = row.attention.map { kind -> SyncAttention(kind) },
                 lastCycle = row.lastCycleResult?.let { result -> cycle(result) },
             )
-            val indicator = cloudSyncIndicator(state, developerMode = false)
+            val indicator = cloudSyncIndicator(state, developerMode = false, online = row.online)
             assertEquals(row.name, row.expectedHeadline, indicator.headline)
             assertEquals(row.name, row.pending, indicator.pendingCount)
             assertEquals(row.name, row.expectedAttention, indicator.attention)
@@ -122,6 +172,30 @@ class CloudSyncIndicatorTest {
             cloudSyncIndicator(failed, developerMode = true).detail,
         )
         assertNull(cloudSyncIndicator(failed, developerMode = false).detail)
+    }
+
+    @Test
+    fun detailShowsAMessageEvenWithoutAClass() {
+        val failed = WardrobeSyncState(
+            connectionStatus = DriveSyncConnectionStatus.Connected,
+            pendingOperationCount = 1,
+            lastCycle = cycle(SyncRunResult.Retry, errorMessage = "Drive sync was interrupted."),
+        )
+        assertEquals("Drive sync was interrupted.", cloudSyncIndicator(failed, developerMode = true).detail)
+    }
+
+    @Test
+    fun everyCycleResultHasItsOwnReadableName() {
+        val results = listOf<SyncRunResult?>(
+            null,
+            SyncRunResult.Success,
+            SyncRunResult.Retry,
+            SyncRunResult.AuthBlocked,
+            SyncRunResult.Conflict,
+            SyncRunResult.NeedsUser,
+        )
+        assertEquals(R.string.dev_cloud_cancelled, (null as SyncRunResult?).readableNameRes())
+        assertEquals(results.size, results.map { it.readableNameRes() }.toSet().size)
     }
 
     private fun runningRestore() = CloudRestoreProgress(
