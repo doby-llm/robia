@@ -84,7 +84,7 @@
     <string name="drive_sync_status_not_configured">Sin configurar</string>
     <string name="drive_sync_status_disconnected">Cuenta de Google desconectada</string>
     <string name="drive_sync_status_syncing">Sincronizando…</string>
-    <string name="drive_sync_status_needs_attention">La sincronización requiere atención</string>
+    <string name="drive_sync_status_needs_attention">Sincronización en pausa: requiere atención</string>
     <string name="developer_mode">Modo de desarrollador</string>
     <string name="developer_mode_summary">Mostrar diagnósticos al añadir prenda y restaurar</string>
     <string name="developer_mode_unlocked">Modo de desarrollador desbloqueado</string>
@@ -603,7 +603,9 @@
     <!-- G03 -->
     <string name="cloud_sync_headline_synced">Sincronizado</string>
     <string name="cloud_sync_headline_pending">Pendiente de sincronizar</string>
+    <string name="cloud_sync_headline_waiting">Esperando conexión</string>
     <string name="dev_cloud_title">Nube (desarrollador)</string>
+    <string name="dev_cloud_status">Estado: %1$s</string>
     <string name="dev_cloud_pending">Cambios pendientes: %1$d</string>
     <string name="dev_cloud_processing">Procesando: %1$s</string>
     <string name="dev_cloud_yes">sí</string>
@@ -613,6 +615,11 @@
     <string name="dev_cloud_ended">Fin: %1$s</string>
     <string name="dev_cloud_result">Resultado: %1$s</string>
     <string name="dev_cloud_cancelled">cancelado</string>
+    <string name="dev_cloud_result_success">correcto</string>
+    <string name="dev_cloud_result_retry">reintento pendiente</string>
+    <string name="dev_cloud_result_auth_blocked">requiere iniciar sesión</string>
+    <string name="dev_cloud_result_conflict">conflicto con la copia de seguridad</string>
+    <string name="dev_cloud_result_needs_user">requiere tu decisión</string>
     <string name="dev_cloud_pending_at_start">Pendientes al inicio: %1$d</string>
     <string name="dev_cloud_error">Último error: %1$s</string>
 </resources>

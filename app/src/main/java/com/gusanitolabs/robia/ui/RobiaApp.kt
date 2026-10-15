@@ -69,6 +69,7 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -317,6 +318,8 @@ private data class UiWardrobeItem(
     val lastSyncedAtEpochMillis: Long?,
     val syncFailureMessage: String?,
     val photoRestoreState: PhotoRestoreState,
+    /** Offline: the pending garment waits for the connection, shown instead of "Pending upload". */
+    val waitingForConnection: Boolean = false,
 )
 
 private data class UiTag(
@@ -615,7 +618,7 @@ private fun WardrobeSyncState.reconcileWithSettings(
  * One headline for every cloud-sync surface: the Browse icon, the Settings lines and the developer card all read from here,
  * so they cannot contradict each other. [Syncing] means the processor is running or a restore is in progress.
  */
-internal enum class CloudSyncHeadline { Synced, Syncing, Pending, Attention, Error, Disabled, NotConfigured }
+internal enum class CloudSyncHeadline { Synced, Syncing, Pending, Waiting, Attention, Error, Disabled, NotConfigured }
 
 internal data class CloudSyncIndicator(
     val headline: CloudSyncHeadline,
@@ -627,25 +630,39 @@ internal data class CloudSyncIndicator(
     val detail: String? = null,
 )
 
-internal fun cloudSyncIndicator(state: WardrobeSyncState, developerMode: Boolean): CloudSyncIndicator {
+/** The processor or a restore is running right now: the raw signal behind [CloudSyncHeadline.Syncing], without any display hold. */
+internal val WardrobeSyncState.isRunningNow: Boolean
+    get() = connectionStatus == DriveSyncConnectionStatus.Syncing ||
+        restoreProgress?.status == CloudRestoreStatus.Running
+
+/**
+ * [online] is false without an internet network. Offline, a run cannot finish, so it never reads as Syncing: pending
+ * changes wait for the connection. A transient Retry waits the same way.
+ */
+internal fun cloudSyncIndicator(
+    state: WardrobeSyncState,
+    developerMode: Boolean,
+    online: Boolean = true,
+): CloudSyncIndicator {
     val pending = state.pendingOperationCount.coerceAtLeast(0)
     val needsUserAction = state.connectionStatus == DriveSyncConnectionStatus.NeedsAttention ||
         state.attention.isNotEmpty() ||
         state.conflict ||
         state.pendingMergeSummary != null
+    val waiting = pending > 0 && (!online || state.lastCycle?.result == SyncRunResult.Retry)
     val headline = when {
         state.connectionStatus == DriveSyncConnectionStatus.NotConfigured -> CloudSyncHeadline.NotConfigured
         state.connectionStatus == DriveSyncConnectionStatus.Disabled -> CloudSyncHeadline.Disabled
-        state.connectionStatus == DriveSyncConnectionStatus.Syncing ||
-            state.restoreProgress?.status == CloudRestoreStatus.Running -> CloudSyncHeadline.Syncing
+        state.isRunningNow && online -> CloudSyncHeadline.Syncing
         state.connectionStatus == DriveSyncConnectionStatus.Disconnected ||
             state.lastCycle?.result == SyncRunResult.AuthBlocked -> CloudSyncHeadline.Error
         needsUserAction -> CloudSyncHeadline.Attention
+        waiting -> CloudSyncHeadline.Waiting
         pending > 0 -> CloudSyncHeadline.Pending
         else -> CloudSyncHeadline.Synced
     }
     val detail = state.lastCycle
-        ?.takeIf { developerMode && it.errorClass != null }
+        ?.takeIf { developerMode && (it.errorClass != null || it.errorMessage != null) }
         ?.let { cycle -> listOfNotNull(cycle.errorClass, cycle.errorMessage).joinToString(": ") }
     return CloudSyncIndicator(
         headline = headline,
@@ -655,9 +672,23 @@ internal fun cloudSyncIndicator(state: WardrobeSyncState, developerMode: Boolean
     )
 }
 
-/** Browse shows the cloud icon only while syncing or when the user has to act; synced, waiting and idle states show nothing. */
+/** Developer card wording for a cycle result. Exhaustive on purpose: a new [SyncRunResult] must get a readable name, never a class name. */
+@StringRes
+internal fun SyncRunResult?.readableNameRes(): Int = when (this) {
+    null -> R.string.dev_cloud_cancelled
+    SyncRunResult.Success -> R.string.dev_cloud_result_success
+    SyncRunResult.Retry -> R.string.dev_cloud_result_retry
+    SyncRunResult.AuthBlocked -> R.string.dev_cloud_result_auth_blocked
+    SyncRunResult.Conflict -> R.string.dev_cloud_result_conflict
+    SyncRunResult.NeedsUser -> R.string.dev_cloud_result_needs_user
+}
+
+/** Browse shows the cloud icon while syncing, while waiting for a connection, or when the user has to act; synced and idle states show nothing. */
 internal val CloudSyncHeadline.showsBrowseIndicator: Boolean
-    get() = this == CloudSyncHeadline.Syncing || this == CloudSyncHeadline.Attention || this == CloudSyncHeadline.Error
+    get() = this == CloudSyncHeadline.Syncing ||
+        this == CloudSyncHeadline.Waiting ||
+        this == CloudSyncHeadline.Attention ||
+        this == CloudSyncHeadline.Error
 
 /** One change of the processing flag, [atMs] on the elapsed-realtime clock. */
 internal data class SyncActivitySample(val atMs: Long, val processing: Boolean)
@@ -710,10 +741,14 @@ private fun rememberSyncIndicatorShowing(processing: Boolean): Boolean {
 
 /** The indicator every cloud surface reads (Browse, Settings, setup summary): [cloudSyncIndicator] with Syncing held. */
 @Composable
-private fun rememberCloudSyncIndicator(state: WardrobeSyncState, developerMode: Boolean): CloudSyncIndicator {
-    val indicator = cloudSyncIndicator(state = state, developerMode = developerMode)
+private fun rememberCloudSyncIndicator(
+    state: WardrobeSyncState,
+    developerMode: Boolean,
+    online: Boolean,
+): CloudSyncIndicator {
+    val indicator = cloudSyncIndicator(state = state, developerMode = developerMode, online = online)
     val showing = rememberSyncIndicatorShowing(processing = indicator.headline == CloudSyncHeadline.Syncing)
-    return if (showing && indicator.headline != CloudSyncHeadline.Syncing) {
+    return if (online && showing && indicator.headline != CloudSyncHeadline.Syncing) {
         indicator.copy(headline = CloudSyncHeadline.Syncing, attention = false)
     } else {
         indicator
@@ -842,6 +877,7 @@ private fun RobiaShell(
     val settingsTapTimestamps = remember { mutableStateListOf<Long>() }
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
+    val online by app.online.collectAsState()
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
     val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
@@ -884,8 +920,8 @@ private fun RobiaShell(
         .filter { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
         .take(MAX_BROWSE_ATTENTION_CARDS)
     val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
-    val items = remember(context, clothingItems, syncState, needsWardrobeUiModels) {
-        if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, context) else emptyList()
+    val items = remember(context, clothingItems, syncState, online, needsWardrobeUiModels) {
+        if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, online, context) else emptyList()
     }
     val filteredItems = remember(items, browseFilters, mainColors, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) {
@@ -964,6 +1000,7 @@ private fun RobiaShell(
     val cloudIndicator = rememberCloudSyncIndicator(
         state = syncState,
         developerMode = settings.developerModeUnlocked && settings.developerModeEnabled,
+        online = online,
     )
     // Only an untouched phone is recommended to set up Drive at first run; connecting later goes through the merge summary.
     val isFirstRunCloudSetup = remember(clothingItems, tagCategories, availableTags, mainColors, syncState) {
@@ -2045,6 +2082,7 @@ private fun CloudSyncIndicator.setupSummaryRes(canAttemptCloudSetup: Boolean): I
     CloudSyncHeadline.Error -> R.string.garment_sync_auth_blocked
     CloudSyncHeadline.Syncing -> R.string.garment_sync_syncing
     CloudSyncHeadline.Pending -> R.string.garment_sync_queued
+    CloudSyncHeadline.Waiting -> R.string.cloud_sync_headline_waiting
     CloudSyncHeadline.Synced,
     CloudSyncHeadline.Attention -> R.string.cloud_setup_configured_summary
 }
@@ -2054,6 +2092,7 @@ private val CloudSyncHeadline.labelRes: Int
         CloudSyncHeadline.Synced -> R.string.cloud_sync_headline_synced
         CloudSyncHeadline.Syncing -> R.string.drive_sync_status_syncing
         CloudSyncHeadline.Pending -> R.string.cloud_sync_headline_pending
+        CloudSyncHeadline.Waiting -> R.string.cloud_sync_headline_waiting
         CloudSyncHeadline.Attention -> R.string.drive_sync_status_needs_attention
         CloudSyncHeadline.Error -> R.string.drive_sync_status_disconnected
         CloudSyncHeadline.Disabled -> R.string.drive_sync_status_disabled
@@ -2065,6 +2104,7 @@ private val CloudSyncHeadline.icon: ImageVector
         CloudSyncHeadline.Synced -> Icons.Rounded.CloudDone
         CloudSyncHeadline.Syncing,
         CloudSyncHeadline.Pending -> Icons.Rounded.CloudUpload
+        CloudSyncHeadline.Waiting -> Icons.Rounded.CloudQueue
         CloudSyncHeadline.Attention -> Icons.Rounded.Error
         CloudSyncHeadline.Error,
         CloudSyncHeadline.Disabled,
@@ -2134,12 +2174,16 @@ private fun PulsingCloudIcon(tint: Color) {
 private fun DeveloperCloudSyncCard(syncState: WardrobeSyncState, indicator: CloudSyncIndicator) {
     val cycle = syncState.lastCycle
     val timeFormat = remember { DateFormat.getTimeInstance(DateFormat.MEDIUM) }
-    val processing = indicator.headline == CloudSyncHeadline.Syncing
+    val processing = syncState.isRunningNow
     SettingsSection(title = stringResource(R.string.dev_cloud_title)) {
         Column(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         ) {
+            Text(
+                text = stringResource(R.string.dev_cloud_status, stringResource(indicator.headline.labelRes)),
+                style = MaterialTheme.typography.labelSmall,
+            )
             Text(
                 text = stringResource(R.string.dev_cloud_pending, indicator.pendingCount),
                 style = MaterialTheme.typography.labelSmall,
@@ -2167,10 +2211,7 @@ private fun DeveloperCloudSyncCard(syncState: WardrobeSyncState, indicator: Clou
                     style = MaterialTheme.typography.labelSmall,
                 )
                 Text(
-                    text = stringResource(
-                        R.string.dev_cloud_result,
-                        cycle.result?.javaClass?.simpleName ?: stringResource(R.string.dev_cloud_cancelled),
-                    ),
+                    text = stringResource(R.string.dev_cloud_result, stringResource(cycle.result.readableNameRes())),
                     style = MaterialTheme.typography.labelSmall,
                 )
                 Text(
@@ -3470,20 +3511,23 @@ private fun GarmentCloudStatusRow(item: UiWardrobeItem) {
 }
 
 @Composable
-private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when (syncStatus) {
-    GarmentSyncStatus.Running,
-    GarmentSyncStatus.FailedRetryable,
-    GarmentSyncStatus.NeedsUserAction -> if (hasMissingRestoredPhoto) {
-        photoRestoreRetryStateText()
-    } else when (syncStatus) {
-        GarmentSyncStatus.Running -> stringResource(R.string.sync_status_uploading)
-        else -> stringResource(R.string.sync_status_pending)
+private fun UiWardrobeItem.garmentCloudStatusLabel(): String = when {
+    waitingForConnection -> stringResource(R.string.cloud_sync_headline_waiting)
+    else -> when (syncStatus) {
+        GarmentSyncStatus.Running,
+        GarmentSyncStatus.FailedRetryable,
+        GarmentSyncStatus.NeedsUserAction -> if (hasMissingRestoredPhoto) {
+            photoRestoreRetryStateText()
+        } else when (syncStatus) {
+            GarmentSyncStatus.Running -> stringResource(R.string.sync_status_uploading)
+            else -> stringResource(R.string.sync_status_pending)
+        }
+        GarmentSyncStatus.LocalOnly -> stringResource(R.string.garment_sync_saved_device)
+        GarmentSyncStatus.Dirty,
+        GarmentSyncStatus.Queued -> stringResource(R.string.sync_status_pending)
+        GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
+        GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
     }
-    GarmentSyncStatus.LocalOnly -> stringResource(R.string.garment_sync_saved_device)
-    GarmentSyncStatus.Dirty,
-    GarmentSyncStatus.Queued -> stringResource(R.string.sync_status_pending)
-    GarmentSyncStatus.Synced -> stringResource(R.string.garment_sync_synced)
-    GarmentSyncStatus.AuthBlocked -> stringResource(R.string.garment_sync_auth_blocked)
 }
 
 /** Saved on this phone and waiting for an automatic upload: no user action needed. */
@@ -4835,16 +4879,17 @@ private fun LanguageSettingsScreen(innerPadding: PaddingValues) {
 
 private fun List<ClothingItem>.toUiWardrobeItems(
     syncState: WardrobeSyncState,
+    online: Boolean,
     context: Context,
 ): List<UiWardrobeItem> = map { item ->
-    val effectiveSyncStatus = item.syncStatus.resolveForConnection(syncState.connectionStatus)
+    val cloud = item.syncStatus.resolveForConnection(syncState.connectionStatus, online)
     UiWardrobeItem(
         id = item.id,
         name = item.name,
         subtitle = if (item.photoRestoreState.needsAttention) {
             context.getString(R.string.cloud_restore_photo_missing_message)
         } else {
-            item.notes.ifBlank { context.getString(effectiveSyncStatus.itemStatusLabelRes) }
+            item.notes.ifBlank { context.getString(cloud.labelRes) }
         },
         notes = item.notes,
         photoUri = item.photoUri,
@@ -4861,31 +4906,58 @@ private fun List<ClothingItem>.toUiWardrobeItems(
         secondaryPaletteColorName = item.colorMetrics.secondaryPaletteColorName,
         secondaryPaletteColorHex = item.colorMetrics.secondaryPaletteColorHex,
         isFavorite = item.isFavorite,
-        syncStatus = effectiveSyncStatus,
+        syncStatus = cloud.status,
         syncDirtyAtEpochMillis = item.syncDirtyAtEpochMillis,
         lastSyncedAtEpochMillis = item.lastSyncedAtEpochMillis,
         syncFailureMessage = item.syncFailureMessage,
         photoRestoreState = item.photoRestoreState,
+        waitingForConnection = cloud.waitingForConnection,
     )
 }
 
-private fun GarmentSyncStatus.resolveForConnection(
+/** A garment's cloud line: its status as the connection allows it, and whether it only waits for a connection. */
+internal data class GarmentCloudState(
+    val status: GarmentSyncStatus,
+    val waitingForConnection: Boolean,
+)
+
+/** Statuses that wait for an upload: offline they read "Waiting for connection" rather than a stuck upload. */
+internal val WaitingForConnectionStatuses = setOf(
+    GarmentSyncStatus.Dirty,
+    GarmentSyncStatus.Queued,
+    GarmentSyncStatus.FailedRetryable,
+)
+
+internal fun GarmentSyncStatus.resolveForConnection(
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
-): GarmentSyncStatus = when {
-    this == GarmentSyncStatus.Synced -> GarmentSyncStatus.Synced
-    this == GarmentSyncStatus.FailedRetryable -> GarmentSyncStatus.FailedRetryable
-    this == GarmentSyncStatus.NeedsUserAction -> GarmentSyncStatus.NeedsUserAction
-    this == GarmentSyncStatus.Running -> GarmentSyncStatus.Running
-    driveSyncConnectionStatus == DriveSyncConnectionStatus.Disconnected -> GarmentSyncStatus.AuthBlocked
-    driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured ||
-        driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled -> when (this) {
-            GarmentSyncStatus.Dirty,
-            GarmentSyncStatus.Queued,
-            GarmentSyncStatus.AuthBlocked -> this
-            else -> GarmentSyncStatus.LocalOnly
-        }
-    else -> this
+    online: Boolean,
+): GarmentCloudState {
+    val status = when {
+        this == GarmentSyncStatus.Synced -> GarmentSyncStatus.Synced
+        this == GarmentSyncStatus.FailedRetryable -> GarmentSyncStatus.FailedRetryable
+        this == GarmentSyncStatus.NeedsUserAction -> GarmentSyncStatus.NeedsUserAction
+        this == GarmentSyncStatus.Running -> GarmentSyncStatus.Running
+        driveSyncConnectionStatus == DriveSyncConnectionStatus.Disconnected -> GarmentSyncStatus.AuthBlocked
+        driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured ||
+            driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled -> when (this) {
+                GarmentSyncStatus.Dirty,
+                GarmentSyncStatus.Queued,
+                GarmentSyncStatus.AuthBlocked -> this
+                else -> GarmentSyncStatus.LocalOnly
+            }
+        else -> this
+    }
+    // Without a configured or enabled Drive there is no connection to wait for: the garment stays saved on this phone.
+    val driveEnabled = driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured &&
+        driveSyncConnectionStatus != DriveSyncConnectionStatus.Disabled
+    return GarmentCloudState(
+        status = status,
+        waitingForConnection = !online && driveEnabled && status in WaitingForConnectionStatuses,
+    )
 }
+
+private val GarmentCloudState.labelRes: Int
+    get() = if (waitingForConnection) R.string.cloud_sync_headline_waiting else status.itemStatusLabelRes
 
 private val GarmentSyncStatus.itemStatusLabelRes: Int
     get() = when (this) {
