@@ -83,7 +83,6 @@
     <string name="drive_sync_status_disabled">Desactivada</string>
     <string name="drive_sync_status_not_configured">Sin configurar</string>
     <string name="drive_sync_status_disconnected">Cuenta de Google desconectada</string>
-    <string name="drive_sync_status_connected">Lista para sincronizar</string>
     <string name="drive_sync_status_syncing">Sincronizando…</string>
     <string name="drive_sync_status_needs_attention">La sincronización requiere atención</string>
     <string name="developer_mode">Modo de desarrollador</string>
@@ -136,7 +135,6 @@
     <string name="sample_wardrobe_body">Explora prendas de ejemplo mientras tu armario local está vacío.</string>
     <string name="wardrobe_item_saved_locally">Guardada localmente</string>
     <string name="garment_sync_saved_device">Guardada en este dispositivo</string>
-    <string name="garment_sync_cloud_setup_required">Se requiere configurar la nube</string>
     <string name="garment_sync_waiting">Esperando sincronización</string>
     <string name="garment_sync_queued">En cola para sincronización en la nube</string>
     <string name="garment_sync_syncing">Sincronizando con la nube…</string>
@@ -406,7 +404,6 @@
     <string name="browse_selection_count">%1$d seleccionadas</string>
     <string name="content_delete_selected_items">Eliminar prendas seleccionadas</string>
     <string name="content_select_garment">Seleccionar prenda</string>
-    <string name="content_cloud_sync_active">Sincronización con la nube en curso</string>
     <string name="category_style">Estilo</string>
     <string name="category_season">Estaciones</string>
     <string name="category_occasion">Ocasiones</string>
@@ -600,4 +597,19 @@
         <item quantity="one">%1$d prenda la tenía. Sus otras ocasiones se mantienen.</item>
         <item quantity="other">%1$d prendas la tenían. Sus otras ocasiones se mantienen.</item>
     </plurals>
+    <!-- G03 -->
+    <string name="cloud_sync_headline_synced">Sincronizado</string>
+    <string name="cloud_sync_headline_pending">Pendiente de sincronizar</string>
+    <string name="dev_cloud_title">Nube (desarrollador)</string>
+    <string name="dev_cloud_pending">Cambios pendientes: %1$d</string>
+    <string name="dev_cloud_processing">Procesando: %1$s</string>
+    <string name="dev_cloud_yes">sí</string>
+    <string name="dev_cloud_no">no</string>
+    <string name="dev_cloud_no_cycle">Todavía no se ha ejecutado ningún ciclo de sincronización en esta sesión</string>
+    <string name="dev_cloud_started">Inicio: %1$s</string>
+    <string name="dev_cloud_ended">Fin: %1$s</string>
+    <string name="dev_cloud_result">Resultado: %1$s</string>
+    <string name="dev_cloud_cancelled">cancelado</string>
+    <string name="dev_cloud_pending_at_start">Pendientes al inicio: %1$d</string>
+    <string name="dev_cloud_error">Último error: %1$s</string>
 </resources>

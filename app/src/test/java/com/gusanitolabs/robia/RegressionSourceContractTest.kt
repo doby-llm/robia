@@ -214,7 +214,7 @@ class RegressionSourceContractTest {
         val filterChipIndex = filterBar.indexOf("FilterChip(")
         val dividerIndex = filterBar.indexOf(".height(24.dp)")
         val flexibleSpacerIndex = filterBar.indexOf("Modifier.weight(1f)")
-        val syncSpinnerIndex = filterBar.indexOf("CircularProgressIndicator(")
+        val syncSpinnerIndex = filterBar.indexOf("CloudSyncStatusIcon(")
 
         assertTrue("FilterBar should expose one filter entry point", !filterBar.contains("R.string.all_filters"))
         assertTrue("FilterBar should not keep the duplicate All Filters AssistChip", !filterBar.contains("AssistChip("))
@@ -319,11 +319,11 @@ class RegressionSourceContractTest {
         assertTrue(processor.contains("CloudRestoreStatus.CompletedWithAttention"))
         assertTrue(snapshotRepository.contains("GarmentSyncStatus.NeedsUserAction"))
 
-        val visibleActivity = app
-            .substringAfter("private val WardrobeSyncState.hasVisibleSyncActivity: Boolean")
-            .substringBefore("@Composable\nprivate fun LocalizedRobiaContent")
-        assertTrue(visibleActivity.contains("connectionStatus == DriveSyncConnectionStatus.Syncing"))
-        assertTrue(!visibleActivity.contains("pendingOperationCount > 0"))
+        val cloudIndicator = app
+            .substringAfter("internal fun cloudSyncIndicator(")
+            .substringBefore("private val CloudSyncHeadline.isCloudActive")
+        assertTrue(cloudIndicator.contains("state.pendingOperationCount"))
+        assertTrue(!app.contains("pendingGarmentSyncCount"))
     }
 
     @Test
@@ -605,7 +605,7 @@ class RegressionSourceContractTest {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val settingsScreen = app
             .substringAfter("private fun SettingsScreen(")
-            .substringBefore("@StringRes\nprivate fun DriveSyncConnectionStatus.cloudSetupSummaryRes")
+            .substringBefore("@StringRes\nprivate fun CloudSyncIndicator.setupSummaryRes")
 
         assertTrue(app.contains("data object Settings : RobiaRoute"))
         assertTrue(app.contains("pushRoute(RobiaRoute.Settings)"))

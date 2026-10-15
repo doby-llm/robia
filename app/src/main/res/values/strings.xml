@@ -83,7 +83,6 @@
     <string name="drive_sync_status_disabled">Disabled</string>
     <string name="drive_sync_status_not_configured">Not configured</string>
     <string name="drive_sync_status_disconnected">Google account disconnected</string>
-    <string name="drive_sync_status_connected">Ready to sync</string>
     <string name="drive_sync_status_syncing">Syncing…</string>
     <string name="drive_sync_status_needs_attention">Sync needs attention</string>
     <string name="developer_mode">Developer Mode</string>
@@ -136,7 +135,6 @@
     <string name="sample_wardrobe_body">Browse example items while your local wardrobe is empty.</string>
     <string name="wardrobe_item_saved_locally">Saved locally</string>
     <string name="garment_sync_saved_device">Saved on this device</string>
-    <string name="garment_sync_cloud_setup_required">Cloud setup required</string>
     <string name="garment_sync_waiting">Waiting to sync</string>
     <string name="garment_sync_queued">Queued for cloud sync</string>
     <string name="garment_sync_syncing">Syncing to cloud…</string>
@@ -406,7 +404,6 @@
     <string name="browse_selection_count">%1$d selected</string>
     <string name="content_delete_selected_items">Delete selected garments</string>
     <string name="content_select_garment">Select garment</string>
-    <string name="content_cloud_sync_active">Cloud sync in progress</string>
     <string name="category_style">Style</string>
     <string name="category_season">Seasons</string>
     <string name="category_occasion">Occasions</string>
@@ -600,4 +597,19 @@
         <item quantity="one">%1$d garment had it. Its other occasions stay.</item>
         <item quantity="other">%1$d garments had it. Their other occasions stay.</item>
     </plurals>
+    <!-- G03 -->
+    <string name="cloud_sync_headline_synced">Synced</string>
+    <string name="cloud_sync_headline_pending">Waiting to sync</string>
+    <string name="dev_cloud_title">Cloud sync (developer)</string>
+    <string name="dev_cloud_pending">Pending changes: %1$d</string>
+    <string name="dev_cloud_processing">Processing: %1$s</string>
+    <string name="dev_cloud_yes">yes</string>
+    <string name="dev_cloud_no">no</string>
+    <string name="dev_cloud_no_cycle">No sync cycle has run in this session yet</string>
+    <string name="dev_cloud_started">Started: %1$s</string>
+    <string name="dev_cloud_ended">Ended: %1$s</string>
+    <string name="dev_cloud_result">Result: %1$s</string>
+    <string name="dev_cloud_cancelled">cancelled</string>
+    <string name="dev_cloud_pending_at_start">Pending at start: %1$d</string>
+    <string name="dev_cloud_error">Last error: %1$s</string>
 </resources>
