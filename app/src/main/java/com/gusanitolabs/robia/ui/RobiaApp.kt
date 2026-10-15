@@ -1046,6 +1046,24 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ManageTags)
     }
 
+    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
+    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
+        pendingColorReviewChangeSet = null
+        val itemsToSave = clothingItemsWithoutDeletedColor(changeSet, excludeIds = emptySet())
+        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
+    }
+
+    fun clothingItemsWithoutDeletedColor(
+        changeSet: ColorPaletteChangeSet,
+        excludeIds: Set<String>,
+    ): List<ClothingItem> {
+        if (changeSet.operation != ColorPaletteOperation.Deleted) return emptyList()
+        val deletedId = changeSet.touchedColorId ?: return emptyList()
+        return clothingItems
+            .filter { item -> item.id !in excludeIds && item.colorMetrics.referencesPaletteColorId(deletedId) }
+            .map { item -> item.withoutPaletteColor(deletedId) }
+    }
+
     fun commitColorReview(changeSet: ColorPaletteChangeSet, updatedItems: List<ClothingItem>) {
         if (changeSet.requiresCommitOnSave) {
             onCommitMainColorChange(changeSet, updatedItems)
@@ -1071,24 +1089,6 @@ private fun RobiaShell(
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
-    }
-
-    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
-    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
-        pendingColorReviewChangeSet = null
-        val itemsToSave = clothingItemsWithoutDeletedColor(changeSet, excludeIds = emptySet())
-        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
-    }
-
-    fun clothingItemsWithoutDeletedColor(
-        changeSet: ColorPaletteChangeSet,
-        excludeIds: Set<String>,
-    ): List<ClothingItem> {
-        if (changeSet.operation != ColorPaletteOperation.Deleted) return emptyList()
-        val deletedId = changeSet.touchedColorId ?: return emptyList()
-        return clothingItems
-            .filter { item -> item.id !in excludeIds && item.colorMetrics.referencesPaletteColorId(deletedId) }
-            .map { item -> item.withoutPaletteColor(deletedId) }
     }
 
     fun handleSettingsClick() {
