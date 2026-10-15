@@ -538,10 +538,8 @@
     <string name="cloud_restore_upload_photos_progress">Fotos werden hochgeladen: %1$d von %2$d</string>
     <string name="cloud_restore_finishing">Wird abgeschlossen…</string>
     <!-- TASK-E08 -->
-    <string name="tag_description_label">Beschreibung (optional)</string>
     <string name="tag_description_placeholder">z. B. ein leichtes Oberteil mit Knopfleiste und Kragen</string>
     <string name="tag_description_helper">Ein kurzer Satz, wie es aussieht. Verbessert Vorschläge.</string>
-    <string name="tag_description_counter">%1$d/200</string>
     <string name="tag_suggest_occasions_label">Anlässe für diese Kategorie vorschlagen</string>
     <string name="tag_suggest_occasions_help">Für Dinge ausschalten, die zu jedem Anlass passen, wie Schmuck oder Accessoires.</string>
     <string name="tag_review_title">Kleidungsstücke prüfen</string>
