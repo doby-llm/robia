@@ -84,6 +84,14 @@ class RestoredPhotoReuploadTest {
 
     @Test
     fun listingFailureFailsTheCycleWithoutReuseOrUpload() = runBlocking {
+        try {
+            listingFailureBody()
+        } catch (throwable: Throwable) {
+            throw AssertionError("listing-failure test threw ${throwable::class.java.name}: ${throwable.message} at ${throwable.stackTrace.take(6).joinToString(" | ")}", throwable)
+        }
+    }
+
+    private suspend fun listingFailureBody() {
         val remote = uploadedOnce("g1")
         phone.sources[localPhoto("g1").localUri] = "webp:pixels-g1"
         // The listing runs first, so the hash and encode lambdas must never be reached.
