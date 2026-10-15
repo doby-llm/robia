@@ -104,7 +104,18 @@ data class SyncCycleSummary(
     val pendingAtStart: Int,
     val errorClass: String? = null,
     val errorMessage: String? = null,
-)
+) {
+    /** Explicit name of [result] for diagnostics. R8 renames class names (a simpleName showed as 'c3'), so these are literals. */
+    val resultName: String?
+        get() = when (result) {
+            null -> null
+            SyncRunResult.Success -> "Success"
+            SyncRunResult.Retry -> "Retry"
+            SyncRunResult.AuthBlocked -> "AuthBlocked"
+            SyncRunResult.Conflict -> "Conflict"
+            SyncRunResult.NeedsUser -> "NeedsUser"
+        }
+}
 
 data class CloudRestoreProgress(
     val phase: CloudRestorePhase,
