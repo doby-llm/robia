@@ -28,6 +28,16 @@ class ModelPromptPolicyTest {
     }
 
     @Test
+    fun browseSearchFieldIsShownOnlyWhenModelIsReady() {
+        assertTrue(browseSearchVisible(ModelState.Ready("model.tflite")))
+        assertFalse(browseSearchVisible(ModelState.NotDownloaded))
+        assertFalse(browseSearchVisible(ModelState.WaitingForWifi))
+        assertFalse(browseSearchVisible(ModelState.Downloading(1L, 10L)))
+        assertFalse(browseSearchVisible(ModelState.Verifying))
+        assertFalse(browseSearchVisible(ModelState.Failed(ModelFailure.CorruptDownload)))
+    }
+
+    @Test
     fun queuedDownloadHeldByNetworkConstraintsShowsWaitingForWifi() {
         assertEquals(ModelState.WaitingForWifi, settingsModelState(ModelState.NotDownloaded, queued = true))
         assertEquals(ModelState.NotDownloaded, settingsModelState(ModelState.NotDownloaded, queued = false))
