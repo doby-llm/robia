@@ -483,8 +483,8 @@
     <string name="color_review_suggested_colors">Suggested colors</string>
     <string name="color_review_chip_description">%1$s color, proposed %2$s</string>
     <string name="undo">Undo</string>
-    <string name="color_review_discard_title">Discard color updates?</string>
-    <string name="color_review_discard_body">Exiting will discard the pending color mappings. Palette color changes already saved stay.</string>
+    <string name="color_review_discard_title">Discard changes?</string>
+    <string name="color_review_discard_body">This undoes the action you just made.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>
@@ -560,13 +560,17 @@
     <string name="tag_review_needs_model">Download smart suggestions to review garments</string>
     <string name="tag_review_accepted">Accepted</string>
     <string name="tag_review_picker_title">%1$s for “%2$s”</string>
-    <string name="tag_review_discard_title">Discard review?</string>
-    <string name="tag_review_discard_body">Exiting discards the pending garment changes. The tag change stays.</string>
+    <string name="tag_review_discard_title">Discard changes?</string>
+    <string name="tag_review_discard_body">This undoes the action you just made.</string>
+    <string name="review_keep_reviewing">Keep reviewing</string>
+    <plurals name="review_picker_option_count">
+        <item quantity="one">%1$d option</item>
+        <item quantity="other">%1$d options</item>
+    </plurals>
     <string name="browse_search_hint">Search your wardrobe</string>
     <string name="browse_search_clear">Clear search</string>
     <string name="browse_sorted_by_similarity">Sorted by similarity · %1$d garments</string>
     <string name="browse_search_text_only">Smart search unavailable, showing name matches.</string>
-    <string name="browse_search_enable_smart">Turn on smart suggestions to also search by photo</string>
     <string name="browse_similar_to">Similar to “%1$s”</string>
     <string name="item_see_similar">See similar garments</string>
     <!-- TASK-E10 -->

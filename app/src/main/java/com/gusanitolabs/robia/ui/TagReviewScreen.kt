@@ -14,16 +14,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Check
@@ -151,6 +148,47 @@ internal fun restoredTagChangeSet(
     return tagChangeSet(TagOperation.RestoredDefault, categoryId, touched, before, after)
 }
 
+/**
+ * Discard = undo for a saved tag change. Restores every tag whose value differs from the one before the change (a rename,
+ * a deleted tag, a restored default), removes the tags the change created, and gives back the garment tags a deletion took.
+ */
+internal fun tagReviewUndoPlan(
+    request: TagReviewRequest,
+    currentGarments: List<ClothingItem>,
+    now: Long,
+): ReviewUndoPlan {
+    val changeSet = request.changeSet
+    val beforeIds = changeSet.beforeTags.mapTo(mutableSetOf(), GarmentTag::id)
+    val afterById = changeSet.afterTags.associateBy(GarmentTag::id)
+    val restoreTags = changeSet.beforeTags.filter { before -> afterById[before.id] != before }
+    val removeTags = changeSet.afterTags.filter { after -> after.id !in beforeIds }
+    val restoreGarments = if (changeSet.operation == TagOperation.Deleted) {
+        request.garments.mapNotNull { snapshot ->
+            restoredGarmentTags(snapshot, currentGarments, changeSet.touchedTagIds, now)
+        }
+    } else {
+        emptyList()
+    }
+    return ReviewUndoPlan(restoreTags = restoreTags, removeTags = removeTags, restoreGarments = restoreGarments)
+}
+
+/**
+ * Compare-and-restore: a garment that lost a deleted tag gets its snapshot tags back only while it still has exactly the
+ * tags it kept (the snapshot minus the deleted ones). Any other change since then is left alone.
+ */
+internal fun restoredGarmentTags(
+    snapshot: ClothingItem,
+    currentGarments: List<ClothingItem>,
+    deletedTagIds: Set<String>,
+    now: Long,
+): ClothingItem? {
+    if (snapshot.tags.none { tag -> tag.id in deletedTagIds }) return null
+    val current = currentGarments.firstOrNull { garment -> garment.id == snapshot.id } ?: return null
+    val keptIds = snapshot.tags.mapTo(mutableSetOf(), GarmentTag::id) - deletedTagIds
+    if (current.tags.mapTo(mutableSetOf(), GarmentTag::id) != keptIds) return null
+    return current.copy(tags = snapshot.tags, updatedAtEpochMillis = now)
+}
+
 private fun tagChangeSet(
     operation: TagOperation,
     categoryId: String,
@@ -223,7 +261,9 @@ internal fun TagReviewScreen(
     val garments = remember(changeSet.id) { request.garments.filterNot(ClothingItem::isArchived) }
     val candidates = remember(changeSet.id) { mutableStateListOf<TagReviewCandidate>() }
     val edits = remember(changeSet.id) { mutableStateMapOf<String, Set<String>>() }
+    // Accepted ids stay in [candidates] for the commit; hidden ids are the accepted cards whose exit has finished.
     val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    val hiddenIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var scannedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var skippedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isPreparing by remember(changeSet.id) { mutableStateOf(true) }
@@ -343,21 +383,26 @@ internal fun TagReviewScreen(
             }
 
             items(
-                items = candidates,
+                items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
                 key = { candidate -> candidate.item.id },
             ) { candidate ->
                 val garmentId = candidate.item.id
-                TagReviewCandidateCard(
-                    candidate = candidate,
-                    proposedIds = edits[garmentId] ?: candidate.proposal.proposed,
-                    kindIds = kindIds,
-                    labelsById = labelsById,
+                ReviewAcceptedCard(
                     accepted = garmentId in acceptedIds,
-                    onPick = { pickerGarmentId = garmentId },
-                    onToggleAccept = {
-                        if (garmentId in acceptedIds) acceptedIds.remove(garmentId) else acceptedIds.add(garmentId)
-                    },
-                )
+                    onGone = { hiddenIds.add(garmentId) },
+                ) {
+                    TagReviewCandidateCard(
+                        candidate = candidate,
+                        proposedIds = edits[garmentId] ?: candidate.proposal.proposed,
+                        kindIds = kindIds,
+                        labelsById = labelsById,
+                        accepted = garmentId in acceptedIds,
+                        onPick = { pickerGarmentId = garmentId },
+                        onAccept = {
+                            if (garmentId !in acceptedIds) acceptedIds.add(garmentId)
+                        },
+                    )
+                }
             }
 
             if (isScanning || (!modelUnavailable && skippedCount > 0)) {
@@ -441,7 +486,7 @@ private fun TagReviewCandidateCard(
     labelsById: Map<String, String>,
     accepted: Boolean,
     onPick: () -> Unit,
-    onToggleAccept: () -> Unit,
+    onAccept: () -> Unit,
 ) {
     val isChooseManually = candidate.proposal.kind == ProposalKind.ChooseManually
     val currentLabels = candidate.proposal.before.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
@@ -513,7 +558,8 @@ private fun TagReviewCandidateCard(
                     )
                 }
                 Button(
-                    onClick = onToggleAccept,
+                    onClick = onAccept,
+                    enabled = !accepted,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
@@ -579,11 +625,7 @@ private fun TagReviewPickerDialog(
         title = { Text(title) },
         text = {
             // Scrolls: a long category list must stay reachable on a small screen, the dialog itself does not scroll.
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 360.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
+            ReviewPickerList(optionCount = options.size) {
                 TagReviewPickerRow(
                     label = stringResource(if (multiChoice) R.string.tag_review_none_occasion else R.string.tag_review_none),
                     selected = selection.isEmpty(),

@@ -483,8 +483,8 @@
     <string name="color_review_suggested_colors">Colores sugeridos</string>
     <string name="color_review_chip_description">Color %1$s, propuesta %2$s</string>
     <string name="undo">Deshacer</string>
-    <string name="color_review_discard_title">¿Descartar actualizaciones de color?</string>
-    <string name="color_review_discard_body">Al salir se descartarán las asignaciones de color pendientes. Los cambios de la paleta de colores ya guardados se mantienen.</string>
+    <string name="color_review_discard_title">¿Descartar cambios?</string>
+    <string name="color_review_discard_body">Esto deshace la acción que acabas de hacer.</string>
     <string-array name="language_choices">
         <item>@string/language_system</item>
         <item>@string/language_english</item>
@@ -560,13 +560,17 @@
     <string name="tag_review_needs_model">Descarga las sugerencias inteligentes para revisar prendas</string>
     <string name="tag_review_accepted">Aceptada</string>
     <string name="tag_review_picker_title">%1$s para “%2$s”</string>
-    <string name="tag_review_discard_title">¿Descartar revisión?</string>
-    <string name="tag_review_discard_body">Al salir se descartan los cambios pendientes en prendas. El cambio de etiqueta se mantiene.</string>
+    <string name="tag_review_discard_title">¿Descartar cambios?</string>
+    <string name="tag_review_discard_body">Esto deshace la acción que acabas de hacer.</string>
+    <string name="review_keep_reviewing">Seguir revisando</string>
+    <plurals name="review_picker_option_count">
+        <item quantity="one">%1$d opción</item>
+        <item quantity="other">%1$d opciones</item>
+    </plurals>
     <string name="browse_search_hint">Buscar en tu armario</string>
     <string name="browse_search_clear">Borrar búsqueda</string>
     <string name="browse_sorted_by_similarity">Ordenado por parecido · %1$d prendas</string>
     <string name="browse_search_text_only">Búsqueda inteligente no disponible, mostrando coincidencias por nombre.</string>
-    <string name="browse_search_enable_smart">Activa las sugerencias inteligentes para buscar también por la foto</string>
     <string name="browse_similar_to">Parecidas a “%1$s”</string>
     <string name="item_see_similar">Ver prendas parecidas</string>
     <!-- TASK-E10 -->

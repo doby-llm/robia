@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,9 +23,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Close
@@ -119,15 +116,18 @@ internal fun ColorReviewScreen(
     val reviewItems = remember(changeSet.id) {
         if (changeSet.requiresCommitOnSave) items.filterNot(ClothingItem::isArchived) else items.filter(ClothingItem::isEligibleForColorReview)
     }
+    // Accepted ids stay in [candidates] until the commit; hidden ids are the accepted cards whose exit has finished.
     val candidates = remember(changeSet.id) { mutableStateListOf<ColorReviewCandidate>() }
-    val acceptedItems = remember(changeSet.id) { mutableStateListOf<ClothingItem>() }
+    val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    val hiddenIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var processedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var pickerTarget by remember(changeSet.id) { mutableStateOf<ColorReviewPickerTarget?>(null) }
 
     LaunchedEffect(changeSet.id) {
         candidates.clear()
-        acceptedItems.clear()
+        acceptedIds.clear()
+        hiddenIds.clear()
         processedCount = 0
         isScanning = true
         val paletteIds = changeSet.afterPalette.map(MainColor::id).toSet()
@@ -197,8 +197,8 @@ internal fun ColorReviewScreen(
         )
     }
 
-    val unresolvedCount = candidates.size
-    val acceptableCount = candidates.count(ColorReviewCandidate::hasConcreteTarget)
+    val unresolvedCount = candidates.count { candidate -> candidate.item.id !in acceptedIds }
+    val acceptableCount = candidates.count { candidate -> candidate.item.id !in acceptedIds && candidate.hasConcreteTarget }
     val canFinish = !isScanning && unresolvedCount == 0
     val totalCount = reviewItems.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
@@ -230,7 +230,7 @@ internal fun ColorReviewScreen(
                 )
             }
 
-            if (!isScanning && candidates.isEmpty() && acceptedItems.isEmpty()) {
+            if (!isScanning && candidates.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     val hasEligibleItems = reviewItems.isNotEmpty()
                     ReviewEmptyCard(
@@ -245,26 +245,29 @@ internal fun ColorReviewScreen(
             }
 
             items(
-                items = candidates,
+                items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
                 key = { candidate -> candidate.item.id },
             ) { candidate ->
-                ColorReviewCandidateCard(
-                    candidate = candidate,
-                    palette = changeSet.afterPalette,
-                    onPrimaryClick = {
-                        pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Primary)
-                    },
-                    onSecondaryClick = {
-                        pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Secondary)
-                    },
-                    onAccept = {
-                        val index = candidates.indexOfFirst { it.item.id == candidate.item.id }
-                        if (index >= 0) {
-                            acceptedItems += candidates[index].toUpdatedItem(changeSet.afterPalette)
-                            candidates.removeAt(index)
-                        }
-                    },
-                )
+                val accepted = candidate.item.id in acceptedIds
+                ReviewAcceptedCard(
+                    accepted = accepted,
+                    onGone = { hiddenIds.add(candidate.item.id) },
+                ) {
+                    ColorReviewCandidateCard(
+                        candidate = candidate,
+                        palette = changeSet.afterPalette,
+                        accepted = accepted,
+                        onPrimaryClick = {
+                            if (!accepted) pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Primary)
+                        },
+                        onSecondaryClick = {
+                            if (!accepted) pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Secondary)
+                        },
+                        onAccept = {
+                            if (!accepted) acceptedIds.add(candidate.item.id)
+                        },
+                    )
+                }
             }
 
             if (isScanning || unresolvedCount > 0) {
@@ -284,16 +287,16 @@ internal fun ColorReviewScreen(
         // Accept all saves every proposal with a concrete target; manual-choice proposals stay out and remain visible.
         ReviewBottomBar(
             label = when {
-                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount)
-                acceptedItems.isNotEmpty() -> stringResource(R.string.color_review_save_accepted_mappings, acceptedItems.size)
+                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount + acceptedIds.size)
+                acceptedIds.isNotEmpty() -> stringResource(R.string.color_review_save_accepted_mappings, acceptedIds.size)
                 else -> stringResource(R.string.done)
             },
             enabled = if (acceptableCount > 0) !isScanning else canFinish,
             onClick = {
-                val concreteItems = candidates
-                    .filter(ColorReviewCandidate::hasConcreteTarget)
+                val commitItems = candidates
+                    .filter { candidate -> candidate.item.id in acceptedIds || candidate.hasConcreteTarget }
                     .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
-                onCommit(changeSet, acceptedItems.toList() + concreteItems)
+                onCommit(changeSet, commitItems)
             },
         )
     }
@@ -303,6 +306,7 @@ internal fun ColorReviewScreen(
 private fun ColorReviewCandidateCard(
     candidate: ColorReviewCandidate,
     palette: List<MainColor>,
+    accepted: Boolean,
     onPrimaryClick: () -> Unit,
     onSecondaryClick: () -> Unit,
     onAccept: () -> Unit,
@@ -330,11 +334,15 @@ private fun ColorReviewCandidateCard(
                 )
                 Button(
                     onClick = onAccept,
+                    enabled = !accepted,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
                 ) {
-                    Text(stringResource(R.string.accept), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }
@@ -480,12 +488,7 @@ private fun ColorReviewPalettePickerDialog(
         title = { Text(title) },
         text = {
             // Scrolls like the tag picker: the last colour must stay reachable on a small screen.
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 360.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ReviewPickerList(optionCount = colors.size, verticalSpacing = 8.dp) {
                 if (allowNoColor) {
                     ColorPickerRow(color = null, label = stringResource(R.string.no_secondary_color), onClick = { onColorSelected(null) })
                 }
@@ -566,6 +569,24 @@ private fun ColorReviewCandidate.toUpdatedItem(palette: List<MainColor>): Clothi
         ),
         updatedAtEpochMillis = System.currentTimeMillis(),
     )
+}
+
+/**
+ * Discard = undo for a saved palette change. Added colours are removed, edited and deleted ones are written back as they
+ * were. A restore-defaults review saves nothing before its commit, so there is nothing to undo. Garments are not touched:
+ * a deleted colour is only taken off garments by the commit or the prompt's decline, never by a discard.
+ */
+internal fun colorReviewUndoPlan(changeSet: ColorPaletteChangeSet): ReviewUndoPlan {
+    val touchedId = changeSet.touchedColorId
+    if (changeSet.requiresCommitOnSave || touchedId == null) return ReviewUndoPlan()
+    val before = changeSet.beforePalette.firstOrNull { color -> color.id == touchedId }
+    val after = changeSet.afterPalette.firstOrNull { color -> color.id == touchedId }
+    return when (changeSet.operation) {
+        ColorPaletteOperation.Added -> ReviewUndoPlan(removeColors = listOfNotNull(after))
+        ColorPaletteOperation.Edited,
+        ColorPaletteOperation.Deleted -> ReviewUndoPlan(restoreColors = listOfNotNull(before))
+        ColorPaletteOperation.RestoredDefault -> ReviewUndoPlan()
+    }
 }
 
 // Removes a deleted palette colour from a garment that carried it; the other slot is kept.
