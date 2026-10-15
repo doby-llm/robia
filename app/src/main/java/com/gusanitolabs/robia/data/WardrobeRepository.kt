@@ -20,6 +20,7 @@ interface WardrobeRepository {
     /** A pending Drive-side garment deletion must win over any restored-photo retry. */
     suspend fun hasPendingCloudDeletion(): Boolean
     suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int
+    suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int
     suspend fun upsertItem(item: ClothingItem)
     suspend fun upsertItems(items: List<ClothingItem>)
     suspend fun archiveItem(id: String, updatedAtEpochMillis: Long)

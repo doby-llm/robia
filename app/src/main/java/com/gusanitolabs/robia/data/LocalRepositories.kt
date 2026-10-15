@@ -55,6 +55,9 @@ class LocalWardrobeRepository(
     override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int =
         wardrobeDao.recoverStaleRunningSyncWork(staleBeforeEpochMillis)
 
+    override suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int =
+        wardrobeDao.recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis)
+
     override suspend fun upsertItem(item: ClothingItem) {
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
     }

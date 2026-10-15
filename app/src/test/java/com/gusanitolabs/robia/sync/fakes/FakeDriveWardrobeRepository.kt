@@ -20,8 +20,13 @@ internal class FakeDriveWardrobeRepository(
     /** The `remote` argument of each upload, so tests can see which photo records the processor passed. */
     val upsertRemotes = mutableListOf<WardrobeSyncSnapshot?>()
     var recordsFetches = 0
+    /** When set, fetching the manifest throws, as an unexpected crash in the Drive client would. */
+    var manifestThrows: Throwable? = null
 
-    override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = manifest
+    override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> {
+        manifestThrows?.let { throw it }
+        return manifest
+    }
 
     override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = snapshot
 

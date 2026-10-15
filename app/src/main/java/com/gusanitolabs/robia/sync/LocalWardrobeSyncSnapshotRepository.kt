@@ -391,7 +391,8 @@ private fun ClothingItemEntity.toColorRecords(): List<GarmentColorMappingRecord>
     ),
 ).filter { record -> record.rawValue != null || record.displayLabel != null || record.paletteColorId != null }
 
-private fun ClothingItemEntity.toPhotoRecord(): GarmentPhotoRecord? = photoUri?.let { uri ->
+/** Internal so the no-op check tests build the local side exactly as export does. */
+internal fun ClothingItemEntity.toPhotoRecord(): GarmentPhotoRecord? = photoUri?.let { uri ->
     GarmentPhotoRecord(
         garmentId = id,
         localUri = uri,

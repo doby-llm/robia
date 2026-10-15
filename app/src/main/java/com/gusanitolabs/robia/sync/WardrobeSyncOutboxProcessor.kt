@@ -74,6 +74,7 @@ class WardrobeSyncOutboxProcessor(
     private val isProcessing = MutableStateFlow(false)
     private val hasGuardedPhotoRestoreIssues = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
+    private val lastCycle = MutableStateFlow<SyncCycleSummary?>(null)
     /** Vectors pending when the current cycle exported its snapshot; marked uploaded only after that snapshot is stored. */
     private var cycleExportedEmbeddingKeys: List<EmbeddingKey> = emptyList()
     private val pendingMergeSummary = MutableStateFlow<MergeSummary?>(null)
@@ -87,6 +88,8 @@ class WardrobeSyncOutboxProcessor(
     // Per-cycle outcomes that the cycle result cannot carry. Written and read only while holding [mutex].
     private var cycleStorageFull = false
     private var cyclePhotoUploadFailureIds: Set<String> = emptySet()
+    /** The Drive failure that ended this cycle's upload attempt, reported in [lastCycle]. Written and read only while holding [mutex]. */
+    private var cycleDriveFailure: Throwable? = null
     private var lastLoggedSettings: RobiaSettings? = null
 
     override val state: Flow<WardrobeSyncState> = mutableState
@@ -100,6 +103,8 @@ class WardrobeSyncOutboxProcessor(
         }
         scope.launch(dispatcher) {
             wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
+            // Only guarded claims older than the photo retry timeout are dead (a live retry is bounded by that timeout).
+            wardrobeRepository.recoverStaleGuardedPhotoSyncWork(System.currentTimeMillis() - PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS)
             // Work still pending from a killed process is handed to WorkManager on app start.
             if (wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
                 wardrobeRepository.pendingMetadataSyncWork().isNotEmpty()
@@ -119,6 +124,7 @@ class WardrobeSyncOutboxProcessor(
                 authBlocked,
                 wardrobeRepository.observeGarmentNeedsUserActionCount(DRIVE_FULL_REASON),
                 wardrobeRepository.observeGarmentNeedsUserActionCount(PHOTO_UPLOAD_FAILED_REASON),
+                lastCycle,
             ) { values ->
                 val settings = values[0] as RobiaSettings
                 val pendingCount = values[1] as Int
@@ -140,6 +146,7 @@ class WardrobeSyncOutboxProcessor(
                     authBlocked = values[9] as Boolean,
                     driveFullCount = values[10] as Int,
                     photoUploadFailedCount = values[11] as Int,
+                    lastCycle = values[12] as SyncCycleSummary?,
                 )
             }.combine(restoreProgress) { inputs, progress ->
                 inputs.connectionStatus.toWardrobeSyncState(inputs, progress)
@@ -621,34 +628,42 @@ class WardrobeSyncOutboxProcessor(
         forceImport: Boolean,
         mergeConfirmed: Boolean = false,
     ): SyncRunResult = mutex.withLock {
+        val idleStartedAt = System.currentTimeMillis()
         val status = settingsRepository.settings.first().driveSyncConnectionStatus
         if (status != DriveSyncConnectionStatus.Connected) {
-            return@withLock if (status == DriveSyncConnectionStatus.Disconnected) {
-                SyncRunResult.AuthBlocked
-            } else {
-                SyncRunResult.NeedsUser
-            }
+            return@withLock recordIdleCycle(
+                idleStartedAt,
+                if (status == DriveSyncConnectionStatus.Disconnected) SyncRunResult.AuthBlocked else SyncRunResult.NeedsUser,
+            )
         }
         // An unresolved conflict or an unconfirmed merge holds every upload until the user chooses.
-        if (!forceImport && settingsRepository.syncConflict.first()) return@withLock SyncRunResult.Conflict
-        if (!mergeConfirmed && pendingMergeSummary.value != null) return@withLock SyncRunResult.NeedsUser
+        if (!forceImport && settingsRepository.syncConflict.first()) return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.Conflict)
+        if (!mergeConfirmed && pendingMergeSummary.value != null) return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.NeedsUser)
 
+        // Held under the mutex, so no claim of this process is live: a Running row now was left by a process that died.
+        // photo_restore_guarded rows are excluded by the query: they have their own recovery at processor init.
+        wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis())
         val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
         val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
         val hasPendingEmbeddings = embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
         if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !hasPendingEmbeddings && !forceSnapshot && !forceImport) {
             authBlocked.value = false
-            return@withLock SyncRunResult.Success
+            return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.Success)
         }
 
         cycleStorageFull = false
         cyclePhotoUploadFailureIds = emptySet()
+        cycleDriveFailure = null
         isProcessing.value = true
         // Claims happen inside the try so a cancellation mid-claim releases every row claimed so far.
         val lockedWork = mutableListOf<PendingGarmentSyncWork>()
         val lockedMetadataWork = mutableListOf<PendingMetadataSyncWork>()
         val syncCorrelationId = UUID.randomUUID().toString().take(8)
         val syncStartedAt = System.currentTimeMillis()
+        val pendingAtStart = pendingWork.size + pendingMetadataWork.size
+        // Stays null when the cycle was cancelled: no outcome to report.
+        var cycleResult: SyncRunResult? = null
+        var cycleFailure: Throwable? = null
         var keepTerminalProgress = false
         try {
             pendingWork.forEach { work ->
@@ -670,6 +685,7 @@ class WardrobeSyncOutboxProcessor(
             cycleExportedEmbeddingKeys = embeddingRepository?.pendingUploadKeys().orEmpty()
             val localSnapshot = snapshotRepository.exportSnapshot()
             val result = executeDirection(localSnapshot, forceImport, mergeConfirmed)
+            cycleResult = result
             keepTerminalProgress = result != SyncRunResult.Success
             recordSyncEnded(
                 syncCorrelationId,
@@ -686,6 +702,8 @@ class WardrobeSyncOutboxProcessor(
             throw cancellation
         } catch (throwable: Throwable) {
             keepTerminalProgress = true
+            cycleFailure = throwable
+            cycleResult = SyncRunResult.Retry
             releaseClaimedWork(lockedWork, lockedMetadataWork)
             recordSyncEnded(syncCorrelationId, syncStartedAt, "failure", level = "error", throwable = throwable)
             SyncRunResult.Retry
@@ -695,7 +713,32 @@ class WardrobeSyncOutboxProcessor(
             // Terminal failures stay visible for the user to read.
             val restoreStillRunning = restoreProgress.value?.status == CloudRestoreStatus.Running
             if (!keepTerminalProgress || restoreStillRunning) restoreProgress.value = null
+            lastCycle.value = SyncCycleSummary(
+                startedAtEpochMillis = syncStartedAt,
+                endedAtEpochMillis = System.currentTimeMillis(),
+                result = cycleResult,
+                pendingAtStart = pendingAtStart,
+                errorClass = (cycleFailure ?: cycleDriveFailure)?.javaClass?.simpleName,
+                errorMessage = (cycleFailure ?: cycleDriveFailure)?.message,
+            )
         }
+    }
+
+    /**
+     * Outcome of a cycle that returned before claiming any row (not connected, conflict, merge waiting, nothing pending).
+     * Records it so [lastCycle] never shows an older cycle as the current one. The pending count is a best-effort read.
+     */
+    private suspend fun recordIdleCycle(startedAt: Long, result: SyncRunResult): SyncRunResult {
+        val pending = runCatching {
+            wardrobeRepository.pendingGarmentSyncWork().size + wardrobeRepository.pendingMetadataSyncWork().size
+        }.getOrDefault(0)
+        lastCycle.value = SyncCycleSummary(
+            startedAtEpochMillis = startedAt,
+            endedAtEpochMillis = System.currentTimeMillis(),
+            result = result,
+            pendingAtStart = pending,
+        )
+        return result
     }
 
     private suspend fun executeDirection(
@@ -762,20 +805,19 @@ class WardrobeSyncOutboxProcessor(
         val remoteManifest = when (val fetched = driveRepository.fetchManifest()) {
             is DriveSyncResult.Success -> fetched.value
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
-            is DriveSyncResult.Failure -> return SyncRunResult.Retry
+            is DriveSyncResult.Failure -> return fetched.retry()
         }
         val otherWriterBackup = remoteManifest.isNewerWriterThan(deviceId, lastKnownRevision)
-        // The remote JSON (photo records, no blobs) is needed for another writer's data and for keeping guarded or failed photo records.
-        val remote = if (otherWriterBackup || localSnapshot.photos.isNotEmpty()) {
-            when (val fetched = driveRepository.fetchSnapshotRecords()) {
-                is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
-                is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
-                is DriveSyncResult.Failure -> return SyncRunResult.Retry
-            }
-        } else {
-            null
+        // The remote JSON (photo records, no blobs) is always read: the no-op check compares against it, and it carries
+        // another writer's data and the guarded or failed photo records. A missing file reads as an empty snapshot.
+        val remote = when (val fetched = driveRepository.fetchSnapshotRecords()) {
+            is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
+            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Failure -> return fetched.retry()
         }
-        if (remote != null && otherWriterBackup && remote.hasUserData()) return proposeMerge(localSnapshot, remote)
+        if (otherWriterBackup && remote.hasUserData()) return proposeMerge(localSnapshot, remote)
+        // Forced cycles (tag and palette edits) upload even when nothing changed: a no-op cycle needs no Drive write.
+        if (remoteAlreadyHoldsLocalSnapshot(localSnapshot, remote)) return SyncRunResult.Success
         val snapshot = localSnapshot.withWriter(deviceId).sortedDeterministically()
         return when (val uploaded = driveRepository.upsertSnapshot(snapshot, remote)) {
             is DriveSyncResult.Success -> {
@@ -789,8 +831,23 @@ class WardrobeSyncOutboxProcessor(
         }
     }
 
+    /** Comparison plus one read of the pending-deletion flag. Skipping writes nothing to Drive; the claimed rows settle as on any success. */
+    private suspend fun remoteAlreadyHoldsLocalSnapshot(localSnapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): Boolean =
+        localSnapshot.remoteAlreadyHolds(
+            remote = remote,
+            hasPendingEmbeddings = cycleExportedEmbeddingKeys.isNotEmpty(),
+            hasPendingCloudDeletion = wardrobeRepository.hasPendingCloudDeletion(),
+        )
+
+    /** Any Drive failure of the cycle is retried; its class and message are kept for [lastCycle]. */
+    private fun DriveSyncResult.Failure.retry(): SyncRunResult {
+        cycleDriveFailure = throwable
+        return SyncRunResult.Retry
+    }
+
     /** A full Drive parks the garments for the user; any other failure is transient and retried. */
     private fun DriveSyncResult.Failure.failureResult(): SyncRunResult {
+        cycleDriveFailure = throwable
         if (throwable !is DriveStorageFullException) return SyncRunResult.Retry
         cycleStorageFull = true
         return SyncRunResult.NeedsUser
@@ -835,19 +892,38 @@ class WardrobeSyncOutboxProcessor(
 
     /** Conflict and merge actions: they run outside [runCycle] and never claim outbox rows. */
     private suspend fun runResolution(label: String, block: suspend () -> SyncRunResult): SyncRunResult {
+        // Read before the flag is raised: a throwing read here must not leave isProcessing stuck on.
+        val pendingAtStart = runCatching {
+            wardrobeRepository.pendingGarmentSyncWork().size + wardrobeRepository.pendingMetadataSyncWork().size
+        }.getOrDefault(0)
         isProcessing.value = true
         val correlationId = UUID.randomUUID().toString().take(8)
         val startedAt = System.currentTimeMillis()
+        var outcome: SyncRunResult? = null
+        var failure: Throwable? = null
         return try {
-            block().also { result -> recordSyncEnded(correlationId, startedAt, "$label result=$result") }
+            block().also { result ->
+                outcome = result
+                recordSyncEnded(correlationId, startedAt, "$label result=$result")
+            }
         } catch (cancellation: CancellationException) {
             recordSyncEnded(correlationId, startedAt, "$label interrupted", level = "warn", throwable = cancellation)
             throw cancellation
         } catch (throwable: Throwable) {
+            failure = throwable
+            outcome = SyncRunResult.Retry
             recordSyncEnded(correlationId, startedAt, "$label failure", level = "error", throwable = throwable)
             SyncRunResult.Retry
         } finally {
             isProcessing.value = false
+            lastCycle.value = SyncCycleSummary(
+                startedAtEpochMillis = startedAt,
+                endedAtEpochMillis = System.currentTimeMillis(),
+                result = outcome,
+                pendingAtStart = pendingAtStart,
+                errorClass = failure?.javaClass?.simpleName,
+                errorMessage = failure?.message,
+            )
         }
     }
 
@@ -1138,6 +1214,7 @@ class WardrobeSyncOutboxProcessor(
             attention = inputs.attention(),
             pendingMergeSummary = inputs.pendingMergeSummary,
             conflict = inputs.conflict,
+            lastCycle = inputs.lastCycle,
         )
     }
 
@@ -1179,6 +1256,7 @@ private data class WardrobeSyncStateInputs(
     val authBlocked: Boolean,
     val driveFullCount: Int,
     val photoUploadFailedCount: Int,
+    val lastCycle: SyncCycleSummary?,
 )
 
 private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList {

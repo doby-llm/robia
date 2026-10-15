@@ -17,6 +17,29 @@ import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 internal fun WardrobeSyncSnapshot.equivalentForUpload(other: WardrobeSyncSnapshot): Boolean =
     equivalenceKey() == other.equivalenceKey() && photosEquivalent(sortedDeterministically().photos, other.sortedDeterministically().photos)
 
+/**
+ * Ordinary upload may be skipped only when [remote] already holds exactly this snapshot. Every doubt keeps the upload:
+ * pending vectors, a pending cloud deletion, a guarded photo on either side, or a legacy photo key (the upload re-keys it) always upload.
+ *
+ * Photo-free wardrobes only. A local photo carries no content hash until it is uploaded (see [photosEquivalent]), so a
+ * wardrobe with any photo on either side always takes the normal upload path. Schema version and wardrobe id must match too,
+ * so an older-schema or other-wardrobe remote is rewritten.
+ */
+internal fun WardrobeSyncSnapshot.remoteAlreadyHolds(
+    remote: WardrobeSyncSnapshot,
+    hasPendingEmbeddings: Boolean,
+    hasPendingCloudDeletion: Boolean,
+): Boolean =
+    !hasPendingEmbeddings &&
+        !hasPendingCloudDeletion &&
+        photos.isEmpty() &&
+        remote.photos.isEmpty() &&
+        metadata.schemaVersion == remote.metadata.schemaVersion &&
+        metadata.wardrobeId == remote.metadata.wardrobeId &&
+        guardedPhotoRestoreIssues().isEmpty() &&
+        remote.guardedPhotoRestoreIssues().isEmpty() &&
+        equivalentForUpload(remote)
+
 private data class SnapshotEquivalenceKey(
     val taxonomies: WardrobeTaxonomySnapshot,
     val garments: List<GarmentSyncRecord>,
@@ -39,6 +62,7 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
 /**
  * Local photos carry only [GarmentPhotoRecord.contentHash] until they are uploaded, while remote photos also carry
  * [GarmentPhotoRecord.sourceHash]. A pair is the same image when both source hashes are set and equal, or content hashes match.
+ * blobPath, mimeType and byteSize are not compared: the blob key derives from the content hash, so equal hashes mean equal blobs.
  */
 private fun photosEquivalent(local: List<GarmentPhotoRecord>, remote: List<GarmentPhotoRecord>): Boolean =
     local.size == remote.size && local.zip(remote).all { (localPhoto, remotePhoto) ->
