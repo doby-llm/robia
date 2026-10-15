@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,7 +87,7 @@ class UploadSkipTest {
         assertTrue(drive.upserts.isEmpty())
         assertEquals(1, drive.recordsFetches)
         assertEquals("Synced", wardrobe.statusOf("g1"))
-        val cycle = assertNotNull(processor.state.first().lastCycle)
+        val cycle = requireNotNull(processor.state.first().lastCycle)
         assertEquals(SyncRunResult.Success, cycle.result)
         assertEquals(1, cycle.pendingAtStart)
         assertNull(cycle.errorClass)
