@@ -35,8 +35,14 @@ interface EmbeddingDao {
     @Query("DELETE FROM garment_embeddings")
     suspend fun deleteEverything(): Int
 
-    @Query("UPDATE garment_embeddings SET pending_upload = 0 WHERE garment_id = :garmentId AND kind = :kind")
-    suspend fun markUploaded(garmentId: String, kind: String)
+    /** Clears pending only for the exact vector that was exported; a vector re-computed since then stays pending. */
+    @Query(
+        """
+        UPDATE garment_embeddings SET pending_upload = 0
+        WHERE garment_id = :garmentId AND kind = :kind AND computed_at_epoch_millis = :computedAtEpochMillis
+        """,
+    )
+    suspend fun markUploaded(garmentId: String, kind: String, computedAtEpochMillis: Long)
 
     /** Active garments with a photo that have no image vector for this model+recipe; newest first. */
     @Query(

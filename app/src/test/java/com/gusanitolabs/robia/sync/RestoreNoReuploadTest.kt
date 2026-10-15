@@ -51,7 +51,7 @@ class RestoreNoReuploadTest {
         val guard = processor.substringAfter("val finalUploadGuardReason = mergedSnapshot.finalUploadGuardReasonAfterRestore()")
             .substringBefore("diagnostics.recordFinalUploadAttempted()")
 
-        assertTrue(guard.contains("if (mergedSnapshot.equivalentForUpload(remoteSnapshot))"))
+        assertTrue(guard.contains("if (mergedSnapshot.equivalentForUpload(remoteSnapshot) && cycleExportedEmbeddingKeys.isEmpty())"))
         assertTrue(guard.contains("remote_equivalent"))
     }
 

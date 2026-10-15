@@ -21,6 +21,8 @@ import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSnapshotMetadata
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
+import com.gusanitolabs.robia.data.EmbeddingKey
+import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.PendingGarmentSyncWork
 import com.gusanitolabs.robia.data.PendingMetadataSyncWork
 import com.gusanitolabs.robia.data.SettingsRepository
@@ -63,11 +65,17 @@ class WardrobeSyncOutboxProcessor(
     private val syncWorkScheduler: SyncWorkScheduler = NoOpSyncWorkScheduler,
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** Vectors waiting for a Drive upload; null only in tests that do not model embeddings. */
+    private val embeddingRepository: EmbeddingRepository? = null,
+    /** Called after a restore imported the remote garments, so the backfill can fill vectors that the backup lacked. */
+    private val onRestoreImported: () -> Unit = {},
 ) : WardrobeSyncGateway {
     private val mutex = Mutex()
     private val isProcessing = MutableStateFlow(false)
     private val hasGuardedPhotoRestoreIssues = MutableStateFlow(false)
     private val restoreProgress = MutableStateFlow<CloudRestoreProgress?>(null)
+    /** Vectors pending when the current cycle exported its snapshot; marked uploaded only after that snapshot is stored. */
+    private var cycleExportedEmbeddingKeys: List<EmbeddingKey> = emptyList()
     private val pendingMergeSummary = MutableStateFlow<MergeSummary?>(null)
     /** Remote revision the pending merge proposal was built from; declining it opens the conflict at this revision. */
     private var pendingMergeRemoteRevision = 0L
@@ -627,7 +635,8 @@ class WardrobeSyncOutboxProcessor(
 
         val pendingWork = wardrobeRepository.pendingGarmentSyncWork()
         val pendingMetadataWork = wardrobeRepository.pendingMetadataSyncWork()
-        if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !forceSnapshot && !forceImport) {
+        val hasPendingEmbeddings = embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
+        if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !hasPendingEmbeddings && !forceSnapshot && !forceImport) {
             authBlocked.value = false
             return@withLock SyncRunResult.Success
         }
@@ -658,6 +667,7 @@ class WardrobeSyncOutboxProcessor(
                         "garments=${lockedWork.size} metadata=${lockedMetadataWork.size}",
                 ),
             )
+            cycleExportedEmbeddingKeys = embeddingRepository?.pendingUploadKeys().orEmpty()
             val localSnapshot = snapshotRepository.exportSnapshot()
             val result = executeDirection(localSnapshot, forceImport, mergeConfirmed)
             keepTerminalProgress = result != SyncRunResult.Success
@@ -770,6 +780,7 @@ class WardrobeSyncOutboxProcessor(
         return when (val uploaded = driveRepository.upsertSnapshot(snapshot, remote)) {
             is DriveSyncResult.Success -> {
                 settingsRepository.setLastKnownRemoteRevision(uploaded.value.revision)
+                markExportedEmbeddingsUploaded()
                 cyclePhotoUploadFailureIds = uploaded.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
                 SyncRunResult.Success
             }
@@ -1004,6 +1015,7 @@ class WardrobeSyncOutboxProcessor(
             ImportSnapshotResult(restoredGarmentCount = 0, restoredPhotoCount = 0, guardedPhotoCount = 0)
         }
         diagnostics.recordLocalSave(importResult)
+        onRestoreImported()
         settingsRepository.setLastKnownRemoteRevision(remoteSnapshot.metadata.revision)
 
         restoreProgress.value = diagnostics.progress(
@@ -1029,7 +1041,8 @@ class WardrobeSyncOutboxProcessor(
             )
             return SyncRunResult.Success
         }
-        if (mergedSnapshot.equivalentForUpload(remoteSnapshot)) {
+        // SnapshotEquivalence ignores embeddings, so a pending vector must still be uploaded even when the rest matches.
+        if (mergedSnapshot.equivalentForUpload(remoteSnapshot) && cycleExportedEmbeddingKeys.isEmpty()) {
             diagnostics.recordFinalUploadSkipped("remote_equivalent")
             restoreProgress.value = diagnostics.progress(
                 phase = CloudRestorePhase.Complete,
@@ -1054,6 +1067,7 @@ class WardrobeSyncOutboxProcessor(
             is DriveSyncResult.Success -> {
                 diagnostics.recordFinalUploadSucceeded()
                 settingsRepository.setLastKnownRemoteRevision(uploadResult.value.revision)
+                markExportedEmbeddingsUploaded()
                 // Garments whose photo did not upload wait for the user, exactly as in uploadLocalSnapshot.
                 cyclePhotoUploadFailureIds = uploadResult.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
                 restoreProgress.value = diagnostics.progress(
@@ -1086,6 +1100,11 @@ class WardrobeSyncOutboxProcessor(
                 uploadResult.failureResult()
             }
         }
+    }
+
+    /** Only after a stored snapshot: a failed upload leaves the vectors pending for the next cycle. */
+    private suspend fun markExportedEmbeddingsUploaded() {
+        embeddingRepository?.markUploaded(cycleExportedEmbeddingKeys)
     }
 
     private suspend fun markSynced(work: List<PendingGarmentSyncWork>, metadataWork: List<PendingMetadataSyncWork>) {

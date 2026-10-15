@@ -160,6 +160,7 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.SavedExample
@@ -186,6 +187,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -2429,6 +2431,8 @@ private fun BrowseWardrobeScreen(
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
     val gridState = rememberLazyGridState()
+    val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
+    val backfillProgress by (backfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
 
     BrowseImagePrefetch(items = items, gridState = gridState)
 
@@ -2449,6 +2453,11 @@ private fun BrowseWardrobeScreen(
                 showSyncActivity = showSyncActivity,
                 onFiltersClick = onFiltersClick,
             )
+        }
+        if (backfillProgress.remaining > 0) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SuggestionsProgressBanner(remaining = backfillProgress.remaining)
+            }
         }
         if (items.isNotEmpty()) {
             attentions.forEach { attention ->

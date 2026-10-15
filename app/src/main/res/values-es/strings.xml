@@ -529,6 +529,11 @@
     <string name="sync_use_backup_confirm_body">Las prendas y fotos de este móvil se reemplazarán por la copia de Google Drive. Los cambios que solo existen en este móvil se perderán.</string>
     <string name="sync_use_backup_confirm_action">Reemplazar</string>
     <string name="sync_status_parked_help">Guardada en este móvil. No se subirá hasta que pulses Reintentar.</string>
+    <!-- TASK-E06 -->
+    <plurals name="suggestions_preparing_count">
+        <item quantity="one">Preparando sugerencias para %d prenda…</item>
+        <item quantity="other">Preparando sugerencias para %d prendas…</item>
+    </plurals>
     <!-- TASK-S07 -->
     <string name="cloud_restore_upload_photos_progress">Subiendo fotos %1$d de %2$d</string>
     <string name="cloud_restore_finishing">Finalizando…</string>

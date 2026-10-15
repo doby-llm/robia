@@ -529,6 +529,11 @@
     <string name="sync_use_backup_confirm_body">Die Kleidungsstücke und Fotos auf diesem Handy werden durch die Google-Drive-Sicherung ersetzt. Änderungen, die nur auf diesem Handy existieren, gehen verloren.</string>
     <string name="sync_use_backup_confirm_action">Ersetzen</string>
     <string name="sync_status_parked_help">Auf diesem Handy gespeichert. Es wird erst hochgeladen, wenn du Erneut versuchen tippst.</string>
+    <!-- TASK-E06 -->
+    <plurals name="suggestions_preparing_count">
+        <item quantity="one">Vorschläge für %d Kleidungsstück werden vorbereitet…</item>
+        <item quantity="other">Vorschläge für %d Kleidungsstücke werden vorbereitet…</item>
+    </plurals>
     <!-- TASK-S07 -->
     <string name="cloud_restore_upload_photos_progress">Fotos werden hochgeladen: %1$d von %2$d</string>
     <string name="cloud_restore_finishing">Wird abgeschlossen…</string>

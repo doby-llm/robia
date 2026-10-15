@@ -76,12 +76,32 @@ class EmbeddingRepositoryTest {
         repository.upsert("garment-1", EmbeddingKind.TEXT, vector, "hash", 1L)
 
         assertEquals(
-            listOf(EmbeddingKey("garment-1", EmbeddingKind.IMAGE), EmbeddingKey("garment-1", EmbeddingKind.TEXT)),
+            listOf(
+                EmbeddingKey("garment-1", EmbeddingKind.IMAGE, 1_234L),
+                EmbeddingKey("garment-1", EmbeddingKind.TEXT, 1_234L),
+            ),
             repository.pendingUploadKeys(),
         )
-        repository.markUploaded(listOf(EmbeddingKey("garment-1", EmbeddingKind.IMAGE)))
+        repository.markUploaded(listOf(EmbeddingKey("garment-1", EmbeddingKind.IMAGE, 1_234L)))
 
-        assertEquals(listOf(EmbeddingKey("garment-1", EmbeddingKind.TEXT)), repository.pendingUploadKeys())
+        assertEquals(listOf(EmbeddingKey("garment-1", EmbeddingKind.TEXT, 1_234L)), repository.pendingUploadKeys())
+    }
+
+    /** The processor exports the pending keys, then a re-compute lands before the upload is marked. */
+    @Test
+    fun vectorRecomputedAfterExportStaysPendingAfterUpload() = runBlocking {
+        var now = 1_000L
+        val live = EmbeddingRepository(dao, clock = { now })
+        val vector = FloatArray(EmbeddingRecipe.DIMENSION)
+        live.upsert("garment-1", EmbeddingKind.IMAGE, vector, "hash-old", 1L)
+        val exported = live.pendingUploadKeys()
+
+        now = 2_000L
+        live.upsert("garment-1", EmbeddingKind.IMAGE, vector, "hash-new", 1L)
+        live.markUploaded(exported)
+
+        assertEquals(listOf(EmbeddingKey("garment-1", EmbeddingKind.IMAGE, 2_000L)), live.pendingUploadKeys())
+        assertTrue(dao.rows.getValue("garment-1" to EmbeddingKind.IMAGE).pendingUpload)
     }
 
     @Test
@@ -200,7 +220,7 @@ class EmbeddingRepositoryTest {
 }
 
 /** Keyed by (garmentId, kind) like the real table's primary key. Unused DAO queries fail loudly. */
-private class InMemoryEmbeddingDao : EmbeddingDao {
+internal class InMemoryEmbeddingDao : EmbeddingDao {
     val rows = linkedMapOf<Pair<String, String>, GarmentEmbeddingEntity>()
     private val state = MutableStateFlow<List<GarmentEmbeddingEntity>>(emptyList())
 
@@ -244,8 +264,10 @@ private class InMemoryEmbeddingDao : EmbeddingDao {
         return count
     }
 
-    override suspend fun markUploaded(garmentId: String, kind: String) {
-        rows[garmentId to kind]?.let { row -> rows[garmentId to kind] = row.copy(pendingUpload = false) }
+    override suspend fun markUploaded(garmentId: String, kind: String, computedAtEpochMillis: Long) {
+        rows[garmentId to kind]?.let { row ->
+            if (row.computedAtEpochMillis == computedAtEpochMillis) rows[garmentId to kind] = row.copy(pendingUpload = false)
+        }
         publish()
     }
 

@@ -138,7 +138,11 @@ class LocalWardrobeSyncSnapshotRepository(
                 tagDao.insertItemTagRefs(tagRefs)
             }
             if (tombstones.isNotEmpty()) tagDao.upsertSyncTombstones(tombstones)
-            if (embeddings.isNotEmpty()) database.embeddingDao().upsertAll(embeddings)
+            // A vector re-computed while the download ran is newer than the imported one: keep it, still pending.
+            val embeddingDao = database.embeddingDao()
+            val localEmbeddings = embeddings.mapNotNull { imported -> embeddingDao.get(imported.garmentId, imported.kind) }
+            val embeddingsToWrite = embeddings.withoutOlderThanLocal(localEmbeddings)
+            if (embeddingsToWrite.isNotEmpty()) embeddingDao.upsertAll(embeddingsToWrite)
         }
 
         return ImportSnapshotResult(
@@ -324,8 +328,18 @@ private fun GarmentEmbeddingEntity.toSyncRecord(): EmbeddingSyncRecord = Embeddi
     b64 = Base64.getEncoder().encodeToString(vector),
 )
 
+/** Drops imported vectors that a local row computed later would overwrite; equal or missing local rows are written. */
+internal fun List<GarmentEmbeddingEntity>.withoutOlderThanLocal(
+    localRows: List<GarmentEmbeddingEntity>,
+): List<GarmentEmbeddingEntity> {
+    val localComputedAt = localRows.associate { row -> (row.garmentId to row.kind) to row.computedAtEpochMillis }
+    return filter { imported ->
+        (localComputedAt[imported.garmentId to imported.kind] ?: Long.MIN_VALUE) <= imported.computedAtEpochMillis
+    }
+}
+
 /** Accepts only the current model+recipe with a complete 768-dim float32 payload; anything else is re-computed. */
-private fun EmbeddingSyncRecord.toImportEntity(garmentId: String): GarmentEmbeddingEntity? {
+internal fun EmbeddingSyncRecord.toImportEntity(garmentId: String): GarmentEmbeddingEntity? {
     if (kind != EmbeddingKind.IMAGE && kind != EmbeddingKind.TEXT) return null
     if (modelId != EmbeddingRecipe.MODEL_ID || recipeId != EmbeddingRecipe.RECIPE_ID) return null
     if (dim != EmbeddingRecipe.DIMENSION) return null
