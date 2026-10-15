@@ -125,7 +125,10 @@ class WardrobeSyncOutboxProcessor(
                 val hasPendingWork = wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
                     wardrobeRepository.pendingMetadataSyncWork().isNotEmpty() ||
                     embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
-                if (hasPendingWork && status in INIT_REQUEST_STATUSES) requestSync("init")
+                if (hasPendingWork && status in INIT_REQUEST_STATUSES) {
+                    // A failing init request must not stop the state pipeline below from starting.
+                    logRequestFailures("init") { requestSync("init") }
+                }
             }
             combine(
                 settingsRepository.settings,
@@ -1388,7 +1391,8 @@ private const val DRIVE_FULL_REASON = "drive_full"
 private const val PHOTO_UPLOAD_FAILED_REASON = "photo_upload_failed"
 private const val MAX_RETRY_DIAGNOSTIC_EVENTS = 16
 /** Drive states in which a request reaches a run that can act on it; any other state would only wake WorkManager for nothing. */
-private val INIT_REQUEST_STATUSES = setOf(DriveSyncConnectionStatus.Connected, DriveSyncConnectionStatus.NeedsAttention)
+// NeedsAttention is derived for display only and never stored, so only a stored Connected can run a request.
+private val INIT_REQUEST_STATUSES = setOf(DriveSyncConnectionStatus.Connected)
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS = 60 * 1000L
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MESSAGE = "Drive photo retry timed out."
 private const val SYNC_INTERRUPTED_MESSAGE = "Drive sync was interrupted. Retry is available after backoff."

@@ -11,7 +11,7 @@ import org.junit.Test
 
 /** H01 finding A, E and B: what the processor asks WorkManager for when it starts, and when a forced operation is requested. */
 class SyncInitRequestTest {
-    /** A claim made 60 s ago is inside the 15 min stale window, so only a recovery at the current time frees it. */
+    /** A claim made 60 s ago: init recovers Running rows at the current time (under the mutex), so it is requeued and requested. */
     @Test
     fun interruptedClaimFromAKilledProcessProducesAnInitRequest() = runBlocking {
         val wardrobe = FakeWardrobeRepository()
@@ -26,7 +26,7 @@ class SyncInitRequestTest {
 
     @Test
     fun initRequestIsSentOnlyWhenDriveCanRunIt() = runBlocking {
-        for (status in listOf(DriveSyncConnectionStatus.Connected, DriveSyncConnectionStatus.NeedsAttention)) {
+        for (status in listOf(DriveSyncConnectionStatus.Connected)) {
             val wardrobe = FakeWardrobeRepository().apply { addQueued("garment-1") }
             val scheduler = FakeSyncWorkScheduler()
 
