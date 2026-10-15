@@ -15,8 +15,11 @@ data class GarmentVectors(
     val text: FloatArray?,
 )
 
-/** Identifies one stored vector; used to find and mark rows awaiting Drive upload. */
-data class EmbeddingKey(val garmentId: String, val kind: String)
+/**
+ * Identifies one stored vector awaiting Drive upload. [computedAtEpochMillis] is the version that was exported,
+ * so marking it uploaded cannot clear a vector that was re-computed after the export.
+ */
+data class EmbeddingKey(val garmentId: String, val kind: String, val computedAtEpochMillis: Long)
 
 /**
  * Stores garment vectors in `garment_embeddings` only. It holds no reference to the wardrobe DAO, so
@@ -71,10 +74,10 @@ class EmbeddingRepository(
     }
 
     suspend fun pendingUploadKeys(): List<EmbeddingKey> =
-        embeddingDao.pendingUpload().map { row -> EmbeddingKey(row.garmentId, row.kind) }
+        embeddingDao.pendingUpload().map { row -> EmbeddingKey(row.garmentId, row.kind, row.computedAtEpochMillis) }
 
     suspend fun markUploaded(keys: List<EmbeddingKey>) {
-        keys.forEach { key -> embeddingDao.markUploaded(key.garmentId, key.kind) }
+        keys.forEach { key -> embeddingDao.markUploaded(key.garmentId, key.kind, key.computedAtEpochMillis) }
     }
 }
 

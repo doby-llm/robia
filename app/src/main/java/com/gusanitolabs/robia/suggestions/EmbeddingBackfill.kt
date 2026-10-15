@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /** [remaining] garments still waiting for a vector; [running] while the loop is active (TS§3.8). */
 data class BackfillProgress(val remaining: Int = 0, val running: Boolean = false)
@@ -33,6 +34,9 @@ private sealed interface BackfillTask {
 
 /** A garment is skipped for the rest of the process after this many failed attempts. */
 private const val MAX_ATTEMPTS_PER_GARMENT = 2
+
+/** Saved vectors per periodic sync request; each request uploads everything pending, so one per vector is O(N^2) bytes. */
+private const val SYNC_EVERY_SAVES = 20
 
 /**
  * Computes the missing IMAGE vectors and the stale TEXT vectors of saved garments, one at a time, newest first
@@ -54,6 +58,7 @@ class EmbeddingBackfill(
     val progress: StateFlow<BackfillProgress> = _progress.asStateFlow()
 
     private val failures = ConcurrentHashMap<String, Int>()
+    private val unsyncedSaves = AtomicInteger(0)
     private var job: Job? = null
 
     fun resume() {
@@ -79,8 +84,18 @@ class EmbeddingBackfill(
                 yield()
             }
         } finally {
+            flushSync()
             _progress.value = _progress.value.copy(running = false)
         }
+    }
+
+    /** One request per [SYNC_EVERY_SAVES] saved vectors, and one more when the pass ends, pauses or is cancelled. */
+    private fun recordSave() {
+        if (unsyncedSaves.incrementAndGet() >= SYNC_EVERY_SAVES) flushSync()
+    }
+
+    private fun flushSync() {
+        if (unsyncedSaves.getAndSet(0) > 0) requestSync()
     }
 
     /** Image tasks first, then TEXT tasks; each group is newest garment first. Garments past the attempt limit are left out. */
@@ -118,17 +133,17 @@ class EmbeddingBackfill(
                     val encoded = encodeImage(task.photoUri)
                     val vector = embedder.embedImage(encoded.bytes)
                     saveVector(task.garmentId, EmbeddingKind.IMAGE, vector, sha256Hex16(encoded.bytes), clockMillis() - started)
-                    requestSync()
+                    recordSave()
                 }
                 is BackfillTask.Text -> {
                     val started = clockMillis()
                     val vector = embedder.embedText(task.text)
                     saveVector(task.garmentId, EmbeddingKind.TEXT, vector, task.inputHash, clockMillis() - started)
-                    requestSync()
+                    recordSave()
                 }
                 is BackfillTask.ClearText -> {
                     deleteVector(task.garmentId, EmbeddingKind.TEXT)
-                    requestSync()
+                    recordSave()
                 }
             }
         } catch (cancelled: CancellationException) {

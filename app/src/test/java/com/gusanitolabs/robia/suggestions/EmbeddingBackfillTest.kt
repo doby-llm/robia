@@ -19,6 +19,7 @@ class EmbeddingBackfillTest {
     private val rows = mutableListOf<GarmentEmbeddingEntity>()
     private val saved = mutableListOf<String>()
     private val deleted = mutableListOf<String>()
+    private var syncRequests = 0
 
     private val backfill = EmbeddingBackfill(
         scope = CoroutineScope(Dispatchers.Unconfined),
@@ -36,9 +37,20 @@ class EmbeddingBackfillTest {
             deleted += "$garmentId:$kind"
             rows.removeAll { it.garmentId == garmentId && it.kind == kind }
         },
-        requestSync = {},
+        requestSync = { syncRequests++ },
         clockMillis = { 0L },
     )
+
+    @Test
+    fun backfillOf45VectorsRequestsSyncThreeTimesNotFortyFive() = runBlocking {
+        (1..45).forEach { index -> garments += garment("g$index", createdAt = index.toLong(), photoUri = "photo-$index", name = "") }
+
+        backfill.runUntilIdle()
+
+        assertEquals(45, saved.size)
+        // Periodic requests after vectors 20 and 40, then one final request when the pass ends.
+        assertEquals(3, syncRequests)
+    }
 
     @Test
     fun imagesNewestFirstThenTextNewestFirst() = runBlocking {

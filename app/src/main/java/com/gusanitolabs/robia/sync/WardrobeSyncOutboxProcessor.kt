@@ -1041,7 +1041,8 @@ class WardrobeSyncOutboxProcessor(
             )
             return SyncRunResult.Success
         }
-        if (mergedSnapshot.equivalentForUpload(remoteSnapshot)) {
+        // SnapshotEquivalence ignores embeddings, so a pending vector must still be uploaded even when the rest matches.
+        if (mergedSnapshot.equivalentForUpload(remoteSnapshot) && cycleExportedEmbeddingKeys.isEmpty()) {
             diagnostics.recordFinalUploadSkipped("remote_equivalent")
             restoreProgress.value = diagnostics.progress(
                 phase = CloudRestorePhase.Complete,
