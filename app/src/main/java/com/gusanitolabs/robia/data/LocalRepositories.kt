@@ -1,13 +1,16 @@
 package com.gusanitolabs.robia.data
 
+import android.util.Log
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DefaultTagSeeds
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.core.model.TagDedupePlanner
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
@@ -20,6 +23,8 @@ import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
+import com.gusanitolabs.robia.data.local.toDedupeTag
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -199,7 +204,7 @@ class LocalTagRepository(
         }
     }
 
-    override suspend fun restoreDefaultTags(categoryId: String) {
+    override suspend fun restoreDefaultTags(categoryId: String): Set<String> {
         DefaultTags.categories
             .firstOrNull { category -> category.id == categoryId }
             ?.let { category -> tagDao.upsertCategory(category.toEntity().queuedForSync()) }
@@ -208,20 +213,60 @@ class LocalTagRepository(
                 .filter { tag -> tag.categoryId == categoryId }
                 .map { tag -> tag.toEntity().queuedForSync() },
         )
+        // A custom row with the same name is merged into the built-in row (its garments move), never kept as a second copy.
+        return mergeDuplicateTags(categoryId)
     }
 
     override suspend fun resetMainColorsToDefaults() {
         tagDao.replaceMainColors(DefaultTags.mainColors.map { color -> color.toEntity().queuedForSync() })
     }
 
-    override suspend fun seedDefaultsIfNeeded() {
+    override suspend fun seedDefaultsIfNeeded(): Set<String> {
+        val deletedTagIds = garmentTagTombstoneRevisions().keys
         tagDao.seedCategories(DefaultTags.categories.map(TagCategory::toEntity))
-        tagDao.seedTags(DefaultTags.tags.map(GarmentTag::toEntity))
+        tagDao.seedTags(DefaultTagSeeds.withoutDeleted(DefaultTags.tags, deletedTagIds).map(GarmentTag::toEntity))
         if (tagDao.mainColorCount() == 0) {
             tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
         }
+        return mergeDuplicateTags(categoryId = null)
     }
+
+    /**
+     * Local-only: merges tag rows that share a name in one category (see [TagDedupePlanner]). Repeats are no-ops.
+     * Returns the ids touched by merges that dropped a row, so the caller can enqueue them. A failure is logged, never thrown:
+     * this runs at launch.
+     */
+    private suspend fun mergeDuplicateTags(categoryId: String?): Set<String> {
+        val merges = TagDedupePlanner.plan(
+            tagDao.tagsForDedupe(categoryId).map(GarmentTagEntity::toDedupeTag),
+            garmentTagTombstoneRevisions(),
+        )
+        if (merges.isEmpty()) return emptySet()
+        val droppedIds = try {
+            tagDao.applyTagMerges(
+                plannedMerges = merges,
+                tombstoneByDropId = merges.associate { merge ->
+                    merge.dropId to syncTombstone(entityType = "garment_tag", entityId = merge.dropId)
+                },
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(DEDUPE_LOG_TAG, "Tag dedupe skipped for ${merges.size} merge(s)", error)
+            return emptySet()
+        }
+        return merges
+            .filter { merge -> merge.dropId in droppedIds }
+            .flatMapTo(mutableSetOf()) { merge -> listOf(merge.dropId, merge.keepId) }
+    }
+
+    /** Deleted garment tag ids with their tombstone revision: a built-in with one is not seeded again, and a ghost is not merged into. */
+    private suspend fun garmentTagTombstoneRevisions(): Map<String, Long> = syncTombstoneDao?.getAllForSync().orEmpty()
+        .filter { tombstone -> tombstone.entityType == "garment_tag" }
+        .associate { tombstone -> tombstone.entityId to tombstone.revision }
 }
+
+private const val DEDUPE_LOG_TAG = "TagDedupe"
 
 private fun PendingGarmentSyncWorkEntity.toDomain(): PendingGarmentSyncWork = PendingGarmentSyncWork(
     id = id,
