@@ -124,9 +124,11 @@ class EmbeddingUploadTest {
         assertEquals(SyncRunResult.Success, processor.runOnce(SyncTrigger.Background, reason = "periodic"))
         assertEquals(1, drive.upserts.size)
 
+        // Building the processor with a vector pending already requested "init"; the count is taken after that.
+        val requestsBefore = scheduler.requestSyncCount
         processor.requestSyncInBackground("periodic")
 
-        assertEquals(0, scheduler.requestSyncCount)
+        assertEquals(requestsBefore, scheduler.requestSyncCount)
     }
 
     /** H01 finding 2: a deferred run lives only in memory, so init must re-request when only vectors are pending. */
@@ -236,9 +238,10 @@ class EmbeddingUploadTest {
     /** H01: a vector saved by the backfill asks for a run, and the run carries the reason into the log line. */
     @Test
     fun backfillSaveRequestsOneRunWithItsReason() = runBlocking {
+        val processor = processor()
         embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
 
-        processor().requestSyncInBackground("backfill")
+        processor.requestSyncInBackground("backfill")
 
         assertEquals(listOf("backfill"), scheduler.requestReasons)
     }
