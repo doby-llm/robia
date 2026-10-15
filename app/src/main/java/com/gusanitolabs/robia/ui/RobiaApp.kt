@@ -11,6 +11,7 @@ import android.net.Uri
 import android.content.res.Configuration
 import android.os.LocaleList
 import android.os.SystemClock
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -168,7 +169,9 @@ import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.EmbeddingKind
+import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
@@ -197,7 +200,6 @@ import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import com.gusanitolabs.robia.suggestions.engine.TextImageEmbedder
 import com.gusanitolabs.robia.suggestions.garmentTextInput
-import com.gusanitolabs.robia.suggestions.labelTextFor
 import com.gusanitolabs.robia.suggestions.rankSimilar
 import com.gusanitolabs.robia.suggestions.sortNewestFirst
 import com.gusanitolabs.robia.suggestions.sha256Hex16
@@ -216,7 +218,9 @@ import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -366,6 +370,8 @@ private val bottomDestinations = listOf(
     BottomNavDestination(RobiaRoute.ManageTags, R.string.manage, Icons.Rounded.Style),
 )
 
+private const val TAG_REVIEW_OFFER_LOG_TAG = "TagReviewOffer"
+
 @Composable
 fun RobiaApp(
     settingsRepository: SettingsRepository,
@@ -403,6 +409,12 @@ fun RobiaApp(
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val app = LocalContext.current.applicationContext as RobiaApplication
+    // The last tag or colour write. An undo launched right after it (cancelled prompt, discard) joins it first.
+    // Review writes and their undo run on the app scope, a SupervisorJob: a failed save must not cancel the undo.
+    val lastReviewWrite = remember { mutableStateOf<Job?>(null) }
+    fun launchReviewWrite(block: suspend CoroutineScope.() -> Unit) {
+        lastReviewWrite.value = app.appScope.launch(block = block)
+    }
     val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
         SuggestionService(
@@ -496,7 +508,7 @@ fun RobiaApp(
                 }
             },
             onSaveItems = { items, captures ->
-                scope.launch {
+                launchReviewWrite {
                     wardrobeRepository.upsertItems(items)
                     items.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
                     app.appScope.launch {
@@ -511,31 +523,31 @@ fun RobiaApp(
                 }
             },
             onSaveTag = { tag ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.upsertTag(tag)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
                 }
             },
             onSaveMainColor = { color ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.upsertMainColor(color)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
             onDeleteCustomTag = { tag ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.deleteCustomTag(tag.id)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
                 }
             },
             onDeleteMainColor = { color ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.deleteMainColor(color.id)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
             onRestoreDefaultTags = { category ->
-                scope.launch {
+                launchReviewWrite {
                     val mergedTagIds = tagRepository.restoreDefaultTags(category.id)
                     val restoredTagIds = DefaultTags.tags
                         .filter { tag -> tag.categoryId == category.id }
@@ -544,15 +556,14 @@ fun RobiaApp(
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(restoredTagIds + mergedTagIds))
                 }
             },
-            onRestoreDefaultMainColors = {
-                scope.launch {
-                    tagRepository.resetMainColorsToDefaults()
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
-                }
+            readGarmentsForReview = {
+                afterPreviousWrite(lastReviewWrite.value) { app.database.wardrobeDao().getAllItemsForSync().map(ClothingItemWithTags::toDomain) }
             },
-            onUndoReview = { plan ->
-                // One coroutine, in order: tombstones first, so a restored tag is not deleted again by the next sync.
-                scope.launch {
+            onUndoReview = { buildPlan ->
+                // One coroutine, in order: the write it follows, then the plan, then tombstones, so a restored tag is not deleted again by the next sync.
+                val previousWrite = lastReviewWrite.value
+                app.appScope.launch {
+                    val plan = afterPreviousWrite(previousWrite, buildPlan)
                     plan.tombstonesToClear.forEach { (entityType, entityId) ->
                         app.database.syncTombstoneDao().deleteTombstone(entityType, entityId)
                     }
@@ -579,7 +590,7 @@ fun RobiaApp(
                 }
             },
             onCommitMainColorChange = { changeSet, updatedItems ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.applyMainColorChange(
                         upsertColors = changeSet.colorsToUpsertForCommit(),
                         deleteColorIds = changeSet.colorIdsToDeleteForCommit(),
@@ -855,9 +866,9 @@ private fun RobiaShell(
     onDeleteCustomTag: (GarmentTag) -> Unit,
     onDeleteMainColor: (MainColor) -> Unit,
     onRestoreDefaultTags: (TagCategory) -> Unit,
-    onRestoreDefaultMainColors: () -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
-    onUndoReview: (ReviewUndoPlan) -> Unit = {},
+    readGarmentsForReview: suspend () -> List<ClothingItem>,
+    onUndoReview: (buildPlan: suspend () -> ReviewUndoPlan) -> Unit = {},
     initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
     val routeStack = remember(initialPerformanceBatchFixtureUris) {
@@ -901,6 +912,9 @@ private fun RobiaShell(
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var pendingTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
+    // True from the start of a tag action's snapshot until its write; a second action in that window is dropped.
+    var tagReviewOfferInFlight by remember { mutableStateOf(false) }
+    val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
     var showCloudSetupPrompt by remember { mutableStateOf(false) }
@@ -1198,28 +1212,41 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ColorReview)
     }
 
-    // Save-first: the change is persisted before the snapshot is offered for review. The snapshot is taken before the
-    // save, because a deleted tag is removed from the garments right away.
+    // Save-first: the change is persisted before the snapshot is offered for review. The snapshot holds every garment,
+    // archived ones too, and is read before the write, because a deleted tag is removed from the garments right away.
+    fun offerTagReviewAfterWrite(changeSet: TagChangeSet?, write: () -> Unit) {
+        if (!canStartTagReviewAction(tagReviewOfferInFlight, promptPending = pendingTagReview != null)) return
+        tagReviewOfferInFlight = true
+        reviewScope.launch {
+            try {
+                val garments = try {
+                    readGarmentsForReview()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    // No snapshot, no offer: the review could not restore the garments it would touch. The write still lands.
+                    Log.e(TAG_REVIEW_OFFER_LOG_TAG, "Review snapshot failed; the change is saved without a review offer", failure)
+                    null
+                }
+                write()
+                if (garments != null) pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+            } finally {
+                tagReviewOfferInFlight = false
+            }
+        }
+    }
+
     fun saveTagAndOfferReview(tag: GarmentTag) {
-        val garments = clothingItems
-        val changeSet = savedTagChangeSet(availableTags, tag)
-        onSaveTag(tag)
-        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        offerTagReviewAfterWrite(savedTagChangeSet(availableTags, tag)) { onSaveTag(tag) }
     }
 
     fun deleteTagAndOfferReview(tag: GarmentTag) {
-        val garments = clothingItems
-        val changeSet = deletedTagChangeSet(availableTags, tag)
-        onDeleteCustomTag(tag)
-        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        offerTagReviewAfterWrite(deletedTagChangeSet(availableTags, tag)) { onDeleteCustomTag(tag) }
     }
 
     fun restoreDefaultTagsAndOfferReview(category: TagCategory) {
-        val garments = clothingItems
         val defaults = DefaultTags.tags.filter { tag -> tag.categoryId == category.id }
-        val changeSet = restoredTagChangeSet(availableTags, category.id, defaults)
-        onRestoreDefaultTags(category)
-        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        offerTagReviewAfterWrite(restoredTagChangeSet(availableTags, category.id, defaults)) { onRestoreDefaultTags(category) }
     }
 
     fun commitTagReview(updatedItems: List<ClothingItem>) {
@@ -1233,10 +1260,18 @@ private fun RobiaShell(
         showTagReviewDiscardDialog = true
     }
 
+    // Read when the undo runs, after the write it follows, so the plan sees the garments that write left behind. Archived
+    // garments are included: a tag they still reference must not be removed, and a deleted tag goes back onto them too.
+    suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()
+
     // Discard = undo: the saved tag change is reversed through the normal paths. The garment proposals go with it.
     fun discardTagReview() {
         val request = activeTagReview
-        if (request != null) onUndoReview(tagReviewUndoPlan(request, clothingItems, System.currentTimeMillis()))
+        if (request != null) {
+            onUndoReview {
+                tagReviewUndoPlan(request, currentGarmentsForUndo(), System.currentTimeMillis())
+            }
+        }
         activeTagReview = null
         showTagReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1278,10 +1313,27 @@ private fun RobiaShell(
         showColorReviewDiscardDialog = true
     }
 
+    // Tapping outside the tag prompt or going back cancels the saved change: the same undo as Discard, without a review.
+    // Once only: a repeat tap, back after an outside tap, or a dismiss after Review finds the request already taken.
+    fun cancelTagReviewPrompt(request: TagReviewRequest) {
+        if (!isStillPending(pendingTagReview, request)) return
+        pendingTagReview = null
+        onUndoReview {
+            tagReviewUndoPlan(request, currentGarmentsForUndo(), System.currentTimeMillis())
+        }
+    }
+
+    // Tapping outside the colour prompt or going back cancels the saved change. Garments are untouched, so no decline.
+    fun cancelColorReviewPrompt(changeSet: ColorPaletteChangeSet) {
+        if (!isStillPending(pendingColorReviewChangeSet, changeSet)) return
+        pendingColorReviewChangeSet = null
+        onUndoReview { colorReviewUndoPlan(changeSet) }
+    }
+
     // Discard = undo: the saved palette change is reversed. Garments are not written here, so no decline is called.
     fun discardColorReview() {
         val changeSet = activeColorReviewChangeSet
-        if (changeSet != null) onUndoReview(colorReviewUndoPlan(changeSet))
+        if (changeSet != null) onUndoReview { colorReviewUndoPlan(changeSet) }
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1448,10 +1500,12 @@ private fun RobiaShell(
     pendingTagReview?.let { request ->
         TagReviewPromptDialog(
             modelReady = app.modelStore.state.value is ModelState.Ready,
-            onDismiss = { pendingTagReview = null },
+            onNotNow = { pendingTagReview = null },
+            onCancel = { cancelTagReviewPrompt(request) },
             onReview = {
-                activeTagReview = request
+                // Cleared first: a dismiss callback after Review finds the request taken and cannot undo the change.
                 pendingTagReview = null
+                activeTagReview = request
                 replaceRoute(RobiaRoute.TagReview)
             },
         )
@@ -1459,10 +1513,12 @@ private fun RobiaShell(
 
     pendingColorReviewChangeSet?.let { changeSet ->
         ColorReviewPromptDialog(
-            onDismiss = { declineColorReviewProposal(changeSet) },
+            onNotNow = { declineColorReviewProposal(changeSet) },
+            onCancel = { cancelColorReviewPrompt(changeSet) },
             onReview = {
-                activeColorReviewChangeSet = changeSet
+                // Cleared first, as for the tag prompt: a dismiss after Review cannot undo the change.
                 pendingColorReviewChangeSet = null
+                activeColorReviewChangeSet = changeSet
                 replaceRoute(RobiaRoute.ColorReview)
             },
         )
@@ -1748,12 +1804,14 @@ private fun RobiaShell(
             onManageTagsTabIdChange = { manageTagsTabId = it },
             onCommitTagReview = ::commitTagReview,
             onRequestTagReviewDiscard = ::requestTagReviewDiscard,
+            showTagReviewDiscardDialog = showTagReviewDiscardDialog,
             onCommitColorReview = ::commitColorReview,
             onCloseColorReview = {
                 activeColorReviewChangeSet = null
                 replaceRoute(RobiaRoute.ManageTags)
             },
             onRequestColorReviewDiscard = ::requestColorReviewDiscard,
+            showColorReviewDiscardDialog = showColorReviewDiscardDialog,
             onClearRestoreSyncLog = onClearRestoreSyncLog,
             onLanguageSelected = onLanguageSelected,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
@@ -2724,12 +2782,14 @@ private fun RobiaNavHost(
     onCommitColorReview: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onCloseColorReview: () -> Unit,
     onRequestColorReviewDiscard: () -> Unit,
+    showColorReviewDiscardDialog: Boolean,
     tagReviewRequest: TagReviewRequest?,
     prepareTagReviewScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
     manageTagsTabId: String?,
     onManageTagsTabIdChange: (String?) -> Unit,
     onCommitTagReview: (List<ClothingItem>) -> Unit,
     onRequestTagReviewDiscard: () -> Unit,
+    showTagReviewDiscardDialog: Boolean,
     onClearRestoreSyncLog: () -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
@@ -2803,6 +2863,7 @@ private fun RobiaNavHost(
                 items = domainItems,
                 changeSet = changeSet,
                 onCommit = onCommitColorReview,
+                discardDialogOpen = showColorReviewDiscardDialog,
                 onRequestDiscard = onRequestColorReviewDiscard,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
@@ -2811,6 +2872,7 @@ private fun RobiaNavHost(
                 innerPadding = innerPadding,
                 request = request,
                 prepareScan = prepareTagReviewScan,
+                discardDialogOpen = showTagReviewDiscardDialog,
                 onCommit = onCommitTagReview,
                 onRequestDiscard = onRequestTagReviewDiscard,
             )
@@ -5042,7 +5104,7 @@ private fun RobiaAppPreview() {
             onDeleteCustomTag = {},
             onDeleteMainColor = {},
             onRestoreDefaultTags = {},
-            onRestoreDefaultMainColors = {},
+            readGarmentsForReview = { emptyList() },
             onCommitMainColorChange = { _, _ -> },
         )
     }
@@ -5062,9 +5124,22 @@ private suspend fun prepareTagReviewScan(
         .first()
     val labelVectors = changeSet.afterTags
         .filter { tag -> tag.categoryId == changeSet.categoryId }
-        .associate { tag -> tag.id to app.embeddingEngineHolder.embedText(labelTextFor(tag)) }
+        .associate { tag -> tag.id to app.embeddingEngineHolder.embedText(reviewScanLabelText(tag, changeSet.touchedTagIds)) }
     return ReviewPlanner.scan(changeSet, garments, vectors, labelVectors, changeSet.afterTags)
 }
+
+/**
+ * Builds an undo plan only after [previousWrite] has finished, so the plan reads what that write left behind. `join` waits
+ * and does not rethrow a failed write, so a failed save never blocks the undo. Cancelling the caller during the wait still
+ * propagates, which is why this is not wrapped in runCatching.
+ */
+internal suspend fun <T> afterPreviousWrite(previousWrite: Job?, buildPlan: suspend () -> T): T {
+    previousWrite?.join()
+    return buildPlan()
+}
+
+/** A prompt's cancel or confirm acts only while its request is still the pending one; a stale callback finds it taken. */
+internal fun <T : Any> isStillPending(pending: T?, request: T): Boolean = pending === request
 
 /**
  * Stores the capture-time IMAGE vector when it belongs to the saved photo, and keeps the TEXT vector in step with

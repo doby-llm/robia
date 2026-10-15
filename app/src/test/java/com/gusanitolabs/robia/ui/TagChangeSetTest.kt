@@ -35,8 +35,17 @@ class TagChangeSetTest {
     }
 
     @Test
-    fun descriptionOnlyEditBuildsNoChangeSet() {
-        assertNull(savedTagChangeSet(before, tops.copy(description = "a light top")))
+    fun descriptionEditBuildsRenamedChangeSet() {
+        // The description is part of the label the garments are matched on, so editing it triggers the review.
+        val changeSet = savedTagChangeSet(before, tops.copy(description = "a light top"))
+
+        assertEquals(TagOperation.Renamed, changeSet?.operation)
+        assertEquals(setOf("category-tops"), changeSet?.touchedTagIds)
+    }
+
+    @Test
+    fun unchangedDefaultSaveBuildsNoChangeSet() {
+        assertNull(savedTagChangeSet(before, dresses))
     }
 
     @Test
