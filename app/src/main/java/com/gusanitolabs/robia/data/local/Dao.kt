@@ -614,12 +614,15 @@ data class RestoredPhotoApplyStateEntity(
     val photoUri: String?,
 )
 
-/** Table a metadata sync row is claimed, settled and released in. Decided from the row's entity type alone (see [metadataSyncTable]). */
+/** Table a metadata sync row is claimed, settled and released in. */
 internal enum class MetadataSyncTable { TagCategory, GarmentTag, MainColor, Tombstone }
 
-internal fun PendingMetadataSyncWorkEntity.metadataSyncTable(): MetadataSyncTable = when (entityType) {
-    "tag_category", "category" -> MetadataSyncTable.TagCategory
-    "garment_tag", "tag" -> MetadataSyncTable.GarmentTag
-    "main_color", "palette_color", "color" -> MetadataSyncTable.MainColor
+internal fun PendingMetadataSyncWorkEntity.metadataSyncTable(): MetadataSyncTable = when {
+    // A tombstone keeps the entity type of the row it deletes, so its id is the only tell: "$entityType:$entityId".
+    // Live ids never contain ':' (default ids use '-', custom ids are slugs plus a UUID).
+    id.startsWith("$entityType:") -> MetadataSyncTable.Tombstone
+    entityType == "tag_category" || entityType == "category" -> MetadataSyncTable.TagCategory
+    entityType == "garment_tag" || entityType == "tag" -> MetadataSyncTable.GarmentTag
+    entityType == "main_color" || entityType == "palette_color" || entityType == "color" -> MetadataSyncTable.MainColor
     else -> MetadataSyncTable.Tombstone
 }
