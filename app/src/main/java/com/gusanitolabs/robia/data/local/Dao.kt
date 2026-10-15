@@ -512,6 +512,10 @@ interface SyncTombstoneDao {
 
     @Upsert
     suspend fun upsert(tombstone: SyncTombstoneEntity)
+
+    // Discard = undo: a tombstone written by a deletion that is being undone is removed before the entity is re-saved.
+    @Query("DELETE FROM sync_tombstones WHERE entity_type = :entityType AND entity_id = :entityId")
+    suspend fun deleteTombstone(entityType: String, entityId: String): Int
 }
 
 private fun ClothingItemEntity.queuedForSync(guardedPhotoRestoreState: GuardedPhotoRestoreState? = null): ClothingItemEntity {
