@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.suggestions
 
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.data.GarmentVectors
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
