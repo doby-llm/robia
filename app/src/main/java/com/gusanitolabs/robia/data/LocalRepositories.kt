@@ -2,12 +2,14 @@ package com.gusanitolabs.robia.data
 
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DedupeTag
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.core.model.TagDedupePlanner
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
@@ -208,6 +210,8 @@ class LocalTagRepository(
                 .filter { tag -> tag.categoryId == categoryId }
                 .map { tag -> tag.toEntity().queuedForSync() },
         )
+        // A custom row with the same name is merged into the built-in row (its garments move), never kept as a second copy.
+        mergeDuplicateTags(categoryId)
     }
 
     override suspend fun resetMainColorsToDefaults() {
@@ -220,6 +224,21 @@ class LocalTagRepository(
         if (tagDao.mainColorCount() == 0) {
             tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
         }
+        mergeDuplicateTags(categoryId = null)
+    }
+
+    /** Local-only: merges tag rows that share a name in one category (see [TagDedupePlanner]). Repeats are no-ops. */
+    private suspend fun mergeDuplicateTags(categoryId: String?) {
+        val merges = TagDedupePlanner.plan(
+            tagDao.tagsForDedupe(categoryId).map { tag -> DedupeTag(id = tag.id, categoryId = tag.categoryId, name = tag.name) },
+        )
+        if (merges.isEmpty()) return
+        tagDao.applyTagMerges(
+            keepIdByDropId = merges.associate { merge -> merge.dropId to merge.keepId },
+            tombstoneByDropId = merges.associate { merge ->
+                merge.dropId to syncTombstone(entityType = "garment_tag", entityId = merge.dropId)
+            },
+        )
     }
 }
 

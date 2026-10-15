@@ -503,6 +503,44 @@ interface TagDao {
         if (deletedCount > 0) upsertSyncTombstones(listOf(tombstone))
         return deletedCount
     }
+
+    @Query("SELECT * FROM garment_tags WHERE :categoryId IS NULL OR category_id = :categoryId")
+    suspend fun tagsForDedupe(categoryId: String?): List<GarmentTagEntity>
+
+    @Query("SELECT * FROM clothing_item_tags WHERE tag_id = :tagId")
+    suspend fun itemRefsForTag(tagId: String): List<ClothingItemTagCrossRef>
+
+    @Query("SELECT * FROM clothing_items WHERE id IN (:ids)")
+    suspend fun clothingItemsByIds(ids: List<String>): List<ClothingItemEntity>
+
+    /** Moves every garment on a dropped duplicate to its kept tag, then deletes the duplicate with its tombstone. */
+    @Transaction
+    suspend fun applyTagMerges(
+        keepIdByDropId: Map<String, String>,
+        tombstoneByDropId: Map<String, SyncTombstoneEntity>,
+    ) {
+        val repointedRefs = keepIdByDropId.flatMap { (dropId, keepId) ->
+            itemRefsForTag(dropId).map { ref -> ClothingItemTagCrossRef(ref.clothingItemId, keepId) }
+        }
+        if (repointedRefs.isNotEmpty()) {
+            insertItemTagRefs(repointedRefs)
+            val itemIds = repointedRefs.map(ClothingItemTagCrossRef::clothingItemId).distinct()
+            upsertClothingItems(
+                clothingItemsByIds(itemIds).map { item ->
+                    item.queuedForSync(
+                        GuardedPhotoRestoreState(
+                            guarded = item.photoRestoreGuarded,
+                            retryAfterEpochMillis = item.retryAfterEpochMillis,
+                            deadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis,
+                        ),
+                    )
+                },
+            )
+        }
+        keepIdByDropId.keys.forEach { dropId ->
+            deleteEditableTagAndReferences(dropId, tombstoneByDropId.getValue(dropId))
+        }
+    }
 }
 
 @Dao
