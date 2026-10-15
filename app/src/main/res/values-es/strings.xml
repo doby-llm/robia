@@ -590,6 +590,7 @@
     <string name="tag_review_prompt_confirm">Revisar prendas</string>
     <string name="tag_review_scan_title">Escaneo de prendas</string>
     <string name="tag_review_scanning_count">%1$d / %2$d prendas</string>
+    <string name="tag_review_preparing">Preparando…</string>
     <string name="tag_review_checking_helper">Revisando prendas…</string>
     <string name="tag_review_empty_title">Ninguna prenda necesita cambios</string>
     <string name="tag_review_empty_body">Tus prendas ya encajan con este cambio.</string>

@@ -590,6 +590,7 @@
     <string name="tag_review_prompt_confirm">Kleidungsstücke prüfen</string>
     <string name="tag_review_scan_title">Kleidungs-Scan</string>
     <string name="tag_review_scanning_count">%1$d / %2$d Kleidungsstücke</string>
+    <string name="tag_review_preparing">Wird vorbereitet…</string>
     <string name="tag_review_checking_helper">Kleidungsstücke werden geprüft…</string>
     <string name="tag_review_empty_title">Keine Kleidungsstücke brauchen Änderungen</string>
     <string name="tag_review_empty_body">Deine Kleidungsstücke passen bereits zu dieser Änderung.</string>

@@ -59,6 +59,7 @@ import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
+import java.text.Collator
 import java.util.Locale
 import java.util.UUID
 
@@ -125,7 +126,8 @@ fun ManageTagsScreen(
     val labelsById = remember(tags, configuration.locales) {
         tags.associate { tag -> tag.id to tag.localizedTagLabel(context) }
     }
-    val activeTags = tagsByCategory[activeTabId].orEmpty()
+    val activeTags = tagsByCategory[activeTabId].orEmpty().sortedAlphabetically(label = { tag -> labelsById[tag.id] ?: tag.name })
+    val sortedColors = mainColors.sortedAlphabetically(label = MainColor::name)
 
     Column(
         modifier = Modifier
@@ -196,7 +198,7 @@ fun ManageTagsScreen(
                         onRestoreDefault = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
                     )
                 }
-                mainColors.forEach { color ->
+                sortedColors.forEach { color ->
                     item(key = "color-row:${color.id}", contentType = "color-row") {
                         ColorListRow(
                             color = color,
@@ -908,6 +910,18 @@ private fun List<GarmentTag>.nextTagSortOrder(): Int =
 
 private fun List<MainColor>.nextColorSortOrder(): Int =
     (maxOfOrNull(MainColor::sortOrder) ?: 0) + 10
+
+/**
+ * Alphabetical by display label (case and accents ignored, Collator PRIMARY). Pinned rows such as "No category" or
+ * "Not set" go first, in their original order. Used by every tag and colour list, so all of them sort the same way.
+ */
+internal fun <T> List<T>.sortedAlphabetically(
+    label: (T) -> String,
+    pinned: (T) -> Boolean = { false },
+): List<T> {
+    val collator = Collator.getInstance(Locale.getDefault()).apply { strength = Collator.PRIMARY }
+    return sortedWith(compareBy<T> { !pinned(it) }.thenComparator { a, b -> collator.compare(label(a), label(b)) })
+}
 
 private val RestorableTagCategoryIds = setOf("category", "season", "occasion")
 

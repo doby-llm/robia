@@ -590,6 +590,7 @@
     <string name="tag_review_prompt_confirm">Review garments</string>
     <string name="tag_review_scan_title">Garment scan</string>
     <string name="tag_review_scanning_count">%1$d / %2$d garments</string>
+    <string name="tag_review_preparing">Preparing…</string>
     <string name="tag_review_checking_helper">Checking garments…</string>
     <string name="tag_review_empty_title">No garments need changes</string>
     <string name="tag_review_empty_body">Your garments already match this change.</string>

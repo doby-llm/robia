@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 enum class TagOperation { Added, Renamed, Deleted, RestoredDefault }
@@ -92,11 +93,15 @@ object ReviewPlanner {
             }
         }
 
-        /** Plans [garments] one by one on Dispatchers.Default. Cancelling the caller stops the walk before the next garment. */
+        /**
+         * Plans [garments] one by one on Dispatchers.Default. Cancelling the caller stops the walk before the next garment.
+         * Each garment is followed by a short pause, so the progress bar advances visibly instead of jumping to the end.
+         */
         suspend fun scanEach(garments: List<ClothingItem>, onPlanned: (ClothingItem, ReviewProposal?) -> Unit) {
             for (garment in garments) {
                 val proposal = withContext(Dispatchers.Default) { proposalFor(garment) }
                 onPlanned(garment, proposal)
+                delay(SCAN_STEP_MILLIS)
             }
         }
     }
@@ -189,4 +194,5 @@ object ReviewPlanner {
 
     private const val CATEGORY = "category"
     private const val OCCASION = "occasion"
+    private const val SCAN_STEP_MILLIS = 16L
 }

@@ -4113,6 +4113,8 @@ private fun FilterTagChips(
     onTagToggled: (GarmentTag) -> Unit,
     onUnsetToggled: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val sortedTags = tags.sortedAlphabetically(label = { tag -> tag.localizedTagLabel(context) })
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val notSetSelected = categoryId in selectedUnsetTagCategoryIds
         FilterChip(
@@ -4125,7 +4127,7 @@ private fun FilterTagChips(
                 null
             },
         )
-        tags.forEach { tag ->
+        sortedTags.forEach { tag ->
             val selected = tag.id in selectedTagIds
             FilterChip(
                 selected = selected,
@@ -4170,7 +4172,7 @@ private fun ColorPaletteChips(
             )
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                colors.forEach { color ->
+                colors.sortedAlphabetically(label = MainColor::name).forEach { color ->
                     val selected = color.id in selectedColorIds
                     val swatchDescription = stringResource(R.string.content_color_swatch, color.name)
                     FilterChip(
