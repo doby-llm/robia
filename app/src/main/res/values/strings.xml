@@ -555,17 +555,11 @@
         <item quantity="one">%1$d garment had it. We suggest another one; you can change it or leave it empty.</item>
         <item quantity="other">%1$d garments had it. We suggest another one; you can change it or leave it empty.</item>
     </plurals>
-    <string name="tag_review_progress">Reviewed %1$d of %2$d</string>
     <string name="tag_review_skipped">%1$d without suggestions yet (skipped)</string>
     <string name="tag_review_choose">Choose</string>
     <string name="tag_review_choose_manually">No suggestions yet: choose manually.</string>
     <string name="tag_review_none">No category</string>
     <string name="tag_review_none_occasion">None</string>
-    <plurals name="tag_review_save">
-        <item quantity="one">Save %1$d change</item>
-        <item quantity="other">Save %1$d changes</item>
-    </plurals>
-    <string name="tag_review_nothing">No garments need changes</string>
     <string name="tag_review_needs_model">Download smart suggestions to review garments</string>
     <string name="tag_review_accepted">Accepted</string>
     <string name="tag_review_picker_title">%1$s for “%2$s”</string>
@@ -590,4 +584,19 @@
     <string name="browse_similar_untitled">Untitled garment</string>
     <!-- F03a -->
     <string name="color_review_accept_all">Accept all (%1$d)</string>
+    <!-- F03b -->
+    <string name="tag_review_prompt_title">Review garments?</string>
+    <string name="tag_review_prompt_body">Robia can check your garments against this change. Nothing changes until you accept.</string>
+    <string name="tag_review_prompt_confirm">Review garments</string>
+    <string name="tag_review_scan_title">Garment scan</string>
+    <string name="tag_review_scanning_count">%1$d / %2$d garments</string>
+    <string name="tag_review_checking_helper">Checking garments…</string>
+    <string name="tag_review_empty_title">No garments need changes</string>
+    <string name="tag_review_empty_body">Your garments already match this change.</string>
+    <string name="tag_review_needs_model_body">Robia can review garments once smart suggestions are ready.</string>
+    <string name="tag_review_accept_all">Accept all (%1$d)</string>
+    <plurals name="tag_review_deleted_occasion_body">
+        <item quantity="one">%1$d garment had it. Its other occasions stay.</item>
+        <item quantity="other">%1$d garments had it. Their other occasions stay.</item>
+    </plurals>
 </resources>

@@ -3,6 +3,8 @@ package com.gusanitolabs.robia.suggestions
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class TagOperation { Added, Renamed, Deleted, RestoredDefault }
 
@@ -27,9 +29,10 @@ data class ReviewProposal(
 )
 
 /**
- * DEC-010: which garments a tag change affects, and the tags each would get. Garments without an IMAGE vector cannot
- * be scored, so they are left out and counted by [skippedCount]; the exception is a deleted category, where they are
- * listed as [ProposalKind.ChooseManually]. Results keep the order of `garments`.
+ * DEC-010 (occasion deletion superseded by PLAN-CHANGE 15): which garments a tag change affects, and the tags each would
+ * get. Garments without an IMAGE vector cannot be scored, so they are left out and counted by [Scan.skippedCount]; the
+ * exceptions are a deleted category, where they are listed as [ProposalKind.ChooseManually], and a deleted occasion,
+ * which needs no scoring. Results keep the order of `garments`.
  */
 object ReviewPlanner {
     fun plan(
@@ -39,26 +42,63 @@ object ReviewPlanner {
         labelVectors: Map<String, FloatArray>,
         tags: List<GarmentTag>,
     ): List<ReviewProposal> {
-        if (changeSet.operation == TagOperation.Deleted && changeSet.categoryId == OCCASION) return emptyList()
-        val labels = tags
+        val scanner = scan(changeSet, garments, vectors, labelVectors, tags)
+        return garments.mapNotNull(scanner::proposalFor)
+    }
+
+    /** Garments that a tag change could not be scored for because they have no IMAGE vector. */
+    fun skippedCount(changeSet: TagChangeSet, garments: List<ClothingItem>, vectors: Map<String, GarmentVectors>): Int =
+        scan(changeSet, garments, vectors, emptyMap(), emptyList()).skippedCount
+
+    /**
+     * Shared state for a scan of one change set. Built once, then [Scan.proposalFor] runs per garment, so the scan can
+     * report each garment as soon as it is planned.
+     */
+    fun scan(
+        changeSet: TagChangeSet,
+        garments: List<ClothingItem>,
+        vectors: Map<String, GarmentVectors>,
+        labelVectors: Map<String, FloatArray>,
+        tags: List<GarmentTag>,
+    ): Scan = Scan(changeSet, garments, vectors, labelVectors, tags)
+
+    class Scan(
+        private val changeSet: TagChangeSet,
+        garments: List<ClothingItem>,
+        private val vectors: Map<String, GarmentVectors>,
+        labelVectors: Map<String, FloatArray>,
+        private val tags: List<GarmentTag>,
+    ) {
+        private val labels = tags
             .filter { it.categoryId == changeSet.categoryId }
             .mapNotNull { tag -> labelVectors[tag.id]?.let { tag.id to it } }
-        val allImagesByTag = imagesByTag(garments, vectors)
-        return garments.mapNotNull { garment ->
+        private val labelTagIds = labels.map { (tagId, _) -> tagId }
+        private val allImagesByTag = imagesByTag(garments, vectors)
+
+        val skippedCount: Int =
+            if (changeSet.operation == TagOperation.Deleted) 0 else garments.count { vectors[it.id]?.image == null }
+
+        /** Null when the garment is not affected by the change. Only the label tags need examples, so only they are built. */
+        fun proposalFor(garment: ClothingItem): ReviewProposal? {
             val image = vectors[garment.id]?.image
-            val examples = allImagesByTag.mapValues { (_, entries) -> entries.filter { it.first != garment.id }.map { it.second } }
-            when {
+            val examples = labelTagIds.associateWith { tagId ->
+                allImagesByTag[tagId].orEmpty().filter { it.first != garment.id }.map { it.second }
+            }
+            return when {
+                changeSet.operation == TagOperation.Deleted && changeSet.categoryId == OCCASION -> deletedOccasion(changeSet, garment)
                 changeSet.operation == TagOperation.Deleted -> deletedCategory(changeSet, garment, image, labels, examples)
                 changeSet.categoryId == CATEGORY -> addedCategory(changeSet, garment, image, labels, examples)
                 else -> addedOccasion(changeSet, garment, image, labels, examples, tags)
             }
         }
-    }
 
-    /** Garments that a tag change could not be scored for because they have no IMAGE vector. */
-    fun skippedCount(changeSet: TagChangeSet, garments: List<ClothingItem>, vectors: Map<String, GarmentVectors>): Int {
-        if (changeSet.operation == TagOperation.Deleted) return 0
-        return garments.count { vectors[it.id]?.image == null }
+        /** Plans [garments] one by one on Dispatchers.Default. Cancelling the caller stops the walk before the next garment. */
+        suspend fun scanEach(garments: List<ClothingItem>, onPlanned: (ClothingItem, ReviewProposal?) -> Unit) {
+            for (garment in garments) {
+                val proposal = withContext(Dispatchers.Default) { proposalFor(garment) }
+                onPlanned(garment, proposal)
+            }
+        }
     }
 
     /** Added/renamed/restored category: affected when the top category is a touched tag other than the current one. */
@@ -76,6 +116,13 @@ object ReviewPlanner {
         val current = garment.categoryTagIds(changeSet.categoryId)
         if (marked !in changeSet.touchedTagIds || marked in current) return null
         return ReviewProposal(garment.id, before, before - current + marked, ProposalKind.Suggested)
+    }
+
+    /** Deleted occasion: the proposal is the garment's current occasions minus the deleted one. Nothing is forced in. */
+    private fun deletedOccasion(changeSet: TagChangeSet, garment: ClothingItem): ReviewProposal? {
+        val before = garment.tagIds()
+        if (before.none { it in changeSet.touchedTagIds }) return null
+        return ReviewProposal(garment.id, before, before - changeSet.touchedTagIds, ProposalKind.Suggested)
     }
 
     /**

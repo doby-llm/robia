@@ -555,17 +555,11 @@
         <item quantity="one">%1$d Kleidungsstück hatte sie. Wir schlagen eine andere vor; du kannst sie ändern oder leer lassen.</item>
         <item quantity="other">%1$d Kleidungsstücke hatten sie. Wir schlagen eine andere vor; du kannst sie ändern oder leer lassen.</item>
     </plurals>
-    <string name="tag_review_progress">%1$d von %2$d geprüft</string>
     <string name="tag_review_skipped">%1$d noch ohne Vorschläge (übersprungen)</string>
     <string name="tag_review_choose">Auswählen</string>
     <string name="tag_review_choose_manually">Noch keine Vorschläge: manuell auswählen.</string>
     <string name="tag_review_none">Keine Kategorie</string>
     <string name="tag_review_none_occasion">Keine</string>
-    <plurals name="tag_review_save">
-        <item quantity="one">%1$d Änderung speichern</item>
-        <item quantity="other">%1$d Änderungen speichern</item>
-    </plurals>
-    <string name="tag_review_nothing">Keine Kleidungsstücke müssen geändert werden</string>
     <string name="tag_review_needs_model">Lade intelligente Vorschläge herunter, um Kleidungsstücke zu prüfen</string>
     <string name="tag_review_accepted">Übernommen</string>
     <string name="tag_review_picker_title">%1$s für „%2$s“</string>
@@ -590,4 +584,19 @@
     <string name="browse_similar_untitled">Kleidungsstück ohne Namen</string>
     <!-- F03a -->
     <string name="color_review_accept_all">Alle akzeptieren (%1$d)</string>
+    <!-- F03b -->
+    <string name="tag_review_prompt_title">Kleidungsstücke prüfen?</string>
+    <string name="tag_review_prompt_body">Robia kann deine Kleidungsstücke mit dieser Änderung abgleichen. Nichts ändert sich, bis du zustimmst.</string>
+    <string name="tag_review_prompt_confirm">Kleidungsstücke prüfen</string>
+    <string name="tag_review_scan_title">Kleidungs-Scan</string>
+    <string name="tag_review_scanning_count">%1$d / %2$d Kleidungsstücke</string>
+    <string name="tag_review_checking_helper">Kleidungsstücke werden geprüft…</string>
+    <string name="tag_review_empty_title">Keine Kleidungsstücke brauchen Änderungen</string>
+    <string name="tag_review_empty_body">Deine Kleidungsstücke passen bereits zu dieser Änderung.</string>
+    <string name="tag_review_needs_model_body">Robia kann Kleidungsstücke prüfen, sobald die intelligenten Vorschläge bereit sind.</string>
+    <string name="tag_review_accept_all">Alle akzeptieren (%1$d)</string>
+    <plurals name="tag_review_deleted_occasion_body">
+        <item quantity="one">%1$d Kleidungsstück hatte ihn. Die anderen Anlässe bleiben.</item>
+        <item quantity="other">%1$d Kleidungsstücke hatten ihn. Die anderen Anlässe bleiben.</item>
+    </plurals>
 </resources>
