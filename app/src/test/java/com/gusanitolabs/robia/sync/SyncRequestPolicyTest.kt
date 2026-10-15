@@ -15,13 +15,23 @@ class SyncRequestPolicyTest {
         lastRequestAt: Long? = null,
         now: Long = 1_000_000L,
         deferredWaiting: Boolean = false,
-    ) = shouldRequestSync(garments, metadata, embeddings, lastRequestAt, now, interval, deferredWaiting)
+        forced: Boolean = false,
+    ) = shouldRequestSync(garments, metadata, embeddings, lastRequestAt, now, interval, deferredWaiting, forced)
 
     @Test
     fun nothingPendingIsDropped() {
         assertEquals(SyncRequestDecision.Drop, decide())
         assertEquals(SyncRequestDecision.Drop, decide(lastRequestAt = 0L))
         assertEquals(SyncRequestDecision.Drop, decide(deferredWaiting = true))
+    }
+
+    /** H01 finding B: a forced snapshot export or import keeps its background retry even when nothing is pending. */
+    @Test
+    fun forcedRequestWithNothingPendingIsEnqueued() {
+        assertEquals(SyncRequestDecision.Enqueue, decide(forced = true))
+        assertEquals(SyncRequestDecision.Enqueue, decide(forced = true, lastRequestAt = 0L))
+        assertEquals(SyncRequestDecision.Defer(delayMillis = 4_000L), decide(forced = true, lastRequestAt = 1_000_000L - interval + 4_000L))
+        assertEquals(SyncRequestDecision.Coalesce, decide(forced = true, deferredWaiting = true))
     }
 
     @Test

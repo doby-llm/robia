@@ -113,16 +113,19 @@ class WardrobeSyncOutboxProcessor(
             }
         }
         scope.launch(dispatcher) {
-            wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis() - STALE_RUNNING_TIMEOUT_MILLIS)
-            // Only guarded claims older than the photo retry timeout are dead (a live retry is bounded by that timeout).
-            wardrobeRepository.recoverStaleGuardedPhotoSyncWork(System.currentTimeMillis() - PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS)
-            // Work still pending from a killed process is handed to WorkManager on app start. A deferred request dies with
-            // the process, so pending vectors are re-requested here too.
-            if (wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
-                wardrobeRepository.pendingMetadataSyncWork().isNotEmpty() ||
-                embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
-            ) {
-                requestSync("init")
+            mutex.withLock {
+                // Held under the mutex, so no claim of this process is live: a Running row now was left by a killed process.
+                // photo_restore_guarded rows are excluded by the query: they have their own recovery below.
+                wardrobeRepository.recoverStaleRunningSyncWork(System.currentTimeMillis())
+                // Only guarded claims older than the photo retry timeout are dead (a live retry is bounded by that timeout).
+                wardrobeRepository.recoverStaleGuardedPhotoSyncWork(System.currentTimeMillis() - PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS)
+                // Work still pending from a killed process is handed to WorkManager on app start. A deferred request dies with
+                // the process, so pending vectors are re-requested here too. Only a Drive that can run it gets the request.
+                val status = settingsRepository.settings.first().driveSyncConnectionStatus
+                val hasPendingWork = wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
+                    wardrobeRepository.pendingMetadataSyncWork().isNotEmpty() ||
+                    embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
+                if (hasPendingWork && status in INIT_REQUEST_STATUSES) requestSync("init")
             }
             combine(
                 settingsRepository.settings,
@@ -249,12 +252,15 @@ class WardrobeSyncOutboxProcessor(
                     else -> {
                         // WorkManager owns backoff and retries; running now keeps the foreground responsive.
                         val reason = "enqueue:${operation::class.simpleName}"
-                        requestSync(reason)
+                        val forceSnapshot = operation.affectedGarmentIds().isEmpty()
+                        val forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot
+                        // A forced operation keeps its background retry even when its inline run fails with nothing pending (H01 B).
+                        requestSync(reason, forced = forceSnapshot || forceImport)
                         runCycle(
                             reason = reason,
                             trigger = SyncTrigger.Foreground,
-                            forceSnapshot = operation.affectedGarmentIds().isEmpty(),
-                            forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
+                            forceSnapshot = forceSnapshot,
+                            forceImport = forceImport,
                         )
                     }
                 }
@@ -274,14 +280,14 @@ class WardrobeSyncOutboxProcessor(
 
     /** Embedding backfill entry point. Non-suspending: the request is decided on [scope]. */
     fun requestSyncInBackground(reason: String) {
-        scope.launch(dispatcher) { requestSync(reason) }
+        scope.launch(dispatcher) { logRequestFailures(reason) { requestSync(reason) } }
     }
 
     /**
      * The only place that asks WorkManager for a run. Rate guard: [shouldRequestSync] drops a request when nothing is pending,
      * and merges requests inside [MIN_SYNC_REQUEST_INTERVAL_MILLIS] into one deferred request. No real write loses its request.
      */
-    private suspend fun requestSync(reason: String) {
+    private suspend fun requestSync(reason: String, forced: Boolean = false) {
         syncRequestMutex.withLock {
             val now = monotonicMillis()
             val pendingEmbeddings = embeddingRepository?.pendingUploadKeys()?.size ?: 0
@@ -293,6 +299,7 @@ class WardrobeSyncOutboxProcessor(
                 now = now,
                 minIntervalMs = MIN_SYNC_REQUEST_INTERVAL_MILLIS,
                 deferredWaiting = deferredSyncRequest?.isActive == true,
+                forced = forced,
             )
             when (decision) {
                 SyncRequestDecision.Drop -> logRequest("sync request dropped reason=$reason nothing pending")
@@ -307,11 +314,24 @@ class WardrobeSyncOutboxProcessor(
     private fun deferRequest(reason: String, delayMillis: Long) {
         logRequest("sync request deferred reason=$reason delay_ms=$delayMillis")
         deferredSyncRequest = scope.launch(dispatcher) {
-            awaitDeferredRequest(delayMillis)
-            syncRequestMutex.withLock {
-                deferredSyncRequest = null
-                enqueueRequest("deferred:$reason", monotonicMillis())
+            logRequestFailures("deferred:$reason") {
+                awaitDeferredRequest(delayMillis)
+                syncRequestMutex.withLock {
+                    deferredSyncRequest = null
+                    enqueueRequest("deferred:$reason", monotonicMillis())
+                }
             }
+        }
+    }
+
+    /** Runs one request body on [scope]: a failure is logged, because nothing awaits it. Cancellation still propagates. */
+    private suspend fun logRequestFailures(reason: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            logRequest("sync request failed reason=$reason error=${throwable.javaClass.simpleName}")
         }
     }
 
@@ -1367,7 +1387,8 @@ private const val MAX_RETRY_ATTEMPTS = 3
 private const val DRIVE_FULL_REASON = "drive_full"
 private const val PHOTO_UPLOAD_FAILED_REASON = "photo_upload_failed"
 private const val MAX_RETRY_DIAGNOSTIC_EVENTS = 16
-private const val STALE_RUNNING_TIMEOUT_MILLIS = 15 * 60 * 1000L
+/** Drive states in which a request reaches a run that can act on it; any other state would only wake WorkManager for nothing. */
+private val INIT_REQUEST_STATUSES = setOf(DriveSyncConnectionStatus.Connected, DriveSyncConnectionStatus.NeedsAttention)
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MILLIS = 60 * 1000L
 private const val PHOTO_RESTORE_RETRY_TIMEOUT_MESSAGE = "Drive photo retry timed out."
 private const val SYNC_INTERRUPTED_MESSAGE = "Drive sync was interrupted. Retry is available after backoff."

@@ -1,6 +1,8 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
+import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
+import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.data.EmbeddingKey
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.InMemoryEmbeddingDao
@@ -28,7 +30,9 @@ import java.util.Base64
 
 /** V-E06b: an embedding-only change is uploaded as a snapshot and marked uploaded only after the upload succeeds. */
 class EmbeddingUploadTest {
-    private val embeddings = EmbeddingRepository(InMemoryEmbeddingDao())
+    /** Computed-at time of each vector this test stores; a test moves it to model a recompute. */
+    private var clockMillis = 1_000L
+    private val embeddings = EmbeddingRepository(InMemoryEmbeddingDao(), clock = { clockMillis })
     private val drive = FakeDriveWardrobeRepository()
     private val wardrobe = FakeWardrobeRepository()
     private val store = FakeWardrobeSnapshotStore(local = snapshotWithGarments("garment-1"))
@@ -110,11 +114,12 @@ class EmbeddingUploadTest {
     }
 
     /**
-     * H01: once the cycle that uploaded a pending vector has stored its snapshot, nothing is pending any more. The next
-     * cycle sends nothing, and a request made after it is dropped rather than enqueued.
+     * H01: a live garment's vector is uploaded once; the next cycle sends nothing and a later request is dropped.
+     * This does NOT reproduce the loop: it passes without the H01 change too, because the upload path already marks the
+     * vector. The orphan-state test below builds the state that actually looped.
      */
     @Test
-    fun secondCycleAfterUploadSendsNothingAndLeavesNoRequestToMake() = runBlocking {
+    fun secondCycleAfterLiveVectorUploadSendsNothing() = runBlocking {
         embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
         exportWithVector(embeddings.pendingUploadKeys().single())
         val processor = processor()
@@ -252,6 +257,65 @@ class EmbeddingUploadTest {
         processor().requestSyncInBackground("backfill")
 
         assertEquals(0, scheduler.requestSyncCount)
+    }
+
+    /**
+     * H01 finding C: the orphan state. Pending vectors whose garment id is absent from clothing_items, with no garments,
+     * tombstones or custom tags. One cycle clears them, and no second request is made afterwards.
+     */
+    @Test
+    fun orphanVectorsOfAMissingGarmentAreClearedAndNoSecondRequestIsMade() = runBlocking {
+        embeddings.upsert("garment-gone", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        val processor = processor(snapshotStore = FakeWardrobeSnapshotStore())
+        assertEquals(listOf("init"), scheduler.requestReasons)
+
+        assertEquals(SyncRunResult.Success, processor.runOnce(SyncTrigger.Background, reason = "periodic"))
+        assertTrue(embeddings.pendingUploadKeys().isEmpty())
+
+        processor.requestSyncInBackground("periodic")
+        assertEquals(listOf("init"), scheduler.requestReasons)
+    }
+
+    /**
+     * H01 finding D: an archived-only wardrobe carries its tombstone, so it is uploaded, not skipped as empty. A failed upload
+     * must leave the pending vector pending; marking it in the skip branch would drop it with nothing uploaded.
+     */
+    @Test
+    fun archivedOnlyWardrobeWithTombstoneDoesNotMarkPendingVectorsUploaded() = runBlocking {
+        val archivedOnly = WardrobeSyncSnapshot(
+            tombstones = listOf(SyncTombstoneRecord(entityType = "garment", entityId = "garment-1", deletedAtEpochMillis = 2L, revision = 2L)),
+        )
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        drive.upsertResult = DriveSyncResult.Failure(IllegalStateException("network"))
+
+        val result = processor(snapshotStore = FakeWardrobeSnapshotStore(local = archivedOnly)).runOnce(SyncTrigger.Background, reason = "backfill")
+
+        assertEquals(SyncRunResult.Retry, result)
+        assertEquals(1, drive.upserts.size)
+        assertEquals(1, embeddings.pendingUploadKeys().size)
+    }
+
+    /**
+     * H01 finding D: a vector recomputed after the cycle captured its keys is not in that cycle's keys, so marking the cycle
+     * uploaded leaves it pending with its new computed-at time.
+     */
+    @Test
+    fun vectorRecomputedDuringTheCycleStaysPending() = runBlocking {
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        exportWithVector(embeddings.pendingUploadKeys().single())
+        // Recomputes the vector while the cycle exports its snapshot, which runs after the keys were captured.
+        val recomputingDuringExport = object : WardrobeSnapshotStore by store {
+            override suspend fun exportSnapshot(generatedAtEpochMillis: Long): WardrobeSyncSnapshot {
+                clockMillis = 2_000L
+                embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-2", 6L)
+                return store.exportSnapshot(generatedAtEpochMillis)
+            }
+        }
+
+        val result = processor(snapshotStore = recomputingDuringExport).runOnce(SyncTrigger.Background, reason = "backfill")
+
+        assertEquals(SyncRunResult.Success, result)
+        assertEquals(listOf(2_000L), embeddings.pendingUploadKeys().map { it.computedAtEpochMillis })
     }
 
     /** V-E06c: a Drive embedding for another model or recipe is not imported, so nothing is stored or marked. */
