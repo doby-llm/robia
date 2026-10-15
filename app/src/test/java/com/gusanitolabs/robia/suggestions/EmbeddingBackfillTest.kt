@@ -27,8 +27,15 @@ class EmbeddingBackfillTest {
         encodeImage = { photoUri -> EncodedImage(photoUri.toByteArray(), 1, 1) },
         loadGarments = { garments.toList() },
         loadStoredRows = { rows.toList() },
-        saveVector = { garmentId, kind, _, _, _ -> saved += "$garmentId:$kind" },
-        deleteVector = { garmentId, kind -> deleted += "$garmentId:$kind" },
+        saveVector = { garmentId, kind, _, inputHash, _ ->
+            saved += "$garmentId:$kind"
+            rows.removeAll { it.garmentId == garmentId && it.kind == kind }
+            rows += row(garmentId, kind, inputHash)
+        },
+        deleteVector = { garmentId, kind ->
+            deleted += "$garmentId:$kind"
+            rows.removeAll { it.garmentId == garmentId && it.kind == kind }
+        },
         requestSync = {},
         clockMillis = { 0L },
     )

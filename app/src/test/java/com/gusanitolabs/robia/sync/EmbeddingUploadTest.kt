@@ -9,6 +9,7 @@ import com.gusanitolabs.robia.sync.fakes.FakeSettingsRepository
 import com.gusanitolabs.robia.sync.fakes.FakeSyncWorkScheduler
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeRepository
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeSnapshotStore
+import com.gusanitolabs.robia.sync.fakes.snapshotWithGarments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
@@ -26,7 +27,7 @@ class EmbeddingUploadTest {
     private fun processor(): WardrobeSyncOutboxProcessor = WardrobeSyncOutboxProcessor(
         settingsRepository = FakeSettingsRepository(),
         wardrobeRepository = wardrobe,
-        snapshotRepository = FakeWardrobeSnapshotStore(),
+        snapshotRepository = FakeWardrobeSnapshotStore(local = snapshotWithGarments("garment-1")),
         driveRepository = drive,
         syncWorkScheduler = FakeSyncWorkScheduler(),
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
