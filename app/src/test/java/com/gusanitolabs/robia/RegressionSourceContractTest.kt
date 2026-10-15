@@ -227,6 +227,17 @@ class RegressionSourceContractTest {
     }
 
     @Test
+    fun tagReviewSnapshotAndUndo_readArchivedGarmentsToo() {
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+
+        // Browse keeps the active-only read; the review snapshot and undo must see archived garments as well.
+        assertTrue(app.contains("readGarmentsForReview = {"))
+        assertTrue(app.contains("app.database.wardrobeDao().getAllItems()"))
+        assertTrue(app.contains("val garments = readGarmentsForReview()"))
+        assertTrue(app.contains("suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()"))
+    }
+
+    @Test
     fun browseWardrobe_waitsForInitialLocalDataBeforeShowingEmptyState() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
 

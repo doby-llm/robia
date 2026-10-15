@@ -289,7 +289,7 @@ private fun PendingMetadataSyncWork.toEntity(): PendingMetadataSyncWorkEntity = 
     revision = revision,
 )
 
-private fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
+internal fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
     id = item.id,
     name = item.name,
     notes = item.notes,

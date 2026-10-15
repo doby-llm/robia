@@ -168,7 +168,9 @@ import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.EmbeddingKind
+import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
@@ -502,7 +504,7 @@ fun RobiaApp(
                 }
             },
             onSaveItems = { items, captures ->
-                scope.launch {
+                launchReviewWrite {
                     wardrobeRepository.upsertItems(items)
                     items.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
                     app.appScope.launch {
@@ -551,12 +553,14 @@ fun RobiaApp(
                 }
             },
             onRestoreDefaultMainColors = {
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.resetMainColorsToDefaults()
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
                 }
             },
-            readActiveGarments = { wardrobeRepository.observeActiveItems().first() },
+            readGarmentsForReview = {
+                afterPreviousWrite(lastReviewWrite.value) { app.database.wardrobeDao().getAllItems().map(ClothingItemWithTags::toDomain) }
+            },
             onUndoReview = { buildPlan ->
                 // One coroutine, in order: the write it follows, then the plan, then tombstones, so a restored tag is not deleted again by the next sync.
                 val previousWrite = lastReviewWrite.value
@@ -588,7 +592,7 @@ fun RobiaApp(
                 }
             },
             onCommitMainColorChange = { changeSet, updatedItems ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.applyMainColorChange(
                         upsertColors = changeSet.colorsToUpsertForCommit(),
                         deleteColorIds = changeSet.colorIdsToDeleteForCommit(),
@@ -866,7 +870,7 @@ private fun RobiaShell(
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
-    readActiveGarments: suspend () -> List<ClothingItem> = { emptyList() },
+    readGarmentsForReview: suspend () -> List<ClothingItem> = { emptyList() },
     onUndoReview: (buildPlan: suspend () -> ReviewUndoPlan) -> Unit = {},
     initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
@@ -911,6 +915,7 @@ private fun RobiaShell(
     var pendingColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var activeColorReviewChangeSet by remember { mutableStateOf<ColorPaletteChangeSet?>(null) }
     var pendingTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
+    val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
     var showCloudSetupPrompt by remember { mutableStateOf(false) }
@@ -1208,28 +1213,27 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ColorReview)
     }
 
-    // Save-first: the change is persisted before the snapshot is offered for review. The snapshot is taken before the
-    // save, because a deleted tag is removed from the garments right away.
+    // Save-first: the change is persisted before the snapshot is offered for review. The snapshot holds every garment,
+    // archived ones too, and is read before the write, because a deleted tag is removed from the garments right away.
+    fun offerTagReviewAfterWrite(changeSet: TagChangeSet?, write: () -> Unit) {
+        reviewScope.launch {
+            val garments = readGarmentsForReview()
+            write()
+            pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        }
+    }
+
     fun saveTagAndOfferReview(tag: GarmentTag) {
-        val garments = clothingItems
-        val changeSet = savedTagChangeSet(availableTags, tag)
-        onSaveTag(tag)
-        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        offerTagReviewAfterWrite(savedTagChangeSet(availableTags, tag)) { onSaveTag(tag) }
     }
 
     fun deleteTagAndOfferReview(tag: GarmentTag) {
-        val garments = clothingItems
-        val changeSet = deletedTagChangeSet(availableTags, tag)
-        onDeleteCustomTag(tag)
-        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        offerTagReviewAfterWrite(deletedTagChangeSet(availableTags, tag)) { onDeleteCustomTag(tag) }
     }
 
     fun restoreDefaultTagsAndOfferReview(category: TagCategory) {
-        val garments = clothingItems
         val defaults = DefaultTags.tags.filter { tag -> tag.categoryId == category.id }
-        val changeSet = restoredTagChangeSet(availableTags, category.id, defaults)
-        onRestoreDefaultTags(category)
-        pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+        offerTagReviewAfterWrite(restoredTagChangeSet(availableTags, category.id, defaults)) { onRestoreDefaultTags(category) }
     }
 
     fun commitTagReview(updatedItems: List<ClothingItem>) {
@@ -1243,8 +1247,9 @@ private fun RobiaShell(
         showTagReviewDiscardDialog = true
     }
 
-    // Read when the undo runs, after the write it follows, so the plan sees the garments that write left behind.
-    suspend fun currentGarmentsForUndo(): List<ClothingItem> = readActiveGarments()
+    // Read when the undo runs, after the write it follows, so the plan sees the garments that write left behind. Archived
+    // garments are included: a tag they still reference must not be removed, and a deleted tag goes back onto them too.
+    suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()
 
     // Discard = undo: the saved tag change is reversed through the normal paths. The garment proposals go with it.
     fun discardTagReview() {

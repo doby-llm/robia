@@ -79,7 +79,10 @@ internal data class TagReviewCandidate(
     val proposal: ReviewProposal,
 )
 
-/** The change set plus the garments as they were before the change was saved (a deleted tag is still on them). */
+/**
+ * The change set plus the garments as they were before the change was saved (a deleted tag is still on them). Archived
+ * garments are included so the undo can put a deleted tag back on them; the scan only reads the active ones.
+ */
 internal data class TagReviewRequest(
     val changeSet: TagChangeSet,
     val garments: List<ClothingItem>,
@@ -124,7 +127,7 @@ internal fun reviewScanLabelText(tag: GarmentTag, touchedTagIds: Set<String>): S
         labelTextFor(tag)
     }
 
-/** Developer-mode log line per review scan: the label text used for each touched tag and how many proposals were found. */
+/** Debug log line per review scan: the label text used for each touched tag and how many proposals were found. */
 internal fun tagReviewScanLogLine(changeSet: TagChangeSet, proposalCount: Int): String {
     val labels = changeSet.afterTags
         .filter { tag -> tag.categoryId == changeSet.categoryId && tag.id in changeSet.touchedTagIds }
@@ -175,7 +178,8 @@ internal fun restoredTagChangeSet(
 /**
  * Discard = undo for a saved tag change. Restores every tag whose value differs from the one before the change (a rename,
  * a deleted tag, a restored default), removes the tags the change created, and gives back the garment tags a deletion took.
- * A tag that a current garment still references is never removed: a restore that merged a custom row into a built-in one
+ * A tag that a current garment still references is never removed, archived garments included (the caller passes every garment):
+ * a restore that merged a custom row into a built-in one
  * repointed those garments onto the built-in id, and removing it would strip their tags.
  */
 internal fun tagReviewUndoPlan(
@@ -338,7 +342,7 @@ internal fun TagReviewScreen(
             scannedCount += 1
         }
         isScanning = false
-        Log.i(TAG_REVIEW_SCAN_LOG_TAG, tagReviewScanLogLine(changeSet, candidates.size))
+        Log.d(TAG_REVIEW_SCAN_LOG_TAG, tagReviewScanLogLine(changeSet, candidates.size))
     }
 
     // Accept all saves every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it.
@@ -502,8 +506,10 @@ internal fun TagReviewScreen(
             enabled = !isScanning,
             onClick = {
                 // Same once-only flag as the auto-commit: a Done tapped in the frame the auto-commit fires must not commit twice.
-                committed = true
-                onCommit(commitUpdatedItems())
+                if (!committed) {
+                    committed = true
+                    onCommit(commitUpdatedItems())
+                }
             },
         )
     }

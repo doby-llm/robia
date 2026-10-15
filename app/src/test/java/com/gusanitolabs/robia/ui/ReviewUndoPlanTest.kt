@@ -70,6 +70,24 @@ class ReviewUndoPlanTest {
     }
 
     @Test
+    fun builtInTagStaysOnAnArchivedGarmentAfterTheRestoreMerge() {
+        // Same merge as above, but the garment that carried the custom "Dresses" is archived. The archived garment is
+        // still in the snapshot read the undo uses, so the built-in id it now carries is referenced and kept.
+        val custom = tag("custom-dresses", name = "Dresses")
+        val builtIn = tag("dress", name = "Dresses")
+        val changeSet = restoredTagChangeSet(listOf(custom, shirt), "category", listOf(builtIn))!!
+        val archived = garment("g1", tags = listOf(builtIn)).copy(isArchived = true)
+
+        val plan = tagReviewUndoPlan(
+            TagReviewRequest(changeSet, listOf(garment("g1", tags = listOf(custom)).copy(isArchived = true))),
+            currentGarments = listOf(archived),
+            now = NOW,
+        )
+
+        assertTrue(plan.removeTags.isEmpty())
+    }
+
+    @Test
     fun renamedTagIsRestoredAndGarmentsReferencingItAreLeftAlone() {
         val renamed = dress.copy(name = "Vestidos")
         val garment = garment("g1", tags = listOf(renamed, shirt))
@@ -134,6 +152,18 @@ class ReviewUndoPlanTest {
         )
 
         assertTrue(plan.restoreGarments.isEmpty())
+    }
+
+    @Test
+    fun deletedTagIsRestoredOnAnArchivedGarment() {
+        val archivedBefore = garment("g1", tags = listOf(dress, shirt)).copy(isArchived = true)
+        val plan = tagReviewUndoPlan(
+            request(TagOperation.Deleted, setOf(dress.id), before, listOf(shirt), garments = listOf(archivedBefore)),
+            currentGarments = listOf(archivedBefore.copy(tags = listOf(shirt))),
+            now = NOW,
+        )
+
+        assertEquals(listOf(archivedBefore.copy(tags = listOf(dress, shirt), updatedAtEpochMillis = NOW)), plan.restoreGarments)
     }
 
     @Test
