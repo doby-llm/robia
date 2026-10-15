@@ -86,7 +86,7 @@ class RobiaApplication : Application() {
             },
             deleteVector = { garmentId, kind -> embeddingRepository.delete(garmentId, kind) },
             // Each new vector is pending upload; the sync cycle sends it without changing any garment revision.
-            requestSync = { DriveSyncScheduler(applicationContext).requestSync() },
+            requestSync = { reason -> syncGateway.requestSyncInBackground(reason) },
         )
     }
 

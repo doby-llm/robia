@@ -263,11 +263,13 @@ internal class FakeWardrobeSnapshotStore(
 
 internal class FakeSyncWorkScheduler : SyncWorkScheduler {
     var requestSyncCount = 0
+    val requestReasons = mutableListOf<String>()
     var ensurePeriodicCount = 0
     var cancelAllCount = 0
 
-    override fun requestSync() {
+    override fun requestSync(reason: String) {
         requestSyncCount++
+        requestReasons += reason
     }
 
     override fun ensurePeriodic() {

@@ -12,7 +12,9 @@ class DriveSyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val processor = (applicationContext as RobiaApplication).syncGateway
-        return when (processor.runOnce(SyncTrigger.Background)) {
+        // Periodic runs carry no input data; every one-time request names its reason.
+        val reason = inputData.getString(DriveSyncScheduler.REASON_KEY) ?: "periodic"
+        return when (processor.runOnce(SyncTrigger.Background, reason)) {
             SyncRunResult.Retry -> Result.retry()
             else -> Result.success()
         }

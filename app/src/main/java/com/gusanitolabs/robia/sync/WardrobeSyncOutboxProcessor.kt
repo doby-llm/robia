@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -91,6 +92,12 @@ class WardrobeSyncOutboxProcessor(
     /** The Drive failure that ended this cycle's upload attempt, reported in [lastCycle]. Written and read only while holding [mutex]. */
     private var cycleDriveFailure: Throwable? = null
     private var lastLoggedSettings: RobiaSettings? = null
+    /** Serialises [requestSync]; held only for the decision and the enqueue, never across a cycle. */
+    private val syncRequestMutex = Mutex()
+    /** When the last WorkManager request was enqueued by this process; null before the first one. Guarded by [syncRequestMutex]. */
+    private var lastSyncRequestAt: Long? = null
+    /** The one deferred request that later requests merge into. Guarded by [syncRequestMutex]. */
+    private var deferredSyncRequest: Job? = null
 
     override val state: Flow<WardrobeSyncState> = mutableState
     override val restoreSyncLogText: Flow<String> = restoreSyncLogRepository.text
@@ -109,7 +116,7 @@ class WardrobeSyncOutboxProcessor(
             if (wardrobeRepository.pendingGarmentSyncWork().isNotEmpty() ||
                 wardrobeRepository.pendingMetadataSyncWork().isNotEmpty()
             ) {
-                syncWorkScheduler.requestSync()
+                requestSync("init")
             }
             combine(
                 settingsRepository.settings,
@@ -235,8 +242,10 @@ class WardrobeSyncOutboxProcessor(
                     is WardrobeSyncOperation.RetryAttention -> retryAttention(operation.kind)
                     else -> {
                         // WorkManager owns backoff and retries; running now keeps the foreground responsive.
-                        syncWorkScheduler.requestSync()
+                        val reason = "enqueue:${operation::class.simpleName}"
+                        requestSync(reason)
                         runCycle(
+                            reason = reason,
                             trigger = SyncTrigger.Foreground,
                             forceSnapshot = operation.affectedGarmentIds().isEmpty(),
                             forceImport = operation is WardrobeSyncOperation.ImportFullSnapshot,
@@ -251,10 +260,72 @@ class WardrobeSyncOutboxProcessor(
         }
     }
 
-    /** Entry point for WorkManager ([SyncTrigger.Background]) and foreground callers. */
-    suspend fun runOnce(trigger: SyncTrigger): SyncRunResult = withContext(dispatcher) {
+    /** Entry point for WorkManager ([SyncTrigger.Background]) and foreground callers. [reason] is logged with the run. */
+    suspend fun runOnce(trigger: SyncTrigger, reason: String = "direct"): SyncRunResult = withContext(dispatcher) {
         retryGuardedPhotos()
-        runCycle(trigger = trigger, forceSnapshot = false, forceImport = false)
+        runCycle(reason = reason, trigger = trigger, forceSnapshot = false, forceImport = false)
+    }
+
+    /** Embedding backfill entry point. Non-suspending: the request is decided on [scope]. */
+    fun requestSyncInBackground(reason: String) {
+        scope.launch(dispatcher) { requestSync(reason) }
+    }
+
+    /**
+     * The only place that asks WorkManager for a run. Rate guard: [shouldRequestSync] drops a request when nothing is pending,
+     * and merges requests inside [MIN_SYNC_REQUEST_INTERVAL_MILLIS] into one deferred request. No real write loses its request.
+     */
+    private suspend fun requestSync(reason: String) {
+        syncRequestMutex.withLock {
+            val now = System.currentTimeMillis()
+            val pendingEmbeddings = embeddingRepository?.pendingUploadKeys()?.size ?: 0
+            val decision = shouldRequestSync(
+                pendingGarments = wardrobeRepository.pendingGarmentSyncWork().size,
+                pendingMetadata = wardrobeRepository.pendingMetadataSyncWork().size,
+                pendingEmbeddings = pendingEmbeddings,
+                lastRequestAt = lastSyncRequestAt,
+                now = now,
+                minIntervalMs = MIN_SYNC_REQUEST_INTERVAL_MILLIS,
+                deferredWaiting = deferredSyncRequest?.isActive == true,
+            )
+            when (decision) {
+                SyncRequestDecision.Drop -> logRequest("sync request dropped reason=$reason nothing pending")
+                SyncRequestDecision.Enqueue -> enqueueRequest(reason, now)
+                SyncRequestDecision.Coalesce -> logRequest("sync request merged reason=$reason into deferred run")
+                is SyncRequestDecision.Defer -> deferRequest(reason, decision.delayMillis)
+            }
+        }
+    }
+
+    /** Caller holds [syncRequestMutex]. One deferred request: it starts after the interval and later requests merge into it. */
+    private fun deferRequest(reason: String, delayMillis: Long) {
+        logRequest("sync request deferred reason=$reason delay_ms=$delayMillis")
+        deferredSyncRequest = scope.launch(dispatcher) {
+            delay(delayMillis)
+            syncRequestMutex.withLock {
+                deferredSyncRequest = null
+                enqueueRequest("deferred:$reason", System.currentTimeMillis())
+            }
+        }
+    }
+
+    /** Caller holds [syncRequestMutex]. */
+    private fun enqueueRequest(reason: String, now: Long) {
+        lastSyncRequestAt = now
+        logRequest("sync requested reason=$reason")
+        syncWorkScheduler.requestSync(reason)
+    }
+
+    private fun logRequest(message: String) {
+        restoreSyncLogRepository.append(
+            RestoreSyncLogEvent(
+                correlationId = "request",
+                category = "sync",
+                phase = null,
+                status = null,
+                message = message,
+            ),
+        )
     }
 
     /** Guarded photos are retried on every run. Transient download failures do not count toward the attempt cap. */
@@ -276,14 +347,14 @@ class WardrobeSyncOutboxProcessor(
         withContext(dispatcher) {
             val accepted = mutex.withLock { runResolution("keep_this_phone") { acceptRemoteRevisionAsKnown() } }
             if (accepted == SyncRunResult.Success) {
-                runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
+                runCycle(reason = "keep_this_phone", trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
             }
         }
     }
 
     override suspend fun confirmMerge() {
         withContext(dispatcher) {
-            runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = true, mergeConfirmed = true)
+            runCycle(reason = "merge_confirmed", trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = true, mergeConfirmed = true)
         }
     }
 
@@ -304,7 +375,7 @@ class WardrobeSyncOutboxProcessor(
             }
             // Only the chosen garment's guard is cleared; the next snapshot upload drops its photo record without deleting any blob.
             val kept = mutex.withLock { wardrobeRepository.keepGarmentWithoutRestoredPhoto(garmentId) }
-            if (kept) runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
+            if (kept) runCycle(reason = "keep_without_photo", trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
         }
     }
 
@@ -317,8 +388,9 @@ class WardrobeSyncOutboxProcessor(
         }
         val released = mutex.withLock { wardrobeRepository.releaseNeedsUserActionToQueued(reasonCode) }
         if (released == 0) return
-        syncWorkScheduler.requestSync()
-        runCycle(trigger = SyncTrigger.Foreground, forceSnapshot = false, forceImport = false)
+        val reason = "retry_attention:${kind.name}"
+        requestSync(reason)
+        runCycle(reason = reason, trigger = SyncTrigger.Foreground, forceSnapshot = false, forceImport = false)
     }
 
     private suspend fun deleteCloudBackup() = mutex.withLock {
@@ -611,7 +683,7 @@ class WardrobeSyncOutboxProcessor(
             return
         }
 
-        runCycle(trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true)
+        runCycle(reason = "fresh_install_restore", trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true)
 
         // Do not burn the one-shot bootstrap attempt on a retryable Drive/photo failure. Keeping the
         // flag false lets a later explicit retry or reconnect re-enter the restore path instead of
@@ -623,6 +695,7 @@ class WardrobeSyncOutboxProcessor(
     }
 
     private suspend fun runCycle(
+        reason: String,
         trigger: SyncTrigger,
         forceSnapshot: Boolean,
         forceImport: Boolean,
@@ -678,7 +751,7 @@ class WardrobeSyncOutboxProcessor(
                     category = "sync",
                     phase = null,
                     status = CloudRestoreStatus.Running,
-                    message = "sync started trigger=${trigger.name} forceSnapshot=$forceSnapshot forceImport=$forceImport " +
+                    message = "sync started trigger=${trigger.name} reason=$reason forceSnapshot=$forceSnapshot forceImport=$forceImport " +
                         "garments=${lockedWork.size} metadata=${lockedMetadataWork.size}",
                 ),
             )

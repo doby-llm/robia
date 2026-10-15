@@ -31,12 +31,14 @@ class EmbeddingUploadTest {
     private val wardrobe = FakeWardrobeRepository()
     private val store = FakeWardrobeSnapshotStore(local = snapshotWithGarments("garment-1"))
 
+    private val scheduler = FakeSyncWorkScheduler()
+
     private fun processor(): WardrobeSyncOutboxProcessor = WardrobeSyncOutboxProcessor(
         settingsRepository = FakeSettingsRepository(),
         wardrobeRepository = wardrobe,
         snapshotRepository = store,
         driveRepository = drive,
-        syncWorkScheduler = FakeSyncWorkScheduler(),
+        syncWorkScheduler = scheduler,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         dispatcher = Dispatchers.Unconfined,
         embeddingRepository = embeddings,
@@ -96,6 +98,55 @@ class EmbeddingUploadTest {
 
         assertEquals(1, drive.upserts.size)
         assertTrue(embeddings.pendingUploadKeys().isEmpty())
+    }
+
+    /**
+     * H01 reproduction: once the cycle that uploaded a pending vector has stored its snapshot, nothing is pending any more.
+     * The next cycle then sends nothing, and no cycle asks for another run on its own.
+     */
+    @Test
+    fun secondCycleAfterUploadFindsNothingPendingAndSendsNothing() = runBlocking {
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        exportWithVector(embeddings.pendingUploadKeys().single())
+        val processor = processor()
+
+        assertEquals(SyncRunResult.Success, processor.runOnce(SyncTrigger.Background, reason = "backfill"))
+        assertTrue(embeddings.pendingUploadKeys().isEmpty())
+        assertEquals(SyncRunResult.Success, processor.runOnce(SyncTrigger.Background, reason = "periodic"))
+
+        assertEquals(1, drive.upserts.size)
+        assertEquals(0, scheduler.requestSyncCount)
+    }
+
+    /** H01: a vector saved by the backfill asks for a run, and the run carries the reason into the log line. */
+    @Test
+    fun backfillSaveRequestsOneRunWithItsReason() = runBlocking {
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+
+        processor().requestSyncInBackground("backfill")
+
+        assertEquals(listOf("backfill"), scheduler.requestReasons)
+    }
+
+    /** H01: two backfill requests inside the interval become one WorkManager request; the second is deferred, not dropped. */
+    @Test
+    fun backfillRequestsInsideTheIntervalCoalesceIntoOneRun() = runBlocking {
+        embeddings.upsert("garment-1", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-1", 5L)
+        val processor = processor()
+
+        processor.requestSyncInBackground("backfill")
+        embeddings.upsert("garment-2", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-2", 6L)
+        processor.requestSyncInBackground("backfill")
+
+        assertEquals(listOf("backfill"), scheduler.requestReasons)
+    }
+
+    /** H01: a request with nothing pending sends nothing to WorkManager. */
+    @Test
+    fun requestWithNothingPendingIsDropped() = runBlocking {
+        processor().requestSyncInBackground("backfill")
+
+        assertEquals(0, scheduler.requestSyncCount)
     }
 
     /** V-E06c: a Drive embedding for another model or recipe is not imported, so nothing is stored or marked. */
