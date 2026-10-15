@@ -45,6 +45,9 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     private val attentionCount = MutableStateFlow(0)
     private val guardedCount = MutableStateFlow(0)
     private val reasonCounts = mutableMapOf<String, MutableStateFlow<Int>>()
+    var pendingCloudDeletion = false
+    /** Thresholds passed to [recoverStaleRunningSyncWork], so tests can see when a cycle recovers stale claims. */
+    val staleRecoveryThresholds = mutableListOf<Long>()
 
     fun addQueued(id: String, revision: Long = 1L) = put(id, revision, "Queued")
 
@@ -95,8 +98,12 @@ internal class FakeWardrobeRepository : WardrobeRepository {
 
     override suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork> = emptyList()
     override suspend fun nextRunnableSyncRetryEpochMillis(): Long? = null
-    override suspend fun hasPendingCloudDeletion(): Boolean = false
-    override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int = 0
+    override suspend fun hasPendingCloudDeletion(): Boolean = pendingCloudDeletion
+    override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int {
+        staleRecoveryThresholds += staleBeforeEpochMillis
+        return 0
+    }
+    override suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int = 0
     override suspend fun upsertItem(item: ClothingItem) = error("not used by sync tests")
     override suspend fun upsertItems(items: List<ClothingItem>) = error("not used by sync tests")
     override suspend fun archiveItem(id: String, updatedAtEpochMillis: Long) = error("not used by sync tests")

@@ -99,6 +99,14 @@ interface WardrobeDao {
     @Query("UPDATE clothing_items SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND photo_restore_guarded = 0 AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleUnguardedGarmentSyncWork(staleBeforeEpochMillis: Long): Int
 
+    /**
+     * A guarded claim older than the photo retry timeout was left by a process that died mid-retry: the retry is bounded by that
+     * timeout. It parks as NeedsUserAction, not Queued, so a retry stays user-triggered; the guard and the remote blob stay in place.
+     * Called at processor init only, since a retry of this process can claim a row outside the sync mutex.
+     */
+    @Query("UPDATE clothing_items SET sync_status = 'NeedsUserAction', sync_started_at_epoch_millis = NULL, retry_after_epoch_millis = NULL, sync_failure_message = 'photo_restore_interrupted' WHERE sync_status = 'Running' AND photo_restore_guarded = 1 AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int
+
     @Query("UPDATE tag_categories SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleTagCategorySyncWork(staleBeforeEpochMillis: Long): Int
 

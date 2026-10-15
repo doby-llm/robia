@@ -67,6 +67,71 @@ class StaleClaimRecoveryTest {
         }
     }
 
+    @Test
+    fun deadGuardedClaimParksAsNeedsUserActionAndRetryCanClaimItAgain() {
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "CREATE TABLE clothing_items (id TEXT NOT NULL, sync_status TEXT NOT NULL, sync_failure_message TEXT, " +
+                        "sync_revision INTEGER NOT NULL, retry_attempt_count INTEGER NOT NULL, retry_after_epoch_millis INTEGER, " +
+                        "sync_started_at_epoch_millis INTEGER, photo_restore_guarded INTEGER NOT NULL, " +
+                        "photo_restore_retry_deadline_epoch_millis INTEGER)",
+                )
+            }
+            // dead: claimed before the threshold by a process that died. live: claimed after it. plain: unguarded, not this query's concern.
+            insertGuardedRow(connection, id = "dead", status = "Running", startedAt = STALE_STARTED_AT, guarded = 1)
+            insertGuardedRow(connection, id = "live", status = "Running", startedAt = FRESH_STARTED_AT, guarded = 1)
+            insertGuardedRow(connection, id = "plain", status = "Running", startedAt = STALE_STARTED_AT, guarded = 0)
+
+            connection.createStatement().use { statement ->
+                statement.executeUpdate(
+                    recoveryStatement("recoverStaleGuardedPhotoSyncWork")
+                        .replace(":staleBeforeEpochMillis", STALE_BEFORE.toString()),
+                )
+            }
+            assertEquals(
+                listOf(
+                    "dead|NeedsUserAction|photo_restore_interrupted|1|1|null|null",
+                    "live|Running|null|1|1|null|$FRESH_STARTED_AT",
+                    "plain|Running|null|1|1|null|$STALE_STARTED_AT",
+                ),
+                guardedRows(connection),
+            )
+
+            // The retry claim takes the parked row again: it is eligible while its attempts and deadline allow.
+            val claimed = connection.createStatement().use { statement ->
+                statement.executeUpdate(
+                    recoveryStatement("markGarmentPhotoRestoreRetrying")
+                        .replace(":itemId", "'dead'")
+                        .replace(":revision", "1")
+                        .replace(":startedAtEpochMillis", RETRY_STARTED_AT.toString())
+                        .replace(":now", RETRY_STARTED_AT.toString()),
+                )
+            }
+            assertEquals(1, claimed)
+            assertEquals("dead|Running|photo_restore_interrupted|1|1|null|$RETRY_STARTED_AT", guardedRows(connection).first())
+        }
+    }
+
+    private fun insertGuardedRow(connection: Connection, id: String, status: String, startedAt: Long, guarded: Int) {
+        connection.createStatement().use { statement ->
+            statement.execute(
+                "INSERT INTO clothing_items VALUES ('$id', '$status', NULL, 1, 1, NULL, $startedAt, $guarded, $DEADLINE)",
+            )
+        }
+    }
+
+    private fun guardedRows(connection: Connection): List<String> = connection.createStatement().use { statement ->
+        statement.executeQuery(
+            "SELECT id, sync_status, sync_failure_message, sync_revision, retry_attempt_count, retry_after_epoch_millis, " +
+                "sync_started_at_epoch_millis FROM clothing_items ORDER BY id",
+        ).use { resultSet ->
+            generateSequence { if (resultSet.next()) resultSet else null }.map { row ->
+                (1..COLUMN_COUNT).joinToString("|") { column -> row.getObject(column)?.toString() ?: "null" }
+            }.toList()
+        }
+    }
+
     private fun recoveryStatement(method: String): String {
         val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
         return dao.substringBefore("suspend fun $method(").substringAfterLast("@Query(\"").substringBefore("\")")
@@ -119,6 +184,9 @@ class StaleClaimRecoveryTest {
         const val STALE_STARTED_AT = 1_000L
         const val FRESH_STARTED_AT = 9_000L
         const val STALE_BEFORE = 5_000L
+        const val RETRY_STARTED_AT = 8_000L
+        const val DEADLINE = 20_000L
+        const val COLUMN_COUNT = 7
         val TABLES = listOf("clothing_items", "tag_categories", "garment_tags", "main_colors", "sync_tombstones")
         val RECOVERY_METHODS = listOf(
             "recoverStaleGarmentSyncWork",
