@@ -287,7 +287,7 @@ internal fun ColorReviewScreen(
         // Accept all saves every proposal with a concrete target; manual-choice proposals stay out and remain visible.
         ReviewBottomBar(
             label = when {
-                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount)
+                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount + acceptedIds.size)
                 acceptedIds.isNotEmpty() -> stringResource(R.string.color_review_save_accepted_mappings, acceptedIds.size)
                 else -> stringResource(R.string.done)
             },

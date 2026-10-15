@@ -66,7 +66,7 @@ internal const val REVIEW_ACCEPT_HIGHLIGHT_MILLIS = 200
 internal const val REVIEW_ACCEPT_EXIT_MILLIS = 250
 
 /** The picker list has a bottom fade and an option count only while more options are below the visible part. */
-internal fun scrollHintVisible(value: Int, max: Int): Boolean = value < max
+internal fun scrollHintVisible(value: Int, max: Int): Boolean = max > 0 && value < max
 
 /**
  * What Discard undoes, as a pure plan built from the change that was saved. Applied through the normal save and delete
