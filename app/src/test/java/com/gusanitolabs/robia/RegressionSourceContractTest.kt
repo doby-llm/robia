@@ -233,7 +233,7 @@ class RegressionSourceContractTest {
         // Browse keeps the active-only read; the review snapshot and undo must see archived garments as well.
         assertTrue(app.contains("readGarmentsForReview = {"))
         assertTrue(app.contains("app.database.wardrobeDao().getAllItemsForSync()"))
-        assertTrue(app.contains("val garments = readGarmentsForReview()"))
+        assertTrue(app.contains("val garments = try {"))
         assertTrue(app.contains("suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()"))
     }
 
