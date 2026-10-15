@@ -258,6 +258,10 @@
     <string name="processing_stage_cropping_picture">Cropping picture</string>
     <string name="processing_stage_extracting_color">Extracting color</string>
     <string name="processing_stage_applying_quick_edit">Applying quick edit</string>
+    <string name="processing_stage_preparing_suggestions">Preparing suggestions</string>
+    <string name="developer_export_suggestion_input">Export input image</string>
+    <string name="developer_export_suggestion_input_saved">Input image saved to Pictures/Robia</string>
+    <string name="developer_export_suggestion_input_error">Couldn’t export input image</string>
     <string name="quick_edit_title">Quick edit photo</string>
     <string name="quick_edit_brightness">Brightness</string>
     <string name="quick_edit_temperature">Temperature</string>

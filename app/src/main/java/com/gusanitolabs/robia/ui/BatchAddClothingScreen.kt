@@ -70,6 +70,9 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.suggestions.SuggestionCapture
+import com.gusanitolabs.robia.suggestions.SuggestionOutcome
+import com.gusanitolabs.robia.suggestions.SuggestionService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -93,6 +96,7 @@ internal data class BatchDraftItem(
     val selectedPrimaryColorId: String? = null,
     val selectedSecondaryColorId: String? = null,
     val createdAtEpochMillis: Long = System.currentTimeMillis(),
+    val suggestionCapture: SuggestionCapture? = null,
 )
 
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
@@ -482,6 +486,7 @@ internal suspend fun processBatchDraft(
     backgroundRemover: PhotoBackgroundRemover,
     mainColors: List<MainColor>,
     availableTags: List<GarmentTag>,
+    suggestionService: SuggestionService,
     onDraftUpdated: (BatchDraftItem) -> Unit,
 ) {
     onDraftUpdated(
@@ -511,6 +516,11 @@ internal suspend fun processBatchDraft(
             .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
             ?.color
             ?.id
+        val suggestion = suggestionService.suggestForPhoto(
+            photoUri = croppedUri,
+            tags = availableTags,
+            selectedCategoryId = availableTags.firstOrNull { tag -> tag.categoryId == "category" && tag.id in draft.selectedTagIds }?.id,
+        )
         val needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri
         val resolvedStatus = if (needsOriginalFallbackReview) BatchDraftStatus.NeedsReview else BatchDraftStatus.Ready
         val resolvedMessage = if (needsOriginalFallbackReview) {
@@ -518,6 +528,7 @@ internal suspend fun processBatchDraft(
         } else {
             null
         }
+        val ready = suggestion as? SuggestionOutcome.Ready
         onDraftUpdated(
             draft.copy(
                 photoUri = croppedUri.toString(),
@@ -525,6 +536,14 @@ internal suspend fun processBatchDraft(
                 status = resolvedStatus,
                 selectedPrimaryColorId = primaryColorId,
                 selectedSecondaryColorId = secondaryColorId,
+                selectedTagIds = if (ready == null) {
+                    draft.selectedTagIds
+                } else {
+                    mergePredictedTags(draft.selectedTagIds, ready.predictedTagIds, availableTags)
+                },
+                suggestionCapture = ready?.let { outcome ->
+                    SuggestionCapture(croppedUri.toString(), outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
+                },
                 errorMessage = resolvedMessage,
             ),
         )
@@ -660,8 +679,6 @@ internal fun ClothingItem.toBatchDraftItem(
     errorMessage = null,
 )
 
-// Reused by TASK-E05 (EmbeddingGemma suggestions).
-@Suppress("unused")
 private fun mergePredictedTags(
     currentTagIds: List<String>,
     predictedTagIds: Set<String>,
@@ -706,4 +723,4 @@ private const val FIT_VALUE_FITS = 2
 private const val SECONDARY_COLOR_MIN_RATIO = 0.20f
 private const val PHOTO_PREVIEW_MIN_ASPECT_RATIO = 0.66f
 private const val PHOTO_PREVIEW_MAX_ASPECT_RATIO = 1.6f
-private val MODEL_PREDICTED_CATEGORIES = setOf("category", "season", "occasion")
+private val MODEL_PREDICTED_CATEGORIES = setOf("category", "occasion")

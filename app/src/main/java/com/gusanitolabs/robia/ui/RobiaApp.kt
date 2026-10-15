@@ -144,9 +144,11 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
@@ -159,6 +161,15 @@ import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.suggestions.DevBenchmark
+import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import com.gusanitolabs.robia.suggestions.SavedExample
+import com.gusanitolabs.robia.suggestions.SuggestionCapture
+import com.gusanitolabs.robia.suggestions.SuggestionService
+import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
+import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
+import com.gusanitolabs.robia.suggestions.engine.TextImageEmbedder
+import com.gusanitolabs.robia.suggestions.garmentTextInput
+import com.gusanitolabs.robia.suggestions.sha256Hex16
 import com.gusanitolabs.robia.suggestions.model.ModelDownloadWorker
 import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.CloudRestorePhase
@@ -351,6 +362,21 @@ fun RobiaApp(
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val app = LocalContext.current.applicationContext as RobiaApplication
+    val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
+    val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
+        SuggestionService(
+            embedder = app.embeddingEngineHolder,
+            isModelReady = { app.modelStore.state.value is ModelState.Ready },
+            encodeImage = { uri -> ImageInputEncoder.encode(app, uri) },
+            savedExamples = {
+                val vectors = embeddingRepository.observeVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID).first()
+                wardrobeRepository.observeActiveItems().first().mapNotNull { item ->
+                    vectors[item.id]?.image?.let { image -> SavedExample(item.id, item.tags.map(GarmentTag::id), image) }
+                }
+            },
+            preloadEngine = { app.embeddingEngineHolder.preload() },
+        )
+    }
     val modelState by app.modelStore.state.collectAsState()
     val modelPromptShown by settingsRepository.modelPromptShown.collectAsState(initial = null)
     LaunchedEffect(tagRepository) {
@@ -361,6 +387,7 @@ fun RobiaApp(
         RobiaTheme {
         val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
         RobiaShell(
+            suggestionService = suggestionService,
             settings = displaySettings,
             settingsLoaded = settingsLoaded,
             syncState = displaySyncState,
@@ -419,16 +446,20 @@ fun RobiaApp(
             onClearRestoreSyncLog = {
                 scope.launch { syncGateway.clearRestoreSyncLog() }
             },
-            onSaveItem = { item ->
+            onSaveItem = { item, capture ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id))
+                    app.appScope.launch { storeSuggestionVectors(app, embeddingRepository, item, capture) }
                 }
             },
-            onSaveItems = { items ->
+            onSaveItems = { items, captures ->
                 scope.launch {
                     wardrobeRepository.upsertItems(items)
                     items.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
+                    app.appScope.launch {
+                        items.forEach { item -> storeSuggestionVectors(app, embeddingRepository, item, captures[item.id]) }
+                    }
                 }
             },
             onDeleteItems = { itemIds ->
@@ -611,8 +642,9 @@ private fun RobiaShell(
     onRequestCloudBackupDeletion: () -> Unit = {},
     onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
-    onSaveItem: (ClothingItem) -> Unit,
-    onSaveItems: (List<ClothingItem>) -> Unit,
+    suggestionService: SuggestionService,
+    onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
+    onSaveItems: (List<ClothingItem>, Map<String, SuggestionCapture>) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
     onSaveMainColor: (MainColor) -> Unit,
@@ -756,6 +788,7 @@ private fun RobiaShell(
                 isFavorite = !item.isFavorite,
                 updatedAtEpochMillis = System.currentTimeMillis(),
             ),
+            null,
         )
     }
 
@@ -791,6 +824,7 @@ private fun RobiaShell(
                     backgroundRemover = batchBackgroundRemover,
                     mainColors = mainColors,
                     availableTags = availableTags,
+                    suggestionService = suggestionService,
                     onDraftUpdated = ::updateBatchDraft,
                 )
             },
@@ -897,7 +931,7 @@ private fun RobiaShell(
         if (changeSet.requiresCommitOnSave) {
             onCommitMainColorChange(changeSet, updatedItems)
         } else if (updatedItems.isNotEmpty()) {
-            onSaveItems(updatedItems)
+            onSaveItems(updatedItems, emptyMap())
         }
         activeColorReviewChangeSet = null
         pendingColorReviewChangeSet = null
@@ -1245,6 +1279,7 @@ private fun RobiaShell(
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         RobiaNavHost(
+            suggestionService = suggestionService,
             currentRoute = currentRoute,
             innerPadding = innerPadding,
             items = filteredItems,
@@ -1287,8 +1322,8 @@ private fun RobiaShell(
             onToggleFavorite = ::toggleFavorite,
             onBrowseSelectionToggle = ::toggleBrowseSelection,
             onCancelAddEdit = ::closeAddEdit,
-            onSaveItem = { item ->
-                onSaveItem(item)
+            onSaveItem = { item, capture ->
+                onSaveItem(item, capture)
                 selectedItemId = item.id
                 replaceRoute(RobiaRoute.Browse)
                 pushRoute(RobiaRoute.ItemDetail)
@@ -1309,7 +1344,8 @@ private fun RobiaShell(
                 val batchItems = acceptedDrafts.map { draft ->
                     draft.toClothingItem(availableTags, mainColors)
                 }
-                if (batchItems.isNotEmpty()) onSaveItems(batchItems)
+                val batchCaptures = acceptedDrafts.mapNotNull { draft -> draft.suggestionCapture?.let { draft.id to it } }.toMap()
+                if (batchItems.isNotEmpty()) onSaveItems(batchItems, batchCaptures)
                 val savedIds = acceptedDrafts.map(BatchDraftItem::id).toSet()
                 batchDrafts.removeAll { it.id in savedIds }
                 batchSaveStatusMessage = context.getString(
@@ -1323,14 +1359,14 @@ private fun RobiaShell(
             onCancelBatch = {
                 cancelBatchAdd()
             },
-            onSaveBatchDraft = { item, acceptOriginalPhoto ->
+            onSaveBatchDraft = { item, acceptOriginalPhoto, capture ->
                 batchDrafts.firstOrNull { draft -> draft.id == item.id }?.let { previous ->
                     updateBatchDraft(
                         item.toBatchDraftFromExisting(
                             previous = previous,
                             mainColors = mainColors,
                             acceptOriginalPhoto = acceptOriginalPhoto,
-                        ),
+                        ).copy(suggestionCapture = capture ?: previous.suggestionCapture),
                     )
                 }
                 popRoute()
@@ -2138,6 +2174,7 @@ private fun RobiaBottomBar(
 
 @Composable
 private fun RobiaNavHost(
+    suggestionService: SuggestionService,
     currentRoute: RobiaRoute,
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
@@ -2171,7 +2208,7 @@ private fun RobiaNavHost(
     onToggleFavorite: (String) -> Unit,
     onBrowseSelectionToggle: (String) -> Unit,
     onCancelAddEdit: () -> Unit,
-    onSaveItem: (ClothingItem) -> Unit,
+    onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
     onDeleteItem: (ClothingItem) -> Unit,
     onBatchPhotosSelected: (List<String>) -> Unit,
     onDraftSelected: (BatchDraftItem) -> Unit,
@@ -2179,7 +2216,7 @@ private fun RobiaNavHost(
     onDiscardBatchDraft: (BatchDraftItem) -> Unit,
     onSaveBatch: (Set<String>) -> Unit,
     onCancelBatch: () -> Unit,
-    onSaveBatchDraft: (ClothingItem, Boolean) -> Unit,
+    onSaveBatchDraft: (ClothingItem, Boolean, SuggestionCapture?) -> Unit,
     onFiltersChange: (BrowseFilterState) -> Unit,
     onResetFilters: () -> Unit,
     onSaveTag: (GarmentTag) -> Unit,
@@ -2251,6 +2288,7 @@ private fun RobiaNavHost(
             mainColors = mainColors,
             existingItem = selectedDomainItem,
             developerModeEnabled = developerModeEnabled,
+            suggestionService = suggestionService,
             onCancel = onCancelAddEdit,
             onSave = onSaveItem,
             onDelete = onDeleteItem,
@@ -2275,6 +2313,7 @@ private fun RobiaNavHost(
                 mainColors = mainColors,
                 existingItem = draft.toBatchEditItem(availableTags, mainColors),
                 developerModeEnabled = developerModeEnabled,
+                suggestionService = suggestionService,
                 initialPhotoReviewState = draft.toBatchEditPhotoReviewState(),
                 titleRes = R.string.batch_edit_title,
                 bodyRes = R.string.batch_edit_body,
@@ -2284,8 +2323,8 @@ private fun RobiaNavHost(
                     R.string.batch_return_to_batch
                 },
                 onCancel = onBack,
-                onSave = { item ->
-                    onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview)
+                onSave = { item, capture ->
+                    onSaveBatchDraft(item, draft.status == BatchDraftStatus.NeedsReview, capture)
                 },
             )
         } ?: BatchAddClothingScreen(
@@ -4162,11 +4201,23 @@ private fun Int.fitLabel(): String = when (coerceIn(0, 4)) {
     else -> stringResource(R.string.fit_oversized)
 }
 
+private object PreviewTextImageEmbedder : TextImageEmbedder {
+    override suspend fun embedImage(png: ByteArray): FloatArray = error("Preview has no embedder")
+    override suspend fun embedText(text: String): FloatArray = error("Preview has no embedder")
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun RobiaAppPreview() {
     RobiaTheme {
         RobiaShell(
+            suggestionService = SuggestionService(
+                embedder = PreviewTextImageEmbedder,
+                isModelReady = { false },
+                encodeImage = { error("Preview has no image input") },
+                savedExamples = { emptyList() },
+                preloadEngine = {},
+            ),
             settings = RobiaSettings(),
             settingsLoaded = true,
             syncState = WardrobeSyncState.notConfigured(),
@@ -4184,8 +4235,8 @@ private fun RobiaAppPreview() {
             onRequestCloudSetup = {},
             onConfirmMerge = {},
             onCancelMerge = {},
-            onSaveItem = {},
-            onSaveItems = {},
+            onSaveItem = { _, _ -> },
+            onSaveItems = { _, _ -> },
             onDeleteItems = {},
             onSaveTag = {},
             onSaveMainColor = {},
@@ -4196,4 +4247,34 @@ private fun RobiaAppPreview() {
             onCommitMainColorChange = { _, _ -> },
         )
     }
+}
+
+/**
+ * Stores the capture-time IMAGE vector when it belongs to the saved photo, and keeps the TEXT vector in step with
+ * name and notes (TS§3.7). Writes only `garment_embeddings`, never the garment row.
+ */
+private suspend fun storeSuggestionVectors(
+    app: RobiaApplication,
+    embeddingRepository: EmbeddingRepository,
+    item: ClothingItem,
+    capture: SuggestionCapture?,
+) {
+    if (capture != null && capture.photoUri == item.photoUri) {
+        embeddingRepository.upsert(item.id, EmbeddingKind.IMAGE, capture.imageVector, capture.imageInputHash, capture.durationMs)
+    }
+    val textInput = garmentTextInput(item.name, item.notes)
+    if (textInput == null) {
+        embeddingRepository.delete(item.id, EmbeddingKind.TEXT)
+        return
+    }
+    val inputHash = sha256Hex16(textInput.toByteArray(Charsets.UTF_8))
+    if (app.database.embeddingDao().get(item.id, EmbeddingKind.TEXT)?.inputHash == inputHash) return
+    val startedAt = System.nanoTime()
+    // Without a ready model the TEXT vector waits for the backfill, so the save itself never fails.
+    val vector = try {
+        app.embeddingEngineHolder.embedText(textInput)
+    } catch (unavailable: EmbeddingFailure) {
+        return
+    }
+    embeddingRepository.upsert(item.id, EmbeddingKind.TEXT, vector, inputHash, (System.nanoTime() - startedAt) / 1_000_000L)
 }
