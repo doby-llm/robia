@@ -84,16 +84,11 @@ class RestoredPhotoReuploadTest {
 
     @Test
     fun listingFailureFailsTheCycleWithoutReuseOrUpload() = runBlocking {
-        try {
-            listingFailureBody()
-        } catch (throwable: Throwable) {
-            throw AssertionError("listing-failure test threw ${throwable::class.java.name}: ${throwable.message} at ${throwable.stackTrace.take(6).joinToString(" | ")}", throwable)
-        }
-    }
-
-    private suspend fun listingFailureBody() {
         val remote = uploadedOnce("g1")
         phone.sources[localPhoto("g1").localUri] = "webp:pixels-g1"
+        // Counters after the setup upload: the cycle under test must not add to them.
+        val blobUploadsBefore = api.blobUploads.get()
+        val snapshotUploadsBefore = api.snapshotUploads.get()
         // The listing runs first, so the hash and encode lambdas must never be reached.
         val listingDown = object : DriveSnapshotApi by api {
             override suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>> =
@@ -112,9 +107,9 @@ class RestoredPhotoReuploadTest {
             previous = mapOf("g1" to remote.toLastUploadedPhoto()),
         )
 
-        if (result !is DriveSyncResult.Failure) throw AssertionError("expected the cycle to fail, but was $result")
-        assertEquals(0, api.blobUploads.get())
-        assertEquals(0, api.snapshotUploads.get())
+        assertTrue("expected the cycle to fail, but was $result", result is DriveSyncResult.Failure)
+        assertEquals(0, api.blobUploads.get() - blobUploadsBefore)
+        assertEquals(0, api.snapshotUploads.get() - snapshotUploadsBefore)
     }
 
     @Test
