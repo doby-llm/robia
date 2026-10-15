@@ -82,7 +82,7 @@ interface WardrobeDao {
 
     @Transaction
     suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int =
-        recoverStaleGarmentSyncWork(staleBeforeEpochMillis) +
+        recoverStaleUnguardedGarmentSyncWork(staleBeforeEpochMillis) +
             recoverStaleTagCategorySyncWork(staleBeforeEpochMillis) +
             recoverStaleGarmentTagSyncWork(staleBeforeEpochMillis) +
             recoverStaleMainColorSyncWork(staleBeforeEpochMillis) +
@@ -91,6 +91,13 @@ interface WardrobeDao {
     /** An interrupted claim is transient work: it goes back to Queued with no attempt counted and no attention needed. */
     @Query("UPDATE clothing_items SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleGarmentSyncWork(staleBeforeEpochMillis: Long): Int
+
+    /**
+     * The aggregate's garment query. Guarded rows are excluded: their photo retry claims them outside the sync mutex,
+     * so a Running guarded row may be live. Requeuing it here would let an ordinary cycle race that retry.
+     */
+    @Query("UPDATE clothing_items SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND photo_restore_guarded = 0 AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
+    suspend fun recoverStaleUnguardedGarmentSyncWork(staleBeforeEpochMillis: Long): Int
 
     @Query("UPDATE tag_categories SET sync_status = 'Queued', retry_after_epoch_millis = NULL, sync_started_at_epoch_millis = NULL WHERE sync_status = 'Running' AND COALESCE(sync_started_at_epoch_millis, 0) <= :staleBeforeEpochMillis")
     suspend fun recoverStaleTagCategorySyncWork(staleBeforeEpochMillis: Long): Int

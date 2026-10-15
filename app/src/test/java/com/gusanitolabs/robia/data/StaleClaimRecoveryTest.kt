@@ -43,6 +43,30 @@ class StaleClaimRecoveryTest {
         }
     }
 
+    @Test
+    fun cycleStartRecoveryRequeuesUnguardedClaimsAndLeavesGuardedOnesRunning() {
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->
+            createTable(connection, "clothing_items")
+            insertRow(connection, "clothing_items", id = "guarded", startedAt = STALE_STARTED_AT, guarded = 1)
+            insertRow(connection, "clothing_items", id = "unguarded", startedAt = STALE_STARTED_AT, guarded = 0)
+
+            connection.createStatement().use { statement ->
+                statement.executeUpdate(
+                    recoveryStatement("recoverStaleUnguardedGarmentSyncWork")
+                        .replace(":staleBeforeEpochMillis", STALE_BEFORE.toString()),
+                )
+            }
+
+            assertEquals(
+                listOf(
+                    "guarded|Running|2|5000|$STALE_STARTED_AT",
+                    "unguarded|Queued|2|null|null",
+                ),
+                rows(connection, "clothing_items"),
+            )
+        }
+    }
+
     private fun recoveryStatement(method: String): String {
         val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
         return dao.substringBefore("suspend fun $method(").substringAfterLast("@Query(\"").substringBefore("\")")

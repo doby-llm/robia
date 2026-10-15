@@ -17,6 +17,22 @@ import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 internal fun WardrobeSyncSnapshot.equivalentForUpload(other: WardrobeSyncSnapshot): Boolean =
     equivalenceKey() == other.equivalenceKey() && photosEquivalent(sortedDeterministically().photos, other.sortedDeterministically().photos)
 
+/**
+ * Ordinary upload may be skipped only when [remote] already holds exactly this snapshot. Every doubt keeps the upload:
+ * pending vectors, a pending cloud deletion, a guarded photo on either side, or a legacy photo key (the upload re-keys it) always upload.
+ */
+internal fun WardrobeSyncSnapshot.remoteAlreadyHolds(
+    remote: WardrobeSyncSnapshot,
+    hasPendingEmbeddings: Boolean,
+    hasPendingCloudDeletion: Boolean,
+): Boolean =
+    !hasPendingEmbeddings &&
+        !hasPendingCloudDeletion &&
+        guardedPhotoRestoreIssues().isEmpty() &&
+        remote.guardedPhotoRestoreIssues().isEmpty() &&
+        remote.photos.none { photo -> PhotoBlobKeys.isLegacyKey(photo.blobPath) } &&
+        equivalentForUpload(remote)
+
 private data class SnapshotEquivalenceKey(
     val taxonomies: WardrobeTaxonomySnapshot,
     val garments: List<GarmentSyncRecord>,

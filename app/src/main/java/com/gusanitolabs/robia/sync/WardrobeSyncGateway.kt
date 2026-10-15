@@ -74,6 +74,8 @@ data class WardrobeSyncState(
     val attention: List<SyncAttention> = emptyList(),
     val pendingMergeSummary: MergeSummary? = null,
     val conflict: Boolean = false,
+    /** The last cycle or user resolution that reached its outcome; null until one has run in this process. */
+    val lastCycle: SyncCycleSummary? = null,
 ) {
     val canAttemptGoogleDriveSync: Boolean
         get() = connectionStatus == DriveSyncConnectionStatus.Connected
@@ -90,6 +92,19 @@ data class WardrobeSyncState(
         )
     }
 }
+
+/**
+ * Developer-facing summary of one sync run. [result] is null when the run was cancelled before it produced an outcome;
+ * a run that threw reports [SyncRunResult.Retry] with the throwable's class and message.
+ */
+data class SyncCycleSummary(
+    val startedAtEpochMillis: Long,
+    val endedAtEpochMillis: Long,
+    val result: SyncRunResult?,
+    val pendingAtStart: Int,
+    val errorClass: String? = null,
+    val errorMessage: String? = null,
+)
 
 data class CloudRestoreProgress(
     val phase: CloudRestorePhase,
