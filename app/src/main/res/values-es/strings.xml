@@ -578,4 +578,10 @@
     <string name="browse_search_enable_smart">Activa las sugerencias inteligentes para buscar también por la foto</string>
     <string name="browse_similar_to">Parecidas a “%1$s”</string>
     <string name="item_see_similar">Ver prendas parecidas</string>
+    <!-- TASK-E10 -->
+    <string name="dev_suggestion_diagnostics">Diagnóstico de sugerencias</string>
+    <string name="dev_diagnostics_unavailable">El diagnóstico necesita el modelo de sugerencias inteligentes y un embedding de la foto guardada.</string>
+    <string name="dev_recompute_embedding">Recalcular embedding</string>
+    <string name="dev_recompute_embedding_done">Embedding recalculado</string>
+    <string name="dev_recompute_embedding_error">No se pudo recalcular el embedding. Se mantiene el anterior.</string>
 </resources>

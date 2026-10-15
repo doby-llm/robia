@@ -578,4 +578,10 @@
     <string name="browse_search_enable_smart">Turn on smart suggestions to also search by photo</string>
     <string name="browse_similar_to">Similar to “%1$s”</string>
     <string name="item_see_similar">See similar garments</string>
+    <!-- TASK-E10 -->
+    <string name="dev_suggestion_diagnostics">Suggestion diagnostics</string>
+    <string name="dev_diagnostics_unavailable">Diagnostics need the smart suggestions model and a saved photo embedding.</string>
+    <string name="dev_recompute_embedding">Recompute embedding</string>
+    <string name="dev_recompute_embedding_done">Embedding recomputed</string>
+    <string name="dev_recompute_embedding_error">Couldn’t recompute the embedding. The previous one is kept.</string>
 </resources>
