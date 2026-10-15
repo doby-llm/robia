@@ -113,6 +113,7 @@ internal fun ColorReviewScreen(
     innerPadding: PaddingValues,
     items: List<ClothingItem>,
     changeSet: ColorPaletteChangeSet,
+    discardDialogOpen: Boolean,
     onCommit: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
 ) {
@@ -215,6 +216,7 @@ internal fun ColorReviewScreen(
         isScanning = isScanning,
         committed = committed,
         pickerOpen = pickerTarget != null,
+        discardDialogOpen = discardDialogOpen,
     )
     LaunchedEffect(autoCommit) {
         if (autoCommit) {

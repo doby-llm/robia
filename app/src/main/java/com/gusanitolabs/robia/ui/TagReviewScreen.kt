@@ -265,7 +265,7 @@ internal fun TagReviewPromptDialog(
 
 /**
  * A review finishes by itself once every candidate is accepted or hidden. Never for an empty scan, never while the scan
- * runs or a manual-choice picker is open, and only once per review ([committed]).
+ * runs, a manual-choice picker is open, or the discard dialog is open, and only once per review ([committed]).
  */
 internal fun shouldAutoCommit(
     candidateIds: Set<String>,
@@ -273,8 +273,17 @@ internal fun shouldAutoCommit(
     isScanning: Boolean,
     committed: Boolean,
     pickerOpen: Boolean,
+    discardDialogOpen: Boolean,
 ): Boolean =
-    !committed && !isScanning && !pickerOpen && candidateIds.isNotEmpty() && acceptedOrHiddenIds.containsAll(candidateIds)
+    !committed && !isScanning && !pickerOpen && !discardDialogOpen &&
+        candidateIds.isNotEmpty() && acceptedOrHiddenIds.containsAll(candidateIds)
+
+/**
+ * A tag action waits for the review snapshot of the one before it: while that snapshot is in flight or a prompt is
+ * pending, a new action is dropped before it reads or writes, so no snapshot can miss refs an earlier write removed.
+ */
+internal fun canStartTagReviewAction(offerInFlight: Boolean, promptPending: Boolean): Boolean =
+    !offerInFlight && !promptPending
 
 /**
  * Review of a category or occasion change. Garments are scanned incrementally on Dispatchers.Default, so the screen
@@ -286,6 +295,7 @@ internal fun TagReviewScreen(
     innerPadding: PaddingValues,
     request: TagReviewRequest,
     prepareScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
+    discardDialogOpen: Boolean,
     onCommit: (List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
 ) {
@@ -364,6 +374,7 @@ internal fun TagReviewScreen(
         isScanning = isScanning,
         committed = committed,
         pickerOpen = pickerGarmentId != null,
+        discardDialogOpen = discardDialogOpen,
     )
     LaunchedEffect(autoCommit) {
         if (autoCommit) {

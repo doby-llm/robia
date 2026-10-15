@@ -57,31 +57,52 @@ class TagReviewScanTest {
 
     @Test
     fun emptyScanNeverAutoCommits() {
-        assertFalse(shouldAutoCommit(emptySet(), emptySet(), isScanning = false, committed = false, pickerOpen = false))
+        assertFalse(shouldAutoCommit(emptySet(), emptySet(), isScanning = false, committed = false, pickerOpen = false, discardDialogOpen = false))
     }
 
     @Test
     fun midScanNeverAutoCommits() {
-        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = true, committed = false, pickerOpen = false))
+        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = true, committed = false, pickerOpen = false, discardDialogOpen = false))
     }
 
     @Test
     fun openManualChoicePickerNeverAutoCommits() {
-        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = false, committed = false, pickerOpen = true))
+        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = false, committed = false, pickerOpen = true, discardDialogOpen = false))
     }
 
     @Test
     fun unresolvedCandidateBlocksAutoCommit() {
-        assertFalse(shouldAutoCommit(setOf("a", "b"), setOf("a"), isScanning = false, committed = false, pickerOpen = false))
+        assertFalse(shouldAutoCommit(setOf("a", "b"), setOf("a"), isScanning = false, committed = false, pickerOpen = false, discardDialogOpen = false))
     }
 
     @Test
     fun acceptedAndHiddenCandidatesAutoCommit() {
-        assertTrue(shouldAutoCommit(setOf("a", "b"), setOf("a", "b"), isScanning = false, committed = false, pickerOpen = false))
+        assertTrue(shouldAutoCommit(setOf("a", "b"), setOf("a", "b"), isScanning = false, committed = false, pickerOpen = false, discardDialogOpen = false))
     }
 
     @Test
     fun autoCommitFiresOnlyOnce() {
-        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = false, committed = true, pickerOpen = false))
+        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = false, committed = true, pickerOpen = false, discardDialogOpen = false))
+    }
+
+    @Test
+    fun openDiscardDialogNeverAutoCommits() {
+        // The last card accepted while Discard is open must not commit the change the user is discarding.
+        assertFalse(shouldAutoCommit(setOf("a"), setOf("a"), isScanning = false, committed = false, pickerOpen = false, discardDialogOpen = true))
+    }
+
+    @Test
+    fun actionIsDroppedWhileSnapshotIsInFlight() {
+        assertFalse(canStartTagReviewAction(offerInFlight = true, promptPending = false))
+    }
+
+    @Test
+    fun actionIsDroppedWhilePromptIsPending() {
+        assertFalse(canStartTagReviewAction(offerInFlight = false, promptPending = true))
+    }
+
+    @Test
+    fun actionStartsWhenIdle() {
+        assertTrue(canStartTagReviewAction(offerInFlight = false, promptPending = false))
     }
 }

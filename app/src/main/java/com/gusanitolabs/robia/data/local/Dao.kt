@@ -388,10 +388,6 @@ interface WardrobeDao {
             upsertItemWithTags(item, tagIdsByItemId[item.id].orEmpty())
         }
     }
-
-    @Transaction
-    @Query("SELECT * FROM clothing_items ORDER BY id")
-    suspend fun getAllItems(): List<ClothingItemWithTags>
 }
 
 @Dao
