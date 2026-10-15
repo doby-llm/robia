@@ -208,6 +208,10 @@ class LocalTagRepository(
         DefaultTags.categories
             .firstOrNull { category -> category.id == categoryId }
             ?.let { category -> tagDao.upsertCategory(category.toEntity().queuedForSync()) }
+        // A restored default is alive again: its garment_tag tombstone (left by a delete) must not delete it on the next sync.
+        DefaultTags.tags
+            .filter { tag -> tag.categoryId == categoryId }
+            .forEach { tag -> syncTombstoneDao?.deleteTombstone(entityType = "garment_tag", entityId = tag.id) }
         tagDao.upsertTags(
             DefaultTags.tags
                 .filter { tag -> tag.categoryId == categoryId }

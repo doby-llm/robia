@@ -196,7 +196,6 @@ import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import com.gusanitolabs.robia.suggestions.engine.TextImageEmbedder
 import com.gusanitolabs.robia.suggestions.garmentTextInput
-import com.gusanitolabs.robia.suggestions.labelTextFor
 import com.gusanitolabs.robia.suggestions.rankSimilar
 import com.gusanitolabs.robia.suggestions.sortNewestFirst
 import com.gusanitolabs.robia.suggestions.sha256Hex16
@@ -216,6 +215,7 @@ import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -399,6 +399,11 @@ fun RobiaApp(
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    // The last tag or colour write. An undo launched right after it (cancelled prompt, discard) joins it first.
+    val lastReviewWrite = remember { mutableStateOf<Job?>(null) }
+    fun launchReviewWrite(block: suspend CoroutineScope.() -> Unit) {
+        lastReviewWrite.value = scope.launch(block = block)
+    }
     val app = LocalContext.current.applicationContext as RobiaApplication
     val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
@@ -508,31 +513,31 @@ fun RobiaApp(
                 }
             },
             onSaveTag = { tag ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.upsertTag(tag)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
                 }
             },
             onSaveMainColor = { color ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.upsertMainColor(color)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
             onDeleteCustomTag = { tag ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.deleteCustomTag(tag.id)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
                 }
             },
             onDeleteMainColor = { color ->
-                scope.launch {
+                launchReviewWrite {
                     tagRepository.deleteMainColor(color.id)
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
             onRestoreDefaultTags = { category ->
-                scope.launch {
+                launchReviewWrite {
                     val mergedTagIds = tagRepository.restoreDefaultTags(category.id)
                     val restoredTagIds = DefaultTags.tags
                         .filter { tag -> tag.categoryId == category.id }
@@ -548,8 +553,11 @@ fun RobiaApp(
                 }
             },
             onUndoReview = { plan ->
-                // One coroutine, in order: tombstones first, so a restored tag is not deleted again by the next sync.
+                // One coroutine, in order: the write it follows, then tombstones, so a restored tag is not deleted again by the next sync.
+                val previousWrite = lastReviewWrite.value
                 scope.launch {
+                    // A failed earlier write must not block the undo: join only waits, it does not rethrow here.
+                    previousWrite?.let { write -> runCatching { write.join() } }
                     plan.tombstonesToClear.forEach { (entityType, entityId) ->
                         app.database.syncTombstoneDao().deleteTombstone(entityType, entityId)
                     }
@@ -1241,6 +1249,18 @@ private fun RobiaShell(
         showColorReviewDiscardDialog = true
     }
 
+    // Tapping outside the tag prompt or going back cancels the saved change: the same undo as Discard, without a review.
+    fun cancelTagReviewPrompt(request: TagReviewRequest) {
+        pendingTagReview = null
+        onUndoReview(tagReviewUndoPlan(request, clothingItems, System.currentTimeMillis()))
+    }
+
+    // Tapping outside the colour prompt or going back cancels the saved change. Garments are untouched, so no decline.
+    fun cancelColorReviewPrompt(changeSet: ColorPaletteChangeSet) {
+        pendingColorReviewChangeSet = null
+        onUndoReview(colorReviewUndoPlan(changeSet))
+    }
+
     // Discard = undo: the saved palette change is reversed. Garments are not written here, so no decline is called.
     fun discardColorReview() {
         val changeSet = activeColorReviewChangeSet
@@ -1411,7 +1431,8 @@ private fun RobiaShell(
     pendingTagReview?.let { request ->
         TagReviewPromptDialog(
             modelReady = app.modelStore.state.value is ModelState.Ready,
-            onDismiss = { pendingTagReview = null },
+            onNotNow = { pendingTagReview = null },
+            onCancel = { cancelTagReviewPrompt(request) },
             onReview = {
                 activeTagReview = request
                 pendingTagReview = null
@@ -1422,7 +1443,8 @@ private fun RobiaShell(
 
     pendingColorReviewChangeSet?.let { changeSet ->
         ColorReviewPromptDialog(
-            onDismiss = { declineColorReviewProposal(changeSet) },
+            onNotNow = { declineColorReviewProposal(changeSet) },
+            onCancel = { cancelColorReviewPrompt(changeSet) },
             onReview = {
                 activeColorReviewChangeSet = changeSet
                 pendingColorReviewChangeSet = null
@@ -4990,7 +5012,7 @@ private suspend fun prepareTagReviewScan(
         .first()
     val labelVectors = changeSet.afterTags
         .filter { tag -> tag.categoryId == changeSet.categoryId }
-        .associate { tag -> tag.id to app.embeddingEngineHolder.embedText(labelTextFor(tag)) }
+        .associate { tag -> tag.id to app.embeddingEngineHolder.embedText(reviewScanLabelText(tag, changeSet.touchedTagIds)) }
     return ReviewPlanner.scan(changeSet, garments, vectors, labelVectors, changeSet.afterTags)
 }
 

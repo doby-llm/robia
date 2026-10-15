@@ -81,13 +81,18 @@ internal data class ColorPaletteChangeSet(
 
 internal enum class ColorPaletteOperation { Added, Edited, Deleted, RestoredDefault }
 
+/**
+ * Shown after a colour change is saved. Not now keeps the change; tapping outside or back cancels it (the caller undoes
+ * it, and garments are left alone); accepting opens the review.
+ */
 @Composable
 internal fun ColorReviewPromptDialog(
-    onDismiss: () -> Unit,
+    onNotNow: () -> Unit,
+    onCancel: () -> Unit,
     onReview: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.color_review_prompt_title)) },
         text = { Text(stringResource(R.string.color_review_prompt_body)) },
         confirmButton = {
@@ -96,7 +101,7 @@ internal fun ColorReviewPromptDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onNotNow) {
                 Text(stringResource(R.string.not_now))
             }
         },
@@ -123,6 +128,7 @@ internal fun ColorReviewScreen(
     var processedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var pickerTarget by remember(changeSet.id) { mutableStateOf<ColorReviewPickerTarget?>(null) }
+    var committed by remember(changeSet.id) { mutableStateOf(false) }
 
     LaunchedEffect(changeSet.id) {
         candidates.clear()
@@ -200,6 +206,22 @@ internal fun ColorReviewScreen(
     val unresolvedCount = candidates.count { candidate -> candidate.item.id !in acceptedIds }
     val acceptableCount = candidates.count { candidate -> candidate.item.id !in acceptedIds && candidate.hasConcreteTarget }
     val canFinish = !isScanning && unresolvedCount == 0
+    fun commitItems(): List<ClothingItem> = candidates
+        .filter { candidate -> candidate.item.id in acceptedIds || candidate.hasConcreteTarget }
+        .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
+    val autoCommit = shouldAutoCommit(
+        candidateIds = candidates.mapTo(mutableSetOf()) { candidate -> candidate.item.id },
+        acceptedOrHiddenIds = acceptedIds.toSet() + hiddenIds,
+        isScanning = isScanning,
+        committed = committed,
+        pickerOpen = pickerTarget != null,
+    )
+    LaunchedEffect(autoCommit) {
+        if (autoCommit) {
+            committed = true
+            onCommit(changeSet, commitItems())
+        }
+    }
     val totalCount = reviewItems.size.coerceAtLeast(1)
     val progress = processedCount.toFloat() / totalCount.toFloat()
     val animatedProgress by animateFloatAsState(
@@ -292,12 +314,7 @@ internal fun ColorReviewScreen(
                 else -> stringResource(R.string.done)
             },
             enabled = if (acceptableCount > 0) !isScanning else canFinish,
-            onClick = {
-                val commitItems = candidates
-                    .filter { candidate -> candidate.item.id in acceptedIds || candidate.hasConcreteTarget }
-                    .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
-                onCommit(changeSet, commitItems)
-            },
+            onClick = { onCommit(changeSet, commitItems()) },
         )
     }
 }

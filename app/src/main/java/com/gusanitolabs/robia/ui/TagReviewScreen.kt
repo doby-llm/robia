@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -56,18 +57,21 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.media.ImagePurpose
+import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.ProposalKind
 import com.gusanitolabs.robia.suggestions.ReviewPlanner
 import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
+import com.gusanitolabs.robia.suggestions.labelTextFor
 import java.util.Locale
 import java.util.UUID
 
 private const val TAG_REVIEW_THUMBNAIL_MAX_EDGE_PX = 384
 private const val TAG_KIND_CATEGORY = "category"
 private const val TAG_KIND_OCCASION = "occasion"
+private const val TAG_REVIEW_SCAN_LOG_TAG = "TagReviewScan"
 private val ReviewedTagKinds = setOf(TAG_KIND_CATEGORY, TAG_KIND_OCCASION)
 
 internal data class TagReviewCandidate(
@@ -109,15 +113,35 @@ internal fun tagReviewCommitCandidates(
 }
 
 /**
- * Change set for a saved tag (TS§3.10). Null for a new tag of another kind, or when the name did not change:
- * description-only edits and the suggest-occasions switch never affect garments.
+ * Label text the review scan embeds for a tag. An added or restored tag with no stored description is labelled by its bare
+ * name, like a custom tag: a default's built-in description ranks close to its neighbours (Dresses against Jumpsuits) and
+ * then matches no garment. Every other tag keeps [labelTextFor].
+ */
+internal fun reviewScanLabelText(tag: GarmentTag, touchedTagIds: Set<String>): String =
+    if (tag.id in touchedTagIds && tag.description.isNullOrBlank()) {
+        EmbeddingRecipe.CLASSIFICATION_PREFIX + tag.name
+    } else {
+        labelTextFor(tag)
+    }
+
+/** Developer-mode log line per review scan: the label text used for each touched tag and how many proposals were found. */
+internal fun tagReviewScanLogLine(changeSet: TagChangeSet, proposalCount: Int): String {
+    val labels = changeSet.afterTags
+        .filter { tag -> tag.categoryId == changeSet.categoryId && tag.id in changeSet.touchedTagIds }
+        .joinToString(" | ") { tag -> reviewScanLabelText(tag, changeSet.touchedTagIds) }
+    return "${changeSet.operation} ${changeSet.categoryId} labels=[$labels] proposals=$proposalCount"
+}
+
+/**
+ * Change set for a saved tag (TS§3.10). Null for a new tag of another kind, or when the text the garments are matched on
+ * did not change: a description edit changes it (and so triggers the review), a suggest-occasions switch does not.
  */
 internal fun savedTagChangeSet(before: List<GarmentTag>, saved: GarmentTag): TagChangeSet? {
     if (saved.categoryId !in ReviewedTagKinds) return null
     val existing = before.firstOrNull { tag -> tag.id == saved.id }
     val operation = when {
         existing == null -> TagOperation.Added
-        existing.name == saved.name -> return null
+        labelTextFor(existing) == labelTextFor(saved) -> return null
         else -> TagOperation.Renamed
     }
     val after = before.filterNot { tag -> tag.id == saved.id } + saved
@@ -204,15 +228,19 @@ private fun tagChangeSet(
     afterTags = after,
 )
 
-/** Shown after a tag change is saved. Declining keeps the change; accepting opens the scanning review. */
+/**
+ * Shown after a tag change is saved. Not now keeps the change; tapping outside or back cancels it (the caller undoes it);
+ * accepting opens the scanning review.
+ */
 @Composable
 internal fun TagReviewPromptDialog(
     modelReady: Boolean,
-    onDismiss: () -> Unit,
+    onNotNow: () -> Unit,
+    onCancel: () -> Unit,
     onReview: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.tag_review_prompt_title)) },
         text = { Text(stringResource(if (modelReady) R.string.tag_review_prompt_body else R.string.tag_review_needs_model)) },
         confirmButton = {
@@ -221,12 +249,25 @@ internal fun TagReviewPromptDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onNotNow) {
                 Text(stringResource(R.string.not_now))
             }
         },
     )
 }
+
+/**
+ * A review finishes by itself once every candidate is accepted or hidden. Never for an empty scan, never while the scan
+ * runs or a manual-choice picker is open, and only once per review ([committed]).
+ */
+internal fun shouldAutoCommit(
+    candidateIds: Set<String>,
+    acceptedOrHiddenIds: Set<String>,
+    isScanning: Boolean,
+    committed: Boolean,
+    pickerOpen: Boolean,
+): Boolean =
+    !committed && !isScanning && !pickerOpen && candidateIds.isNotEmpty() && acceptedOrHiddenIds.containsAll(candidateIds)
 
 /**
  * Review of a category or occasion change. Garments are scanned incrementally on Dispatchers.Default, so the screen
@@ -270,6 +311,7 @@ internal fun TagReviewScreen(
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
     var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
+    var committed by remember(changeSet.id) { mutableStateOf(false) }
 
     // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
     LaunchedEffect(changeSet.id) {
@@ -293,6 +335,34 @@ internal fun TagReviewScreen(
             scannedCount += 1
         }
         isScanning = false
+        Log.i(TAG_REVIEW_SCAN_LOG_TAG, tagReviewScanLogLine(changeSet, candidates.size))
+    }
+
+    // Accept all saves every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it.
+    val commitCandidates = tagReviewCommitCandidates(candidates.toList(), acceptedIds.toSet())
+    fun commitUpdatedItems(): List<ClothingItem> {
+        val now = System.currentTimeMillis()
+        return commitCandidates.map { candidate ->
+            val proposed = edits[candidate.item.id] ?: candidate.proposal.proposed
+            candidate.item.copy(
+                tags = changeSet.afterTags.filter { tag -> tag.id in proposed },
+                updatedAtEpochMillis = now,
+            )
+        }
+    }
+
+    val autoCommit = shouldAutoCommit(
+        candidateIds = candidates.mapTo(mutableSetOf()) { candidate -> candidate.item.id },
+        acceptedOrHiddenIds = acceptedIds.toSet() + hiddenIds,
+        isScanning = isScanning,
+        committed = committed,
+        pickerOpen = pickerGarmentId != null,
+    )
+    LaunchedEffect(autoCommit) {
+        if (autoCommit) {
+            committed = true
+            onCommit(commitUpdatedItems())
+        }
     }
 
     val totalCount = garments.size.coerceAtLeast(1)
@@ -420,7 +490,6 @@ internal fun TagReviewScreen(
         }
 
         // Accept all saves every proposal with a concrete target; manual-choice proposals stay out unless accepted by hand.
-        val commitCandidates = tagReviewCommitCandidates(candidates.toList(), acceptedIds.toSet())
         ReviewBottomBar(
             label = if (commitCandidates.isNotEmpty()) {
                 stringResource(R.string.tag_review_accept_all, commitCandidates.size)
@@ -428,17 +497,7 @@ internal fun TagReviewScreen(
                 stringResource(R.string.done)
             },
             enabled = !isScanning,
-            onClick = {
-                val now = System.currentTimeMillis()
-                val updatedItems = commitCandidates.map { candidate ->
-                    val proposed = edits[candidate.item.id] ?: candidate.proposal.proposed
-                    candidate.item.copy(
-                        tags = changeSet.afterTags.filter { tag -> tag.id in proposed },
-                        updatedAtEpochMillis = now,
-                    )
-                }
-                onCommit(updatedItems)
-            },
+            onClick = { onCommit(commitUpdatedItems()) },
         )
     }
 }
