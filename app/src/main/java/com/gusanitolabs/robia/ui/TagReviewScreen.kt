@@ -175,6 +175,8 @@ internal fun restoredTagChangeSet(
 /**
  * Discard = undo for a saved tag change. Restores every tag whose value differs from the one before the change (a rename,
  * a deleted tag, a restored default), removes the tags the change created, and gives back the garment tags a deletion took.
+ * A tag that a current garment still references is never removed: a restore that merged a custom row into a built-in one
+ * repointed those garments onto the built-in id, and removing it would strip their tags.
  */
 internal fun tagReviewUndoPlan(
     request: TagReviewRequest,
@@ -184,8 +186,9 @@ internal fun tagReviewUndoPlan(
     val changeSet = request.changeSet
     val beforeIds = changeSet.beforeTags.mapTo(mutableSetOf(), GarmentTag::id)
     val afterById = changeSet.afterTags.associateBy(GarmentTag::id)
+    val referencedIds = currentGarments.flatMapTo(mutableSetOf()) { garment -> garment.tags.map(GarmentTag::id) }
     val restoreTags = changeSet.beforeTags.filter { before -> afterById[before.id] != before }
-    val removeTags = changeSet.afterTags.filter { after -> after.id !in beforeIds }
+    val removeTags = changeSet.afterTags.filter { after -> after.id !in beforeIds && after.id !in referencedIds }
     val restoreGarments = if (changeSet.operation == TagOperation.Deleted) {
         request.garments.mapNotNull { snapshot ->
             restoredGarmentTags(snapshot, currentGarments, changeSet.touchedTagIds, now)
@@ -497,7 +500,11 @@ internal fun TagReviewScreen(
                 stringResource(R.string.done)
             },
             enabled = !isScanning,
-            onClick = { onCommit(commitUpdatedItems()) },
+            onClick = {
+                // Same once-only flag as the auto-commit: a Done tapped in the frame the auto-commit fires must not commit twice.
+                committed = true
+                onCommit(commitUpdatedItems())
+            },
         )
     }
 }

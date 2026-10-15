@@ -27,6 +27,64 @@ class ReviewUndoPlanTest {
     }
 
     @Test
+    fun addedTagIsRemovedEvenWhileOtherTagsAreInUse() {
+        val added = tag("skirt", name = "Skirts")
+        val plan = tagReviewUndoPlan(
+            request(TagOperation.Added, setOf(added.id), before, before + added),
+            currentGarments = listOf(garment("g1", listOf(shirt))),
+            now = NOW,
+        )
+
+        assertEquals(listOf(added), plan.removeTags)
+    }
+
+    @Test
+    fun addedTagThatAGarmentStillReferencesIsKept() {
+        val added = tag("skirt", name = "Skirts")
+        val plan = tagReviewUndoPlan(
+            request(TagOperation.Added, setOf(added.id), before, before + added),
+            currentGarments = listOf(garment("g1", listOf(added))),
+            now = NOW,
+        )
+
+        assertTrue(plan.removeTags.isEmpty())
+    }
+
+    @Test
+    fun restoreDefaultsMergedIntoBuiltInTagKeepsTheRepointedGarmentsOnIt() {
+        // The built-in "Dresses" was gone. The restore merges the custom "Dresses" into it: the garment now carries the
+        // built-in id. Undoing the restore must not remove that id, or the garment loses its tag.
+        val custom = tag("custom-dresses", name = "Dresses")
+        val builtIn = tag("dress", name = "Dresses")
+        val changeSet = restoredTagChangeSet(listOf(custom, shirt), "category", listOf(builtIn))!!
+        val repointed = garment("g1", tags = listOf(builtIn))
+
+        val plan = tagReviewUndoPlan(
+            TagReviewRequest(changeSet, listOf(garment("g1", tags = listOf(custom)))),
+            currentGarments = listOf(repointed),
+            now = NOW,
+        )
+
+        assertTrue(plan.removeTags.isEmpty())
+        assertTrue(plan.restoreGarments.isEmpty())
+    }
+
+    @Test
+    fun renamedTagIsRestoredAndGarmentsReferencingItAreLeftAlone() {
+        val renamed = dress.copy(name = "Vestidos")
+        val garment = garment("g1", tags = listOf(renamed, shirt))
+        val plan = tagReviewUndoPlan(
+            request(TagOperation.Renamed, setOf(dress.id), before, listOf(renamed, shirt), garments = listOf(garment)),
+            currentGarments = listOf(garment),
+            now = NOW,
+        )
+
+        assertEquals(listOf(dress), plan.restoreTags)
+        assertTrue(plan.removeTags.isEmpty())
+        assertTrue(plan.restoreGarments.isEmpty())
+    }
+
+    @Test
     fun renamedTagIsWrittenBackWithItsOldName() {
         val renamed = dress.copy(name = "Vestidos")
         val plan = tagReviewUndoPlan(

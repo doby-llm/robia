@@ -314,7 +314,11 @@ internal fun ColorReviewScreen(
                 else -> stringResource(R.string.done)
             },
             enabled = if (acceptableCount > 0) !isScanning else canFinish,
-            onClick = { onCommit(changeSet, commitItems()) },
+            onClick = {
+                // Same once-only flag as the auto-commit: a Done tapped in the frame the auto-commit fires must not commit twice.
+                committed = true
+                onCommit(changeSet, commitItems())
+            },
         )
     }
 }

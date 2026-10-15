@@ -402,12 +402,13 @@ fun RobiaApp(
     val availableTags by tagRepository.observeTags().collectAsState(initial = emptyList())
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    val app = LocalContext.current.applicationContext as RobiaApplication
     // The last tag or colour write. An undo launched right after it (cancelled prompt, discard) joins it first.
+    // Review writes and their undo run on the app scope, a SupervisorJob: a failed save must not cancel the undo.
     val lastReviewWrite = remember { mutableStateOf<Job?>(null) }
     fun launchReviewWrite(block: suspend CoroutineScope.() -> Unit) {
-        lastReviewWrite.value = scope.launch(block = block)
+        lastReviewWrite.value = app.appScope.launch(block = block)
     }
-    val app = LocalContext.current.applicationContext as RobiaApplication
     val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
         SuggestionService(
@@ -555,12 +556,12 @@ fun RobiaApp(
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
                 }
             },
-            onUndoReview = { plan ->
-                // One coroutine, in order: the write it follows, then tombstones, so a restored tag is not deleted again by the next sync.
+            readActiveGarments = { wardrobeRepository.observeActiveItems().first() },
+            onUndoReview = { buildPlan ->
+                // One coroutine, in order: the write it follows, then the plan, then tombstones, so a restored tag is not deleted again by the next sync.
                 val previousWrite = lastReviewWrite.value
-                scope.launch {
-                    // A failed earlier write must not block the undo: join only waits, it does not rethrow here.
-                    previousWrite?.let { write -> runCatching { write.join() } }
+                app.appScope.launch {
+                    val plan = afterPreviousWrite(previousWrite, buildPlan)
                     plan.tombstonesToClear.forEach { (entityType, entityId) ->
                         app.database.syncTombstoneDao().deleteTombstone(entityType, entityId)
                     }
@@ -865,7 +866,8 @@ private fun RobiaShell(
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
-    onUndoReview: (ReviewUndoPlan) -> Unit = {},
+    readActiveGarments: suspend () -> List<ClothingItem> = { emptyList() },
+    onUndoReview: (buildPlan: suspend () -> ReviewUndoPlan) -> Unit = {},
     initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
     val routeStack = remember(initialPerformanceBatchFixtureUris) {
@@ -1241,10 +1243,17 @@ private fun RobiaShell(
         showTagReviewDiscardDialog = true
     }
 
+    // Read when the undo runs, after the write it follows, so the plan sees the garments that write left behind.
+    suspend fun currentGarmentsForUndo(): List<ClothingItem> = readActiveGarments()
+
     // Discard = undo: the saved tag change is reversed through the normal paths. The garment proposals go with it.
     fun discardTagReview() {
         val request = activeTagReview
-        if (request != null) onUndoReview(tagReviewUndoPlan(request, clothingItems, System.currentTimeMillis()))
+        if (request != null) {
+            onUndoReview {
+                tagReviewUndoPlan(request, currentGarmentsForUndo(), System.currentTimeMillis())
+            }
+        }
         activeTagReview = null
         showTagReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1287,21 +1296,26 @@ private fun RobiaShell(
     }
 
     // Tapping outside the tag prompt or going back cancels the saved change: the same undo as Discard, without a review.
+    // Once only: a repeat tap, back after an outside tap, or a dismiss after Review finds the request already taken.
     fun cancelTagReviewPrompt(request: TagReviewRequest) {
+        if (!isStillPending(pendingTagReview, request)) return
         pendingTagReview = null
-        onUndoReview(tagReviewUndoPlan(request, clothingItems, System.currentTimeMillis()))
+        onUndoReview {
+            tagReviewUndoPlan(request, currentGarmentsForUndo(), System.currentTimeMillis())
+        }
     }
 
     // Tapping outside the colour prompt or going back cancels the saved change. Garments are untouched, so no decline.
     fun cancelColorReviewPrompt(changeSet: ColorPaletteChangeSet) {
+        if (!isStillPending(pendingColorReviewChangeSet, changeSet)) return
         pendingColorReviewChangeSet = null
-        onUndoReview(colorReviewUndoPlan(changeSet))
+        onUndoReview { colorReviewUndoPlan(changeSet) }
     }
 
     // Discard = undo: the saved palette change is reversed. Garments are not written here, so no decline is called.
     fun discardColorReview() {
         val changeSet = activeColorReviewChangeSet
-        if (changeSet != null) onUndoReview(colorReviewUndoPlan(changeSet))
+        if (changeSet != null) onUndoReview { colorReviewUndoPlan(changeSet) }
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1471,8 +1485,9 @@ private fun RobiaShell(
             onNotNow = { pendingTagReview = null },
             onCancel = { cancelTagReviewPrompt(request) },
             onReview = {
-                activeTagReview = request
+                // Cleared first: a dismiss callback after Review finds the request taken and cannot undo the change.
                 pendingTagReview = null
+                activeTagReview = request
                 replaceRoute(RobiaRoute.TagReview)
             },
         )
@@ -1483,8 +1498,9 @@ private fun RobiaShell(
             onNotNow = { declineColorReviewProposal(changeSet) },
             onCancel = { cancelColorReviewPrompt(changeSet) },
             onReview = {
-                activeColorReviewChangeSet = changeSet
+                // Cleared first, as for the tag prompt: a dismiss after Review cannot undo the change.
                 pendingColorReviewChangeSet = null
+                activeColorReviewChangeSet = changeSet
                 replaceRoute(RobiaRoute.ColorReview)
             },
         )
@@ -5087,6 +5103,19 @@ private suspend fun prepareTagReviewScan(
         .associate { tag -> tag.id to app.embeddingEngineHolder.embedText(reviewScanLabelText(tag, changeSet.touchedTagIds)) }
     return ReviewPlanner.scan(changeSet, garments, vectors, labelVectors, changeSet.afterTags)
 }
+
+/**
+ * Builds an undo plan only after [previousWrite] has finished, so the plan reads what that write left behind. `join` waits
+ * and does not rethrow a failed write, so a failed save never blocks the undo. Cancelling the caller during the wait still
+ * propagates, which is why this is not wrapped in runCatching.
+ */
+internal suspend fun <T> afterPreviousWrite(previousWrite: Job?, buildPlan: suspend () -> T): T {
+    previousWrite?.join()
+    return buildPlan()
+}
+
+/** A prompt's cancel or confirm acts only while its request is still the pending one; a stale callback finds it taken. */
+internal fun <T : Any> isStillPending(pending: T?, request: T): Boolean = pending === request
 
 /**
  * Stores the capture-time IMAGE vector when it belongs to the saved photo, and keeps the TEXT vector in step with
