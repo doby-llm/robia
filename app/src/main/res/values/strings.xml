@@ -584,4 +584,8 @@
     <string name="dev_recompute_embedding">Recompute embedding</string>
     <string name="dev_recompute_embedding_done">Embedding recomputed</string>
     <string name="dev_recompute_embedding_error">Couldn’t recompute the embedding. The previous one is kept.</string>
+    <!-- F01 -->
+    <string name="browse_search_in_progress">Searching…</string>
+    <string name="browse_similar_caption">Sorted by similarity</string>
+    <string name="browse_similar_untitled">Untitled garment</string>
 </resources>
