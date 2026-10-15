@@ -38,6 +38,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -89,6 +90,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -208,6 +210,7 @@ import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
+import com.gusanitolabs.robia.sync.SyncCycleSummary
 import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.SyncAttention
@@ -881,6 +884,7 @@ private fun RobiaShell(
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
     val online by app.online.collectAsState()
+    val cloudAuthorizationInFlight by app.cloudAuthorizationInFlight.collectAsState()
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
     val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
@@ -917,7 +921,14 @@ private fun RobiaShell(
     val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
-    var showCloudSetupPrompt by remember { mutableStateOf(false) }
+    // One first-run prompt at a time; the order lives in nextFirstRunPrompt. Answered cloud/model prompts stay answered in memory until settings catch up.
+    var activeFirstRunPrompt by remember { mutableStateOf<FirstRunPrompt?>(null) }
+    var answeredFirstRunPrompts by remember { mutableStateOf(emptySet<FirstRunPrompt>()) }
+    var showKeepPhoneConfirmation by remember { mutableStateOf(false) }
+    // A kept merge proposal (Not now) lives on as a Browse card; a new proposal shows the dialog again.
+    var mergeDialogDismissed by remember(syncState.pendingMergeSummary) { mutableStateOf(false) }
+    var mergeCombinePhase by remember { mutableStateOf(MergeCombinePhase.Idle) }
+    var mergeCycleAtTap by remember { mutableStateOf<SyncCycleSummary?>(null) }
     var showBackupDeletionConfirmation by remember { mutableStateOf(false) }
     var showUseBackupConfirmation by remember { mutableStateOf(false) }
     var conflictDialogDismissed by remember(syncState.conflict) { mutableStateOf(false) }
@@ -1018,34 +1029,40 @@ private fun RobiaShell(
             !syncState.hasConflictingAccountBinding
     }
 
-    LaunchedEffect(
-        settingsLoaded,
-        settings.driveSyncConnectionStatus,
-        settings.cloudSetupPromptInteracted,
-        isFirstRunCloudSetup,
-    ) {
-        if (settingsLoaded &&
-            !settings.cloudSetupPromptInteracted &&
-            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
-            isFirstRunCloudSetup
-        ) {
-            onCloudSetupPromptInteracted()
-            showCloudSetupPrompt = true
-        }
-    }
-
-    var showModelPrompt by remember { mutableStateOf(false) }
     val cloudSetupPromptPending = settingsLoaded &&
         !settings.cloudSetupPromptInteracted &&
         settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
         isFirstRunCloudSetup
-    LaunchedEffect(modelPromptShown, modelState, showCloudSetupPrompt, cloudSetupPromptPending) {
-        // A null preference means not loaded yet, so the prompt waits; the cloud-setup prompt goes first.
-        if (!showCloudSetupPrompt &&
-            !cloudSetupPromptPending &&
-            shouldShowModelPrompt(promptShown = modelPromptShown ?: true, state = modelState)
-        ) {
-            showModelPrompt = true
+    val firstRunInputs = FirstRunPromptInputs(
+        settingsLoaded = settingsLoaded,
+        cloudAuthorizationInFlight = cloudAuthorizationInFlight,
+        anotherDialogOpen = activeFirstRunPrompt != null || showUseBackupConfirmation || showKeepPhoneConfirmation,
+        cloudSetupPending = cloudSetupPromptPending && FirstRunPrompt.CloudSetup !in answeredFirstRunPrompts,
+        mergeConfirmationPending = syncState.pendingMergeSummary != null && !mergeDialogDismissed,
+        backupConflictPending = syncState.conflict && !conflictDialogDismissed,
+        modelDownloadPending = FirstRunPrompt.ModelDownload !in answeredFirstRunPrompts &&
+            shouldShowModelPrompt(promptShown = modelPromptShown ?: true, state = modelState),
+    )
+    val queuedFirstRunPrompt = nextFirstRunPrompt(firstRunInputs)
+    LaunchedEffect(queuedFirstRunPrompt) {
+        if (queuedFirstRunPrompt != null) activeFirstRunPrompt = queuedFirstRunPrompt
+    }
+    LaunchedEffect(activeFirstRunPrompt, firstRunInputs) {
+        // A prompt whose answer arrived elsewhere (for example a finished sync) closes instead of blocking the queue.
+        val shown = activeFirstRunPrompt ?: return@LaunchedEffect
+        if (!firstRunInputs.isPending(shown)) activeFirstRunPrompt = null
+    }
+
+    val lastCycle = syncState.lastCycle
+    val mergeProposalPending = syncState.pendingMergeSummary != null
+    LaunchedEffect(lastCycle, mergeProposalPending) {
+        mergeCombinePhase = nextMergeCombinePhase(mergeCombinePhase, mergeCycleAtTap, lastCycle, mergeProposalPending)
+    }
+    // Safety net: no cycle ever finished after the tap (offline, work not scheduled) must not leave 'Combining' forever.
+    LaunchedEffect(mergeCombinePhase) {
+        if (mergeCombinePhase == MergeCombinePhase.Combining) {
+            kotlinx.coroutines.delay(MERGE_COMBINE_TIMEOUT_MS)
+            if (mergeCombinePhase == MergeCombinePhase.Combining) mergeCombinePhase = MergeCombinePhase.Failed
         }
     }
 
@@ -1396,17 +1413,86 @@ private fun RobiaShell(
         }
     }
 
+    fun closeFirstRunPrompt(prompt: FirstRunPrompt) {
+        answeredFirstRunPrompts = answeredFirstRunPrompts + prompt
+        activeFirstRunPrompt = null
+    }
+
     fun dismissCloudSetupPrompt() {
         onCloudSetupPromptInteracted()
-        showCloudSetupPrompt = false
+        closeFirstRunPrompt(FirstRunPrompt.CloudSetup)
     }
 
     fun confirmCloudSetupPrompt() {
         onCloudSetupPromptInteracted()
-        showCloudSetupPrompt = false
+        closeFirstRunPrompt(FirstRunPrompt.CloudSetup)
         if (isFirstRunCloudSetup) {
             onRequestCloudSetup()
         }
+    }
+
+    fun laterModelPrompt() {
+        onModelPromptShown()
+        closeFirstRunPrompt(FirstRunPrompt.ModelDownload)
+    }
+
+    fun downloadModelFromPrompt() {
+        onModelPromptShown()
+        closeFirstRunPrompt(FirstRunPrompt.ModelDownload)
+        startModelDownload(context)
+    }
+
+    // Combine closes the dialog at once; the Browse card shows the progress and the result.
+    fun startMergeCombine() {
+        mergeCycleAtTap = syncState.lastCycle
+        mergeCombinePhase = MergeCombinePhase.Combining
+        onConfirmMerge()
+    }
+
+    fun combineFromMergeDialog() {
+        mergeDialogDismissed = true
+        activeFirstRunPrompt = null
+        startMergeCombine()
+    }
+
+    // Not now, outside tap and back keep the proposal as a Browse card. cancelMerge is NOT called: it would persist a conflict.
+    fun keepMergeProposalForLater() {
+        mergeDialogDismissed = true
+        activeFirstRunPrompt = null
+    }
+
+    // Replacing is a destructive choice: the existing replace confirmation decides; cancelling it brings the proposal back.
+    fun replaceFromMergeProposal() {
+        activeFirstRunPrompt = null
+        showUseBackupConfirmation = true
+    }
+
+    fun useBackupFromConflict() {
+        activeFirstRunPrompt = null
+        showUseBackupConfirmation = true
+    }
+
+    fun keepThisPhoneFromConflict() {
+        activeFirstRunPrompt = null
+        showKeepPhoneConfirmation = true
+    }
+
+    fun notNowFromConflict() {
+        conflictDialogDismissed = true
+        activeFirstRunPrompt = null
+    }
+
+    fun confirmUseBackup() {
+        showUseBackupConfirmation = false
+        conflictDialogDismissed = true
+        mergeDialogDismissed = true
+        onUseBackup()
+    }
+
+    fun confirmKeepThisPhone() {
+        showKeepPhoneConfirmation = false
+        conflictDialogDismissed = true
+        onKeepThisPhone()
     }
 
     val restoreProgress = syncState.restoreProgress
@@ -1524,55 +1610,59 @@ private fun RobiaShell(
         )
     }
 
-    if (showCloudSetupPrompt) {
-        CloudSetupDialog(
+    when (activeFirstRunPrompt) {
+        FirstRunPrompt.CloudSetup -> CloudSetupDialog(
             onDismiss = ::dismissCloudSetupPrompt,
             onConfirmSetup = ::confirmCloudSetupPrompt,
         )
-    }
-
-    if (syncState.conflict && !conflictDialogDismissed && !showUseBackupConfirmation) {
-        BackupConflictDialog(
-            onUseBackup = { showUseBackupConfirmation = true },
-            onKeepThisPhone = {
-                conflictDialogDismissed = true
-                onKeepThisPhone()
-            },
-            onNotNow = { conflictDialogDismissed = true },
+        FirstRunPrompt.MergeConfirmation -> syncState.pendingMergeSummary?.let { summary ->
+            MergeConfirmationDialog(
+                summary = summary,
+                onCombine = ::combineFromMergeDialog,
+                onReplace = ::replaceFromMergeProposal,
+                onNotNow = ::keepMergeProposalForLater,
+            )
+        }
+        FirstRunPrompt.BackupConflict -> BackupConflictDialog(
+            onUseBackup = ::useBackupFromConflict,
+            onKeepThisPhone = ::keepThisPhoneFromConflict,
+            onNotNow = ::notNowFromConflict,
         )
+        FirstRunPrompt.ModelDownload -> ModelPromptDialog(
+            onLater = ::laterModelPrompt,
+            onDownloadNow = ::downloadModelFromPrompt,
+        )
+        null -> Unit
     }
 
     if (showUseBackupConfirmation) {
         UseBackupConfirmationDialog(
-            onConfirm = {
-                showUseBackupConfirmation = false
-                conflictDialogDismissed = true
-                onUseBackup()
-            },
+            onConfirm = ::confirmUseBackup,
             onCancel = { showUseBackupConfirmation = false },
         )
     }
 
-    syncState.pendingMergeSummary?.let { summary ->
-        MergeConfirmationDialog(
-            summary = summary,
-            onConfirm = onConfirmMerge,
-            onCancel = onCancelMerge,
+    if (showKeepPhoneConfirmation) {
+        KeepPhoneConfirmationDialog(
+            onConfirm = ::confirmKeepThisPhone,
+            onCancel = { showKeepPhoneConfirmation = false },
         )
     }
 
-    if (showModelPrompt) {
-        ModelPromptDialog(
-            onLater = {
-                showModelPrompt = false
-                onModelPromptShown()
-            },
-            onDownloadNow = {
-                showModelPrompt = false
-                onModelPromptShown()
-                startModelDownload(context)
-            },
-        )
+    val mergeProposalCardShown = (syncState.pendingMergeSummary != null && mergeDialogDismissed) ||
+        mergeCombinePhase != MergeCombinePhase.Idle
+    val mergeProposalCard: (@Composable () -> Unit)? = if (mergeProposalCardShown) {
+        {
+            MergeProposalCard(
+                summary = syncState.pendingMergeSummary,
+                phase = mergeCombinePhase,
+                onCombine = ::startMergeCombine,
+                onReplace = ::replaceFromMergeProposal,
+                onDone = { mergeCombinePhase = MergeCombinePhase.Idle },
+            )
+        }
+    } else {
+        null
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1820,6 +1910,7 @@ private fun RobiaShell(
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
+            mergeProposalCard = mergeProposalCard,
             onSyncAttentionAction = ::handleAttentionAction,
             onKeepWithoutPhoto = onKeepWithoutPhoto,
             onRetryAttention = onRetryAttention,
@@ -2284,31 +2375,70 @@ private fun CloudSetupDialog(
     )
 }
 
+/**
+ * Dialog with its choices stacked full width in the button area, so long EN/ES/DE labels never share a row.
+ * Cancel, Not now, outside tap and back close it without changing data unless an action is chosen.
+ */
+@Composable
+private fun StackedActionDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    text: @Composable () -> Unit,
+    actions: @Composable ColumnScope.() -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = text,
+        confirmButton = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+                content = actions,
+            )
+        },
+    )
+}
+
+@Composable
+private fun DestructiveButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError,
+        ),
+    ) { Text(label) }
+}
+
+@Composable
+private fun DestructiveOutlinedButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+    ) { Text(label) }
+}
+
 @Composable
 private fun BackupConflictDialog(
     onUseBackup: () -> Unit,
     onKeepThisPhone: () -> Unit,
     onNotNow: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onNotNow,
-        title = { Text(stringResource(R.string.sync_attention_conflict_title)) },
+    StackedActionDialog(
+        title = stringResource(R.string.sync_attention_conflict_title),
+        onDismiss = onNotNow,
         text = { Text(stringResource(R.string.sync_attention_conflict_body)) },
-        confirmButton = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Button(onClick = onUseBackup, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.sync_conflict_use_backup))
-                }
-                OutlinedButton(onClick = onKeepThisPhone, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.sync_conflict_keep_phone))
-                }
+        actions = {
+            DestructiveButton(stringResource(R.string.sync_conflict_use_backup), onUseBackup)
+            DestructiveButton(stringResource(R.string.sync_conflict_keep_phone), onKeepThisPhone)
+            TextButton(onClick = onNotNow, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.not_now))
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onNotNow) { Text(stringResource(R.string.not_now)) }
         },
     )
 }
@@ -2318,15 +2448,33 @@ private fun UseBackupConfirmationDialog(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.sync_use_backup_confirm_title)) },
+    StackedActionDialog(
+        title = stringResource(R.string.sync_use_backup_confirm_title),
+        onDismiss = onCancel,
         text = { Text(stringResource(R.string.sync_use_backup_confirm_body)) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.sync_use_backup_confirm_action)) }
+        actions = {
+            DestructiveButton(stringResource(R.string.sync_use_backup_confirm_action), onConfirm)
+            TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cancel))
+            }
         },
-        dismissButton = {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+    )
+}
+
+@Composable
+private fun KeepPhoneConfirmationDialog(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    StackedActionDialog(
+        title = stringResource(R.string.sync_keep_phone_confirm_title),
+        onDismiss = onCancel,
+        text = { Text(stringResource(R.string.sync_keep_phone_confirm_body)) },
+        actions = {
+            DestructiveButton(stringResource(R.string.sync_keep_phone_confirm_action), onConfirm)
+            TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cancel))
+            }
         },
     )
 }
@@ -2334,17 +2482,18 @@ private fun UseBackupConfirmationDialog(
 @Composable
 private fun MergeConfirmationDialog(
     summary: MergeSummary,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
+    onCombine: () -> Unit,
+    onReplace: () -> Unit,
+    onNotNow: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.sync_merge_title)) },
+    StackedActionDialog(
+        title = stringResource(R.string.sync_merge_title),
+        onDismiss = onNotNow,
         text = {
             Column {
                 Text(
                     stringResource(
-                        R.string.sync_merge_body,
+                        R.string.sync_merge_plain_body,
                         summary.remoteGarmentCount,
                         summary.localGarmentCount,
                         summary.mergedGarmentCount,
@@ -2358,13 +2507,89 @@ private fun MergeConfirmationDialog(
                 )
             }
         },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.sync_merge_confirm)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        actions = {
+            Button(onClick = onCombine, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.sync_merge_confirm))
+            }
+            DestructiveOutlinedButton(stringResource(R.string.sync_merge_replace), onReplace)
+            TextButton(onClick = onNotNow, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.not_now))
+            }
         },
     )
+}
+
+/** Browse card for a merge proposal that was kept, or one being combined. Its buttons never write without a tap. */
+@Composable
+private fun MergeProposalCard(
+    summary: MergeSummary?,
+    phase: MergeCombinePhase,
+    onCombine: () -> Unit,
+    onReplace: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val combining = phase == MergeCombinePhase.Combining
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.sync_merge_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            summary?.let { merge ->
+                Text(
+                    text = stringResource(
+                        R.string.sync_merge_plain_body,
+                        merge.remoteGarmentCount,
+                        merge.localGarmentCount,
+                        merge.mergedGarmentCount,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            val status = when (phase) {
+                MergeCombinePhase.Idle -> null
+                MergeCombinePhase.Combining -> R.string.sync_merge_combining
+                MergeCombinePhase.Done -> R.string.sync_merge_combined
+                MergeCombinePhase.Failed -> R.string.sync_merge_combine_failed
+            }
+            status?.let { statusRes ->
+                Text(
+                    text = stringResource(statusRes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (phase == MergeCombinePhase.Failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            ) {
+                if (phase == MergeCombinePhase.Done) {
+                    Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.sync_merge_result_ok))
+                    }
+                } else {
+                    Button(onClick = onCombine, enabled = !combining, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.sync_merge_confirm))
+                    }
+                    DestructiveOutlinedButton(
+                        label = stringResource(R.string.sync_merge_replace),
+                        onClick = onReplace,
+                        enabled = !combining,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2798,6 +3023,7 @@ private fun RobiaNavHost(
     onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
+    mergeProposalCard: (@Composable () -> Unit)? = null,
     onSyncAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     onKeepWithoutPhoto: (String) -> Unit,
     onRetryAttention: (SyncAttentionKind) -> Unit,
@@ -2830,6 +3056,7 @@ private fun RobiaNavHost(
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
             onResetFilters = onResetFilters,
             attentions = browseAttentions,
+            mergeProposalCard = mergeProposalCard,
             onAttentionAction = onSyncAttentionAction,
             showSyncDetails = developerModeEnabled,
             onSyncDetailsClick = onRestoreSyncLogClick,
@@ -3026,6 +3253,7 @@ private fun BrowseWardrobeScreen(
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
     attentions: List<SyncAttention>,
+    mergeProposalCard: (@Composable () -> Unit)? = null,
     onAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     showSyncDetails: Boolean,
     onSyncDetailsClick: () -> Unit,
@@ -3057,7 +3285,7 @@ private fun BrowseWardrobeScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -3082,6 +3310,9 @@ private fun BrowseWardrobeScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SuggestionsProgressBanner(remaining = backfillProgress.remaining)
             }
+        }
+        mergeProposalCard?.let { card ->
+            item(span = { GridItemSpan(maxLineSpan) }) { card() }
         }
         if (items.isNotEmpty()) {
             attentions.forEach { attention ->
@@ -4371,7 +4602,7 @@ private fun AdvancedFiltersScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {

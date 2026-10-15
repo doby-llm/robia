@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestGoogleDriveAuthorization() {
         lifecycleScope.launch { settingsRepository.markCloudSetupPromptInteracted() }
+        setCloudAuthorizationInFlight(true)
 
         val request = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(DRIVE_APPDATA_SCOPE)))
@@ -114,6 +115,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleDriveAuthorizationResolution(resultCode: Int, data: Intent?) {
+        setCloudAuthorizationInFlight(false)
         if (data == null) {
             val outcome = if (resultCode == Activity.RESULT_CANCELED) "cancelled" else "missing_data"
             logDriveAuthorizationOutcome(
@@ -160,6 +162,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun persistDriveAuthorizationResult(result: AuthorizationResult) {
+        setCloudAuthorizationInFlight(false)
         val grantedDriveScope = result.grantedScopes.any { scope ->
             scope == DRIVE_APPDATA_SCOPE
         }
@@ -195,7 +198,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showCloudSetupLaunchFailure() {
+        setCloudAuthorizationInFlight(false)
         showCloudSetupFailure(R.string.cloud_setup_launch_failed)
+    }
+
+    private fun setCloudAuthorizationInFlight(inFlight: Boolean) {
+        (application as RobiaApplication).setCloudAuthorizationInFlight(inFlight)
     }
 
     private fun showCloudSetupFailure(messageRes: Int) {
