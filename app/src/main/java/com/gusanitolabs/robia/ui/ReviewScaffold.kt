@@ -1,15 +1,25 @@
 package com.gusanitolabs.robia.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
@@ -24,16 +34,130 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.MainColor
+import kotlinx.coroutines.delay
 
 // Shared skeleton of the review screens (colour mapping now, tag review later). Look must stay identical across them.
+
+/** An accepted card stays this long with its accepted highlight before it starts leaving. */
+internal const val REVIEW_ACCEPT_HIGHLIGHT_MILLIS = 200
+
+/** The accepted card fades and shrinks away over this long; the same timing in both review screens. */
+internal const val REVIEW_ACCEPT_EXIT_MILLIS = 250
+
+/** The picker list has a bottom fade and an option count only while more options are below the visible part. */
+internal fun scrollHintVisible(value: Int, max: Int): Boolean = value < max
+
+/**
+ * What Discard undoes, as a pure plan built from the change that was saved. Applied through the normal save and delete
+ * paths, in this order: tombstones cleared, tags and colours restored or removed, then garments put back.
+ */
+internal data class ReviewUndoPlan(
+    val restoreTags: List<GarmentTag> = emptyList(),
+    val removeTags: List<GarmentTag> = emptyList(),
+    val restoreColors: List<MainColor> = emptyList(),
+    val removeColors: List<MainColor> = emptyList(),
+    val restoreGarments: List<ClothingItem> = emptyList(),
+) {
+    /** Entity type and id of each restored tag and colour; a deletion being undone left a tombstone under these keys. */
+    val tombstonesToClear: List<Pair<String, String>>
+        get() = restoreTags.map { tag -> "garment_tag" to tag.id } + restoreColors.map { color -> "main_color" to color.id }
+}
+
+/**
+ * Wraps a review card that can be accepted. Accepting it shows the accepted state for a moment, then fades and shrinks it
+ * away and calls [onGone], which removes it from the list. Accepted proposals stay in the screen's state for the commit.
+ */
+@Composable
+internal fun ReviewAcceptedCard(
+    accepted: Boolean,
+    onGone: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    var leaving by remember { mutableStateOf(false) }
+    val currentOnGone by rememberUpdatedState(onGone)
+    LaunchedEffect(accepted) {
+        if (accepted) {
+            delay(REVIEW_ACCEPT_HIGHLIGHT_MILLIS.toLong())
+            leaving = true
+            delay(REVIEW_ACCEPT_EXIT_MILLIS.toLong())
+            currentOnGone()
+        }
+    }
+    AnimatedVisibility(
+        visible = !leaving,
+        exit = fadeOut(animationSpec = tween(REVIEW_ACCEPT_EXIT_MILLIS)) +
+            shrinkVertically(animationSpec = tween(REVIEW_ACCEPT_EXIT_MILLIS)),
+    ) {
+        content()
+    }
+}
+
+/**
+ * Scrollable option list for the review pickers. While options are below the visible part, a bottom fade and an
+ * "N options" caption say so, because a scroll area looks like the whole list otherwise.
+ */
+@Composable
+internal fun ReviewPickerList(
+    optionCount: Int,
+    verticalSpacing: Dp = 0.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val showHint = scrollHintVisible(scrollState.value, scrollState.maxValue)
+    Column {
+        Box {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+                content = content,
+            )
+            if (showHint) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerHigh),
+                            ),
+                        ),
+                )
+            }
+        }
+        if (showHint) {
+            Text(
+                text = pluralStringResource(R.plurals.review_picker_option_count, optionCount, optionCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+}
 
 @Composable
 internal fun ReviewProgressHeader(
@@ -172,7 +296,7 @@ internal fun ReviewDiscardDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.keep_editing))
+                Text(stringResource(R.string.review_keep_reviewing))
             }
         },
     )

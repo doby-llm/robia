@@ -540,6 +540,34 @@ fun RobiaApp(
                     syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(DefaultTags.mainColors))
                 }
             },
+            onUndoReview = { plan ->
+                // One coroutine, in order: tombstones first, so a restored tag is not deleted again by the next sync.
+                scope.launch {
+                    plan.tombstonesToClear.forEach { (entityType, entityId) ->
+                        app.database.syncTombstoneDao().deleteTombstone(entityType, entityId)
+                    }
+                    plan.restoreTags.forEach { tag ->
+                        tagRepository.upsertTag(tag)
+                        syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
+                    }
+                    plan.removeTags.forEach { tag ->
+                        tagRepository.deleteCustomTag(tag.id)
+                        syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
+                    }
+                    plan.restoreColors.forEach { color ->
+                        tagRepository.upsertMainColor(color)
+                        syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
+                    }
+                    plan.removeColors.forEach { color ->
+                        tagRepository.deleteMainColor(color.id)
+                        syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
+                    }
+                    if (plan.restoreGarments.isNotEmpty()) {
+                        wardrobeRepository.upsertItems(plan.restoreGarments)
+                        plan.restoreGarments.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
+                    }
+                }
+            },
             onCommitMainColorChange = { changeSet, updatedItems ->
                 scope.launch {
                     tagRepository.applyMainColorChange(
@@ -787,6 +815,7 @@ private fun RobiaShell(
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onRestoreDefaultMainColors: () -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
+    onUndoReview: (ReviewUndoPlan) -> Unit = {},
     initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
     val routeStack = remember(initialPerformanceBatchFixtureUris) {
@@ -1160,8 +1189,10 @@ private fun RobiaShell(
         showTagReviewDiscardDialog = true
     }
 
-    // Discarding drops the garment proposals only; the tag change was already saved.
+    // Discard = undo: the saved tag change is reversed through the normal paths. The garment proposals go with it.
     fun discardTagReview() {
+        val request = activeTagReview
+        if (request != null) onUndoReview(tagReviewUndoPlan(request, clothingItems, System.currentTimeMillis()))
         activeTagReview = null
         showTagReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1203,10 +1234,10 @@ private fun RobiaShell(
         showColorReviewDiscardDialog = true
     }
 
-    // The palette change was saved first, so discarding keeps it; only the proposals are dropped.
+    // Discard = undo: the saved palette change is reversed. Garments are not written here, so no decline is called.
     fun discardColorReview() {
         val changeSet = activeColorReviewChangeSet
-        if (changeSet != null) declineColorReviewProposal(changeSet)
+        if (changeSet != null) onUndoReview(colorReviewUndoPlan(changeSet))
         activeColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
@@ -1364,7 +1395,7 @@ private fun RobiaShell(
             },
             dismissButton = {
                 TextButton(onClick = { showTagReviewDiscardDialog = false }) {
-                    Text(stringResource(R.string.keep_editing))
+                    Text(stringResource(R.string.review_keep_reviewing))
                 }
             },
         )
