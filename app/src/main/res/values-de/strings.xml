@@ -571,4 +571,11 @@
     <string name="tag_review_picker_title">%1$s für „%2$s“</string>
     <string name="tag_review_discard_title">Prüfung verwerfen?</string>
     <string name="tag_review_discard_body">Beim Verlassen werden die ausstehenden Änderungen an Kleidungsstücken verworfen. Die Tag-Änderung bleibt erhalten.</string>
+    <string name="browse_search_hint">Kleiderschrank durchsuchen</string>
+    <string name="browse_search_clear">Suche löschen</string>
+    <string name="browse_sorted_by_similarity">Nach Ähnlichkeit sortiert · %1$d Kleidungsstücke</string>
+    <string name="browse_search_text_only">Suche in Namen und Notizen.</string>
+    <string name="browse_search_enable_smart">Aktiviere intelligente Vorschläge, um auch per Foto zu suchen</string>
+    <string name="browse_similar_to">Ähnlich wie „%1$s“</string>
+    <string name="item_see_similar">Ähnliche Kleidungsstücke</string>
 </resources>
