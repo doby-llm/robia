@@ -104,7 +104,7 @@ class RestoredPhotoReuploadTest {
             previous = mapOf("g1" to remote.toLastUploadedPhoto()),
         )
 
-        assertTrue(result is DriveSyncResult.Failure)
+        if (result !is DriveSyncResult.Failure) throw AssertionError("expected the cycle to fail, but was $result")
         assertEquals(0, api.blobUploads.get())
         assertEquals(0, api.snapshotUploads.get())
     }
