@@ -19,6 +19,8 @@ interface WardrobeRepository {
     suspend fun nextRunnableSyncRetryEpochMillis(): Long?
     /** A pending Drive-side garment deletion must win over any restored-photo retry. */
     suspend fun hasPendingCloudDeletion(): Boolean
+    /** Any synced row (garment, tag, colour, tombstone) that has not reached Drive, in any state. See WardrobeDao.hasAnyUnsyncedLocalRow. */
+    suspend fun hasAnyUnsyncedLocalRow(): Boolean
     suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int
     suspend fun recoverStaleGuardedPhotoSyncWork(staleBeforeEpochMillis: Long): Int
     suspend fun upsertItem(item: ClothingItem)

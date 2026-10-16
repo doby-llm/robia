@@ -18,6 +18,14 @@ internal fun WardrobeSyncSnapshot.equivalentForUpload(other: WardrobeSyncSnapsho
     equivalenceKey() == other.equivalenceKey() && photosEquivalent(sortedDeterministically().photos, other.sortedDeterministically().photos)
 
 /**
+ * True when [other] is the same phone state as this one: the records [equivalentForUpload] compares, and the photo records exactly.
+ * For two local exports, which carry no upload hashes, so [equivalentForUpload] cannot match their photos. A photo swap that keeps
+ * the garment revision (same garment, different URI) is a change here.
+ */
+internal fun WardrobeSyncSnapshot.unchangedSince(other: WardrobeSyncSnapshot): Boolean =
+    equivalenceKey() == other.equivalenceKey() && sortedDeterministically().photos == other.sortedDeterministically().photos
+
+/**
  * Ordinary upload may be skipped only when [remote] already holds exactly this snapshot. Every doubt keeps the upload:
  * pending vectors, a pending cloud deletion, a guarded photo on either side, or a legacy photo key (the upload re-keys it) always upload.
  *
@@ -63,10 +71,16 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
  * Local photos carry only [GarmentPhotoRecord.contentHash] until they are uploaded, while remote photos also carry
  * [GarmentPhotoRecord.sourceHash]. A pair is the same image when both source hashes are set and equal, or content hashes match.
  * blobPath, mimeType and byteSize are not compared: the blob key derives from the content hash, so equal hashes mean equal blobs.
+ *
+ * A phone photo with no hash never matches: two photos with no hash are not known to be the same image. A placeholder (no phone
+ * file, no hash) is compared as before. Known deviation (not fixed): the phone's export carries no hash, so a local photo never
+ * matches a remote photo by hash. A photo-bearing wardrobe therefore never records the base, and any photo the phone holds with
+ * a remote photo for the same garment is not equivalent (the merge keeps the newer record, see mergePhotos). Carrying the
+ * upload hash into the export would remove the difference.
  */
 private fun photosEquivalent(local: List<GarmentPhotoRecord>, remote: List<GarmentPhotoRecord>): Boolean =
     local.size == remote.size && local.zip(remote).all { (localPhoto, remotePhoto) ->
         localPhoto.garmentId == remotePhoto.garmentId &&
             (localPhoto.sourceHash != null && localPhoto.sourceHash == remotePhoto.sourceHash ||
-                localPhoto.contentHash == remotePhoto.contentHash)
+                localPhoto.contentHash == remotePhoto.contentHash && (localPhoto.contentHash != null || localPhoto.localUri.isBlank()))
     }

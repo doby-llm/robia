@@ -33,7 +33,9 @@ interface SettingsRepository {
     suspend fun deviceId(): String
     /** Revision of the Drive snapshot this phone last saw or uploaded; 0 when never connected. */
     val lastKnownRemoteRevision: Flow<Long>
-    suspend fun setLastKnownRemoteRevision(revision: Long)
+    /** Writer of the backup at [lastKnownRemoteRevision]; null when unknown (a base recorded before this was stored). */
+    val lastKnownRemoteWriterDeviceId: Flow<String?>
+    suspend fun setLastKnownRemoteRevision(revision: Long, writerDeviceId: String?)
     /** True while a newer backup from another phone blocks uploads until the user chooses. */
     val syncConflict: Flow<Boolean>
     /** Remote revision the open conflict was raised against; cleared together with [syncConflict]. */
@@ -133,8 +135,20 @@ class DataStoreSettingsRepository(
         preferences[lastKnownRemoteRevisionKey] ?: 0L
     }
 
-    override suspend fun setLastKnownRemoteRevision(revision: Long) {
-        dataStore.edit { preferences -> preferences[lastKnownRemoteRevisionKey] = revision }
+    override val lastKnownRemoteWriterDeviceId: Flow<String?> = dataStore.data.map { preferences ->
+        preferences[lastKnownRemoteWriterDeviceIdKey]
+    }
+
+    /** Revision and writer are one write, so the base is never recorded with a writer from another revision. */
+    override suspend fun setLastKnownRemoteRevision(revision: Long, writerDeviceId: String?) {
+        dataStore.edit { preferences ->
+            preferences[lastKnownRemoteRevisionKey] = revision
+            if (writerDeviceId == null) {
+                preferences.remove(lastKnownRemoteWriterDeviceIdKey)
+            } else {
+                preferences[lastKnownRemoteWriterDeviceIdKey] = writerDeviceId
+            }
+        }
     }
 
     override val syncConflict: Flow<Boolean> = dataStore.data.map { preferences ->
@@ -177,6 +191,7 @@ class DataStoreSettingsRepository(
         val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
         val deviceIdKey = stringPreferencesKey("sync_device_id")
         val lastKnownRemoteRevisionKey = longPreferencesKey("sync_last_known_remote_revision")
+        val lastKnownRemoteWriterDeviceIdKey = stringPreferencesKey("sync_last_known_remote_writer")
         val syncConflictKey = booleanPreferencesKey("sync_conflict")
         val syncConflictRemoteRevisionKey = longPreferencesKey("sync_conflict_remote_revision")
     }
