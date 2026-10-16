@@ -34,6 +34,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,12 +55,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
@@ -122,9 +125,10 @@ internal fun ColorReviewScreen(
     val reviewItems = remember(changeSet.id) {
         if (changeSet.requiresCommitOnSave) items.filterNot(ClothingItem::isArchived) else items.filter(ClothingItem::isEligibleForColorReview)
     }
-    // Accepted ids stay in [candidates] until the commit; hidden ids are the accepted cards whose exit has finished.
+    // Accepted ids stay in [candidates] until the commit; discarded cards are never saved. Hidden ids are the resolved cards whose exit has finished.
     val candidates = remember(changeSet.id) { mutableStateListOf<ColorReviewCandidate>() }
     val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    val discardedIds = remember(changeSet.id) { mutableStateListOf<String>() }
     val hiddenIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var processedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
@@ -134,6 +138,7 @@ internal fun ColorReviewScreen(
     LaunchedEffect(changeSet.id) {
         candidates.clear()
         acceptedIds.clear()
+        discardedIds.clear()
         hiddenIds.clear()
         processedCount = 0
         isScanning = true
@@ -204,15 +209,22 @@ internal fun ColorReviewScreen(
         )
     }
 
-    val unresolvedCount = candidates.count { candidate -> candidate.item.id !in acceptedIds }
-    val acceptableCount = candidates.count { candidate -> candidate.item.id !in acceptedIds && candidate.hasConcreteTarget }
+    val closedIds = acceptedIds.toSet() + discardedIds
+    val unresolvedCount = candidates.count { candidate -> candidate.item.id !in closedIds }
+    val acceptableCount = candidates.count { candidate -> candidate.item.id !in closedIds && candidate.hasConcreteTarget }
     val canFinish = !isScanning && unresolvedCount == 0
     fun commitItems(): List<ClothingItem> = candidates
-        .filter { candidate -> candidate.item.id in acceptedIds || candidate.hasConcreteTarget }
+        .filter { candidate ->
+            colorReviewIncludedInCommit(
+                accepted = candidate.item.id in acceptedIds,
+                discarded = candidate.item.id in discardedIds,
+                hasConcreteTarget = candidate.hasConcreteTarget,
+            )
+        }
         .map { candidate -> candidate.toUpdatedItem(changeSet.afterPalette) }
     val autoCommit = shouldAutoCommit(
         candidateIds = candidates.mapTo(mutableSetOf()) { candidate -> candidate.item.id },
-        acceptedOrHiddenIds = acceptedIds.toSet() + hiddenIds,
+        closedIds = closedIds + hiddenIds,
         isScanning = isScanning,
         committed = committed,
         pickerOpen = pickerTarget != null,
@@ -273,22 +285,27 @@ internal fun ColorReviewScreen(
                 key = { candidate -> candidate.item.id },
             ) { candidate ->
                 val accepted = candidate.item.id in acceptedIds
+                val discarded = candidate.item.id in discardedIds
                 ReviewAcceptedCard(
-                    accepted = accepted,
+                    resolved = accepted || discarded,
                     onGone = { hiddenIds.add(candidate.item.id) },
                 ) {
                     ColorReviewCandidateCard(
                         candidate = candidate,
                         palette = changeSet.afterPalette,
                         accepted = accepted,
+                        discarded = discarded,
                         onPrimaryClick = {
-                            if (!accepted) pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Primary)
+                            if (!accepted && !discarded) pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Primary)
                         },
                         onSecondaryClick = {
-                            if (!accepted) pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Secondary)
+                            if (!accepted && !discarded) pickerTarget = ColorReviewPickerTarget(candidate.item.id, ColorReviewColorRole.Secondary)
                         },
                         onAccept = {
-                            if (!accepted) acceptedIds.add(candidate.item.id)
+                            if (!accepted && !discarded) acceptedIds.add(candidate.item.id)
+                        },
+                        onDiscard = {
+                            if (!accepted && !discarded) discardedIds.add(candidate.item.id)
                         },
                     )
                 }
@@ -308,10 +325,10 @@ internal fun ColorReviewScreen(
             }
         }
 
-        // Accept all saves every proposal with a concrete target; manual-choice proposals stay out and remain visible.
+        // Accept all counts open cards with a concrete target; manual-choice proposals stay out and remain visible.
         ReviewBottomBar(
             label = when {
-                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount + acceptedIds.size)
+                acceptableCount > 0 -> stringResource(R.string.color_review_accept_all, acceptableCount)
                 acceptedIds.isNotEmpty() -> stringResource(R.string.color_review_save_accepted_mappings, acceptedIds.size)
                 else -> stringResource(R.string.done)
             },
@@ -332,12 +349,15 @@ private fun ColorReviewCandidateCard(
     candidate: ColorReviewCandidate,
     palette: List<MainColor>,
     accepted: Boolean,
+    discarded: Boolean,
     onPrimaryClick: () -> Unit,
     onSecondaryClick: () -> Unit,
     onAccept: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
     val primaryColor = palette.colorForId(candidate.editablePrimaryColorId)
     val secondaryColor = palette.colorForId(candidate.editableSecondaryColorId)
+    val resolved = accepted || discarded
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -345,7 +365,11 @@ private fun ColorReviewCandidateCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
-            ColorReviewPhoto(candidate.item)
+            // The editable primary, as Accept will save it. A colour deleted from the palette has no match: Unknown.
+            ColorReviewPhoto(
+                item = candidate.item,
+                swatch = garmentSwatchLabel(primaryColor?.hex),
+            )
             Column(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -357,17 +381,37 @@ private fun ColorReviewCandidateCard(
                     onPrimaryClick = onPrimaryClick,
                     onSecondaryClick = onSecondaryClick,
                 )
-                Button(
-                    onClick = onAccept,
-                    enabled = !accepted,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                ) {
-                    Text(
-                        stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onAccept,
+                        enabled = !resolved,
+                        contentPadding = ReviewCardActionPadding,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text(
+                            stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onDiscard,
+                        enabled = !resolved,
+                        contentPadding = ReviewCardActionPadding,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.review_card_discard),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -375,12 +419,12 @@ private fun ColorReviewCandidateCard(
 }
 
 @Composable
-private fun ColorReviewPhoto(item: ClothingItem) {
+private fun ColorReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(132.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            .background(rememberGarmentSwatchBrush(swatch.swatchColor())),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }
@@ -614,6 +658,29 @@ internal fun colorReviewUndoPlan(changeSet: ColorPaletteChangeSet): ReviewUndoPl
     }
 }
 
+/** A discarded card is never saved. Otherwise a card is saved when it was accepted or has a concrete target (Accept all). */
+internal fun colorReviewIncludedInCommit(accepted: Boolean, discarded: Boolean, hasConcreteTarget: Boolean): Boolean =
+    !discarded && (accepted || hasConcreteTarget)
+
+/**
+ * Garments outside [excludeIds] that still reference a removed palette colour, with those slots cleared. The palette rows go
+ * away with the commit, so a garment the commit leaves out (a discarded card, or a garment with no change) would keep a
+ * dangling id unless it is cleared here too.
+ */
+internal fun garmentsWithRemovedColors(
+    items: List<ClothingItem>,
+    removedIds: Collection<String>,
+    excludeIds: Set<String>,
+): List<ClothingItem> {
+    if (removedIds.isEmpty()) return emptyList()
+    return items
+        .filter { item -> item.id !in excludeIds && removedIds.any { colorId -> item.colorMetrics.referencesColorId(colorId) } }
+        .map { item -> removedIds.fold(item) { garment, colorId -> garment.withoutPaletteColor(colorId) } }
+}
+
+private fun ClothingColorMetrics.referencesColorId(colorId: String): Boolean =
+    primaryPaletteColorId == colorId || secondaryPaletteColorId == colorId
+
 // Removes a deleted palette colour from a garment that carried it; the other slot is kept.
 internal fun ClothingItem.withoutPaletteColor(colorId: String): ClothingItem {
     val metrics = colorMetrics
@@ -754,7 +821,7 @@ internal fun colorReviewHasConcreteTarget(
     return current.primaryPaletteColorId == null || primaryResolved
 }
 
-private fun ClothingItem.isEligibleForColorReview(): Boolean = !isArchived && !photoUri.isNullOrBlank()
+internal fun ClothingItem.isEligibleForColorReview(): Boolean = !isArchived && !photoUri.isNullOrBlank()
 
 private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { color -> color.id == id }
 

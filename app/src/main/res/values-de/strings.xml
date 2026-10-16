@@ -605,6 +605,8 @@
     <string name="tag_review_empty_body">Deine Kleidungsstücke passen bereits zu dieser Änderung.</string>
     <string name="tag_review_needs_model_body">Robia kann Kleidungsstücke prüfen, sobald die intelligenten Vorschläge bereit sind.</string>
     <string name="tag_review_accept_all">Alle akzeptieren (%1$d)</string>
+    <string name="tag_review_save_accepted">%1$d akzeptierte Änderungen speichern</string>
+    <string name="review_card_discard">Verwerfen</string>
     <plurals name="tag_review_deleted_occasion_body">
         <item quantity="one">%1$d Kleidungsstück hatte ihn. Die anderen Anlässe bleiben.</item>
         <item quantity="other">%1$d Kleidungsstücke hatten ihn. Die anderen Anlässe bleiben.</item>

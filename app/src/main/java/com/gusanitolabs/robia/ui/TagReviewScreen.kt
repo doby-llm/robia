@@ -33,6 +33,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
@@ -65,6 +67,7 @@ import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
 import com.gusanitolabs.robia.suggestions.labelTextFor
+import kotlinx.coroutines.CancellationException
 import java.util.Locale
 import java.util.UUID
 
@@ -72,6 +75,7 @@ private const val TAG_REVIEW_THUMBNAIL_MAX_EDGE_PX = 384
 private const val TAG_KIND_CATEGORY = "category"
 private const val TAG_KIND_OCCASION = "occasion"
 private const val TAG_REVIEW_SCAN_LOG_TAG = "TagReviewScan"
+private const val TAG_REVIEW_OFFER_LOG_TAG = "TagReviewOffer"
 private val ReviewedTagKinds = setOf(TAG_KIND_CATEGORY, TAG_KIND_OCCASION)
 
 internal data class TagReviewCandidate(
@@ -107,12 +111,45 @@ internal fun tagPickerLabel(tagId: String, name: String, labelsById: Map<String,
 internal fun tagReviewPickerTitle(noun: String, garmentName: String, namedTitle: String): String =
     if (garmentName.isBlank()) noun.replaceFirstChar { char -> char.titlecase(Locale.getDefault()) } else namedTitle
 
-/** Accept all takes every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it. */
+/**
+ * What the commit saves. Accept all takes every proposal with a concrete target; a manual-choice proposal joins only when the
+ * user accepts it. A discarded card is never saved, whatever its kind.
+ */
 internal fun tagReviewCommitCandidates(
     candidates: List<TagReviewCandidate>,
     acceptedIds: Set<String>,
+    discardedIds: Set<String> = emptySet(),
 ): List<TagReviewCandidate> = candidates.filter { candidate ->
-    candidate.proposal.kind == ProposalKind.Suggested || candidate.item.id in acceptedIds
+    candidate.item.id !in discardedIds &&
+        (candidate.proposal.kind == ProposalKind.Suggested || candidate.item.id in acceptedIds)
+}
+
+/** Accept all counts the open cards with a concrete target only: accepted and discarded cards are closed, manual choices are not counted. */
+internal fun tagReviewOpenAcceptableCount(candidates: List<TagReviewCandidate>, closedIds: Set<String>): Int =
+    candidates.count { candidate -> candidate.proposal.kind == ProposalKind.Suggested && candidate.item.id !in closedIds }
+
+/**
+ * Snapshot, then write, in one coroutine. The snapshot is read after the previous review write's database part, never its
+ * sync (RobiaApp), and the write always lands. Returns the request to offer: null when there is no change set, when the
+ * snapshot failed, or when no active garment would be reviewed.
+ */
+internal suspend fun offerTagReviewRequest(
+    changeSet: TagChangeSet?,
+    readGarments: suspend () -> List<ClothingItem>,
+    write: () -> Unit,
+): TagReviewRequest? {
+    val garments = try {
+        readGarments()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        // No snapshot, no offer: the review could not restore the garments it would touch. The write still lands.
+        Log.e(TAG_REVIEW_OFFER_LOG_TAG, "Review snapshot failed; the change is saved without a review offer", failure)
+        null
+    }
+    write()
+    if (changeSet == null || garments == null || !hasReviewableGarments(garments, ReviewKind.Tag)) return null
+    return TagReviewRequest(changeSet, garments)
 }
 
 /**
@@ -264,19 +301,19 @@ internal fun TagReviewPromptDialog(
 }
 
 /**
- * A review finishes by itself once every candidate is accepted or hidden. Never for an empty scan, never while the scan
- * runs, a manual-choice picker is open, or the discard dialog is open, and only once per review ([committed]).
+ * A review finishes by itself once every candidate is closed: accepted, discarded or hidden ([closedIds]). Never for an empty
+ * scan, never while the scan runs, a manual-choice picker is open, or the discard dialog is open, and only once per review ([committed]).
  */
 internal fun shouldAutoCommit(
     candidateIds: Set<String>,
-    acceptedOrHiddenIds: Set<String>,
+    closedIds: Set<String>,
     isScanning: Boolean,
     committed: Boolean,
     pickerOpen: Boolean,
     discardDialogOpen: Boolean,
 ): Boolean =
     !committed && !isScanning && !pickerOpen && !discardDialogOpen &&
-        candidateIds.isNotEmpty() && acceptedOrHiddenIds.containsAll(candidateIds)
+        candidateIds.isNotEmpty() && closedIds.containsAll(candidateIds)
 
 /**
  * A tag action waits for the review snapshot of the one before it: while that snapshot is in flight or a prompt is
@@ -319,8 +356,9 @@ internal fun TagReviewScreen(
     val garments = remember(changeSet.id) { request.garments.filterNot(ClothingItem::isArchived) }
     val candidates = remember(changeSet.id) { mutableStateListOf<TagReviewCandidate>() }
     val edits = remember(changeSet.id) { mutableStateMapOf<String, Set<String>>() }
-    // Accepted ids stay in [candidates] for the commit; hidden ids are the accepted cards whose exit has finished.
+    // Accepted ids stay in [candidates] for the commit; discarded cards are never saved. Hidden ids are the resolved cards whose exit has finished.
     val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    val discardedIds = remember(changeSet.id) { mutableStateListOf<String>() }
     val hiddenIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var scannedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var skippedCount by remember(changeSet.id) { mutableIntStateOf(0) }
@@ -356,7 +394,8 @@ internal fun TagReviewScreen(
     }
 
     // Accept all saves every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it.
-    val commitCandidates = tagReviewCommitCandidates(candidates.toList(), acceptedIds.toSet())
+    val commitCandidates = tagReviewCommitCandidates(candidates.toList(), acceptedIds.toSet(), discardedIds.toSet())
+    val closedIds = acceptedIds.toSet() + discardedIds
     fun commitUpdatedItems(): List<ClothingItem> {
         val now = System.currentTimeMillis()
         return commitCandidates.map { candidate ->
@@ -370,7 +409,7 @@ internal fun TagReviewScreen(
 
     val autoCommit = shouldAutoCommit(
         candidateIds = candidates.mapTo(mutableSetOf()) { candidate -> candidate.item.id },
-        acceptedOrHiddenIds = acceptedIds.toSet() + hiddenIds,
+        closedIds = closedIds + hiddenIds,
         isScanning = isScanning,
         committed = committed,
         pickerOpen = pickerGarmentId != null,
@@ -475,8 +514,10 @@ internal fun TagReviewScreen(
                 key = { candidate -> candidate.item.id },
             ) { candidate ->
                 val garmentId = candidate.item.id
+                val accepted = garmentId in acceptedIds
+                val discarded = garmentId in discardedIds
                 ReviewAcceptedCard(
-                    accepted = garmentId in acceptedIds,
+                    resolved = accepted || discarded,
                     onGone = { hiddenIds.add(garmentId) },
                 ) {
                     TagReviewCandidateCard(
@@ -484,10 +525,18 @@ internal fun TagReviewScreen(
                         proposedIds = edits[garmentId] ?: candidate.proposal.proposed,
                         kindIds = kindIds,
                         labelsById = labelsById,
-                        accepted = garmentId in acceptedIds,
-                        onPick = { pickerGarmentId = garmentId },
+                        accepted = accepted,
+                        discarded = discarded,
+                        onPick = { if (!accepted && !discarded) pickerGarmentId = garmentId },
                         onAccept = {
-                            if (garmentId !in acceptedIds) acceptedIds.add(garmentId)
+                            if (!accepted && !discarded) acceptedIds.add(garmentId)
+                        },
+                        onDiscard = {
+                            // Discard drops the manual edit: the card is closed and nothing is saved for it.
+                            if (!accepted && !discarded) {
+                                edits.remove(garmentId)
+                                discardedIds.add(garmentId)
+                            }
                         },
                     )
                 }
@@ -507,12 +556,13 @@ internal fun TagReviewScreen(
             }
         }
 
-        // Accept all saves every proposal with a concrete target; manual-choice proposals stay out unless accepted by hand.
+        // Accept all counts open cards with a concrete target; manual-choice proposals stay out unless accepted by hand.
+        val openAcceptableCount = tagReviewOpenAcceptableCount(candidates.toList(), closedIds)
         ReviewBottomBar(
-            label = if (commitCandidates.isNotEmpty()) {
-                stringResource(R.string.tag_review_accept_all, commitCandidates.size)
-            } else {
-                stringResource(R.string.done)
+            label = when {
+                openAcceptableCount > 0 -> stringResource(R.string.tag_review_accept_all, openAcceptableCount)
+                acceptedIds.isNotEmpty() -> stringResource(R.string.tag_review_save_accepted, acceptedIds.size)
+                else -> stringResource(R.string.done)
             },
             enabled = !isScanning,
             onClick = {
@@ -568,10 +618,13 @@ private fun TagReviewCandidateCard(
     kindIds: Set<String>,
     labelsById: Map<String, String>,
     accepted: Boolean,
+    discarded: Boolean,
     onPick: () -> Unit,
     onAccept: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
     val isChooseManually = candidate.proposal.kind == ProposalKind.ChooseManually
+    val resolved = accepted || discarded
     val currentLabels = candidate.proposal.before.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
     val proposedLabels = proposedIds.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
 
@@ -581,7 +634,10 @@ private fun TagReviewCandidateCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
-            TagReviewPhoto(candidate.item)
+            TagReviewPhoto(
+                item = candidate.item,
+                swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
+            )
             Column(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -640,21 +696,41 @@ private fun TagReviewCandidateCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Button(
-                    onClick = onAccept,
-                    enabled = !accepted,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                ) {
-                    if (accepted) {
-                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onAccept,
+                        enabled = !resolved,
+                        contentPadding = ReviewCardActionPadding,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        if (accepted) {
+                            Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Text(
+                            text = stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = if (accepted) 6.dp else 0.dp),
+                        )
                     }
-                    Text(
-                        text = stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(start = if (accepted) 6.dp else 0.dp),
-                    )
+                    OutlinedButton(
+                        onClick = onDiscard,
+                        enabled = !resolved,
+                        contentPadding = ReviewCardActionPadding,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.review_card_discard),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -662,12 +738,12 @@ private fun TagReviewCandidateCard(
 }
 
 @Composable
-private fun TagReviewPhoto(item: ClothingItem) {
+private fun TagReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(132.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            .background(rememberGarmentSwatchBrush(swatch.swatchColor())),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf(String::isNotBlank)

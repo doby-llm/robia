@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -84,20 +85,35 @@ internal data class ReviewUndoPlan(
         get() = restoreTags.map { tag -> "garment_tag" to tag.id } + restoreColors.map { color -> "main_color" to color.id }
 }
 
+/** What a review walks: a tag review and a colour save or delete look at photographed garments; a colour restore at every active one. */
+internal enum class ReviewKind { Tag, Colour, ColourRestore }
+
 /**
- * Wraps a review card that can be accepted. Accepting it shows the accepted state for a moment, then fades and shrinks it
- * away and calls [onGone], which removes it from the list. Accepted proposals stay in the screen's state for the commit.
+ * Whether a review has a garment to show. Without one no prompt or screen opens: the save still lands, and a colour delete
+ * or restore still clears its references, applied directly by the caller.
+ */
+internal fun hasReviewableGarments(items: List<ClothingItem>, kind: ReviewKind): Boolean = when (kind) {
+    ReviewKind.Tag, ReviewKind.ColourRestore -> items.any { item -> !item.isArchived }
+    ReviewKind.Colour -> items.any(ClothingItem::isEligibleForColorReview)
+}
+
+/** Accept and Discard share a half-width slot in a two-column card: the default 24 dp side padding would squeeze the label. */
+internal val ReviewCardActionPadding = PaddingValues(horizontal = 8.dp)
+
+/**
+ * Wraps a review card that is resolved, by Accept or Discard. Resolving it shows the state for a moment, then fades and
+ * shrinks it away and calls [onGone], which removes it from the list. Accepted proposals stay in the screen's state for the commit.
  */
 @Composable
 internal fun ReviewAcceptedCard(
-    accepted: Boolean,
+    resolved: Boolean,
     onGone: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     var leaving by remember { mutableStateOf(false) }
     val currentOnGone by rememberUpdatedState(onGone)
-    LaunchedEffect(accepted) {
-        if (accepted) {
+    LaunchedEffect(resolved) {
+        if (resolved) {
             delay(REVIEW_ACCEPT_HIGHLIGHT_MILLIS.toLong())
             leaving = true
             delay(REVIEW_ACCEPT_EXIT_MILLIS.toLong())
