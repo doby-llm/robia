@@ -134,7 +134,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -4005,14 +4004,7 @@ private fun GarmentPhotoPlaceholder(
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.large)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surfaceContainerLow,
-                        swatchColor.copy(alpha = 0.26f),
-                    ),
-                ),
-            ),
+            .background(rememberGarmentSwatchBrush(swatchColor)),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }
@@ -5420,22 +5412,6 @@ private fun DisplayColorLabel.localizedLabel(): String = stringResource(
         DisplayColorLabel.Unknown -> R.string.color_unknown
     },
 )
-
-private fun DisplayColorLabel.swatchColor(): Color = when (this) {
-    DisplayColorLabel.Black -> Color(0xFF1F1F1F)
-    DisplayColorLabel.Blue -> Color(0xFF315F8E)
-    DisplayColorLabel.Brown -> Color(0xFF8B6848)
-    DisplayColorLabel.Gray -> Color(0xFF8E8E8E)
-    DisplayColorLabel.Green -> Color(0xFF5F6F48)
-    DisplayColorLabel.Orange -> Color(0xFFC56F33)
-    DisplayColorLabel.Pink -> Color(0xFFD4879A)
-    DisplayColorLabel.Purple -> Color(0xFF765A91)
-    DisplayColorLabel.Red -> Color(0xFF9E3D35)
-    DisplayColorLabel.White -> Color(0xFFF8F9FA)
-    DisplayColorLabel.Yellow -> Color(0xFFD6B84C)
-    DisplayColorLabel.Multicolor -> Color(0xFFA56639)
-    DisplayColorLabel.Unknown -> Color(0xFFDADADA)
-}
 
 @Composable
 private fun Int.fitLabel(): String = when (coerceIn(0, 4)) {

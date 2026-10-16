@@ -54,7 +54,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -583,16 +582,23 @@ private fun TagEditorDialog(
                         onValueChange = { description = it.take(TagDescriptionMaxLength) },
                         minLines = 2,
                         label = { Text(stringResource(R.string.tag_description_label)) },
-                        trailingIcon = { Text(stringResource(R.string.tag_description_counter, description.length)) },
-                    )
-                    // Always visible, one line, no reserved slot: a placeholder disappeared as soon as the user typed.
-                    Text(
-                        text = stringResource(R.string.tag_description_helper),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        // Helper wraps instead of truncating; the counter is inset from the field's edge.
+                        supportingText = {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    text = stringResource(R.string.tag_description_helper),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                )
+                                Text(
+                                    text = stringResource(R.string.tag_description_counter, description.length),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(end = 4.dp),
+                                )
+                            }
+                        },
                     )
                 }
                 if (state.categoryId == "category") {
