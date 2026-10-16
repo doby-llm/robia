@@ -221,7 +221,6 @@ import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -412,11 +411,16 @@ fun RobiaApp(
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val app = LocalContext.current.applicationContext as RobiaApplication
-    // The last tag or colour write. An undo launched right after it (cancelled prompt, discard) joins it first.
+    // The last tag or colour write, database part only. An undo or the next review snapshot launched right after it joins it first.
     // Review writes and their undo run on the app scope, a SupervisorJob: a failed save must not cancel the undo.
     val lastReviewWrite = remember { mutableStateOf<Job?>(null) }
-    fun launchReviewWrite(block: suspend CoroutineScope.() -> Unit) {
-        lastReviewWrite.value = app.appScope.launch(block = block)
+    // The block does the database write and returns the sync operations it needs. They run detached: a sync cycle takes
+    // seconds (Drive calls), and a snapshot that joined it would hold the review prompt back.
+    fun launchReviewWrite(write: suspend CoroutineScope.() -> List<WardrobeSyncOperation>) {
+        lastReviewWrite.value = app.appScope.launch {
+            val operations = write()
+            app.appScope.launch { operations.forEach { operation -> syncGateway.enqueue(operation) } }
+        }
     }
     val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
@@ -513,10 +517,10 @@ fun RobiaApp(
             onSaveItems = { items, captures ->
                 launchReviewWrite {
                     wardrobeRepository.upsertItems(items)
-                    items.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
                     app.appScope.launch {
                         items.forEach { item -> storeSuggestionVectors(app, embeddingRepository, item, captures[item.id]) }
                     }
+                    items.map { item -> WardrobeSyncOperation.UpsertItem(item.id) }
                 }
             },
             onDeleteItems = { itemIds ->
@@ -528,25 +532,25 @@ fun RobiaApp(
             onSaveTag = { tag ->
                 launchReviewWrite {
                     tagRepository.upsertTag(tag)
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
+                    listOf(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
                 }
             },
             onSaveMainColor = { color ->
                 launchReviewWrite {
                     tagRepository.upsertMainColor(color)
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
+                    listOf(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
             onDeleteCustomTag = { tag ->
                 launchReviewWrite {
                     tagRepository.deleteCustomTag(tag.id)
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
+                    listOf(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
                 }
             },
             onDeleteMainColor = { color ->
                 launchReviewWrite {
                     tagRepository.deleteMainColor(color.id)
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
+                    listOf(WardrobeSyncOperation.UpsertPalette(listOf(color)))
                 }
             },
             onRestoreDefaultTags = { category ->
@@ -556,39 +560,41 @@ fun RobiaApp(
                         .filter { tag -> tag.categoryId == category.id }
                         .map(GarmentTag::id)
                         .toSet()
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(restoredTagIds + mergedTagIds))
+                    listOf(WardrobeSyncOperation.UpsertTags(restoredTagIds + mergedTagIds))
                 }
             },
             readGarmentsForReview = {
-                afterPreviousWrite(lastReviewWrite.value) { app.database.wardrobeDao().getAllItemsForSync().map(ClothingItemWithTags::toDomain) }
+                // Timing for the snapshot delay: the join waits for the previous review write's database part only.
+                val requestedAt = System.nanoTime()
+                afterPreviousWrite(lastReviewWrite.value) {
+                    val joinedAt = System.nanoTime()
+                    app.database.wardrobeDao().getAllItemsForSync().map(ClothingItemWithTags::toDomain).also { garments ->
+                        Log.d(
+                            TAG_REVIEW_OFFER_LOG_TAG,
+                            "snapshot joinMs=${(joinedAt - requestedAt) / 1_000_000} readMs=${(System.nanoTime() - joinedAt) / 1_000_000} garments=${garments.size}",
+                        )
+                    }
+                }
             },
             onUndoReview = { buildPlan ->
                 // One coroutine, in order: the write it follows, then the plan, then tombstones, so a restored tag is not deleted again by the next sync.
                 val previousWrite = lastReviewWrite.value
-                app.appScope.launch {
+                launchReviewWrite {
                     val plan = afterPreviousWrite(previousWrite, buildPlan)
                     plan.tombstonesToClear.forEach { (entityType, entityId) ->
                         app.database.syncTombstoneDao().deleteTombstone(entityType, entityId)
                     }
-                    plan.restoreTags.forEach { tag ->
-                        tagRepository.upsertTag(tag)
-                        syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
-                    }
-                    plan.removeTags.forEach { tag ->
-                        tagRepository.deleteCustomTag(tag.id)
-                        syncGateway.enqueue(WardrobeSyncOperation.UpsertTags(setOf(tag.id)))
-                    }
-                    plan.restoreColors.forEach { color ->
-                        tagRepository.upsertMainColor(color)
-                        syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
-                    }
-                    plan.removeColors.forEach { color ->
-                        tagRepository.deleteMainColor(color.id)
-                        syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(listOf(color)))
-                    }
-                    if (plan.restoreGarments.isNotEmpty()) {
-                        wardrobeRepository.upsertItems(plan.restoreGarments)
-                        plan.restoreGarments.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
+                    plan.restoreTags.forEach { tag -> tagRepository.upsertTag(tag) }
+                    plan.removeTags.forEach { tag -> tagRepository.deleteCustomTag(tag.id) }
+                    plan.restoreColors.forEach { color -> tagRepository.upsertMainColor(color) }
+                    plan.removeColors.forEach { color -> tagRepository.deleteMainColor(color.id) }
+                    if (plan.restoreGarments.isNotEmpty()) wardrobeRepository.upsertItems(plan.restoreGarments)
+                    buildList<WardrobeSyncOperation> {
+                        plan.restoreTags.forEach { tag -> add(WardrobeSyncOperation.UpsertTags(setOf(tag.id))) }
+                        plan.removeTags.forEach { tag -> add(WardrobeSyncOperation.UpsertTags(setOf(tag.id))) }
+                        plan.restoreColors.forEach { color -> add(WardrobeSyncOperation.UpsertPalette(listOf(color))) }
+                        plan.removeColors.forEach { color -> add(WardrobeSyncOperation.UpsertPalette(listOf(color))) }
+                        plan.restoreGarments.forEach { item -> add(WardrobeSyncOperation.UpsertItem(item.id)) }
                     }
                 }
             },
@@ -599,8 +605,10 @@ fun RobiaApp(
                         deleteColorIds = changeSet.colorIdsToDeleteForCommit(),
                         updatedItems = updatedItems,
                     )
-                    syncGateway.enqueue(WardrobeSyncOperation.UpsertPalette(changeSet.afterPalette))
-                    updatedItems.forEach { item -> syncGateway.enqueue(WardrobeSyncOperation.UpsertItem(item.id)) }
+                    buildList<WardrobeSyncOperation> {
+                        add(WardrobeSyncOperation.UpsertPalette(changeSet.afterPalette))
+                        updatedItems.forEach { item -> add(WardrobeSyncOperation.UpsertItem(item.id)) }
+                    }
                 }
             },
             initialPerformanceBatchFixtureUris = if (performanceFixtureMode && performanceBatch) performanceFixtureUris else emptyList(),
@@ -1186,6 +1194,23 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.Browse)
     }
 
+    // Garments that still reference a removed palette colour (a delete, or a restore-defaults), minus the ones a review already writes.
+    fun clothingItemsWithoutRemovedColors(
+        changeSet: ColorPaletteChangeSet,
+        excludeIds: Set<String>,
+    ): List<ClothingItem> = garmentsWithRemovedColors(
+        items = clothingItems,
+        removedIds = changeSet.colorIdsToDeleteForCommit(),
+        excludeIds = excludeIds,
+    )
+
+    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
+    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
+        pendingColorReviewChangeSet = null
+        val itemsToSave = clothingItemsWithoutRemovedColors(changeSet, excludeIds = emptySet())
+        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
+    }
+
     fun saveMainColorAndOfferReview(color: MainColor) {
         val beforePalette = mainColors
         val existingColor = beforePalette.firstOrNull { existing -> existing.id == color.id }
@@ -1198,9 +1223,9 @@ private fun RobiaShell(
             touchedColorId = color.id,
             operation = operation,
         )
-        // Save-first: the colour change stands even if the user declines the review.
+        // Save-first: the colour change stands even if the user declines the review. No photographed garment means nothing to review.
         onSaveMainColor(color)
-        pendingColorReviewChangeSet = changeSet
+        if (hasReviewableGarments(clothingItems, ReviewKind.Colour)) pendingColorReviewChangeSet = changeSet
     }
 
     fun deleteMainColorAndOfferReview(color: MainColor) {
@@ -1213,20 +1238,12 @@ private fun RobiaShell(
             operation = ColorPaletteOperation.Deleted,
         )
         onDeleteMainColor(color)
-        pendingColorReviewChangeSet = changeSet
-    }
-
-    fun restoreDefaultMainColorsAndStartReview() {
-        val beforePalette = mainColors
-        pendingColorReviewChangeSet = null
-        activeColorReviewChangeSet = ColorPaletteChangeSet(
-            beforePalette = beforePalette,
-            afterPalette = DefaultTags.mainColors,
-            touchedColorId = null,
-            operation = ColorPaletteOperation.RestoredDefault,
-            requiresCommitOnSave = true,
-        )
-        replaceRoute(RobiaRoute.ColorReview)
+        if (hasReviewableGarments(clothingItems, ReviewKind.Colour)) {
+            pendingColorReviewChangeSet = changeSet
+        } else {
+            // Nothing to review, but the garments that carried the deleted colour still lose it.
+            declineColorReviewProposal(changeSet)
+        }
     }
 
     // Save-first: the change is persisted before the snapshot is offered for review. The snapshot holds every garment,
@@ -1236,17 +1253,7 @@ private fun RobiaShell(
         tagReviewOfferInFlight = true
         reviewScope.launch {
             try {
-                val garments = try {
-                    readGarmentsForReview()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (failure: Exception) {
-                    // No snapshot, no offer: the review could not restore the garments it would touch. The write still lands.
-                    Log.e(TAG_REVIEW_OFFER_LOG_TAG, "Review snapshot failed; the change is saved without a review offer", failure)
-                    null
-                }
-                write()
-                if (garments != null) pendingTagReview = changeSet?.let { TagReviewRequest(it, garments) }
+                pendingTagReview = offerTagReviewRequest(changeSet, readGarments = readGarmentsForReview, write = write)
             } finally {
                 tagReviewOfferInFlight = false
             }
@@ -1294,36 +1301,39 @@ private fun RobiaShell(
         replaceRoute(RobiaRoute.ManageTags)
     }
 
-    fun clothingItemsWithoutDeletedColor(
-        changeSet: ColorPaletteChangeSet,
-        excludeIds: Set<String>,
-    ): List<ClothingItem> {
-        if (changeSet.operation != ColorPaletteOperation.Deleted) return emptyList()
-        val deletedId = changeSet.touchedColorId ?: return emptyList()
-        return clothingItems
-            .filter { item -> item.id !in excludeIds && item.colorMetrics.referencesPaletteColorId(deletedId) }
-            .map { item -> item.withoutPaletteColor(deletedId) }
-    }
-
-    // Declining a review keeps the palette change; a deleted colour is still removed from the garments that carried it.
-    fun declineColorReviewProposal(changeSet: ColorPaletteChangeSet) {
-        pendingColorReviewChangeSet = null
-        val itemsToSave = clothingItemsWithoutDeletedColor(changeSet, excludeIds = emptySet())
-        if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
-    }
-
     fun commitColorReview(changeSet: ColorPaletteChangeSet, updatedItems: List<ClothingItem>) {
         if (changeSet.requiresCommitOnSave) {
-            onCommitMainColorChange(changeSet, updatedItems)
+            // The restore removes palette rows: a garment the commit leaves out (a discarded card) is cleared of the removed colours too.
+            val updatedIds = updatedItems.map(ClothingItem::id).toSet()
+            onCommitMainColorChange(changeSet, updatedItems + clothingItemsWithoutRemovedColors(changeSet, excludeIds = updatedIds))
         } else {
             val acceptedIds = updatedItems.map(ClothingItem::id).toSet()
-            val itemsToSave = updatedItems + clothingItemsWithoutDeletedColor(changeSet, excludeIds = acceptedIds)
+            val itemsToSave = updatedItems + clothingItemsWithoutRemovedColors(changeSet, excludeIds = acceptedIds)
             if (itemsToSave.isNotEmpty()) onSaveItems(itemsToSave, emptyMap())
         }
         activeColorReviewChangeSet = null
         pendingColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
         replaceRoute(RobiaRoute.ManageTags)
+    }
+
+    // Restore defaults is confirmed in Manage. With no garment to review, the palette restore still applies and no screen opens.
+    fun restoreDefaultMainColorsAndStartReview() {
+        val beforePalette = mainColors
+        pendingColorReviewChangeSet = null
+        val changeSet = ColorPaletteChangeSet(
+            beforePalette = beforePalette,
+            afterPalette = DefaultTags.mainColors,
+            touchedColorId = null,
+            operation = ColorPaletteOperation.RestoredDefault,
+            requiresCommitOnSave = true,
+        )
+        if (hasReviewableGarments(clothingItems, ReviewKind.ColourRestore)) {
+            activeColorReviewChangeSet = changeSet
+            replaceRoute(RobiaRoute.ColorReview)
+        } else {
+            commitColorReview(changeSet, emptyList())
+        }
     }
 
     fun requestColorReviewDiscard() {
