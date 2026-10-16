@@ -89,7 +89,7 @@ class NewerWriterTest {
 
     @Test
     fun nullWriterRevisionAlreadySeenByThisPhoneUploads() = runBlocking {
-        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(5L) }
+        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(5L, writerDeviceId = null) }
         val drive = FakeDriveWardrobeRepository(
             manifest = DriveSyncResult.Success(DriveManifest(revision = 5L, writerDeviceId = null)),
             snapshot = DriveSyncResult.Success(snapshotWithGarments("remote")),
@@ -133,7 +133,7 @@ class NewerWriterTest {
 
     @Test
     fun revisionAlreadySeenByThisPhoneDoesNotBlockUpload() = runBlocking {
-        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(5L) }
+        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(5L, writerDeviceId = null) }
         val wardrobe = FakeWardrobeRepository().apply { addQueued("a") }
         val drive = FakeDriveWardrobeRepository(
             manifest = DriveSyncResult.Success(DriveManifest(revision = 5L, writerDeviceId = "other-phone")),
