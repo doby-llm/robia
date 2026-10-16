@@ -605,6 +605,8 @@
     <string name="tag_review_empty_body">Your garments already match this change.</string>
     <string name="tag_review_needs_model_body">Robia can review garments once smart suggestions are ready.</string>
     <string name="tag_review_accept_all">Accept all (%1$d)</string>
+    <string name="tag_review_save_accepted">Save %1$d accepted</string>
+    <string name="review_card_discard">Discard</string>
     <plurals name="tag_review_deleted_occasion_body">
         <item quantity="one">%1$d garment had it. Its other occasions stay.</item>
         <item quantity="other">%1$d garments had it. Their other occasions stay.</item>

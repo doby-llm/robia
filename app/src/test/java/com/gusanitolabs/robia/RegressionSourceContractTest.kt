@@ -233,8 +233,20 @@ class RegressionSourceContractTest {
         // Browse keeps the active-only read; the review snapshot and undo must see archived garments as well.
         assertTrue(app.contains("readGarmentsForReview = {"))
         assertTrue(app.contains("app.database.wardrobeDao().getAllItemsForSync()"))
-        assertTrue(app.contains("val garments = try {"))
-        assertTrue(app.contains("suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()"))
+        // The snapshot try block moved with the offer step (offerTagReviewRequest, TagReviewScreen.kt). The offer must be
+        // made by RobiaApp, and the snapshot must be read before the write it describes.
+        val tagReview = source("app/src/main/java/com/gusanitolabs/robia/ui/TagReviewScreen.kt")
+        assertTrue(tagReview.contains("val garments = try {"))
+        assertTrue(app.contains("offerTagReviewRequest("))
+        val offer = tagReview.substringAfter("internal suspend fun offerTagReviewRequest(").substringBefore("\n}\n")
+        val readIndex = offer.indexOf("readGarments()")
+        val writeIndex = offer.indexOf("write()")
+        assertTrue("the snapshot read must come before the write", readIndex >= 0 && readIndex < writeIndex)
+        // The undo is itself the latest review write, so its plan must read without joining that write (see ReviewWrites).
+        val undoRead = app.substringAfter("suspend fun currentGarmentsForUndo()").substringBefore("\n\n")
+        assertTrue(undoRead.contains("getAllItemsForSync()"))
+        assertFalse(undoRead.contains("readGarmentsForReview"))
+        assertFalse(undoRead.contains("afterPreviousWrite"))
     }
 
     @Test
