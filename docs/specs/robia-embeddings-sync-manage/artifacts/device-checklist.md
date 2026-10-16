@@ -1,7 +1,7 @@
 # Z01 - Device checklist (Poco F3, Xiaomi M2012K11AG, API 33)
 
-APK: latest `main` staging build (includes J01-J04). Run 38799053446, artifact robia-staging-apk (id 12003662471):
-https://github.com/doby-llm/robia/actions/runs/38799053446/artifacts/12003662471
+APK: latest `main` staging build (includes K01-K04). Run 38879790577, artifact robia-staging-apk (id 12036519904):
+https://github.com/doby-llm/robia/actions/runs/38879790577/artifacts/12036519904
 Install it over the current app (same CI signing key). If Android reports a signature conflict, do NOT uninstall: that deletes local data.
 
 Phone charging, battery saver off, other apps closed. Mark each row PASS / FAIL and write what you saw.
@@ -53,6 +53,17 @@ ID collisions in verification-matrix.md are resolved here: V-Z05b = sync progres
 - [ ] V-Z27 (J04) First launch (clear app data or fresh install): one prompt at a time, cloud setup first, Smart suggestions only after. Result:
 - [ ] V-Z28 (J04) Merge dialog: buttons stacked, no overlap; Combine closes it and the Browse card shows 'Combining...' then done/failed (fails by itself after 90 s); Not now/outside tap keeps the proposal as a card; 'Keep this phone' asks to confirm overwrite. Result:
 - [ ] V-Z29 (J04) Browse and Advanced filters: no blank space at the end of the scroll. Result:
+
+## H. Feedback 5 fixes (K01-K04), after Manu's block G results
+- [ ] V-Z30 (K01) Reinstall (or clear data) with an EMPTY phone, connect Drive: all garments restored and NO 'Combine with your Drive backup?' dialog, also a few seconds later. No second 'Syncing...' beyond the restore. Result:
+- [ ] V-Z31 (K01) Real clash still asks: phone with different clothes + backup with other clothes -> the dialog appears. Edit during a restore does not get lost. Result:
+- [ ] V-Z32 (K02) Smart suggestions prompt never appears while the Drive download/restore runs or on another screen: only on Browse at rest (about 3 s after). Result:
+- [ ] V-Z33 (K02) Airplane mode with a pending edit: 'Waiting for connection' appears quickly; the developer card shows it neutral (not red UnknownHostException). Tap the cloud icon in Browse: small popup explains the state (auto-closes, 'Open Data sync' when it needs attention). Result:
+- [ ] V-Z34 (K03) Review garments (tags and colours): each card has Discard next to Accept; a discarded card is NOT applied (add tag: garment unchanged; delete tag: garment ends without it); Accept all counts only open cards; after the last card the screen closes by itself. Result:
+- [ ] V-Z35 (K03) With 0 garments in the app, no 'Review garments' prompt appears for any tag/colour change. Result:
+- [ ] V-Z36 (K03) Manage > Default (restore defaults): the 'Review garments / Not now' prompt appears immediately (no 2-3 s wait). Result:
+- [ ] V-Z37 (K04) Review cards: photo area has the same colour gradient as Browse (colour review: uses the edited primary colour). Browse looks unchanged. Result:
+- [ ] V-Z38 (K04) Tag description editor: counter '52/200' no longer touches the border; the helper text wraps instead of ending in '...'; no new blank gap. Result:
 
 ## Return
 Paste the results (a copy of this list with PASS/FAIL and notes is enough). Z01 is then closed by recording them in the tracking issue.
