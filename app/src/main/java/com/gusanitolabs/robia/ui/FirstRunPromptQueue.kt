@@ -29,3 +29,39 @@ fun FirstRunPromptInputs.isPending(prompt: FirstRunPrompt): Boolean = when (prom
     FirstRunPrompt.BackupConflict -> backupConflictPending
     FirstRunPrompt.ModelDownload -> modelDownloadPending
 }
+
+internal const val FIRST_RUN_QUIET_MS = 3_000L
+
+/** Whether [nowMs] is at least [quietMs] after the last busy transition; no transition yet counts as quiet. */
+internal fun quietEnoughSince(lastBusyAtMs: Long?, nowMs: Long, quietMs: Long = FIRST_RUN_QUIET_MS): Boolean =
+    lastBusyAtMs == null || nowMs - lastBusyAtMs >= quietMs
+
+/**
+ * Inputs for the model prompt only. Cloud, merge and conflict prompts keep their own order in [nextFirstRunPrompt].
+ * [syncRunning] covers a running Drive restore too; [cloudImportArmed] covers the window before the import starts.
+ */
+data class ModelPromptGateInputs(
+    val onBrowse: Boolean,
+    val syncRunning: Boolean,
+    val cloudImportArmed: Boolean,
+    val cloudAuthorizationInFlight: Boolean,
+    /** Browse dialogs and review offers, merged by the caller: any of them open means the prompt waits. */
+    val browseDialogOpen: Boolean,
+    val mergeCombining: Boolean,
+    val mergeOrConflictPending: Boolean,
+    /** An empty wardrobe with a Drive connection whose fresh-install restore has not been attempted yet. */
+    val emptyWardrobeRestorePending: Boolean,
+    val quietEnough: Boolean,
+)
+
+/** The model prompt may show only on Browse, at rest, after a calm period, with no other prompt or review waiting. */
+fun firstRunGateOpen(inputs: ModelPromptGateInputs): Boolean =
+    inputs.onBrowse &&
+        !inputs.syncRunning &&
+        !inputs.cloudImportArmed &&
+        !inputs.cloudAuthorizationInFlight &&
+        !inputs.browseDialogOpen &&
+        !inputs.mergeCombining &&
+        !inputs.mergeOrConflictPending &&
+        !inputs.emptyWardrobeRestorePending &&
+        inputs.quietEnough
