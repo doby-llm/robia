@@ -62,6 +62,7 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
@@ -364,7 +365,11 @@ private fun ColorReviewCandidateCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
-            ColorReviewPhoto(candidate.item)
+            // The editable primary, as Accept will save it. A colour deleted from the palette has no match: Unknown.
+            ColorReviewPhoto(
+                item = candidate.item,
+                swatch = garmentSwatchLabel(primaryColor?.hex),
+            )
             Column(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -414,12 +419,12 @@ private fun ColorReviewCandidateCard(
 }
 
 @Composable
-private fun ColorReviewPhoto(item: ClothingItem) {
+private fun ColorReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(132.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            .background(rememberGarmentSwatchBrush(swatch.swatchColor())),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }

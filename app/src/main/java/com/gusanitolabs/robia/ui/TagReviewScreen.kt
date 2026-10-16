@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
@@ -633,7 +634,10 @@ private fun TagReviewCandidateCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
-            TagReviewPhoto(candidate.item)
+            TagReviewPhoto(
+                item = candidate.item,
+                swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
+            )
             Column(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -734,12 +738,12 @@ private fun TagReviewCandidateCard(
 }
 
 @Composable
-private fun TagReviewPhoto(item: ClothingItem) {
+private fun TagReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(132.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            .background(rememberGarmentSwatchBrush(swatch.swatchColor())),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf(String::isNotBlank)
