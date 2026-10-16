@@ -17,7 +17,7 @@ import com.gusanitolabs.robia.sync.RestoredPhotoApplyResult
 import com.gusanitolabs.robia.sync.SyncWorkScheduler
 import com.gusanitolabs.robia.sync.WardrobeSnapshotStore
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
-import com.gusanitolabs.robia.sync.equivalentForUpload
+import com.gusanitolabs.robia.sync.unchangedSince
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -208,6 +208,7 @@ internal class FakeSettingsRepository(
         RobiaSettings(driveSyncConnectionStatus = status, driveFreshInstallRestoreAttempted = freshInstallRestoreAttempted),
     )
     private val revisionState = MutableStateFlow(0L)
+    private val writerState = MutableStateFlow<String?>(null)
     private val conflictState = MutableStateFlow(false)
     private val conflictRevisionState = MutableStateFlow(0L)
     private val modelPromptState = MutableStateFlow(false)
@@ -218,6 +219,7 @@ internal class FakeSettingsRepository(
     /** Changes the connection without a suspending call, for a test that drops it at a precise point. */
     fun forceStatus(status: DriveSyncConnectionStatus) = update { it.copy(driveSyncConnectionStatus = status) }
     override val lastKnownRemoteRevision: Flow<Long> = revisionState
+    override val lastKnownRemoteWriterDeviceId: Flow<String?> = writerState
     override val syncConflict: Flow<Boolean> = conflictState
     override val syncConflictRemoteRevision: Flow<Long> = conflictRevisionState
     override val modelPromptShown: Flow<Boolean> = modelPromptState
@@ -255,8 +257,9 @@ internal class FakeSettingsRepository(
 
     override suspend fun deviceId(): String = FAKE_DEVICE_ID
 
-    override suspend fun setLastKnownRemoteRevision(revision: Long) {
+    override suspend fun setLastKnownRemoteRevision(revision: Long, writerDeviceId: String?) {
         revisionState.value = revision
+        writerState.value = writerDeviceId
     }
 
     override suspend fun setSyncConflict(conflict: Boolean, remoteRevision: Long) {
@@ -290,7 +293,8 @@ internal class FakeWardrobeSnapshotStore(
 
     /** Refuses, and writes nothing, when [local] no longer equals the export the cycle merged against. */
     override suspend fun importSnapshotIfLocalUnchanged(expectedLocal: WardrobeSyncSnapshot, snapshot: WardrobeSyncSnapshot): ImportSnapshotResult? {
-        if (!local.equivalentForUpload(expectedLocal)) return null
+        // Mirrors the Room path: a photo swap leaves the garment revision unchanged, so the photo list is compared too.
+        if (!local.unchangedSince(expectedLocal)) return null
         return importSnapshot(snapshot)
     }
 

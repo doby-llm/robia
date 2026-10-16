@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
+import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.InMemoryEmbeddingDao
 import com.gusanitolabs.robia.data.local.EmbeddingKind
@@ -13,6 +14,7 @@ import com.gusanitolabs.robia.sync.fakes.FakeWardrobeRepository
 import com.gusanitolabs.robia.sync.fakes.FakeSettingsRepository
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeSnapshotStore
 import com.gusanitolabs.robia.sync.fakes.OTHER_DEVICE_ID
+import com.gusanitolabs.robia.sync.fakes.SECOND_OTHER_DEVICE_ID
 import com.gusanitolabs.robia.sync.fakes.driveBackup
 import com.gusanitolabs.robia.sync.fakes.exportedSnapshot
 import com.gusanitolabs.robia.sync.fakes.garmentEntity
@@ -283,5 +285,149 @@ class MergeProposalScenarioTest {
 
         assertNull(processor.state.first().pendingMergeSummary)
         assertEquals(1, snapshots.imports.size)
+    }
+
+    // Round 3. Each scenario runs through the real export and the Drive JSON codec, and each names its finding.
+
+    @Test
+    fun finding1_aGuardedRemotePhotoOnTheSamePhotoUriProposesInsteadOfRestoringSilently() = runBlocking {
+        val local = exportedSnapshot(garmentEntity("a", photoUri = PHONE_PHOTO))
+        val snapshots = FakeWardrobeSnapshotStore(local = local)
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(photoBackup(local, revision = 50L)))
+        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(40L) }
+        val processor = newTestProcessor(settings = settings, snapshots = snapshots, drive = drive)
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+
+        assertNotNull(processor.state.first().pendingMergeSummary)
+        assertTrue(snapshots.imports.isEmpty())
+        assertTrue(drive.upserts.isEmpty())
+    }
+
+    @Test
+    fun finding1_aConfirmedMergeWithAGuardedRemotePhotoKeepsThePhonesFileAndHoldsTheUpload() = runBlocking {
+        val local = exportedSnapshot(garmentEntity("a", photoUri = PHONE_PHOTO))
+        val backup = photoBackup(local, revision = 50L)
+        // The blob fails to download: the fetched record has no restored file and carries the guard.
+        val fetched = backup.copy(photos = backup.photos.map { it.copy(restoreFailureCategory = "remote_photo_blob_missing") })
+        val snapshots = FakeWardrobeSnapshotStore(local = local)
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(fetched))
+        val processor = newTestProcessor(snapshots = snapshots, drive = drive)
+
+        processor.confirmMerge()
+
+        assertEquals(1, snapshots.imports.size)
+        assertEquals(PHONE_PHOTO, snapshots.local.photos.single().localUri)
+        assertNull(snapshots.local.photos.single().restoredLocalUri)
+        assertTrue(drive.upserts.isEmpty())
+        assertEquals(SyncRunResult.Retry, processor.state.first().lastCycle?.result)
+    }
+
+    @Test
+    fun finding2_aClockCollisionAtTheBaseRevisionFromAnotherWriterProposes() = runBlocking {
+        val local = exportedSnapshot(garmentEntity("a"), garmentEntity("c"))
+        val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(50L, writerDeviceId = SECOND_OTHER_DEVICE_ID) }
+        val snapshots = FakeWardrobeSnapshotStore(local = local)
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup))
+        val processor = newTestProcessor(settings = settings, snapshots = snapshots, drive = drive)
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+
+        assertNotNull(processor.state.first().pendingMergeSummary)
+        assertTrue(snapshots.imports.isEmpty())
+        assertTrue(drive.upserts.isEmpty())
+    }
+
+    @Test
+    fun finding2_aRestoreRecordsTheBackupWriterSoTheTrailingRunWithAPhotoStaysSilent() = runBlocking {
+        val backup = photoBackup(exportedSnapshot(garmentEntity("a", photoUri = PHONE_PHOTO)), revision = 50L)
+        // The restore materialises the blob, so the restored record carries a local file.
+        val restored = backup.copy(photos = backup.photos.map { it.copy(restoredLocalUri = RESTORED_PHOTO) })
+        val settings = FakeSettingsRepository()
+        val snapshots = FakeWardrobeSnapshotStore(local = exportedSnapshot())
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(restored))
+        val processor = newTestProcessor(settings = settings, snapshots = snapshots, drive = drive)
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+        assertEquals(OTHER_DEVICE_ID, settings.lastKnownRemoteWriterDeviceId.first())
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+
+        assertNull(processor.state.first().pendingMergeSummary)
+        assertEquals(1, snapshots.imports.size)
+        assertTrue(drive.upserts.isEmpty())
+    }
+
+    @Test
+    fun finding2_aRestoreWithAPhotoAndAPendingVectorStaysSilentOnTheTrailingRun() = runBlocking {
+        val backup = photoBackup(exportedSnapshot(garmentEntity("a", photoUri = PHONE_PHOTO)), revision = 50L)
+        val restored = backup.copy(photos = backup.photos.map { it.copy(restoredLocalUri = RESTORED_PHOTO) })
+        val snapshots = FakeWardrobeSnapshotStore(local = exportedSnapshot())
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(restored))
+        val embeddings = EmbeddingRepository(InMemoryEmbeddingDao(), clock = { 1_000L })
+        val processor = WardrobeSyncOutboxProcessor(
+            settingsRepository = FakeSettingsRepository(),
+            wardrobeRepository = FakeWardrobeRepository(),
+            snapshotRepository = snapshots,
+            driveRepository = drive,
+            syncWorkScheduler = FakeSyncWorkScheduler(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined,
+            embeddingRepository = embeddings,
+        )
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+        embeddings.upsert("a", EmbeddingKind.IMAGE, FloatArray(EmbeddingRecipe.DIMENSION), "hash-a", 5L)
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+
+        // The trailing run may upload the vector; it must not ask the user.
+        assertNull(processor.state.first().pendingMergeSummary)
+        assertEquals(1, snapshots.imports.size)
+    }
+
+    @Test
+    fun finding4_aLocalEditBetweenTheClaimAndTheExportIsPendingWorkForTheDecision() = runBlocking {
+        val wardrobe = FakeWardrobeRepository()
+        val settings = FakeSettingsRepository().apply { setLastKnownRemoteRevision(40L) }
+        val snapshots = FakeWardrobeSnapshotStore(local = exportedSnapshot(garmentEntity("a")))
+        // An unsynced tag edit lands after the cycle has read its pending work and before it exports.
+        snapshots.onExport = { wardrobe.unsyncedMetadata = true }
+        val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup))
+        val processor = newTestProcessor(settings = settings, wardrobe = wardrobe, snapshots = snapshots, drive = drive)
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+
+        // Contained backup with no pending work would fast-forward; the late edit makes it a proposal.
+        assertNotNull(processor.state.first().pendingMergeSummary)
+        assertTrue(snapshots.imports.isEmpty())
+    }
+
+    @Test
+    fun finding6_aPhotoSwapDuringTheDownloadWithNoGarmentRevisionChangeReturnsRetry() = runBlocking {
+        val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+        val snapshots = FakeWardrobeSnapshotStore(local = exportedSnapshot(garmentEntity("a", photoUri = PHONE_PHOTO)))
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup))
+        val processor = newTestProcessor(snapshots = snapshots, drive = drive)
+        drive.onSnapshotFetch = {
+            // The garment keeps its revision; only its photo changes. The merge was computed against the old photo.
+            snapshots.local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a-new.jpg"))
+        }
+
+        processor.confirmMerge()
+
+        assertTrue(snapshots.imports.isEmpty())
+        assertTrue(drive.upserts.isEmpty())
+        assertEquals(SyncRunResult.Retry, processor.state.first().lastCycle?.result)
+    }
+
+    /** A backup of [local] written by [OTHER_DEVICE_ID], with each photo's upload hash, as Drive holds it. */
+    private fun photoBackup(local: WardrobeSyncSnapshot, revision: Long): WardrobeSyncSnapshot =
+        driveBackup(local, writer = OTHER_DEVICE_ID, revision = revision)
+            .let { snapshot -> snapshot.copy(photos = snapshot.photos.map { it.copy(contentHash = "hash-${it.garmentId}") }) }
+
+    private companion object {
+        const val PHONE_PHOTO = "file:///photos/a.jpg"
+        const val RESTORED_PHOTO = "file:///restored/a.jpg"
     }
 }

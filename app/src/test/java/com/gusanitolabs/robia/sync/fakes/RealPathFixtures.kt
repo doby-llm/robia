@@ -97,3 +97,6 @@ internal fun driveBackup(snapshot: WardrobeSyncSnapshot, writer: String?, revisi
 
 /** A writer other than [FAKE_DEVICE_ID]: another phone, or this account before a reinstall. */
 internal const val OTHER_DEVICE_ID = "other-device"
+
+/** A third phone, distinct from [OTHER_DEVICE_ID], for a base recorded from one writer and a backup from another. */
+internal const val SECOND_OTHER_DEVICE_ID = "other-device-b"

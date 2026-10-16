@@ -7,6 +7,7 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 import com.gusanitolabs.robia.sync.fakes.FAKE_DEVICE_ID
 import com.gusanitolabs.robia.sync.fakes.OTHER_DEVICE_ID
+import com.gusanitolabs.robia.sync.fakes.SECOND_OTHER_DEVICE_ID
 import com.gusanitolabs.robia.sync.fakes.driveBackup
 import com.gusanitolabs.robia.sync.fakes.exportedSnapshot
 import com.gusanitolabs.robia.sync.fakes.garmentEntity
@@ -25,12 +26,14 @@ class MergeDecisionTest {
         local: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot,
         lastKnown: Long = 0L,
+        lastKnownWriter: String? = null,
         pending: Boolean = false,
         wasEmpty: Boolean = false,
     ): MergeDecision = decideMerge(
         local = local,
         remote = remote,
         lastKnownRemoteRevision = lastKnown,
+        lastKnownRemoteWriter = lastKnownWriter,
         deviceId = FAKE_DEVICE_ID,
         pendingLocalWork = pending,
         localWasEmptyAtStart = wasEmpty,
@@ -165,7 +168,52 @@ class MergeDecisionTest {
         assertEquals(MergeDecision.NoOp, decide(local, remote, lastKnown = 50L))
     }
 
-    // Finding 1: a row that has not reached Drive makes the phone pending, so a newer backup cannot silently replace it.
+    // Finding 2: two writers can share a revision under clock skew, so the base's writer is checked as well.
+
+    @Test
+    fun lineage_anEqualRevisionFromAnotherWriterThanTheBaseWriterFallsThrough() {
+        val local = exportedSnapshot(garmentEntity("a"), garmentEntity("c"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), OTHER_DEVICE_ID, 50L)
+        // The base is revision 50 from SECOND_OTHER; this backup is also 50, from OTHER: a clock collision, not the base.
+        assertEquals(MergeDecision.Propose, decide(local, remote, lastKnown = 50L, lastKnownWriter = SECOND_OTHER_DEVICE_ID))
+    }
+
+    @Test
+    fun lineage_anEqualRevisionFromTheBaseWriterIsStillOwnLineage() {
+        val local = exportedSnapshot(garmentEntity("a"), garmentEntity("c"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), OTHER_DEVICE_ID, 50L)
+        assertEquals(MergeDecision.NoOp, decide(local, remote, lastKnown = 50L, lastKnownWriter = OTHER_DEVICE_ID))
+    }
+
+    @Test
+    fun lineage_aBaseWithAnUnknownWriterKeepsTheRevisionOnlyCheck() {
+        // A base recorded before the writer was stored: the exact revision still counts. This is the documented residual.
+        val local = exportedSnapshot(garmentEntity("a"), garmentEntity("c"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), SECOND_OTHER_DEVICE_ID, 50L)
+        assertEquals(MergeDecision.NoOp, decide(local, remote, lastKnown = 50L, lastKnownWriter = null))
+    }
+
+    @Test
+    fun lineage_aPhotoBearingRestoreIsOwnLineageAtTheBase() {
+        // Writer-only lineage would send this to a proposal. The exact base with its writer keeps the trailing run silent.
+        val local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg")), OTHER_DEVICE_ID, 50L)
+        assertEquals(MergeDecision.NoOp, decide(local, remote, lastKnown = 50L, lastKnownWriter = OTHER_DEVICE_ID))
+        assertEquals(MergeDecision.UploadLocal, decide(local, remote, lastKnown = 50L, lastKnownWriter = OTHER_DEVICE_ID, pending = true))
+    }
+
+    // Finding 1: a remote photo whose blob will not restore is never taken silently over the phone's own photo.
+
+    @Test
+    fun photos_aGuardedRemotePhotoOnTheSamePhotoUriProposesInsteadOfFastForward() {
+        val local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg")), OTHER_DEVICE_ID, 50L)
+            .let { backup -> backup.copy(photos = backup.photos.map { it.copy(contentHash = "hash-a") }) }
+        // The merge used to keep the remote record, which equals the backup, so this was a silent FastForward.
+        assertEquals(MergeDecision.Propose, decide(local, remote, lastKnown = 40L))
+    }
+
+    // Finding 1 (cont.): a row that has not reached Drive makes the phone pending, so a newer backup cannot silently replace it.
 
     @Test
     fun pending_aNeedsUserActionEditIsNotTakenOverByANewerBackup() {

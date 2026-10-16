@@ -89,7 +89,9 @@ class LocalWardrobeSyncSnapshotRepository(
      * Targeted guarded-photo retry uses [applyRestoredPhoto] instead of this bulk import because it
      * must resolve exactly one pre-existing guarded row that has already been claimed as Running.
      */
-    override suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
+    override suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult = importRecords(snapshot, phoneHeldPhotoUris = emptyMap())
+
+    private suspend fun importRecords(snapshot: WardrobeSyncSnapshot, phoneHeldPhotoUris: Map<String, String>): ImportSnapshotResult {
         val deterministicSnapshot = snapshot.sortedDeterministically().withoutTombstonedTaxonomy()
         val remotePhotoByGarmentId = deterministicSnapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
         val guardedPhotoByGarmentId = deterministicSnapshot.photos
@@ -98,7 +100,7 @@ class LocalWardrobeSyncSnapshotRepository(
         val remoteColorsByGarmentId = deterministicSnapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
         val restoredItems = deterministicSnapshot.garments.map { garment ->
             garment.toEntity(
-                photoUri = remotePhotoByGarmentId[garment.id]?.restorableLocalUri(),
+                photoUri = importedPhotoUri(remotePhotoByGarmentId[garment.id], phoneHeldPhotoUris[garment.id]),
                 photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
                 colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
             )
@@ -142,8 +144,13 @@ class LocalWardrobeSyncSnapshotRepository(
             // Re-exported in the same transaction as the writes, so the comparison and the writes see one database state. A write
             // that commits concurrently makes this transaction fail; it cannot slip in unnoticed. Embeddings are not compared
             // (importSnapshot keeps a newer vector), so a vector recomputed during the download does not block the import.
-            if (!exportSnapshot().equivalentForUpload(expectedLocal)) return@withTransaction null
-            importSnapshot(snapshot)
+            // Both sides are local exports. unchangedSince compares the photo list exactly: a photo swap keeps the garment revision.
+            if (!exportSnapshot().unchangedSince(expectedLocal)) return@withTransaction null
+            // The phone's own files are kept where the merged record has no restorable file (see [importedPhotoUri]).
+            importRecords(
+                snapshot,
+                phoneHeldPhotoUris = expectedLocal.photos.filter { it.localUri.isNotBlank() }.associate { it.garmentId to it.localUri },
+            )
         }
 
     /** Persists only the successfully rehydrated image; garment metadata remains untouched. */
@@ -593,6 +600,13 @@ private val tagEntityTypes = setOf("garment_tag", "tag")
 private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
 private fun GarmentPhotoRecord.restorableLocalUri(): String? = restoredLocalUri?.takeIf(String::isNotBlank)
+
+/**
+ * The photo_uri a garment takes on import. A file restored from Drive wins. Without one, the phone keeps the file it already
+ * holds: a silent import must never replace a local photo reference with null, which would orphan the file.
+ */
+internal fun importedPhotoUri(merged: GarmentPhotoRecord?, phoneHeldUri: String?): String? =
+    merged?.restorableLocalUri() ?: phoneHeldUri?.takeIf(String::isNotBlank)
 
 private fun RestoredPhotoApplyStateEntity?.zeroUpdateReason(
     expectedRevision: Long,

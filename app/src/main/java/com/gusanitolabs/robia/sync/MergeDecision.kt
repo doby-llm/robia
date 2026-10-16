@@ -31,8 +31,10 @@ internal enum class MergeDecision {
  *
  * 1. The backup has no user data: upload the phone's snapshot.
  * 2. The phone has data and either this phone wrote the backup, or the backup is exactly the revision this phone last
- *    recorded (the base). An ordinary cycle: it uploads only if local work is pending. A lower revision is not own
- *    lineage: phone clocks skew, so a lower revision may still be another writer's newer data.
+ *    recorded (the base) and, when the base's writer is known, was written by that same writer. An ordinary cycle: it
+ *    uploads only if local work is pending. A lower revision is not own lineage: phone clocks skew, so a lower revision may
+ *    still be another writer's newer data. Two writers can share a revision under skew, so the writer is checked too.
+ *    A base with an unknown writer (recorded before the writer was stored) keeps the revision-only check: a known residual.
  * 3. The phone was empty when the cycle started: take the backup silently. Code checks this before rule 2.
  * 4. Both sides already hold the same data, with the same wardrobe and schema: record the base, uploading only if local work
  *    is pending.
@@ -50,15 +52,18 @@ internal fun decideMerge(
     local: WardrobeSyncSnapshot,
     remote: WardrobeSyncSnapshot,
     lastKnownRemoteRevision: Long,
+    lastKnownRemoteWriter: String?,
     deviceId: String,
     pendingLocalWork: Boolean,
     localWasEmptyAtStart: Boolean,
 ): MergeDecision {
     if (!remote.hasUserData()) return MergeDecision.UploadLocal
     val baseKnown = lastKnownRemoteRevision > 0L
-    // Exactly the base is this phone's own state. Any other revision is not: clocks skew, and a legacy backup has no writer.
-    val ownLineage = remote.metadata.writerDeviceId == deviceId ||
-        (baseKnown && remote.metadata.revision == lastKnownRemoteRevision)
+    // Exactly the base, from the base's writer, is this phone's own state. Any other revision is not: clocks skew, and a legacy
+    // backup has no writer. The writer is not required alone: the writer-only rule would send photo-bearing restores to a proposal.
+    val isBase = baseKnown && remote.metadata.revision == lastKnownRemoteRevision &&
+        (lastKnownRemoteWriter == null || remote.metadata.writerDeviceId == lastKnownRemoteWriter)
+    val ownLineage = remote.metadata.writerDeviceId == deviceId || isBase
     // A different wardrobe or schema is never "the same data", whatever the garments look like.
     val sameWardrobe = local.metadata.schemaVersion == remote.metadata.schemaVersion &&
         local.metadata.wardrobeId == remote.metadata.wardrobeId
