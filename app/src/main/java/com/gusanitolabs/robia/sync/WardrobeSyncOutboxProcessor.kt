@@ -95,6 +95,10 @@ class WardrobeSyncOutboxProcessor(
     private var cyclePhotoUploadFailureIds: Set<String> = emptySet()
     /** The Drive failure that ended this cycle's upload attempt, reported in [lastCycle]. Written and read only while holding [mutex]. */
     private var cycleDriveFailure: Throwable? = null
+    /** Local work the phone had before this cycle claimed anything (rows, vectors, cloud deletion). Written and read only while holding [mutex]. */
+    private var cyclePendingLocalWork = false
+    /** The merge decision this cycle reached, logged with the cycle. Written and read only while holding [mutex]. */
+    private var cycleMergeDecision: MergeDecision? = null
     private var lastLoggedSettings: RobiaSettings? = null
     /** Serialises [requestSync]; held only for the decision and the enqueue, never across a cycle. */
     private val syncRequestMutex = Mutex()
@@ -704,15 +708,19 @@ class WardrobeSyncOutboxProcessor(
             return
         }
 
-        val localSnapshot = snapshotRepository.exportSnapshot()
-        if (!localSnapshot.isFreshInstallSnapshot()) {
+        // Freshness is decided under the mutex: a forced import that ran first has already filled the phone, and a
+        // restore must never be applied over it. The export and the restore share one lock hold, so nothing lands between them.
+        val phoneWasFresh = mutex.withLock {
+            val fresh = snapshotRepository.exportSnapshot().isFreshInstallSnapshot()
+            if (fresh) runCycleHoldingMutex(reason = "fresh_install_restore", trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true, mergeConfirmed = false)
+            fresh
+        }
+        if (!phoneWasFresh) {
             // Once the phone has user wardrobe data, it is authoritative and must not be overwritten.
             hasAttemptedFreshInstallRestore = true
             settingsRepository.markDriveFreshInstallRestoreAttempted()
             return
         }
-
-        runCycle(reason = "fresh_install_restore", trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true)
 
         // Do not burn the one-shot bootstrap attempt on a retryable Drive/photo failure. Keeping the
         // flag false lets a later explicit retry or reconnect re-enter the restore path instead of
@@ -729,18 +737,27 @@ class WardrobeSyncOutboxProcessor(
         forceSnapshot: Boolean,
         forceImport: Boolean,
         mergeConfirmed: Boolean = false,
-    ): SyncRunResult = mutex.withLock {
+    ): SyncRunResult = mutex.withLock { runCycleHoldingMutex(reason, trigger, forceSnapshot, forceImport, mergeConfirmed) }
+
+    /** The cycle body. The caller holds [mutex]; [restoreFreshInstallOnceIfNeeded] holds it across its freshness check and the restore. */
+    private suspend fun runCycleHoldingMutex(
+        reason: String,
+        trigger: SyncTrigger,
+        forceSnapshot: Boolean,
+        forceImport: Boolean,
+        mergeConfirmed: Boolean,
+    ): SyncRunResult {
         val idleStartedAt = System.currentTimeMillis()
         val status = settingsRepository.settings.first().driveSyncConnectionStatus
         if (status != DriveSyncConnectionStatus.Connected) {
-            return@withLock recordIdleCycle(
+            return recordIdleCycle(
                 idleStartedAt,
                 if (status == DriveSyncConnectionStatus.Disconnected) SyncRunResult.AuthBlocked else SyncRunResult.NeedsUser,
             )
         }
         // An unresolved conflict or an unconfirmed merge holds every upload until the user chooses.
-        if (!forceImport && settingsRepository.syncConflict.first()) return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.Conflict)
-        if (!mergeConfirmed && pendingMergeSummary.value != null) return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.NeedsUser)
+        if (!forceImport && settingsRepository.syncConflict.first()) return recordIdleCycle(idleStartedAt, SyncRunResult.Conflict)
+        if (!mergeConfirmed && pendingMergeSummary.value != null) return recordIdleCycle(idleStartedAt, SyncRunResult.NeedsUser)
 
         // Held under the mutex, so no claim of this process is live: a Running row now was left by a process that died.
         // photo_restore_guarded rows are excluded by the query: they have their own recovery at processor init.
@@ -750,12 +767,15 @@ class WardrobeSyncOutboxProcessor(
         val hasPendingEmbeddings = embeddingRepository?.pendingUploadKeys()?.isNotEmpty() == true
         if (pendingWork.isEmpty() && pendingMetadataWork.isEmpty() && !hasPendingEmbeddings && !forceSnapshot && !forceImport) {
             authBlocked.value = false
-            return@withLock recordIdleCycle(idleStartedAt, SyncRunResult.Success)
+            return recordIdleCycle(idleStartedAt, SyncRunResult.Success)
         }
+        cyclePendingLocalWork = pendingWork.isNotEmpty() || pendingMetadataWork.isNotEmpty() || hasPendingEmbeddings ||
+            wardrobeRepository.hasPendingCloudDeletion()
 
         cycleStorageFull = false
         cyclePhotoUploadFailureIds = emptySet()
         cycleDriveFailure = null
+        cycleMergeDecision = null
         isProcessing.value = true
         // Claims happen inside the try so a cancellation mid-claim releases every row claimed so far.
         val lockedWork = mutableListOf<PendingGarmentSyncWork>()
@@ -767,7 +787,7 @@ class WardrobeSyncOutboxProcessor(
         var cycleResult: SyncRunResult? = null
         var cycleFailure: Throwable? = null
         var keepTerminalProgress = false
-        try {
+        return try {
             pendingWork.forEach { work ->
                 // Listed before the claim: a cancellation after the row turned Running must still release it.
                 lockedWork += work
@@ -792,7 +812,7 @@ class WardrobeSyncOutboxProcessor(
             recordSyncEnded(
                 syncCorrelationId,
                 syncStartedAt,
-                "result=$result",
+                "result=$result decision=${cycleMergeDecision?.name ?: "none"}",
                 level = if (result == SyncRunResult.Success) "info" else "warn",
             )
             settleClaimedWork(result, lockedWork, lockedMetadataWork)
@@ -879,15 +899,45 @@ class WardrobeSyncOutboxProcessor(
         withContext(NonCancellable) { restoreSyncLogRepository.flush() }
     }
 
-    /** Connect on a phone with garments: show the merge first; nothing is uploaded until [confirmMerge]. */
+    /**
+     * Forced import on a phone with garments (connect or retry). The decision reads the record JSON only: a backup
+     * that needs no change never downloads its photo blobs. Nothing is uploaded until [confirmMerge] when it proposes.
+     */
     private suspend fun proposeMergeOrUpload(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
-        val remote = when (val fetched = driveRepository.fetchSnapshot()) {
+        val remote = when (val fetched = driveRepository.fetchSnapshotRecords()) {
             is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
-            is DriveSyncResult.Failure -> return SyncRunResult.Retry
+            is DriveSyncResult.Failure -> return fetched.retry()
         }
-        if (!remote.hasUserData()) return uploadLocalSnapshot(localSnapshot)
-        return proposeMerge(localSnapshot, remote)
+        return decideWithRemote(localSnapshot, remote) ?: uploadLocalSnapshot(localSnapshot)
+    }
+
+    /**
+     * Runs [decideMerge] for a remote backup and carries out every outcome except the ordinary upload, which the caller
+     * performs when this returns null ([MergeDecision.UploadLocal]). Only [MergeDecision.Propose] shows the dialog.
+     */
+    private suspend fun decideWithRemote(localSnapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): SyncRunResult? {
+        val decision = decideMerge(
+            local = localSnapshot,
+            remote = remote,
+            lastKnownRemoteRevision = settingsRepository.lastKnownRemoteRevision.first(),
+            deviceId = settingsRepository.deviceId(),
+            pendingLocalWork = cyclePendingLocalWork,
+            localWasEmptyAtStart = localSnapshot.isFreshInstallSnapshot(),
+        )
+        cycleMergeDecision = decision
+        return when (decision) {
+            MergeDecision.UploadLocal -> null
+            MergeDecision.NoOp -> SyncRunResult.Success
+            MergeDecision.RecordBase -> {
+                settingsRepository.setLastKnownRemoteRevision(remote.metadata.revision)
+                SyncRunResult.Success
+            }
+            // The restore merges the phone with the backup before it writes, so no local row is dropped on either path.
+            MergeDecision.RestoreSilently,
+            MergeDecision.FastForward -> restoreThenFlushAndResolveConflict(localSnapshot)
+            MergeDecision.Propose -> proposeMerge(localSnapshot, remote)
+        }
     }
 
     private fun proposeMerge(localSnapshot: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): SyncRunResult {
@@ -921,7 +971,7 @@ class WardrobeSyncOutboxProcessor(
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
             is DriveSyncResult.Failure -> return fetched.retry()
         }
-        if (otherWriterBackup && remote.hasUserData()) return proposeMerge(localSnapshot, remote)
+        if (otherWriterBackup && remote.hasUserData()) decideWithRemote(localSnapshot, remote)?.let { return it }
         // Forced cycles (tag and palette edits) upload even when nothing changed: a no-op cycle needs no Drive write.
         if (remoteAlreadyHoldsLocalSnapshot(localSnapshot, remote)) return SyncRunResult.Success
         val snapshot = localSnapshot.withWriter(deviceId).sortedDeterministically()
@@ -1653,7 +1703,7 @@ private object SyncDirectionPolicy {
 
 private fun WardrobeSyncSnapshot.isFreshInstallSnapshot(): Boolean = !hasUserData()
 
-private fun WardrobeSyncSnapshot.hasUserData(): Boolean =
+internal fun WardrobeSyncSnapshot.hasUserData(): Boolean =
     garments.isNotEmpty() ||
         photos.isNotEmpty() ||
         tombstones.isNotEmpty() ||
@@ -1703,7 +1753,7 @@ private val CloudRestorePhase.completedRestoreWork: Int
         CloudRestorePhase.Complete -> RESTORE_TOTAL_STEPS
     }
 
-private fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): WardrobeSyncSnapshot {
+internal fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSnapshot): WardrobeSyncSnapshot {
     val tombstones = mergeByKey(local.tombstones + remote.tombstones, { "${it.entityType}:${it.entityId}" }, SyncTombstoneRecord::revision)
     val tombstoneByGarmentId = tombstones
         .filter { tombstone -> tombstone.entityType in garmentEntityTypes }
