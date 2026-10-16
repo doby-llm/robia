@@ -62,6 +62,15 @@ class RobiaApplication : Application() {
         cloudAuthorizationInFlightState.value = inFlight
     }
 
+    private val cloudImportArmedState = MutableStateFlow(false)
+
+    /** True from a successful Drive chooser until its first import cycle ends; the model prompt waits for it. In memory only. */
+    val cloudImportArmed: StateFlow<Boolean> = cloudImportArmedState.asStateFlow()
+
+    fun setCloudImportArmed(armed: Boolean) {
+        cloudImportArmedState.value = armed
+    }
+
     val modelStore by lazy {
         ModelStore(
             rootDir = File(filesDir, "models"),
@@ -175,10 +184,12 @@ class RobiaApplication : Application() {
         })
     }
 
+    /** Online means internet AND validated: a Wi-Fi without uplink (captive portal, no route) is not online yet. */
     private fun ConnectivityManager.hasActiveInternet(): Boolean {
         val network = activeNetwork ?: return false
         val capabilities = getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun isUnmeteredNetworkActive(): Boolean {

@@ -139,9 +139,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -151,7 +153,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
@@ -634,7 +639,27 @@ internal data class CloudSyncIndicator(
     val attention: Boolean,
     /** Developer mode only: the class and message of the last failed cycle. */
     val detail: String? = null,
+    /** Developer mode only: the last failed cycle was a connection failure, shown as waiting rather than as an error. */
+    val offline: Boolean = false,
 )
+
+private val OFFLINE_FAILURE_CLASSES = setOf(
+    "UnknownHostException",
+    "SocketTimeoutException",
+    "ConnectException",
+    "SSLHandshakeException",
+    "NoRouteToHostException",
+)
+
+/**
+ * Whether a failed cycle is a connection failure (no route, no DNS, timeout, TLS handshake) rather than a real error.
+ * Matches the simple class name; without a class, the text before the first colon of [errorMessage] is checked.
+ */
+internal fun isOfflineFailure(errorClass: String?, errorMessage: String?): Boolean {
+    if (errorClass != null) return errorClass.substringAfterLast('.') in OFFLINE_FAILURE_CLASSES
+    val messageClass = errorMessage?.substringBefore(':')?.trim()?.substringAfterLast('.') ?: return false
+    return messageClass in OFFLINE_FAILURE_CLASSES
+}
 
 /** The processor or a restore is running right now: the raw signal behind [CloudSyncHeadline.Syncing], without any display hold. */
 internal val WardrobeSyncState.isRunningNow: Boolean
@@ -667,14 +692,14 @@ internal fun cloudSyncIndicator(
         pending > 0 -> CloudSyncHeadline.Pending
         else -> CloudSyncHeadline.Synced
     }
-    val detail = state.lastCycle
-        ?.takeIf { developerMode && (it.errorClass != null || it.errorMessage != null) }
-        ?.let { cycle -> listOfNotNull(cycle.errorClass, cycle.errorMessage).joinToString(": ") }
+    val failedCycle = state.lastCycle?.takeIf { developerMode && (it.errorClass != null || it.errorMessage != null) }
+    val detail = failedCycle?.let { cycle -> listOfNotNull(cycle.errorClass, cycle.errorMessage).joinToString(": ") }
     return CloudSyncIndicator(
         headline = headline,
         pendingCount = pending,
         attention = headline == CloudSyncHeadline.Attention || headline == CloudSyncHeadline.Error,
         detail = detail,
+        offline = failedCycle != null && isOfflineFailure(failedCycle.errorClass, failedCycle.errorMessage),
     )
 }
 
@@ -1033,15 +1058,49 @@ private fun RobiaShell(
         !settings.cloudSetupPromptInteracted &&
         settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NotConfigured &&
         isFirstRunCloudSetup
+    val cloudImportArmed by app.cloudImportArmed.collectAsState()
+    val mergeConfirmationPending = syncState.pendingMergeSummary != null && !mergeDialogDismissed
+    val backupConflictPending = syncState.conflict && !conflictDialogDismissed
+    // The model prompt waits for Browse at rest; a Drive download or import that is starting also holds it (see firstRunGateOpen).
+    val firstRunBusy = syncState.isRunningNow || cloudAuthorizationInFlight || cloudImportArmed
+    var lastBusyTransitionMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    var calmCheckMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(firstRunBusy) {
+        lastBusyTransitionMs = SystemClock.elapsedRealtime()
+        if (!firstRunBusy) {
+            delay(FIRST_RUN_QUIET_MS)
+            calmCheckMs = SystemClock.elapsedRealtime()
+        }
+    }
+    val modelPromptGateOpen = firstRunGateOpen(
+        ModelPromptGateInputs(
+            onBrowse = currentRoute == RobiaRoute.Browse,
+            syncRunning = syncState.isRunningNow,
+            cloudImportArmed = cloudImportArmed,
+            cloudAuthorizationInFlight = cloudAuthorizationInFlight,
+            browseDialogOpen = showBrowseDeleteDialog ||
+                showBackupDeletionConfirmation ||
+                pendingColorReviewChangeSet != null ||
+                pendingTagReview != null ||
+                tagReviewOfferInFlight,
+            mergeCombining = mergeCombinePhase == MergeCombinePhase.Combining,
+            mergeOrConflictPending = mergeConfirmationPending || backupConflictPending,
+            emptyWardrobeRestorePending = clothingItems.isEmpty() &&
+                settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected &&
+                !settings.driveFreshInstallRestoreAttempted,
+            quietEnough = !firstRunBusy && quietEnoughSince(lastBusyTransitionMs, calmCheckMs),
+        ),
+    )
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,
         cloudAuthorizationInFlight = cloudAuthorizationInFlight,
         anotherDialogOpen = activeFirstRunPrompt != null || showUseBackupConfirmation || showKeepPhoneConfirmation,
         cloudSetupPending = cloudSetupPromptPending && FirstRunPrompt.CloudSetup !in answeredFirstRunPrompts,
-        mergeConfirmationPending = syncState.pendingMergeSummary != null && !mergeDialogDismissed,
-        backupConflictPending = syncState.conflict && !conflictDialogDismissed,
+        mergeConfirmationPending = mergeConfirmationPending,
+        backupConflictPending = backupConflictPending,
         modelDownloadPending = FirstRunPrompt.ModelDownload !in answeredFirstRunPrompts &&
-            shouldShowModelPrompt(promptShown = modelPromptShown ?: true, state = modelState),
+            shouldShowModelPrompt(promptShown = modelPromptShown ?: true, state = modelState) &&
+            modelPromptGateOpen,
     )
     val queuedFirstRunPrompt = nextFirstRunPrompt(firstRunInputs)
     LaunchedEffect(queuedFirstRunPrompt) {
@@ -2249,30 +2308,103 @@ private fun CloudSyncIndicator.queueSummaryText(): String? = when {
     else -> stringResource(R.string.garment_sync_pending_count_many, pendingCount)
 }
 
-/** Browse indicator: a cloud icon that pulses while syncing, tinted when the user has to act. Same source as Settings. */
+private const val CLOUD_STATUS_POPUP_MS = 4_000L
+
+/**
+ * Browse indicator: a cloud icon that pulses while syncing, tinted when the user has to act. Same source as Settings.
+ * A tap opens a small popup that explains the state; it closes by itself, on an outside tap or on its action.
+ */
 @Composable
-private fun CloudSyncStatusIcon(indicator: CloudSyncIndicator) {
+private fun CloudSyncStatusIcon(indicator: CloudSyncIndicator, onOpenDataSync: () -> Unit) {
     val description = stringResource(indicator.headline.labelRes)
     val tint = if (indicator.attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.semantics { contentDescription = description },
+    val explanation = cloudStatusExplanation(indicator.headline, indicator.pendingCount)
+    var explanationOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(explanationOpen) {
+        if (explanationOpen) {
+            delay(CLOUD_STATUS_POPUP_MS)
+            explanationOpen = false
+        }
+    }
+    Box {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .semantics { contentDescription = description }
+                .then(
+                    if (explanation != null) {
+                        Modifier.clickable(role = Role.Button) { explanationOpen = !explanationOpen }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+            if (indicator.headline == CloudSyncHeadline.Syncing) {
+                PulsingCloudIcon(tint = tint)
+                Text(
+                    text = stringResource(R.string.drive_sync_status_syncing),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                )
+            } else {
+                Icon(
+                    imageVector = indicator.headline.icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        if (explanation != null && explanationOpen) {
+            CloudStatusPopup(
+                explanation = explanation,
+                onOpenDataSync = {
+                    explanationOpen = false
+                    onOpenDataSync()
+                },
+                onDismiss = { explanationOpen = false },
+            )
+        }
+    }
+}
+
+/** Non-modal: the window is not focusable, so it does not take focus or block the screen behind it. */
+@Composable
+private fun CloudStatusPopup(
+    explanation: CloudStatusExplanation,
+    onOpenDataSync: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val message = explanation.quantity?.let { count ->
+        context.resources.getQuantityString(explanation.messageRes, count, count)
+    } ?: stringResource(explanation.messageRes)
+    val offsetY = with(LocalDensity.current) { 48.dp.roundToPx() }
+    Popup(
+        alignment = Alignment.TopEnd,
+        offset = IntOffset(0, offsetY),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = false, dismissOnBackPress = true, dismissOnClickOutside = true),
     ) {
-        if (indicator.headline == CloudSyncHeadline.Syncing) {
-            PulsingCloudIcon(tint = tint)
-            Text(
-                text = stringResource(R.string.drive_sync_status_syncing),
-                style = MaterialTheme.typography.labelSmall,
-                color = tint,
-            )
-        } else {
-            Icon(
-                imageVector = indicator.headline.icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(22.dp),
-            )
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 6.dp,
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Text(text = message, style = MaterialTheme.typography.bodyMedium)
+                if (explanation.opensDataSync) {
+                    TextButton(onClick = onOpenDataSync) {
+                        Text(text = stringResource(R.string.cloud_status_open_data_sync))
+                    }
+                }
+            }
         }
     }
 }
@@ -2346,11 +2478,25 @@ private fun DeveloperCloudSyncCard(syncState: WardrobeSyncState, indicator: Clou
                     style = MaterialTheme.typography.labelSmall,
                 )
                 indicator.detail?.let { detail ->
-                    Text(
-                        text = stringResource(R.string.dev_cloud_error, detail),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    if (indicator.offline) {
+                        // A connection failure is not an error: neutral wording, the raw class stays as secondary text.
+                        Text(
+                            text = stringResource(R.string.cloud_sync_headline_waiting),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.dev_cloud_error, detail),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
         }
@@ -3494,7 +3640,7 @@ private fun FilterBar(
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 if (cloudSync.headline.showsBrowseIndicator) {
-                    CloudSyncStatusIcon(indicator = cloudSync)
+                    CloudSyncStatusIcon(indicator = cloudSync, onOpenDataSync = onOpenSettings)
                 }
             }
             if (searchInProgress) {
