@@ -168,6 +168,8 @@ class MainActivity : ComponentActivity() {
         }
         val tokenPresent = !result.accessToken.isNullOrBlank()
         val authorized = grantedDriveScope && tokenPresent
+        // Armed before the status write, so the model prompt waits from the chooser result until the import cycle ends.
+        setCloudImportArmed(authorized)
         logDriveAuthorizationOutcome(
             outcome = if (authorized) "authorized" else if (grantedDriveScope) "token_missing" else "scope_denied",
             grantedScopes = result.grantedScopes,
@@ -185,7 +187,7 @@ class MainActivity : ComponentActivity() {
             if (authorized) {
                 syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
             }
-        }
+        }.invokeOnCompletion { setCloudImportArmed(false) }
         if (!authorized) {
             showCloudSetupFailure(
                 if (grantedDriveScope) {
@@ -204,6 +206,10 @@ class MainActivity : ComponentActivity() {
 
     private fun setCloudAuthorizationInFlight(inFlight: Boolean) {
         (application as RobiaApplication).setCloudAuthorizationInFlight(inFlight)
+    }
+
+    private fun setCloudImportArmed(armed: Boolean) {
+        (application as RobiaApplication).setCloudImportArmed(armed)
     }
 
     private fun showCloudSetupFailure(messageRes: Int) {

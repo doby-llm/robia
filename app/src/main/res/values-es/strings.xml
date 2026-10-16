@@ -633,4 +633,12 @@
     <string name="dev_cloud_result_needs_user">requiere tu decisión</string>
     <string name="dev_cloud_pending_at_start">Pendientes al inicio: %1$d</string>
     <string name="dev_cloud_error">Último error: %1$s</string>
+    <!-- K02: cloud icon popup and first-run gate -->
+    <string name="cloud_status_syncing">Sincronizando tu armario con Drive</string>
+    <plurals name="cloud_status_waiting_changes">
+        <item quantity="one">%d cambio se subirá cuando tengas conexión</item>
+        <item quantity="other">%d cambios se subirán cuando tengas conexión</item>
+    </plurals>
+    <string name="cloud_status_attention">La sincronización necesita atención</string>
+    <string name="cloud_status_open_data_sync">Abrir Sincronización de datos</string>
 </resources>
