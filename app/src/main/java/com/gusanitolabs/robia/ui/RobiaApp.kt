@@ -227,6 +227,7 @@ import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -416,17 +417,11 @@ fun RobiaApp(
     val mainColors by tagRepository.observeMainColors().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val app = LocalContext.current.applicationContext as RobiaApplication
-    // The last tag or colour write, database part only. An undo or the next review snapshot launched right after it joins it first.
-    // Review writes and their undo run on the app scope, a SupervisorJob: a failed save must not cancel the undo.
-    val lastReviewWrite = remember { mutableStateOf<Job?>(null) }
-    // The block does the database write and returns the sync operations it needs. They run detached: a sync cycle takes
-    // seconds (Drive calls), and a snapshot that joined it would hold the review prompt back.
-    fun launchReviewWrite(write: suspend CoroutineScope.() -> List<WardrobeSyncOperation>) {
-        lastReviewWrite.value = app.appScope.launch {
-            val operations = write()
-            app.appScope.launch { operations.forEach { operation -> syncGateway.enqueue(operation) } }
-        }
+    // The tag and colour writes of this session. The next review snapshot or undo joins the latest one's database part first.
+    val reviewWrites = remember(app, syncGateway) {
+        ReviewWrites(app.appScope) { operation -> syncGateway.enqueue(operation) }
     }
+    fun launchReviewWrite(write: suspend CoroutineScope.() -> List<WardrobeSyncOperation>) = reviewWrites.launch(write)
     val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
         SuggestionService(
@@ -571,7 +566,7 @@ fun RobiaApp(
             readGarmentsForReview = {
                 // Timing for the snapshot delay: the join waits for the previous review write's database part only.
                 val requestedAt = System.nanoTime()
-                afterPreviousWrite(lastReviewWrite.value) {
+                afterPreviousWrite(reviewWrites.latest) {
                     val joinedAt = System.nanoTime()
                     app.database.wardrobeDao().getAllItemsForSync().map(ClothingItemWithTags::toDomain).also { garments ->
                         Log.d(
@@ -583,9 +578,7 @@ fun RobiaApp(
             },
             onUndoReview = { buildPlan ->
                 // One coroutine, in order: the write it follows, then the plan, then tombstones, so a restored tag is not deleted again by the next sync.
-                val previousWrite = lastReviewWrite.value
-                launchReviewWrite {
-                    val plan = afterPreviousWrite(previousWrite, buildPlan)
+                reviewWrites.launchUndo(buildPlan) { plan ->
                     plan.tombstonesToClear.forEach { (entityType, entityId) ->
                         app.database.syncTombstoneDao().deleteTombstone(entityType, entityId)
                     }
@@ -1345,7 +1338,10 @@ private fun RobiaShell(
 
     // Read when the undo runs, after the write it follows, so the plan sees the garments that write left behind. Archived
     // garments are included: a tag they still reference must not be removed, and a deleted tag goes back onto them too.
-    suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()
+    // A plain read, not readGarmentsForReview: the undo is itself the latest review write, so a read that joins the latest
+    // write would join the undo from inside it and never return. ReviewWrites.launchUndo has already waited for the write it follows.
+    suspend fun currentGarmentsForUndo(): List<ClothingItem> =
+        app.database.wardrobeDao().getAllItemsForSync().map(ClothingItemWithTags::toDomain)
 
     // Discard = undo: the saved tag change is reversed through the normal paths. The garment proposals go with it.
     fun discardTagReview() {
@@ -5523,6 +5519,42 @@ private suspend fun prepareTagReviewScan(
 internal suspend fun <T> afterPreviousWrite(previousWrite: Job?, buildPlan: suspend () -> T): T {
     previousWrite?.join()
     return buildPlan()
+}
+
+/**
+ * The tag and colour writes of one screen session. [launch] runs a write's database part on [scope], a SupervisorJob: a failed
+ * save must not cancel the undo. The sync operations it returns are enqueued afterwards, detached: a sync cycle takes seconds
+ * (Drive calls), and a snapshot that joined it would hold the review prompt back. [latest] is the job the next snapshot or undo
+ * joins, database part only.
+ */
+internal class ReviewWrites(
+    private val scope: CoroutineScope,
+    private val enqueue: suspend (WardrobeSyncOperation) -> Unit,
+) {
+    var latest: Job? = null
+        private set
+
+    fun launch(write: suspend CoroutineScope.() -> List<WardrobeSyncOperation>) {
+        // Lazy start: [latest] is set before the write can run, so nothing reads a stale value while it is being launched.
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            val operations = write()
+            scope.launch { operations.forEach { operation -> enqueue(operation) } }
+        }
+        latest = job
+        job.start()
+    }
+
+    /**
+     * Discard = undo as one write: it waits for the write it follows, builds its plan, then applies it. The plan must not join
+     * [latest] (see RobiaShell's currentGarmentsForUndo): [latest] is this undo, so a join from inside would never return.
+     */
+    fun launchUndo(
+        buildPlan: suspend () -> ReviewUndoPlan,
+        applyPlan: suspend (ReviewUndoPlan) -> List<WardrobeSyncOperation>,
+    ) {
+        val previousWrite = latest
+        launch { applyPlan(afterPreviousWrite(previousWrite, buildPlan)) }
+    }
 }
 
 /** A prompt's cancel or confirm acts only while its request is still the pending one; a stale callback finds it taken. */

@@ -7,6 +7,7 @@ import com.gusanitolabs.robia.suggestions.ProposalKind
 import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagOperation
+import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -21,6 +22,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CopyOnWriteArrayList
 
 class ReviewDiscardTest {
     private val category = GarmentTag(id = "top", categoryId = "category", name = "Tops", sortOrder = 0)
@@ -183,6 +185,75 @@ class ReviewDiscardTest {
                 )
             }
             assertNotNull(request)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    // The detach: a sync that blocks does not hold the snapshot or the prompt back, and the snapshot is read before the write.
+
+    @Test
+    fun snapshotAndPromptDoNotWaitForASyncThatBlocks() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob())
+        // Every enqueue blocks, like a Drive call that never returns during the test.
+        val enqueueReturns = CompletableDeferred<Unit>()
+        val events = CopyOnWriteArrayList<String>()
+        val writes = ReviewWrites(scope) { _ ->
+            events.add("enqueue")
+            enqueueReturns.await()
+        }
+        try {
+            // An earlier save: its database part finishes at once, its sync stays blocked.
+            writes.launch { listOf(WardrobeSyncOperation.UpsertTags(setOf("earlier"))) }
+
+            val request = withTimeout(2_000) {
+                offerTagReviewRequest(
+                    changeSet = deleteChangeSet(),
+                    readGarments = { afterPreviousWrite(writes.latest) { events.add("read"); listOf(garment("g1")) } },
+                    write = {
+                        events.add("write")
+                        writes.launch { listOf(WardrobeSyncOperation.UpsertTags(setOf(category.id))) }
+                    },
+                )
+            }
+
+            assertNotNull(request)
+            // The prompt was offered while every sync was still blocked.
+            assertFalse(enqueueReturns.isCompleted)
+            // The snapshot is read before the write it describes.
+            assertEquals(listOf("read", "write"), events.filter { event -> event == "read" || event == "write" })
+        } finally {
+            enqueueReturns.complete(Unit)
+            scope.cancel()
+        }
+    }
+
+    // Discard and cancel run as the latest review write. Their plan must read garments without joining that write.
+
+    @Test
+    fun undoCompletesWhenItsPlanReadsGarmentsWithoutJoiningIt() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob())
+        val request = TagReviewRequest(deleteChangeSet(), listOf(garment("g1")))
+        val writes = ReviewWrites(scope) { _ -> }
+        try {
+            // The save being undone is still in flight: the undo must wait for it, then build its plan.
+            writes.launch {
+                delay(20)
+                listOf(WardrobeSyncOperation.UpsertTags(setOf(category.id)))
+            }
+            val applied = CompletableDeferred<ReviewUndoPlan>()
+
+            writes.launchUndo(
+                buildPlan = { tagReviewUndoPlan(request, currentGarments = listOf(garment("g1")), now = 0L) },
+                applyPlan = { plan ->
+                    applied.complete(plan)
+                    emptyList()
+                },
+            )
+
+            // A plan that joined the latest write here would wait on the undo itself and time out.
+            val plan = withTimeout(2_000) { applied.await() }
+            assertEquals(listOf(category), plan.restoreTags)
         } finally {
             scope.cancel()
         }
