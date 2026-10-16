@@ -710,22 +710,24 @@ class WardrobeSyncOutboxProcessor(
 
         // Freshness is decided under the mutex: a forced import that ran first has already filled the phone, and a
         // restore must never be applied over it. The export and the restore share one lock hold, so nothing lands between them.
-        val phoneWasFresh = mutex.withLock {
-            val fresh = snapshotRepository.exportSnapshot().isFreshInstallSnapshot()
-            if (fresh) runCycleHoldingMutex(reason = "fresh_install_restore", trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true, mergeConfirmed = false)
-            fresh
+        // Null when the phone already holds user data, so no restore ran.
+        val restoreResult = mutex.withLock {
+            if (!snapshotRepository.exportSnapshot().isFreshInstallSnapshot()) return@withLock null
+            runCycleHoldingMutex(reason = "fresh_install_restore", trigger = SyncTrigger.Background, forceSnapshot = true, forceImport = true, mergeConfirmed = false)
         }
-        if (!phoneWasFresh) {
+        if (restoreResult == null) {
             // Once the phone has user wardrobe data, it is authoritative and must not be overwritten.
             hasAttemptedFreshInstallRestore = true
             settingsRepository.markDriveFreshInstallRestoreAttempted()
             return
         }
 
-        // Do not burn the one-shot bootstrap attempt on a retryable Drive/photo failure. Keeping the
-        // flag false lets a later explicit retry or reconnect re-enter the restore path instead of
-        // leaving a fresh install permanently empty/placeholder-only.
-        if (restoreProgress.value?.isRetryableTerminal != true) {
+        // The one-shot attempt is spent only when the restore settled: it succeeded, or it ended in a terminal state that is
+        // not retryable. An idle return (not connected, a merge waiting) restored nothing, and a retryable failure or a local
+        // edit that moved the phone on keeps the flag false, so a later run or reconnect re-enters the restore path instead of
+        // leaving a fresh install permanently empty or placeholder-only.
+        val restoreSettled = restoreResult == SyncRunResult.Success || restoreProgress.value?.let { !it.isRetryableTerminal } == true
+        if (restoreSettled) {
             hasAttemptedFreshInstallRestore = true
             settingsRepository.markDriveFreshInstallRestoreAttempted()
         }
@@ -769,8 +771,9 @@ class WardrobeSyncOutboxProcessor(
             authBlocked.value = false
             return recordIdleCycle(idleStartedAt, SyncRunResult.Success)
         }
+        // Any row not yet at Drive counts, including NeedsUserAction, AuthBlocked and backoff rows the claim skips.
         cyclePendingLocalWork = pendingWork.isNotEmpty() || pendingMetadataWork.isNotEmpty() || hasPendingEmbeddings ||
-            wardrobeRepository.hasPendingCloudDeletion()
+            wardrobeRepository.hasPendingCloudDeletion() || wardrobeRepository.hasAnyUnsyncedLocalRow()
 
         cycleStorageFull = false
         cyclePhotoUploadFailureIds = emptySet()
@@ -1149,6 +1152,12 @@ class WardrobeSyncOutboxProcessor(
         )
     }
 
+    /** A local edit landed during the download: nothing was written, so the cycle retries and the edit stays pending. */
+    private fun localChangedDuringRestore(diagnostics: RestoreDiagnosticsTracker): SyncRunResult {
+        diagnostics.event("local_changed_during_restore_retry")
+        return SyncRunResult.Retry
+    }
+
     private suspend fun restoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
         val deviceId = settingsRepository.deviceId()
         val diagnostics = RestoreDiagnosticsTracker(
@@ -1241,8 +1250,11 @@ class WardrobeSyncOutboxProcessor(
             phase = CloudRestorePhase.Applying,
             completedWork = RESTORE_STEP_IMPORT_STARTED,
         )
+        // The phone may have changed while the backup downloaded. The write happens only if it still matches the export this
+        // cycle merged against; otherwise nothing is written, the edit stays pending, and the next run merges again.
         val importResult = if (mergedSnapshot.hasUserData()) {
-            snapshotRepository.importSnapshot(mergedSnapshot)
+            snapshotRepository.importSnapshotIfLocalUnchanged(localSnapshot, mergedSnapshot)
+                ?: return localChangedDuringRestore(diagnostics)
         } else {
             ImportSnapshotResult(restoredGarmentCount = 0, restoredPhotoCount = 0, guardedPhotoCount = 0)
         }
@@ -1707,9 +1719,10 @@ internal fun WardrobeSyncSnapshot.hasUserData(): Boolean =
     garments.isNotEmpty() ||
         photos.isNotEmpty() ||
         tombstones.isNotEmpty() ||
-        taxonomies.categories.any { category -> DefaultTags.isCustomOrModifiedDefault(category.toDomain()) } ||
-        taxonomies.tags.any { tag -> DefaultTags.isCustomOrModifiedDefault(tag.toDomain()) } ||
-        taxonomies.mainColors.any { color -> DefaultTags.isCustomOrModifiedDefault(color.toDomain()) }
+        // An archived default is a customisation too: DefaultTags compares names and order, not the archive flag.
+        taxonomies.categories.any { category -> category.isArchived || DefaultTags.isCustomOrModifiedDefault(category.toDomain()) } ||
+        taxonomies.tags.any { tag -> tag.isArchived || DefaultTags.isCustomOrModifiedDefault(tag.toDomain()) } ||
+        taxonomies.mainColors.any { color -> color.isArchived || DefaultTags.isCustomOrModifiedDefault(color.toDomain()) }
 
 private fun TagCategorySyncRecord.toDomain(): TagCategory = TagCategory(
     id = id,

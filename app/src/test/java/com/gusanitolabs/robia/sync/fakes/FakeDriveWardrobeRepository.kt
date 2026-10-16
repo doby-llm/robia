@@ -24,6 +24,8 @@ internal class FakeDriveWardrobeRepository(
     var snapshotFetches = 0
     /** When set, fetching the manifest throws, as an unexpected crash in the Drive client would. */
     var manifestThrows: Throwable? = null
+    /** Runs as the full backup download starts: the window in which a local edit can land. */
+    var onSnapshotFetch: (() -> Unit)? = null
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> {
         manifestThrows?.let { throw it }
@@ -32,6 +34,7 @@ internal class FakeDriveWardrobeRepository(
 
     override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> {
         snapshotFetches++
+        onSnapshotFetch?.invoke()
         return snapshot
     }
 

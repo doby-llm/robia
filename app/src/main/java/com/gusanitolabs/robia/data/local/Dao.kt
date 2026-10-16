@@ -388,6 +388,22 @@ interface WardrobeDao {
             upsertItemWithTags(item, tagIdsByItemId[item.id].orEmpty())
         }
     }
+
+    /**
+     * Read-only. True when any synced table holds a row that has not reached Drive, whatever its state: claimable,
+     * waiting out a backoff, needing the user, or auth-blocked. The claimable queries above cannot answer this, because
+     * they skip those states. A forced import uses it to decide whether a silent take-over is safe.
+     */
+    @Query(
+        """
+        SELECT EXISTS(SELECT 1 FROM clothing_items WHERE sync_status != 'Synced')
+            OR EXISTS(SELECT 1 FROM tag_categories WHERE sync_status != 'Synced')
+            OR EXISTS(SELECT 1 FROM garment_tags WHERE sync_status != 'Synced')
+            OR EXISTS(SELECT 1 FROM main_colors WHERE sync_status != 'Synced')
+            OR EXISTS(SELECT 1 FROM sync_tombstones WHERE sync_status != 'Synced')
+        """,
+    )
+    suspend fun hasAnyUnsyncedLocalRow(): Boolean
 }
 
 @Dao

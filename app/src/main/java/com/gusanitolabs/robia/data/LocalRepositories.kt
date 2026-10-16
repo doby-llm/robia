@@ -57,6 +57,8 @@ class LocalWardrobeRepository(
 
     override suspend fun hasPendingCloudDeletion(): Boolean = wardrobeDao.hasPendingCloudDeletion()
 
+    override suspend fun hasAnyUnsyncedLocalRow(): Boolean = wardrobeDao.hasAnyUnsyncedLocalRow()
+
     override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int =
         wardrobeDao.recoverStaleRunningSyncWork(staleBeforeEpochMillis)
 

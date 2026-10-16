@@ -17,6 +17,7 @@ import com.gusanitolabs.robia.sync.RestoredPhotoApplyResult
 import com.gusanitolabs.robia.sync.SyncWorkScheduler
 import com.gusanitolabs.robia.sync.WardrobeSnapshotStore
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
+import com.gusanitolabs.robia.sync.equivalentForUpload
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,10 +54,15 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     private val guardedCount = MutableStateFlow(0)
     private val reasonCounts = mutableMapOf<String, MutableStateFlow<Int>>()
     var pendingCloudDeletion = false
+    /** Stands for an unsynced tombstone or tag/colour row, which this fake does not model as garment rows. */
+    var unsyncedMetadata = false
     /** Thresholds passed to [recoverStaleRunningSyncWork], so tests can see when a cycle recovers stale claims. */
     val staleRecoveryThresholds = mutableListOf<Long>()
 
     fun addQueued(id: String, revision: Long = 1L) = put(id, revision, "Queued")
+
+    /** A row in any [status], for states the claim skips (NeedsUserAction, AuthBlocked, FailedRetryable in backoff). */
+    fun addRow(id: String, revision: Long, status: String) = put(id, revision, status)
 
     fun addSynced(id: String, revision: Long = 1L) = put(id, revision, "Synced")
 
@@ -112,6 +118,9 @@ internal class FakeWardrobeRepository : WardrobeRepository {
     override suspend fun pendingMetadataSyncWork(): List<PendingMetadataSyncWork> = emptyList()
     override suspend fun nextRunnableSyncRetryEpochMillis(): Long? = null
     override suspend fun hasPendingCloudDeletion(): Boolean = pendingCloudDeletion
+    /** Any garment row not at Drive, in any state, as the DAO query answers it. */
+    override suspend fun hasAnyUnsyncedLocalRow(): Boolean =
+        rows.values.any { it.status != "Synced" } || unsyncedMetadata || pendingCloudDeletion
     override suspend fun recoverStaleRunningSyncWork(staleBeforeEpochMillis: Long): Int {
         staleRecoveryThresholds += staleBeforeEpochMillis
         val stale = rows.values.filter { row ->
@@ -205,6 +214,9 @@ internal class FakeSettingsRepository(
     private val mobileDataState = MutableStateFlow(false)
 
     override val settings: Flow<RobiaSettings> = current
+
+    /** Changes the connection without a suspending call, for a test that drops it at a precise point. */
+    fun forceStatus(status: DriveSyncConnectionStatus) = update { it.copy(driveSyncConnectionStatus = status) }
     override val lastKnownRemoteRevision: Flow<Long> = revisionState
     override val syncConflict: Flow<Boolean> = conflictState
     override val syncConflictRemoteRevision: Flow<Long> = conflictRevisionState
@@ -260,13 +272,26 @@ internal class FakeWardrobeSnapshotStore(
     val imports = mutableListOf<WardrobeSyncSnapshot>()
     val replacements = mutableListOf<WardrobeSyncSnapshot>()
     var replaceFailure: Throwable? = null
+    var exports = 0
+    /** Runs on each export, before [local] is returned: the moment a test can change the phone. */
+    var onExport: (() -> Unit)? = null
 
-    override suspend fun exportSnapshot(generatedAtEpochMillis: Long): WardrobeSyncSnapshot = local
+    override suspend fun exportSnapshot(generatedAtEpochMillis: Long): WardrobeSyncSnapshot {
+        exports++
+        onExport?.invoke()
+        return local
+    }
 
     override suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult {
         imports += snapshot
         local = snapshot
         return ImportSnapshotResult(snapshot.garments.size, snapshot.photos.size, guardedPhotoCount = 0)
+    }
+
+    /** Refuses, and writes nothing, when [local] no longer equals the export the cycle merged against. */
+    override suspend fun importSnapshotIfLocalUnchanged(expectedLocal: WardrobeSyncSnapshot, snapshot: WardrobeSyncSnapshot): ImportSnapshotResult? {
+        if (!local.equivalentForUpload(expectedLocal)) return null
+        return importSnapshot(snapshot)
     }
 
     override suspend fun applyRestoredPhoto(photo: com.gusanitolabs.robia.core.model.GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult =

@@ -37,6 +37,12 @@ import java.util.Base64
 interface WardrobeSnapshotStore {
     suspend fun exportSnapshot(generatedAtEpochMillis: Long = System.currentTimeMillis()): WardrobeSyncSnapshot
     suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult
+
+    /**
+     * [importSnapshot] only while the phone still holds [expectedLocal], the export the cycle merged against. The check and
+     * the write share one transaction. Returns null, and writes nothing, when a local edit landed after that export.
+     */
+    suspend fun importSnapshotIfLocalUnchanged(expectedLocal: WardrobeSyncSnapshot, snapshot: WardrobeSyncSnapshot): ImportSnapshotResult?
     suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult
     suspend fun hasGuardedPhotoRestoreIssues(): Boolean
     suspend fun replaceLocalWithRemote(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult
@@ -130,6 +136,15 @@ class LocalWardrobeSyncSnapshotRepository(
             guardedPhotoCount = deterministicSnapshot.photos.count { photo -> photo.restorableLocalUri() == null },
         )
     }
+
+    override suspend fun importSnapshotIfLocalUnchanged(expectedLocal: WardrobeSyncSnapshot, snapshot: WardrobeSyncSnapshot): ImportSnapshotResult? =
+        database.withTransaction<ImportSnapshotResult?> {
+            // Re-exported in the same transaction as the writes, so the comparison and the writes see one database state. A write
+            // that commits concurrently makes this transaction fail; it cannot slip in unnoticed. Embeddings are not compared
+            // (importSnapshot keeps a newer vector), so a vector recomputed during the download does not block the import.
+            if (!exportSnapshot().equivalentForUpload(expectedLocal)) return@withTransaction null
+            importSnapshot(snapshot)
+        }
 
     /** Persists only the successfully rehydrated image; garment metadata remains untouched. */
     override suspend fun applyRestoredPhoto(photo: GarmentPhotoRecord, expectedRevision: Long): RestoredPhotoApplyResult =

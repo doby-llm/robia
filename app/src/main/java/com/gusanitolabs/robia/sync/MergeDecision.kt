@@ -30,15 +30,21 @@ internal enum class MergeDecision {
  * Pure decision, evaluated in this order; the first rule that matches wins.
  *
  * 1. The backup has no user data: upload the phone's snapshot.
- * 2. The phone has data and either this phone wrote the backup, or the backup is not newer than the revision this phone
- *    last recorded (the base): an ordinary cycle. It uploads only if local work is pending.
- * 3. The phone was empty when the cycle started: take the backup silently.
- * 4. Both sides already hold the same data: record the base, uploading only if local work is pending.
- * 5. Nothing pending and the phone's data is contained in the backup: take the backup silently.
+ * 2. The phone has data and either this phone wrote the backup, or the backup is exactly the revision this phone last
+ *    recorded (the base). An ordinary cycle: it uploads only if local work is pending. A lower revision is not own
+ *    lineage: phone clocks skew, so a lower revision may still be another writer's newer data.
+ * 3. The phone was empty when the cycle started: take the backup silently. Code checks this before rule 2.
+ * 4. Both sides already hold the same data, with the same wardrobe and schema: record the base, uploading only if local work
+ *    is pending.
+ * 5. Nothing pending and the phone's data is contained in the backup, with the same wardrobe and schema: take the backup silently.
  * 6. Otherwise both sides hold data and diverge: propose.
  *
- * Pending local work never reaches rule 5, so a silent take-over cannot drop an unsynced edit. The taking-over outcomes
- * are restores, which merge the phone with the backup before they write.
+ * [pendingLocalWork] is true when any synced row has not reached Drive in any state (see WardrobeDao.hasAnyUnsyncedLocalRow),
+ * so a silent take-over cannot drop an unsynced edit. The taking-over outcomes are restores, which merge the phone with the
+ * backup before they write.
+ *
+ * Rule 3 is checked before rule 2 on purpose: an empty phone is restored even when the backup's writer is this device.
+ * Pending work is never considered by rule 3: a phone with no user data has nothing that a restore could drop.
  */
 internal fun decideMerge(
     local: WardrobeSyncSnapshot,
@@ -50,10 +56,15 @@ internal fun decideMerge(
 ): MergeDecision {
     if (!remote.hasUserData()) return MergeDecision.UploadLocal
     val baseKnown = lastKnownRemoteRevision > 0L
-    val ownLineage = remote.metadata.writerDeviceId == deviceId || (baseKnown && remote.metadata.revision <= lastKnownRemoteRevision)
+    // Exactly the base is this phone's own state. Any other revision is not: clocks skew, and a legacy backup has no writer.
+    val ownLineage = remote.metadata.writerDeviceId == deviceId ||
+        (baseKnown && remote.metadata.revision == lastKnownRemoteRevision)
+    // A different wardrobe or schema is never "the same data", whatever the garments look like.
+    val sameWardrobe = local.metadata.schemaVersion == remote.metadata.schemaVersion &&
+        local.metadata.wardrobeId == remote.metadata.wardrobeId
     if (localWasEmptyAtStart) return MergeDecision.RestoreSilently
     if (ownLineage) return if (pendingLocalWork) MergeDecision.UploadLocal else MergeDecision.NoOp
-    if (local.equivalentForUpload(remote)) return if (pendingLocalWork) MergeDecision.UploadLocal else MergeDecision.RecordBase
-    if (!pendingLocalWork && mergeSnapshots(local, remote).equivalentForUpload(remote)) return MergeDecision.FastForward
+    if (sameWardrobe && local.equivalentForUpload(remote)) return if (pendingLocalWork) MergeDecision.UploadLocal else MergeDecision.RecordBase
+    if (sameWardrobe && !pendingLocalWork && mergeSnapshots(local, remote).equivalentForUpload(remote)) return MergeDecision.FastForward
     return MergeDecision.Propose
 }
