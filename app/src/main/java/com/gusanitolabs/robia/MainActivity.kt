@@ -185,13 +185,9 @@ class MainActivity : ComponentActivity() {
                 },
             )
             if (authorized) {
-                try {
-                    syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
-                } finally {
-                    setCloudImportArmed(false)
-                }
+                syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
             }
-        }
+        }.invokeOnCompletion { setCloudImportArmed(false) }
         if (!authorized) {
             showCloudSetupFailure(
                 if (grantedDriveScope) {
