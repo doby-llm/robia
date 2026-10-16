@@ -35,7 +35,7 @@ interface SettingsRepository {
     val lastKnownRemoteRevision: Flow<Long>
     /** Writer of the backup at [lastKnownRemoteRevision]; null when unknown (a base recorded before this was stored). */
     val lastKnownRemoteWriterDeviceId: Flow<String?>
-    suspend fun setLastKnownRemoteRevision(revision: Long, writerDeviceId: String? = null)
+    suspend fun setLastKnownRemoteRevision(revision: Long, writerDeviceId: String?)
     /** True while a newer backup from another phone blocks uploads until the user chooses. */
     val syncConflict: Flow<Boolean>
     /** Remote revision the open conflict was raised against; cleared together with [syncConflict]. */

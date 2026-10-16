@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
+import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.sync.fakes.OTHER_DEVICE_ID
 import com.gusanitolabs.robia.sync.fakes.driveBackup
 import com.gusanitolabs.robia.sync.fakes.exportedSnapshot
@@ -8,6 +9,7 @@ import com.gusanitolabs.robia.sync.fakes.garmentEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Finding 1: a remote photo whose blob will not restore never replaces the phone's own photo reference. */
@@ -44,24 +46,38 @@ class GuardedPhotoRestoreTest {
     }
 
     @Test
-    fun merge_aGuardedRemotePhotoKeepsThePhonesRecordAndTheGuard() {
+    fun merge_aGuardedRemotePhotoIsMergedAsBeforeAndKeepsItsGuard() {
         val local = exportedSnapshot(garmentEntity("a", photoUri = phoneUri))
-        val backup = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = phoneUri)), OTHER_DEVICE_ID, 50L)
-            .let { snapshot ->
-                snapshot.copy(
-                    photos = snapshot.photos.map { it.copy(contentHash = "hash-a", restoreFailureCategory = "remote_photo_blob_missing") },
-                )
-            }
+        val backup = guardedBackup(local)
 
         val merged = mergeSnapshots(local, backup).photos.single()
 
+        // The merge keeps the remote record as it was before this change. The phone's file survives the import (importedPhotoUri).
         assertEquals(phoneUri, merged.localUri)
         assertNull(merged.restoredLocalUri)
         // The guard still holds the restore's upload, so the phone's file is not uploaded over an unread remote blob.
         assertEquals("remote_photo_blob_missing", merged.restoreFailureCategory)
-        // The phone's record has no hash, so it never matches the backup's photo silently.
-        assertNull(merged.contentHash)
+        assertEquals("hash-a", merged.contentHash)
     }
+
+    @Test
+    fun guardedPhotoOverPhoneFile_countsOnlyAGuardOnAGarmentThePhoneHoldsAFileFor() {
+        val backup = guardedBackup(exportedSnapshot(garmentEntity("a", photoUri = phoneUri)))
+
+        assertTrue(backup.guardedPhotoOverPhoneFile(exportedSnapshot(garmentEntity("a", photoUri = phoneUri))))
+        // A fresh phone holds no file, so there is nothing for a silent restore to protect.
+        assertFalse(backup.guardedPhotoOverPhoneFile(exportedSnapshot()))
+        // A healthy remote photo is never a guarded one, whatever the phone holds.
+        assertFalse(driveBackup(exportedSnapshot(garmentEntity("a", photoUri = phoneUri)), OTHER_DEVICE_ID, 50L)
+            .guardedPhotoOverPhoneFile(exportedSnapshot(garmentEntity("a", photoUri = phoneUri))))
+    }
+
+    private fun guardedBackup(local: WardrobeSyncSnapshot): WardrobeSyncSnapshot =
+        driveBackup(local, OTHER_DEVICE_ID, 50L).let { snapshot ->
+            snapshot.copy(
+                photos = snapshot.photos.map { it.copy(contentHash = "hash-a", restoreFailureCategory = "remote_photo_blob_missing") },
+            )
+        }
 
     @Test
     fun merge_aRestoredRemotePhotoStillWinsOverThePhonesRecord() {

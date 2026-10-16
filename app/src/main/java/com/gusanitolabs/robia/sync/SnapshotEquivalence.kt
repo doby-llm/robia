@@ -75,7 +75,7 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
  * A phone photo with no hash never matches: two photos with no hash are not known to be the same image. A placeholder (no phone
  * file, no hash) is compared as before. Known deviation (not fixed): the phone's export carries no hash, so a local photo never
  * matches a remote photo by hash. A photo-bearing wardrobe therefore never records the base, and any photo the phone holds with
- * a remote photo for the same garment proposes, because the merge keeps the phone's record (see mergePhotos). Carrying the
+ * a remote photo for the same garment is not equivalent (the merge keeps the newer record, see mergePhotos). Carrying the
  * upload hash into the export would remove the difference.
  */
 private fun photosEquivalent(local: List<GarmentPhotoRecord>, remote: List<GarmentPhotoRecord>): Boolean =

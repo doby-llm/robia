@@ -873,13 +873,13 @@ class WardrobeSyncOutboxProcessor(
         forceImport: Boolean,
         mergeConfirmed: Boolean,
     ): SyncRunResult = when {
-        mergeConfirmed -> restoreThenFlushAndResolveConflict(localSnapshot)
+        mergeConfirmed -> restoreThenFlushAndResolveConflict(localSnapshot, userConfirmed = true)
         // An explicit import on a phone with data must not upload while a conflict is open: the user decides first.
         forceImport && localSnapshot.hasUserData() && settingsRepository.syncConflict.first() -> SyncRunResult.Conflict
         else -> when (SyncDirectionPolicy.resolve(localSnapshot, explicitRestoreRequested = forceImport)) {
             SyncDirection.UploadLocalSnapshot -> uploadLocalSnapshot(localSnapshot)
             SyncDirection.MergeWithRemote -> proposeMergeOrUpload(localSnapshot)
-            SyncDirection.RestoreRemoteThenUpload -> restoreThenFlushAndResolveConflict(localSnapshot)
+            SyncDirection.RestoreRemoteThenUpload -> restoreThenFlushAndResolveConflict(localSnapshot, userConfirmed = false)
             SyncDirection.SkipEmptyLocalUpload -> {
                 // No garment carries these vectors, so nothing will ever upload them: clear them, or they keep every cycle alive.
                 if (!localSnapshot.hasUserData()) markExportedEmbeddingsUploaded()
@@ -889,8 +889,8 @@ class WardrobeSyncOutboxProcessor(
     }
 
     /** A restore that succeeds resolves the open conflict: the phone now holds the remote data it was asked to take. */
-    private suspend fun restoreThenFlushAndResolveConflict(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
-        val result = restoreThenFlush(localSnapshot)
+    private suspend fun restoreThenFlushAndResolveConflict(localSnapshot: WardrobeSyncSnapshot, userConfirmed: Boolean): SyncRunResult {
+        val result = restoreThenFlush(localSnapshot, userConfirmed)
         if (result == SyncRunResult.Success) {
             settingsRepository.setSyncConflict(false)
             pendingMergeSummary.value = null
@@ -898,8 +898,8 @@ class WardrobeSyncOutboxProcessor(
         return result
     }
 
-    private suspend fun restoreThenFlush(localSnapshot: WardrobeSyncSnapshot): SyncRunResult = try {
-        restoreRemoteThenUpload(localSnapshot)
+    private suspend fun restoreThenFlush(localSnapshot: WardrobeSyncSnapshot, userConfirmed: Boolean): SyncRunResult = try {
+        restoreRemoteThenUpload(localSnapshot, userConfirmed)
     } finally {
         withContext(NonCancellable) { restoreSyncLogRepository.flush() }
     }
@@ -941,7 +941,7 @@ class WardrobeSyncOutboxProcessor(
             }
             // The restore merges the phone with the backup before it writes, so no local row is dropped on either path.
             MergeDecision.RestoreSilently,
-            MergeDecision.FastForward -> restoreThenFlushAndResolveConflict(localSnapshot)
+            MergeDecision.FastForward -> restoreThenFlushAndResolveConflict(localSnapshot, userConfirmed = false)
             MergeDecision.Propose -> proposeMerge(localSnapshot, remote)
         }
     }
@@ -1161,7 +1161,7 @@ class WardrobeSyncOutboxProcessor(
         return SyncRunResult.Retry
     }
 
-    private suspend fun restoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
+    private suspend fun restoreRemoteThenUpload(localSnapshot: WardrobeSyncSnapshot, userConfirmed: Boolean): SyncRunResult {
         val deviceId = settingsRepository.deviceId()
         val diagnostics = RestoreDiagnosticsTracker(
             attempt = ++restoreAttemptCounter,
@@ -1242,6 +1242,12 @@ class WardrobeSyncOutboxProcessor(
             return SyncRunResult.NeedsUser
         }
 
+        // Only a user-confirmed merge may write over a phone file that a guarded remote photo would replace; a silent restore asks.
+        if (!userConfirmed && remoteSnapshot.guardedPhotoOverPhoneFile(localSnapshot)) {
+            diagnostics.event("guarded_photo_over_phone_file_proposed")
+            cycleMergeDecision = MergeDecision.Propose
+            return proposeMerge(localSnapshot, remoteSnapshot)
+        }
         val mergedSnapshot = mergeSnapshots(localSnapshot, remoteSnapshot).withWriter(deviceId)
         diagnostics.event("snapshots_merged")
         restoreProgress.value = diagnostics.progress(
@@ -1263,7 +1269,6 @@ class WardrobeSyncOutboxProcessor(
         }
         diagnostics.recordLocalSave(importResult)
         onRestoreImported()
-        settingsRepository.setLastKnownRemoteRevision(remoteSnapshot.metadata.revision, remoteSnapshot.metadata.writerDeviceId)
 
         restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,
@@ -1278,8 +1283,10 @@ class WardrobeSyncOutboxProcessor(
                 status = CloudRestoreStatus.CompletedWithAttention,
             )
             // Nothing was uploaded, so the claimed local rows stay pending; the guard is retried on the next run.
+            // The base is not recorded either: the remote stays unknown, so the next cycle compares it again and proposes.
             return SyncRunResult.Retry
         }
+        settingsRepository.setLastKnownRemoteRevision(remoteSnapshot.metadata.revision, remoteSnapshot.metadata.writerDeviceId)
         if (!mergedSnapshot.hasUserData()) {
             diagnostics.recordFinalUploadSkipped("no_remote_user_data")
             restoreProgress.value = diagnostics.progress(
@@ -1836,30 +1843,35 @@ internal fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSna
     ).sortedDeterministically()
 }
 
-/**
- * The phone's photo record wins whenever the merged record has no file to restore (a remote blob that failed, or a record
- * read from JSON alone). The phone then keeps its own file: the silent import would otherwise write a null photo_uri and
- * orphan it. The record keeps the remote's guard, so a restore still holds its upload, and it has no content hash, so it
- * never matches the backup silently.
- */
 private fun mergePhotos(
     localPhotos: List<GarmentPhotoRecord>,
     remotePhotos: List<GarmentPhotoRecord>,
 ): List<GarmentPhotoRecord> {
-    // A placeholder with no local file (blank localUri) is not a phone photo: it merges as the remote record did before.
-    val localPhotoByGarmentId = localPhotos.filter { it.localUri.isNotBlank() }.associateBy(GarmentPhotoRecord::garmentId)
+    val localPhotoByGarmentId = localPhotos.associateBy(GarmentPhotoRecord::garmentId)
     return mergeByKey(localPhotos + remotePhotos, GarmentPhotoRecord::garmentId, GarmentPhotoRecord::revision)
         .map { merged ->
             val local = localPhotoByGarmentId[merged.garmentId]
-            if (local != null && merged.restoredLocalUri.isNullOrBlank()) {
-                local.copy(
-                    restoreFailureCategory = merged.restoreFailureCategory,
-                    restoreFailureMessage = merged.restoreFailureMessage,
-                )
+            if (
+                local != null &&
+                local.revision >= merged.revision &&
+                merged.restoredLocalUri.isNullOrBlank() &&
+                merged.localUri != local.localUri
+            ) {
+                local
             } else {
                 merged
             }
         }
+}
+
+/**
+ * A remote photo whose blob did not restore, for a garment the phone still holds a file for. The silent restore must not decide
+ * it: the phone's file would be kept and the garment held in attention, so the user chooses. Only the fetched blobs carry the
+ * guard, so this runs after the fetch.
+ */
+internal fun WardrobeSyncSnapshot.guardedPhotoOverPhoneFile(local: WardrobeSyncSnapshot): Boolean {
+    val phoneFileGarmentIds = local.photos.filter { it.localUri.isNotBlank() }.mapTo(mutableSetOf()) { it.garmentId }
+    return guardedPhotoRestoreIssues().any { issue -> issue.garmentId in phoneFileGarmentIds }
 }
 
 private fun <T, K> mergeByKey(records: List<T>, key: (T) -> K, revision: (T) -> Long): List<T> =
