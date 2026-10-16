@@ -193,9 +193,10 @@ internal class FakeWardrobeRepository : WardrobeRepository {
 
 internal class FakeSettingsRepository(
     status: DriveSyncConnectionStatus = DriveSyncConnectionStatus.Connected,
+    freshInstallRestoreAttempted: Boolean = true,
 ) : SettingsRepository {
     private val current = MutableStateFlow(
-        RobiaSettings(driveSyncConnectionStatus = status, driveFreshInstallRestoreAttempted = true),
+        RobiaSettings(driveSyncConnectionStatus = status, driveFreshInstallRestoreAttempted = freshInstallRestoreAttempted),
     )
     private val revisionState = MutableStateFlow(0L)
     private val conflictState = MutableStateFlow(false)

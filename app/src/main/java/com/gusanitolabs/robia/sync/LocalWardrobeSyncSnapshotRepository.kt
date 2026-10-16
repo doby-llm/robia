@@ -63,37 +63,16 @@ class LocalWardrobeSyncSnapshotRepository(
         val embeddingsByGarmentId = database.embeddingDao()
             .getForRecipe(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
             .groupBy(GarmentEmbeddingEntity::garmentId)
-        val itemUpdatedAtById = items.associate { item -> item.id to item.syncRevision }
-        val taxonomyRevisions = categories.map(TagCategoryEntity::syncRevision) +
-            tags.map(GarmentTagEntity::syncRevision) +
-            colors.map(MainColorEntity::syncRevision)
-        val snapshotRevision = maxOf(
-            itemUpdatedAtById.values.maxOrNull() ?: 0L,
-            taxonomyRevisions.maxOrNull() ?: 0L,
-            tombstones.maxOfOrNull(SyncTombstoneEntity::revision) ?: 0L,
-            generatedAtEpochMillis,
+        return buildWardrobeSyncSnapshot(
+            items = items,
+            itemTagRefs = itemTagRefs,
+            categories = categories,
+            tags = tags,
+            colors = colors,
+            tombstones = tombstones,
+            embeddingsByGarmentId = embeddingsByGarmentId,
+            generatedAtEpochMillis = generatedAtEpochMillis,
         )
-
-        return WardrobeSyncSnapshot(
-            metadata = WardrobeSnapshotMetadata(
-                generatedAtEpochMillis = generatedAtEpochMillis,
-                revision = snapshotRevision,
-            ),
-            taxonomies = WardrobeTaxonomySnapshot(
-                categories = categories.map(TagCategoryEntity::toSyncRecord),
-                tags = tags.map(GarmentTagEntity::toSyncRecord),
-                mainColors = colors.map(MainColorEntity::toSyncRecord),
-            ),
-            garments = items.map { item ->
-                item.toGarmentRecord(embeddingsByGarmentId[item.id].orEmpty().map(GarmentEmbeddingEntity::toSyncRecord))
-            },
-            garmentTags = itemTagRefs.map { ref ->
-                ref.toSyncRecord(revision = itemUpdatedAtById[ref.clothingItemId] ?: 0L)
-            },
-            garmentColors = items.flatMap(ClothingItemEntity::toColorRecords),
-            photos = items.mapNotNull(ClothingItemEntity::toPhotoRecord),
-            tombstones = tombstones.map(SyncTombstoneEntity::toSyncRecord),
-        ).sortedDeterministically()
     }
 
     /**
@@ -272,6 +251,53 @@ sealed interface RestoredPhotoApplyResult {
     ) : RestoredPhotoApplyResult {
         override val applied: Boolean = false
     }
+}
+
+/**
+ * The pure assembly behind [exportSnapshot]. Room does not run on the JVM, so the sync tests build their
+ * local side and remote backups through this function and the real mappers: no hand-made snapshots.
+ */
+internal fun buildWardrobeSyncSnapshot(
+    items: List<ClothingItemEntity>,
+    itemTagRefs: List<ClothingItemTagCrossRef>,
+    categories: List<TagCategoryEntity>,
+    tags: List<GarmentTagEntity>,
+    colors: List<MainColorEntity>,
+    tombstones: List<SyncTombstoneEntity>,
+    embeddingsByGarmentId: Map<String, List<GarmentEmbeddingEntity>>,
+    generatedAtEpochMillis: Long,
+): WardrobeSyncSnapshot {
+    val itemUpdatedAtById = items.associate { item -> item.id to item.syncRevision }
+    val taxonomyRevisions = categories.map(TagCategoryEntity::syncRevision) +
+        tags.map(GarmentTagEntity::syncRevision) +
+        colors.map(MainColorEntity::syncRevision)
+    val snapshotRevision = maxOf(
+        itemUpdatedAtById.values.maxOrNull() ?: 0L,
+        taxonomyRevisions.maxOrNull() ?: 0L,
+        tombstones.maxOfOrNull(SyncTombstoneEntity::revision) ?: 0L,
+        generatedAtEpochMillis,
+    )
+
+    return WardrobeSyncSnapshot(
+        metadata = WardrobeSnapshotMetadata(
+            generatedAtEpochMillis = generatedAtEpochMillis,
+            revision = snapshotRevision,
+        ),
+        taxonomies = WardrobeTaxonomySnapshot(
+            categories = categories.map(TagCategoryEntity::toSyncRecord),
+            tags = tags.map(GarmentTagEntity::toSyncRecord),
+            mainColors = colors.map(MainColorEntity::toSyncRecord),
+        ),
+        garments = items.map { item ->
+            item.toGarmentRecord(embeddingsByGarmentId[item.id].orEmpty().map(GarmentEmbeddingEntity::toSyncRecord))
+        },
+        garmentTags = itemTagRefs.map { ref ->
+            ref.toSyncRecord(revision = itemUpdatedAtById[ref.clothingItemId] ?: 0L)
+        },
+        garmentColors = items.flatMap(ClothingItemEntity::toColorRecords),
+        photos = items.mapNotNull(ClothingItemEntity::toPhotoRecord),
+        tombstones = tombstones.map(SyncTombstoneEntity::toSyncRecord),
+    ).sortedDeterministically()
 }
 
 private fun TagCategoryEntity.toSyncRecord(): TagCategorySyncRecord = TagCategorySyncRecord(
