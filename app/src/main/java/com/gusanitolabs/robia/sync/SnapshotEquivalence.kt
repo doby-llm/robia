@@ -64,9 +64,10 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
  * [GarmentPhotoRecord.sourceHash]. A pair is the same image when both source hashes are set and equal, or content hashes match.
  * blobPath, mimeType and byteSize are not compared: the blob key derives from the content hash, so equal hashes mean equal blobs.
  *
- * Known deviation (conservative, not data loss): the phone's export carries no hash, so a local photo never matches a remote
- * one and a phone with an identical photo-bearing wardrobe proposes instead of recording the base. Carrying the upload hash
- * into the export would remove it; until then the proposal is the safe outcome.
+ * Known deviation (not fixed): the phone's export carries no hash, so a local photo never matches a remote photo by hash.
+ * A photo-bearing wardrobe therefore never records the base. Its outcome depends on the photo records: different URIs or
+ * revisions propose, and equal revisions with the same URI can fast-forward, because the merge then keeps the remote
+ * record, which equals the backup. Carrying the upload hash into the export would remove the difference.
  */
 private fun photosEquivalent(local: List<GarmentPhotoRecord>, remote: List<GarmentPhotoRecord>): Boolean =
     local.size == remote.size && local.zip(remote).all { (localPhoto, remotePhoto) ->

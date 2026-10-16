@@ -15,6 +15,7 @@ import com.gusanitolabs.robia.sync.fakes.garmentTagRef
 import com.gusanitolabs.robia.sync.fakes.tombstoneEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -245,15 +246,23 @@ class MergeDecisionTest {
         assertEquals(MergeDecision.Propose, decide(local, remote))
     }
 
-    // Finding 4 (known deviation, not fixed): a local photo carries no hash, so an identical photo-bearing wardrobe proposes.
+    // Finding 4 (known deviation, not fixed): a local photo carries no hash, so it never matches a remote photo's hash.
 
     @Test
-    fun photos_aPhotoBearingPhoneProposesEvenWhenTheWardrobeMatches() {
-        val local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg"))
-        // Drive records carry the blob's content hash; the local export does not.
-        val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg")), OTHER_DEVICE_ID, 50L)
+    fun photos_aPhotoBearingPhoneWithAnotherPhotoUriProposesEvenWhenTheWardrobeMatches() {
+        // Equal revisions tie to the remote record; the local URI differs, so the local record is kept and it carries no hash.
+        val local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/local.jpg"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/remote.jpg")), OTHER_DEVICE_ID, 50L)
             .let { backup -> backup.copy(photos = backup.photos.map { it.copy(contentHash = "hash-a") }) }
         assertEquals(MergeDecision.Propose, decide(local, remote))
+    }
+
+    @Test
+    fun photos_aPhotoBearingPhoneNeverRecordsTheBaseWithoutAHashToCompare() {
+        val local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg"))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg")), OTHER_DEVICE_ID, 50L)
+            .let { backup -> backup.copy(photos = backup.photos.map { it.copy(contentHash = "hash-a") }) }
+        assertNotEquals(MergeDecision.RecordBase, decide(local, remote))
     }
 
     private fun archivedDefaultTag(): WardrobeTaxonomySnapshot {
