@@ -1115,7 +1115,9 @@ private fun RobiaShell(
     val lastCycle = syncState.lastCycle
     val mergeProposalPending = syncState.pendingMergeSummary != null
     LaunchedEffect(lastCycle, mergeProposalPending) {
+        // A successful combine needs no message (Manu): the card goes away silently. Only a failure stays visible.
         mergeCombinePhase = nextMergeCombinePhase(mergeCombinePhase, mergeCycleAtTap, lastCycle, mergeProposalPending)
+            .let { next -> if (next == MergeCombinePhase.Done) MergeCombinePhase.Idle else next }
     }
     // Safety net: no cycle ever finished after the tap (offline, work not scheduled) must not leave 'Combining' forever.
     LaunchedEffect(mergeCombinePhase) {
