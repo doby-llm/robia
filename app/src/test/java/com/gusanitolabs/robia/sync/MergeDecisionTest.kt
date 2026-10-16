@@ -205,12 +205,14 @@ class MergeDecisionTest {
     // Finding 1: a remote photo whose blob will not restore is never taken silently over the phone's own photo.
 
     @Test
-    fun photos_aGuardedRemotePhotoOnTheSamePhotoUriProposesInsteadOfFastForward() {
+    fun photos_theDecisionReadsJsonOnlySoAFastForwardIsCheckedAgainstTheFetchedGuard() {
         val local = exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg"))
         val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg")), OTHER_DEVICE_ID, 50L)
             .let { backup -> backup.copy(photos = backup.photos.map { it.copy(contentHash = "hash-a") }) }
-        // The merge used to keep the remote record, which equals the backup, so this was a silent FastForward.
-        assertEquals(MergeDecision.Propose, decide(local, remote, lastKnown = 40L))
+        // The merge keeps the newer remote record, which equals the backup, so the JSON decision is a FastForward. A blob that
+        // fails to download carries the guard only after the fetch: the restore then proposes (see the scenario test
+        // finding1_aGuardedRemotePhotoOnTheSamePhotoUriProposesInsteadOfRestoringSilently).
+        assertEquals(MergeDecision.FastForward, decide(local, remote, lastKnown = 40L))
     }
 
     // Finding 1 (cont.): a row that has not reached Drive makes the phone pending, so a newer backup cannot silently replace it.
