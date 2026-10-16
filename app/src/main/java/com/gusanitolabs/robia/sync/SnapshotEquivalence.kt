@@ -72,14 +72,15 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
  * [GarmentPhotoRecord.sourceHash]. A pair is the same image when both source hashes are set and equal, or content hashes match.
  * blobPath, mimeType and byteSize are not compared: the blob key derives from the content hash, so equal hashes mean equal blobs.
  *
- * A missing hash never matches: two photos with no hash are not known to be the same image. Known deviation (not fixed): the
- * phone's export carries no hash, so a local photo never matches a remote photo by hash. A photo-bearing wardrobe therefore
- * never records the base, and any photo the phone holds with a remote photo for the same garment proposes, because the merge
- * keeps the phone's record (see mergePhotos). Carrying the upload hash into the export would remove the difference.
+ * A phone photo with no hash never matches: two photos with no hash are not known to be the same image. A placeholder (no phone
+ * file, no hash) is compared as before. Known deviation (not fixed): the phone's export carries no hash, so a local photo never
+ * matches a remote photo by hash. A photo-bearing wardrobe therefore never records the base, and any photo the phone holds with
+ * a remote photo for the same garment proposes, because the merge keeps the phone's record (see mergePhotos). Carrying the
+ * upload hash into the export would remove the difference.
  */
 private fun photosEquivalent(local: List<GarmentPhotoRecord>, remote: List<GarmentPhotoRecord>): Boolean =
     local.size == remote.size && local.zip(remote).all { (localPhoto, remotePhoto) ->
         localPhoto.garmentId == remotePhoto.garmentId &&
             (localPhoto.sourceHash != null && localPhoto.sourceHash == remotePhoto.sourceHash ||
-                localPhoto.contentHash != null && localPhoto.contentHash == remotePhoto.contentHash)
+                localPhoto.contentHash == remotePhoto.contentHash && (localPhoto.contentHash != null || localPhoto.localUri.isBlank()))
     }
