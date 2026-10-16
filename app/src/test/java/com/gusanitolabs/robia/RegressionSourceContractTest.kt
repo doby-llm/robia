@@ -233,7 +233,8 @@ class RegressionSourceContractTest {
         // Browse keeps the active-only read; the review snapshot and undo must see archived garments as well.
         assertTrue(app.contains("readGarmentsForReview = {"))
         assertTrue(app.contains("app.database.wardrobeDao().getAllItemsForSync()"))
-        assertTrue(app.contains("val garments = try {"))
+        // The snapshot try block moved with the offer step (offerTagReviewRequest, TagReviewScreen.kt).
+        assertTrue(source("app/src/main/java/com/gusanitolabs/robia/ui/TagReviewScreen.kt").contains("val garments = try {"))
         assertTrue(app.contains("suspend fun currentGarmentsForUndo(): List<ClothingItem> = readGarmentsForReview()"))
     }
 
