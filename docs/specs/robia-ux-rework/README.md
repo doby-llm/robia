@@ -1,8 +1,8 @@
 # robia-ux-rework — planning package
 
-Round 2 of Robia improvements requested by Manu on 2026-10-16 (`feedback/2026-10-16-manu-email.md`, items R1–R15): Browse cards, filters, Manage swipe, garment form/detail, processing feedback, segmentation (reliability, edges, precise cutout pack, refine tool), PDF, Settings, haptics/motion and two new categories.
+Round 2 of Robia improvements requested by Manu on 2026-10-16 (`feedback/2026-10-16-manu-email.md`, items R1–R15) and his answers to revision 1 (`feedback/2026-10-17-manu-rev1-feedback.md`): Browse (photos-only default + details setting), filters, Manage swipe, garment form/detail, processing feedback, segmentation (reliability, edges, precise cutout pack with hanger-first), photo editor (cutout + light), batch speed and batch list with ETA, review completion screen, PDF (sparse garments), Settings, motion (no haptics) and categories (Socks, Underwear, Accessories with belts).
 
-Status: **Revision 1, awaiting APROBADO** (questions Q1–Q7 in the PR description; the plan uses option A for each).
+Status: **Revision 2, awaiting APROBADO**. Revision-1 questions are answered and recorded in `decision-log.md` (headers + rev-2 section).
 
 | File | Content |
 |---|---|
@@ -16,7 +16,8 @@ Status: **Revision 1, awaiting APROBADO** (questions Q1–Q7 in the PR descripti
 | `briefs/` | one step-by-step brief per task + shared README |
 | `PROMPT_WORKER.md` | copy-paste prompt for the implementing model |
 | `mockups/` | HTML mockups (Earth & Steel, light; synthetic garments only) |
-| `artifacts/` | investigator reports (`inv-r2-*.md`), segmentation/taxonomy evidence (`seg-benchmark.md`) |
+| `artifacts/` | investigator reports (`inv-r2-*.md`), segmentation/taxonomy evidence (`seg-benchmark.md`), Spanish decision PDF (`planning-review-r2.pdf`) |
+| `PROMPT_COORDINATOR.md` | copy-paste prompt for the coordinating model |
 | `../../../tools/segmentation-bench/` | Python reference pipeline used for the benchmark |
 
 Roles: planner (this package) → coordinator model (dispatch, review, merge, gates) → implementer model (one task per run).

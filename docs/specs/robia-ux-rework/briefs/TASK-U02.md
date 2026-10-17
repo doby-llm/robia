@@ -1,7 +1,7 @@
-# TASK-U02 — Browse card rework
+# TASK-U02 — Browse card rework + photos-only layout
 
 ## Goal
-Browse cards have different heights, a blank first line, a redundant "Synced" text, clipped chips ("Dressed-u") and a white gap at the top corners (R9, R10, R13). Root causes (certain, `artifacts/inv-r2-a.md` + UX-DEC-001): new garments have `name = ""` but the card always renders `Text(item.name)`; `subtitle = notes.ifBlank { sync label }`; the tag Row is always emitted with unbounded chips (`TonalTag` has no ellipsis); the Card uses 12 dp while the photo clips 16 dp. Make every card uniform per mockup `browse.html` variant A.
+Browse cards have different heights, a blank first line, a redundant "Synced" text, clipped chips ("Dressed-u") and a white gap at the top corners (R9, R10, R13). Root causes (certain, `artifacts/inv-r2-a.md` + UX-DEC-001): new garments have `name = ""` but the card always renders `Text(item.name)`; `subtitle = notes.ifBlank { sync label }`; the tag Row is always emitted with unbounded chips (`TonalTag` has no ellipsis); the Card uses 12 dp while the photo clips 16 dp. Make every card uniform per mockup `browse.html` ("Photos with details"), and add the default layout Manu chose in revision 2: **2 columns, photos only** (`GarmentPhotoTile`), switchable in Settings (U05 adds the row; U01 added `settings.browseLayout`).
 
 ## Read first
 TS§2; `ui/BrowseGrid.kt` (after U00): `GarmentGridCard`, `GarmentCloudStatusBadge`, `garmentCloudStatusIcon/Tint`, `GarmentPhotoPlaceholder`, `TonalTag`, `toUiWardrobeItems`, `BrowseWardrobeScreen` (grid at the `LazyVerticalGrid` call); `core/designsystem/Motion.kt` (`pressScale`); sync state enum used by `cloud` in `toUiWardrobeItems` (follow `resolveForConnection`).
@@ -20,7 +20,7 @@ TS§2; `ui/BrowseGrid.kt` (after U00): `GarmentGridCard`, `GarmentCloudStatusBad
      | NeedsUserAction | Error, `badge_needs_attention` "Needs attention", error |
      | AuthBlocked | CloudOff, `badge_sign_in` "Sign in", error |
      New strings in all locales (ES: "En espera", "Subiendo", "Requiere atención", "Inicia sesión"; DE: "Wartet", "Wird hochgeladen", "Aktion nötig", "Anmelden").
-   - Anti-blink (standing preference): once a badge becomes visible it stays at least 1200 ms (`LaunchedEffect` holding the last non-null badge until the minimum time passed), then fades out 200 ms.
+   - Anti-blink (standing preference): pure `internal fun visibleBadge(previous: CardBadge?, shownAtMs: Long, current: CardBadge?, nowMs: Long): CardBadge?` keeps a shown badge until ≥ 1200 ms passed, then returns `current`; the card drives it with a `LaunchedEffect` + `delay` and fades out in 200 ms. Test: `BadgeHoldTest` (V-U02-6).
 2. `GarmentGridCard`: `Card(shape = MaterialTheme.shapes.large, colors = surfaceContainerLowest, elevation 1.dp)`; selection border with the same shape; `Modifier.pressScale(interactionSource)` and pass the same `interactionSource` to `combinedClickable`.
    Inside: `Box(Modifier.fillMaxWidth().aspectRatio(4f / 5f)) { GarmentPhotoPlaceholder(item, Modifier.matchParentSize(), clip = false); favourite; badge (only if badgeFor != null, bottom-end, pill with icon 14 dp + label labelSmall); selection check }`.
    Footer: `Column(Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp))` with line 1 `Row(verticalAlignment = CenterVertically) { Text(cardTitle(...), titleSmall SemiBold, maxLines 1, Ellipsis, Modifier.weight(1f)); ColorDots }` and line 2 `Text(cardMeta(...).ifEmpty { " " }, bodySmall, onSurfaceVariant, maxLines 1, Ellipsis)` — the `" "` keeps the height constant.
@@ -28,15 +28,16 @@ TS§2; `ui/BrowseGrid.kt` (after U00): `GarmentGridCard`, `GarmentCloudStatusBad
 3. `GarmentPhotoPlaceholder(…, clip: Boolean = true)`: apply `.clip(shapes.large)` only when `clip`.
 4. `toUiWardrobeItems`: `subtitle` = restore-attention message when needed, else `item.notes` (no sync fallback). Restore attention also maps to a badge (error style) — if a badge state for it already exists keep it.
 5. Remove `TonalTag` if now unused (grep `ui/`).
-6. `LazyVerticalGrid`: spacing 12 dp both directions; bottom content padding = existing nav inset + 16 dp (do not hard-code the nav height if a value exists).
+6. `LazyVerticalGrid(GridCells.Fixed(2))`: spacing 12 dp both directions; bottom content padding = existing nav inset + 16 dp (do not hard-code the nav height if a value exists).
+6b. `BrowseWardrobeScreen(…, browseLayout: BrowseLayout = BrowseLayout.PhotosOnly)`: `PhotosOnly` → `GarmentPhotoTile(item, …)` = the same Card/shape/press/long-press/selection code as `GarmentGridCard` but only the 4:5 photo box (favourite, badge, selection check), no footer; `semantics { contentDescription = tileContentDescription(...) }` with pure `tileContentDescription(name, tags, untitled)` = `cardTitle` + ", " + `cardMeta` (meta omitted when empty). Share the card shell between both composables (one private `GarmentCardShell(…, footer: (@Composable () -> Unit)?)`) so behaviour cannot drift. Pure `browseCellFor(layout): BrowseCell` (enum `Tile`/`Card`) for the test. In `ui/RobiaApp.kt` pass `browseLayout = settings.browseLayout` at the `BrowseWardrobeScreen(` call (one line).
 
 7. `RegressionSourceContractTest`: the test around line 766-779 asserts `text = item.name` and `text = item.subtitle` (the old card). Replace those two assertions with `cardTitle(` and `cardMeta(` being used inside `GarmentGridCard`; keep the other assertions of that test. Keep `GarmentCloudStatusBadge` declared directly after `GarmentGridCard` and `GRID_THUMBNAIL_MAX_EDGE_PX` used in the card (test ~960).
 
 ## Tests
-`BrowseCardTextTest`: V-U02-1 cases + `badgeFor` over `GarmentSyncStatus.entries` (V-U02-2).
+`BrowseCardTextTest`: V-U02-1 cases + `badgeFor` over `GarmentSyncStatus.entries` (V-U02-2) + `tileContentDescription` and `browseCellFor` (V-U02-5).
 
 ## Done when
-V-U02-1..4; receipt lists every string reused/added and a screenshot is NOT required (no device).
+V-U02-1..6; receipt lists every string reused/added and a screenshot is NOT required (no device).
 
 ## Do not
 Touch the filter bar, search, `AdvancedFiltersScreen`, the detail screen, or sync code. Do not change what counts as a "synced" state.

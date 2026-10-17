@@ -43,3 +43,25 @@ Reference code: `tools/segmentation-bench/` (copied from the planner workspace; 
 | socks, underwear, swimwear (short texts, b) | 118 | 1 + 1 |
 | socks, underwear (c) | 118 | 1 + 1 |
 No photo of socks/underwear exists in the set: positive recall is untested (device row V-Z2-14).
+
+## Revision 2 (2026-10-17): background enclosed by the hanger, "hanger first"
+Manu: the main problem is background enclosed by the hanger (and sometimes belts) that is not removed. Planner review of the v10 contact sheet on magenta: on clip-hanger skirts/shorts a white strip of door between the clip bar and the waistband stays opaque (#80, #89, #125, #129, #130, #132, #138), sometimes with the clip bar.
+- Cause: saliency + interactive selection join the strip to the garment before the hanger is removed; the hanger mask only deletes hanger pixels.
+| Variant | Result on 10 hard garments | Extra time (Pi, garments with hanger) |
+|---|---|---|
+| B: delete opaque regions next to the hanger whose colour matches the background ring | removes strips but also light waistbands / white trims (#125, #138) → rejected | +0.3 s |
+| A: fill the hanger pixels (OpenCV Telea), rerun u2netp + magic_touch on the filled photo | strip gone on #80, #89, #130, #132; light waistbands kept; #129 lost its lower half | +2.6 s median (142 photos) |
+| A + 85 % area guard | #129 fixed by falling back to v10 (strip stays) | same |
+| **A median + band** (fill = median of a 25 px ring + 9×9 blur; new selection used only from the hanger down to 0.6 × hanger height) | strip gone on #80, #89, #130, #132, #138; #129 complete; median fill as good as Telea → no OpenCV needed on Android | ≈ +1.5–2.5 s |
+Chosen: A median + band (`tools/segmentation-bench/pipeline_v11.py`, `BAND=1 FILL=median NOENC=1`). Full run on all 142 photos: 105 had a hanger detected; extra time median 2.4 s, p90 3.5 s on the Pi; 30/142 cutouts changed by > 2 % of area vs v10. Planner visual check of the 12 largest area losses (#13, #37, #54, #65, #80, #83, #87, #89, #102, #108, #112, #138): every removed region is hanger, clip bar, neck form or enclosed background; no garment part lost. Small clip remnants remain on some shorts/skirts (#87, #108, #112, #138). Limits: clip bars the detector misses stay; small bright specks of the clip may remain at the edge; the photo editor (SG3) is the manual fallback.
+
+## Revision 2: taxonomy with the app recipe (vt70)
+Earlier numbers used stored vt140 vectors; the app uses 70 vision tokens (`eg2-r1-vt70`). Re-embedded the 142 photos at vt70 (Pi, ~12 min) and re-ran (`taxonomy_check3.py`):
+| Variant | top-1 / 142 | Accessories correct / 12 | Other garments predicted Accessories | Taken by Underwear |
+|---|---|---|---|---|
+| today (no new labels) | 114 | 9 | 2 | – |
+| + Socks, Underwear, current Accessories text | 111 | 8 | 2 | 3 |
+| + … "an accessory such as a belt, a scarf, a hat or sunglasses" | 112 | 9 | 2 | 3 |
+| **+ … "an accessory: a belt or waist belt, a scarf, a hat, sunglasses or a similar item"** | **115** | **11** | **0** | 2 |
+| + … "a belt or other accessory: leather belt, waist belt, scarf, hat or sunglasses" | 115 | 12 | 2 | 2 |
+Chosen: the bold row (no false accessories). Socks/underwear positive recall stays untested (no such photos; device row V-Z2-14).

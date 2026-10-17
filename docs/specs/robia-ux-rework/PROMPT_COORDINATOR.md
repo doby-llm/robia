@@ -9,7 +9,7 @@ Hermes skill to load first: haiku-worker-coordination (dispatch commands, review
 Loop:
 1. Create/refresh a tracking issue "Execution: robia-ux-rework" with a status table (task, state Ready/Running/In review/Merged/Blocked, PR, attempts) + Gates + Follow-ups. Update it after every event.
 2. Dispatch Ready tasks (predecessors merged, lease free). Prompt = PROMPT_WORKER.md block with <TASK-ID> replaced; add only answers/continuations, never scope.
-3. On completion: read the receipt; check gh pr checks, diff file list vs the task's Files, every V- row evidence; re-run grep-type rows yourself. Independent read-only review for U03, U06, T01, SG1, SG2a (one review → one consolidated remediation → final check; max 2 rounds, then ask Manu).
+3. On completion: read the receipt; check gh pr checks, diff file list vs the task's Files, every V- row evidence; re-run grep-type rows yourself. Independent read-only review for U03, U06, T01, SG1, SG2a, SG3, B01 (one review → one consolidated remediation → final check; max 2 rounds, then ask Manu).
 4. Merge with gh pr merge --merge when green; re-sync open PR branches that depend on it.
 5. Gates: after SG2a merges send Manu (Spanish, short) the G-SEG-1 message from briefs/TASK-SG2a.md with the latest main-push robia-staging-apk artifact link; SG2b starts only after he reports PASS (apply the pre-approved fallback in implementation-plan.md on FAIL). After SG2b, send G-SEG-2 (briefs/TASK-SG2b.md).
 6. Finish with Z02 (device checklist + APK link) and a short Spanish message to Manu.
