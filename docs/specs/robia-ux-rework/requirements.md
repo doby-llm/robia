@@ -51,6 +51,8 @@ Priority: must unless marked. Standing Robia UI preferences from previous rounds
 - **REQ-PD-02** (rev 2) The PDF adapts to sparse garments (no name, notes optional): title = name, else the localized category, else "Garment"; with no notes the notes block is omitted and the photo box grows (up to 600 pt) so there is no blank band; with no colours the swatch row is omitted; the metadata list shows only rows with a value. Mockup shows the three cases (full, category only, nothing but the photo).
 - **REQ-PD-01** Single-garment PDF is A4 portrait (595×842 pt), Inter (bundled, OFL) Regular/SemiBold/Bold, layout per `mockups/pdf.html`: header line, photo on a soft colour gradient (no tint over the garment, bitmap filtering on), title, notes, colour swatches, metadata list (Category, Season, Occasions, Fit — Location stays out as decided before), logo footer. Text wraps and never shows ellipses (earlier decision); a normal garment fits one page, extremely long notes continue on a second page.
 
+- **REQ-BR-08** (rev 3) Pinch on Browse changes the number of columns: 2–4 in "Photos only", 2–3 in "Photos with details"; tiles glide to the new place, the scroll position is kept, the choice is remembered; one-finger scroll, tap and long-press are unchanged. No new library.
+
 ## Settings (R12)
 - **REQ-ST-01** Settings root = grouped navigation rows: Smart features (Smart suggestions, Precise cutout), Backup (Google Drive), General (Language, Browse layout), About (version; 7 taps unlock developer as today). Developer section appears only when unlocked.
 - **REQ-ST-02** Language is a sub-screen with a radio list driven by `LanguagePreference.entries`; each language shown in its own language plus the current-UI translation. The inline per-language rows and the read-only `LanguageSettingsScreen` list are removed.
@@ -66,3 +68,15 @@ Priority: must unless marked. Standing Robia UI preferences from previous rounds
 - **REQ-TX-01** Two new default categories: `category-socks` ("Socks", description "socks or tights: hosiery worn on the feet and legs") and `category-underwear` ("Underwear", "underwear: bra, briefs, boxers or lingerie worn under clothes"), `suggestOccasions = false`, localized EN/ES/DE, seeded on existing installs (respecting tombstones), included in the scoring labels.
 - **REQ-TX-02** The built-in Accessories description becomes "an accessory: a belt or waist belt, a scarf, a hat, sunglasses or a similar item" (rev 2, includes belts; measured on 142 photos at 70 vision tokens: accessories 11/12 vs 9/12 today, no other garment predicted as accessory). Garments whose Accessories tag has a user-edited description keep it. No other default category changes. Existing garments are not re-tagged automatically.
 - **REQ-TX-03** Recipe id stays `eg2-r1-vt70`: label vectors are computed at runtime from the label text (cache key = text), so a changed description needs no migration; stored image vectors are unaffected.
+
+## Colours (rev 3, R17)
+- **REQ-CO-01** A default colour "Gray" (#8A8A8A) exists and is treated as neutral by colour detection; grey and denim garments are detected as Gray instead of brown/beige. Existing garments keep their colours until the colour review runs; a user who deleted Gray never gets it back.
+- **REQ-CO-02** (optional, no behaviour change) Colour detection decodes a reduced bitmap (long edge ≥ 512 px) instead of the full photo.
+
+## Google Drive (rev 3, R18, R20)
+- **REQ-SY-01** Settings › Google Drive shows the space Robia uses in Drive (total size and photo count, last update time, refresh), computed from the file listing sync already does; no new permission.
+- **REQ-SY-02** A photo restored from Drive is accepted only if its bytes match the hash/size recorded at upload; otherwise it stays guarded and the phone copy is never overwritten.
+- **REQ-SY-03** An upload counts only if Drive reports the same size (and checksum when given); otherwise the previous photo record and blob are kept.
+- **REQ-SY-04** Sync is bound to one Google account; with a different account nothing is uploaded, restored or purged until the user chooses "Use this account" (then the normal merge flow) or disconnects.
+- **REQ-SY-05** "Check photos" (read-only) compares this phone, the backup snapshot and Drive and lists missing / damaged / not-yet-backed-up photos with Restore or Back up now; it never deletes anything.
+- Out of scope (Manu, rev 3): backing up the original camera photo; selling on Ricardo (rejected).

@@ -79,5 +79,25 @@ Levels: **CI** = unit/JVM test or build check run by GitHub Actions on the PR; *
 | V-Z2-20 | Z02 | DEV | Finish a tag review and a colour review: short completion screen with sparks and "updated on N garments", disappears alone after ~1.6 s or on tap | PASS/FAIL |
 | V-Z2-21 | Z02 | DEV | Batch of 10 photos (pack OFF, and ON if installed): garments become Ready in screen order; no crash; total time from the `RobiaBatch` log vs today's APK | PASS/FAIL |
 | V-Z2-22 | Z02 | DEV | Batch screen: one row per garment with category and occasions, no duplicated status text, one header with ETA, bottom bar only Save + short attention line | PASS/FAIL |
+| V-U10-1 | U10 | CI | `BrowseColumnsTest`: range 2..4 PhotosOnly / 2..3 PhotosWithDetails; zoom ≥ 1.25 → −1, ≤ 0.8 → +1, between → same; clamped at both ends | pass |
+| V-U10-2 | U10 | CI | settings mapping: missing / 1 / 5 → 2; 3 → 3 | pass |
+| V-U10-3 | U10 | REV | grep: `GridCells.Fixed(` in `BrowseGrid.kt`, `animateItem(` on garment items, no new dependency in `build.gradle.kts` | confirmed |
+| V-C01-1 | C01 | CI | `DefaultTagsTest`: 12 defaults, `gray` #8A8A8A sort 35 neutral; `gray-charcoal` unchanged | pass |
+| V-C01-2 | C01 | CI | `PaletteColorClassifierTest`: #808080 → `gray`; #D8C3A5 → `gray-charcoal`; existing analyzer tests green | pass |
+| V-C01-3 | C01 | CI | `GraySeedTest`: missing Gray is added once; tombstoned Gray is not re-added; existing garments untouched | pass |
+| V-D01-1 | D01 | CI | `DriveUsageTest`: total, photo/backup split, null sizes, empty list | pass |
+| V-D01-2 | D01 | CI | `DriveUsageStoreTest`: round trip; corrupt → null | pass |
+| V-D01-3 | D01 | REV | grep: no `about` call and no new scope; usage computed from the existing `listAll` results | confirmed |
+| V-D02-1 | D02 | CI | `PhotoIntegrityRestoreTest`: wrong hash / wrong size / truncated → guarded, temp deleted, phone file kept; legacy record without hash accepted | pass |
+| V-D02-2 | D02 | CI | `PhotoUploadVerifyTest`: Drive size or sha256 mismatch → previous record kept, old blob not purged | pass |
+| V-D02-3 | D02 | CI | `CopyRemoteIndexTest`: remote record whose blob is absent from the index is not claimed; garment stays protected; attention raised | pass |
+| V-D02-4 | D02 | CI | `AccountBindingTest`: mismatch → no upload, restore or purge; "Use this account" → merge-on-connect, never silent overwrite | pass |
+| V-D02-5 | D02 | CI | `PhotoIntegrityCheckTest`: Ok / MissingLocalFile / MissingOnDrive / SizeMismatch / NotYetUploaded / orphan count | pass |
+| V-D02-6 | D02 | REV | independent review: no code path in D02 deletes or overwrites a photo file or blob | confirmed |
+| V-Z2-23 | Z02 | DEV | Browse: pinch out 2→3→4 and back; tiles glide, position kept, scrolling/long-press unaffected; with details max 3 | PASS/FAIL |
+| V-Z2-24 | Z02 | DEV | Add a grey garment and a denim one: detected Gray; Settings › colours shows Gray; old garments unchanged until colour review | PASS/FAIL |
+| V-Z2-25 | Z02 | DEV | Settings › Google Drive shows "Space used" with size and photo count; refresh works; value ≈ Google Drive › Manage apps › Robia | PASS/FAIL |
+| V-Z2-26 | Z02 | DEV | Check photos on the real wardrobe: "All N photos are safe" or an actionable list; nothing deleted | PASS/FAIL |
+| V-Z2-27 | Z02 | DEV | Sign in to Drive with a second Google account: "Different Google account" attention, no upload until a choice is made | PASS/FAIL |
 | G-SEG-1 | SG2a | DEV | Developer > Run cutout benchmark on Manu's phone (Poco F3), plugged in, cool, battery saver off: median no-hanger ≤ 4000 ms, hanger ≤ 9000 ms (includes the hanger-first stage), peak PSS ≤ 1300 MB | PASS/FAIL |
 | G-SEG-2 | SG2b | DEV | ≥ 10 garments, pack ON vs OFF, OK/NOK each; pass rule SEG-DEC-006 | PASS/FAIL |

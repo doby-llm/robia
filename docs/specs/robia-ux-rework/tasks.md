@@ -1,6 +1,6 @@
 # Tasks — robia-ux-rework
 
-Revision 2 (2026-10-17; rev-1 feedback in `feedback/2026-10-17-manu-rev1-feedback.md`). **G-APPROVAL** = Manu writes APROBADO on the planning PR and it is merged. All tasks are `Ready` once G-APPROVAL passes and their predecessors are merged.
+Revision 3 (2026-10-17; rev-1 feedback in `feedback/2026-10-17-manu-rev1-feedback.md`, rev-2 feedback and answers in `feedback/2026-10-17-manu-rev2-feedback.md`). **G-APPROVAL** = Manu writes APROBADO on the planning PR and it is merged. All tasks are `Ready` once G-APPROVAL passes and their predecessors are merged.
 
 ## Rules for every worker (read first)
 0. Read `briefs/README.md`, then `briefs/TASK-<ID>.md`, then this section, then your rows in `verification-matrix.md`. `technical-specification.md` §N = TS§N; decisions UX-/SEG-/PROC-DEC-NNN in `decision-log.md`. Mockups: `mockups/*.html` (open in a browser; captions are Spanish, UI copy English).
@@ -121,6 +121,27 @@ Revision 2 (2026-10-17; rev-1 feedback in `feedback/2026-10-17-manu-rev1-feedbac
 - **Reqs:** REQ-BA-02, REQ-BA-03, REQ-PF-04 · UX-DEC-012 · TS§B02 · mockup `batch.html` · **Predecessors:** B01, U07 (both edit `ui/BatchAddClothingScreen.kt`) · **Successors:** Z02
 - **Files:** `ui/BatchAddClothingScreen.kt` (screen UI only), new `ui/BatchEta.kt`, `RegressionSourceContractTest.kt` (`batch_helper_summary` string assertion only).
 - **Acceptance:** V-B02-1..3, V-Z2-22.
+
+## U10 — Pinch to change Browse columns (rev 3)
+- **Reqs:** REQ-BR-08 · UX-DEC-017 · TS§2b · **Predecessors:** U02 (`BrowseGrid.kt`), U05 (`RobiaApp.kt` settings plumbing order) · **Successors:** Z02
+- **Files:** `ui/BrowseGrid.kt` (`BrowseWardrobeScreen` grid + gesture only), new `ui/BrowseColumns.kt`, `ui/RobiaApp.kt` (`BrowseWardrobeScreen(` call site only), `data/SettingsRepository.kt`, `core/model/ClothingModels.kt` (`RobiaSettings.browseColumns`), test fakes implementing `SettingsRepository`.
+- **Acceptance:** V-U10-1..3, V-Z2-23.
+
+## C01 — Gray default colour (rev 3)
+- **Reqs:** REQ-CO-01, REQ-CO-02 · COL-DEC-001 · **Predecessors:** T01 (`DefaultTags.kt`, `DefaultTagsTest.kt`), SG1 (`ClothingImageStore.kt`) · **Successors:** Z02
+- **Files:** `core/model/DefaultTags.kt` (`mainColors` only), `core/color/PaletteColorClassifier.kt` (`NEUTRAL_PALETTE_IDS` only), `data/LocalRepositories.kt` (`seedDefaultsIfNeeded` only), `media/ClothingImageStore.kt` (`extractPaletteColorDiagnostics` decode only, optional step), tests `DefaultTagsTest.kt`, `PaletteColorClassifierTest.kt`, new `GraySeedTest.kt`.
+- **Acceptance:** V-C01-1..3, V-Z2-24.
+
+## D01 — Drive space used by Robia (rev 3)
+- **Reqs:** REQ-SY-01 · DATA-DEC-001 · **Predecessors:** U05 (`DriveSettingsScreen.kt`) · **Successors:** D02, Z02
+- **Files:** new `sync/DriveUsage.kt`, new `sync/DriveUsageStore.kt`, `sync/GoogleDriveWardrobeRepository.kt` (after each `listAll` + new `refreshDriveUsage`), `sync/DriveWardrobeRepository.kt`, `sync/WardrobeSyncGateway.kt` (`driveUsage` field + `refreshDriveUsage`), `sync/WardrobeSyncOutboxProcessor.kt` (`toWardrobeSyncState` + gateway method only), `ui/DriveSettingsScreen.kt`, `RobiaApplication.kt` (store wiring only), test fakes of the gateway/repository.
+- **Acceptance:** V-D01-1..3, V-Z2-25.
+
+## D02 — Photo integrity: exact upload/restore, account binding, Check photos (rev 3)
+- **Reqs:** REQ-SY-02..05 · SYNC-DEC-001 · **Predecessors:** D01 (same sync files and `DriveSettingsScreen.kt`) · **Successors:** Z02
+- **Files:** `sync/GoogleDriveWardrobeRepository.kt`, `sync/DriveWardrobeRepository.kt`, `sync/WardrobeSyncGateway.kt`, `sync/WardrobeSyncOutboxProcessor.kt`, `sync/SyncAttention.kt`, new `sync/PhotoIntegrityCheck.kt`, `MainActivity.kt` (`persistDriveAuthorizationResult` only), `data/SettingsRepository.kt` + `core/model/ClothingModels.kt` (two account fields), `ui/DriveSettingsScreen.kt`, `ui/SyncAttentionCard.kt` (new kind), `ui/RobiaApp.kt` (attention action wiring only), `app/src/test/java/com/gusanitolabs/robia/ui/SyncAttentionMappingTest.kt` (new kind only, rule 11), new tests.
+- **In scope:** steps 1-5 of the brief. **Out of scope:** original-photo backup, key format change, deleting orphans.
+- **Acceptance:** V-D02-1..6, V-Z2-26, V-Z2-27. **Review:** independent (no path may delete or overwrite a photo; account mismatch blocks every write).
 
 ## Z02 — Device checklist
 - **Predecessors:** all above merged · **Files:** `docs/specs/robia-ux-rework/artifacts/device-checklist.md` · **Acceptance:** checklist with every V-Z2 row, latest main staging APK link, grouped A (no cloud), B (photos/segmentation), C (mockup comparison).

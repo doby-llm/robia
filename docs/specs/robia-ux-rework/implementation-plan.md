@@ -17,6 +17,7 @@ Max 3 workers in parallel (coordinator rule). A file listed for two tasks is a l
 | Gate | **G-SEG-1** (Manu, after SG2a) | performance on device |
 | W4 | **SG2b** (after U05 + G-SEG-1 PASS), **SG3** (after U07 + SG2a; SG3 does not touch `RobiaApp.kt`) | |
 | Gate | **G-SEG-2** (Manu, after SG2b) | visual quality |
+| W5 | **C01** (after T01 + SG1), **U10** (after U02 + U05), **D01** (after U05), then **D02** (after D01) | rev 3; disjoint from W3/W4 files except as listed |
 | End | **Z02** | checklist + APK |
 
 ## Dependency graph (edges = must be merged first)
@@ -35,6 +36,9 @@ U07 → SG3 (AddEditClothingScreen.kt)
 U03 → U08 (sparkle button line), U05 (RegressionSourceContractTest order)
 SG2a → G-SEG-1 → SG2b ; SG2a → SG3
 SG2b → G-SEG-2
+T01 → C01 ; SG1 → C01 (ClothingImageStore.kt)
+U02 → U10 ; U05 → U10, D01
+D01 → D02 (sync files, DriveSettingsScreen.kt)
 all → Z02
 ```
 

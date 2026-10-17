@@ -98,3 +98,27 @@ Status legend: **D** decided by planner on evidence (approved with the packet), 
 
 ## UX-DEC-016 — Sparse PDF · D (Manu: most garments have no name and notes are optional)
 - Title = name, else category, else "Garment"; empty blocks are omitted and the photo grows to fill the page; no blank band. Three mockup cases.
+
+## Revision 3 — findings and pending decisions (2026-10-17)
+Source: `feedback/2026-10-17-manu-rev2-feedback.md` (R16–R20). Evidence: `artifacts/inv-r3-zoom-colors-storage.md`, `artifacts/inv-r3-drive-photo-audit.md` (sub-agent, key claims re-verified by the planner), `artifacts/inv-r3-ricardo.md` (sub-agent, key sources re-fetched).
+- **UX-DEC-017 Browse pinch zoom (R16) · D (planner):** feasible with Compose foundation 1.7 (BOM 2024.12.01), no library. `GridCells.Fixed(n)`, n 2..4 (Photos only) / 2..3 (Photos with details), persisted `browse_columns`, `animateItem()`, first visible item anchored. New task U10 after U02.
+- **DATA-DEC-001 Drive usage (R18) · D (planner):** sum `size` of the `appDataFolder` listing that every upload already fetches (`GoogleDriveWardrobeRepository.kt:352, 683-697`); show in Settings › Google Drive. No new scope or request. New task D01 after U05.
+- **COL-DEC-001 colour extraction (R17) · D (Manu: "1. Sí" → add Gray, task C01):** no Gray swatch exists (`gray-charcoal` = "Beige / Cream" #D8C3A5, `DefaultTags.kt:47`); low-saturation pixels can only become black/white/beige/brown, so grey and denim garments read as brown/beige. Adding Gray #8A8A8A: 30/142 change, ≈18 better / ≈6 worse (planner visual check). Optional speed fix: decode with `inSampleSize` (full-size decode today, `ClothingImageStore.kt:145`). ΔE2000 / k-means: no gain expected.
+- **SYNC-DEC-001 photo integrity (R20) · planner-verified findings:**
+  - Restore never compares downloaded bytes with the record's `contentHash`/`byteSize`; any decodable image is accepted (`GoogleDriveWardrobeRepository.kt:1155-1210`).
+  - Upload trusts the 200 response without size/checksum check (`:431-451`).
+  - `CopyRemote` keeps a remote record without checking that its blob exists in the Drive index (`:384-390`).
+  - Account binding is dead code: `authorizedAccountEmail` / `expectedAccountEmail` are never assigned in main (only declared, `WardrobeSyncGateway.kt:71-86`; read at `RobiaApp.kt:1054`).
+  - Only the edited photo exists, both locally (`photo_uri`) and on Drive (lossy WebP q90 ≤ 2048 px). The original camera photo is not kept after save (`AddEditClothingScreen.kt:600`).
+  - Safe today: replace order (upload → snapshot → purge), purge exclusions, partial-download cleanup, guarded restore with user-visible attention, error classification.
+  - Not fixable in-app: photos added and never synced are lost on uninstall (Android backup is disabled on purpose).
+  - D (Manu "2. A", "3. A"): task D02 = exact restore/upload, CopyRemote index check, account binding, read-only Check photos; the original photo is not backed up (one photo per garment).
+- **SELL-DEC-001 Ricardo (R19) · REJECTED (Manu: "Descartado 100%"); findings kept for reference:**
+  - Ricardo's public seller API was switched off on 2026-09-01 with no successor (magnalister notice, 2026-06-17; legacy docs only).
+  - No verified URL prefill.
+  - The app is `com.qxl.Client` and handles ricardo.ch links (assetlinks.json verified).
+  - Least-permission path: a "Sell on Ricardo" button that prepares title + description (editable), copies them to the clipboard, and shares the photo with `ACTION_SEND` if Ricardo accepts images, otherwise opens `https://www.ricardo.ch/de/list/`. The user completes and publishes in Ricardo.
+  - No new Android permission.
+
+- **PROC-DEC-005 (rev 3):** Manu "5. A": U10, C01, D01, D02 join this round before APROBADO (wave W5).
+- **SEG-DEC-008 (rev 3, R21) · proposed (planner):** keep v11 as the precise-cutout pipeline. Dedicated matting models (IS-Net, BEN2, BiRefNet-lite) keep the hanger and, on white doors, the door; BiRefNet-lite does not fit 5 GB at 1024 px; BEN2 ~90 s/photo. LaMa inpainting of the hanger = same result as the median fill at ×3 time. The quality bottleneck is hanger detection (missed clips, wooden clip hangers). Follow-up (not this round): open-vocabulary hanger detector ≤ 100 MB / ≤ 2 s. Evidence `artifacts/inv-r3-matting.md`; generative results in `artifacts/inv-r3-generative.md`.

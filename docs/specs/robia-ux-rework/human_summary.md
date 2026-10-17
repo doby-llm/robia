@@ -1,6 +1,6 @@
 # Robia — ronda UX 2: qué se va a hacer (resumen para Manu)
 
-Origen: tu email «Prompt robia» del 16-10-2026 (`feedback/2026-10-16-manu-email.md`) y tus respuestas del 17-10-2026 (`feedback/2026-10-17-manu-rev1-feedback.md`). Esta es la **revisión 2**.
+Origen: tu email «Prompt robia» del 16-10-2026 (`feedback/2026-10-16-manu-email.md`) y tus respuestas del 17-10-2026 (`feedback/2026-10-17-manu-rev1-feedback.md`). Esta es la **revisión 3** (tus respuestas del 17-10 a la revisión 2: `feedback/2026-10-17-manu-rev2-feedback.md`).
 Mockups: `mockups/index.html` (ábrelos en el navegador; las animaciones se mueven).
 
 ## Lo que cambia respecto a la revisión 1
@@ -115,3 +115,17 @@ Mockups: `mockups/index.html` (ábrelos en el navegador; las animaciones se muev
 2. **G-SEG-1** (~10 min): instalar el APK de prueba, pulsar «Run cutout benchmark» en Developer y pegarme el resultado.
 3. **G-SEG-2** (~15 min): añadir 10 prendas con y sin recorte preciso y decirme si te convence.
 4. **Z02**: repasar la lista final de comprobación en el móvil (incluye medir el tiempo de un batch de 10 fotos).
+
+## Novedades de la revisión 3
+- **Zoom en Browse (U10):** pellizcar cambia el número de columnas (2–4 solo fotos, 2–3 con detalles). Las prendas se deslizan a su sitio y se mantiene la posición. Sin librerías.
+- **Color gris (C01):** nuevo color por defecto «Gray». Los grises y vaqueros ya no salen marrón/beige. Tus prendas actuales no cambian hasta que repases los colores.
+- **Espacio en Drive (D01):** Settings › Google Drive muestra cuánto ocupa Robia y cuántas fotos tiene, sin permisos nuevos.
+- **Integridad de fotos (D02):**
+  - Al restaurar y al subir se comprueba que la foto es exactamente la misma.
+  - No se conserva una referencia a una foto que ya no existe en Drive.
+  - El sync queda ligado a tu cuenta de Google: con otra cuenta no sube ni borra nada hasta que elijas.
+  - «Check photos» revisa todo sin borrar nada.
+- **Sin cambios:** una foto por prenda (el original de la cámara no se guarda) y Ricardo descartado.
+- **Recorte (benchmark de modelos nuevos):**
+  - Ni los modelos de recorte dedicados ni LaMa mejoran el pipeline propuesto. Se mantiene v11.
+  - El límite real es detectar la percha (pinzas pequeñas, perchas de madera). Queda como siguiente paso.

@@ -42,6 +42,10 @@ Settings plumbing (used by U02/SG2a/SG2b): U01 extracts the inline preferences m
 - Grid: `LazyVerticalGrid(GridCells.Fixed(2))`, spacing 12 dp, `contentPadding(bottom = navHeight + 16.dp)`.
 - Layout setting (rev 2): `BrowseWardrobeScreen` gets `browseLayout: BrowseLayout`. `PhotosWithDetails` → `GarmentGridCard` as above. `PhotosOnly` (default) → `GarmentPhotoTile(item, …)` = same `Card(shape = shapes.large)` + 4:5 photo box with favourite, badge and selection check, **no footer**; content description = `cardTitle` + `cardMeta` so TalkBack still reads them. Long-press/selection behaviour identical in both. `RobiaApp.kt` passes `settings.browseLayout` (one line at the `BrowseWardrobeScreen(` call).
 
+## §2b Browse pinch zoom (U10, rev 3) — `ui/BrowseGrid.kt`, new `ui/BrowseColumns.kt`
+- `GridCells.Fixed(n)`, `n = settings.browseColumns.coerceIn(browseColumnRange(layout))`; range 2..4 (PhotosOnly) / 2..3 (PhotosWithDetails); setting key `browse_columns` (int, default 2).
+- Gesture on `PointerEventPass.Initial`, only with ≥ 2 pointers; cumulative zoom thresholds ×1.25 (one column fewer) and ×0.8 (one more), reset after each step; first visible item index restored after the change; `graphicsLayer` scale feedback clamped 0.94–1.06; `Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)` on garment items. Foundation 1.7 (BOM 2024.12.01) provides all APIs; no library.
+
 ## §3 Filters (U03) — `ui/BrowseFilterBar.kt`, `ui/AdvancedFiltersScreen.kt`
 - `BrowseFilterState.matches(item, paletteColors)` new semantics: group `selectedTagIds` by tag category (the state carries `selectedTagCategories: Map<String, String>` tagId → categoryId, maintained by the toggle helpers; `matches` needs no new parameter); item passes a group if it carries ANY id of that group; all groups AND; `selectedUnsetTagCategoryIds` = item has NO tag of that category (OR with selected tags of the same category: "Dresses or Not set"); colours OR; favourites AND.
 - Toggle helpers: single-select helpers removed; every dimension uses multi toggle.
@@ -177,3 +181,16 @@ Files: `ui/SettingsScreen.kt`, new `ui/PreciseCutoutSettings.kt`, `ui/RobiaApp.k
 
 ## §Z Device checklist (Z02)
 `docs/specs/robia-ux-rework/artifacts/device-checklist.md` with rows V-Z2-* (verification-matrix.md) and the latest main staging APK link.
+
+## §C Colours (C01, rev 3)
+- New default `MainColor("gray", "Gray", "#8A8A8A", sortOrder = 35, isDefault = true)`; `gray` joins `NEUTRAL_PALETTE_IDS`. Existing installs: `seedDefaultsIfNeeded` inserts Gray when absent and not tombstoned (`main_color` tombstone). `gray-charcoal` ("Beige / Cream") keeps id and hex.
+- Optional: colour decode with power-of-two `inSampleSize` keeping long edge ≥ 512 px (offline: 138/142 identical, 140/142 same primary on the 142 cutouts).
+
+## §D Google Drive (D01, D02, rev 3)
+- D01: `DriveUsage(totalBytes, photoCount, photoBytes, backupCount, measuredAtEpochMillis)` from `listAll` results (no extra request in sync; `refreshDriveUsage()` = one `listAll`), persisted in `DriveUsageStore` (JSON file), exposed as `WardrobeSyncState.driveUsage`.
+- D02 restore: compare downloaded SHA-256/length with `GarmentPhotoRecord.contentHash`/`byteSize` before `moveToFinal`; mismatch → `guardedRestore(REMOTE_PHOTO_MISMATCH)`.
+- D02 upload: multipart URLs add `fields=id,size,sha256Checksum`; mismatch → `Failure` → `keepPreviousRecord` (old blob never purged).
+- D02 CopyRemote: carried record must exist in `DriveFileIndex`; otherwise not claimed, garment protected, PhotoUnrecoverable attention.
+- D02 account binding: e-mail from `GET drive/v3/about?fields=user(emailAddress)` (allowed for `drive.appdata`) after authorization; first value stored as `driveBoundAccountEmail`, current as `driveAuthorizedAccountEmail`; these fill `WardrobeSyncState.expectedAccountEmail` / `authorizedAccountEmail`; while `hasConflictingAccountBinding` the processor performs no Drive write, restore or purge and raises `SyncAttentionKind.AccountMismatch` (actions: Use this account → rebind + merge-on-connect; Disconnect).
+- D02 Check photos: pure `checkPhotoIntegrity(local, files, snapshot)`; read-only; actions reuse existing guarded-restore retry and sync enqueue.
+- Accepted risk: 16-hex SHA-256 prefix keys (per garment); not changed this round.
