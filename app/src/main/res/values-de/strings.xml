@@ -649,4 +649,9 @@
     <!-- SG1 -->
     <string name="background_removal_preparing">Fotooptimierung wird vorbereitet…</string>
     <string name="background_removal_fallback_module">Die Fotooptimierung wird noch heruntergeladen. Wir haben das Originalfoto behalten; tippe in einem Moment auf Erneut versuchen.</string>
+    <!-- U02 -->
+    <string name="badge_waiting">Wartet</string>
+    <string name="badge_uploading">Wird hochgeladen</string>
+    <string name="badge_needs_attention">Aktion nötig</string>
+    <string name="badge_sign_in">Anmelden</string>
 </resources>

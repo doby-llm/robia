@@ -2,6 +2,9 @@ package com.gusanitolabs.robia.ui
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -12,10 +15,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +46,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudDone
@@ -91,6 +98,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
+import com.gusanitolabs.robia.core.designsystem.pressScale
+import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
@@ -184,6 +194,7 @@ internal fun BrowseWardrobeScreen(
     onClearSearch: () -> Unit,
     modelState: ModelState,
     onOpenSettings: () -> Unit,
+    browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
     val searchActive = searchQuery.isNotBlank() || similarToName != null
@@ -199,13 +210,14 @@ internal fun BrowseWardrobeScreen(
 
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Fixed(2),
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        // innerPadding already carries the bottom bar inset, so the list ends at bar height + 16 dp.
+        contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             FilterBar(
@@ -261,20 +273,30 @@ internal fun BrowseWardrobeScreen(
             }
         }
         items(items, key = { it.id }) { item ->
-            GarmentGridCard(
-                item = item,
-                isSelected = item.id in selectedItemIds,
-                isSelectionMode = isSelectionMode,
-                onClick = {
-                    if (isSelectionMode) {
-                        onSelectionToggle(item.id)
-                    } else {
-                        onItemSelected(item)
-                    }
-                },
-                onLongClick = { onSelectionToggle(item.id) },
-                onFavoriteClick = { onToggleFavorite(item.id) },
-            )
+            val onClick = {
+                if (isSelectionMode) {
+                    onSelectionToggle(item.id)
+                } else {
+                    onItemSelected(item)
+                }
+            }
+            when (browseCellFor(browseLayout)) {
+                BrowseCell.Tile -> GarmentPhotoTile(
+                    item = item,
+                    isSelected = item.id in selectedItemIds,
+                    onClick = onClick,
+                    onLongClick = { onSelectionToggle(item.id) },
+                    onFavoriteClick = { onToggleFavorite(item.id) },
+                )
+                BrowseCell.Card -> GarmentGridCard(
+                    item = item,
+                    isSelected = item.id in selectedItemIds,
+                    isSelectionMode = isSelectionMode,
+                    onClick = onClick,
+                    onLongClick = { onSelectionToggle(item.id) },
+                    onFavoriteClick = { onToggleFavorite(item.id) },
+                )
+            }
         }
     }
 }
@@ -366,41 +388,52 @@ private fun BrowseWardrobeLoadingCard() {
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun GarmentGridCard(
+private fun GarmentCardShell(
     item: UiWardrobeItem,
     isSelected: Boolean,
-    isSelectionMode: Boolean,
+    description: String,
+    thumbnailMaxEdgePx: Int,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
+    footer: (@Composable () -> Unit)?,
 ) {
-    val itemDescription = stringResource(R.string.content_open_item_detail)
-    val selectDescription = stringResource(R.string.content_select_garment)
+    val interactionSource = remember { MutableInteractionSource() }
     val favoriteDescription = stringResource(R.string.content_favorite)
 
     Card(
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .pressScale(interactionSource)
             .border(
                 width = if (isSelected) 2.dp else 0.dp,
                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = MaterialTheme.shapes.medium,
+                shape = MaterialTheme.shapes.large,
             )
             .semantics {
-                contentDescription = if (isSelectionMode) selectDescription else itemDescription
+                contentDescription = description
                 selected = isSelected
             }
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
     ) {
-        Box {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(4f / 5f),
+        ) {
             GarmentPhotoPlaceholder(
                 item = item,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(3f / 4f),
-                thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
+                modifier = Modifier.matchParentSize(),
+                thumbnailMaxEdgePx = thumbnailMaxEdgePx,
+                clip = false,
             )
             Surface(
                 shape = CircleShape,
@@ -422,7 +455,7 @@ private fun GarmentGridCard(
                 )
             }
             GarmentCloudStatusBadge(
-                item = item,
+                badge = cardBadgeFor(item.syncStatus, item.hasMissingRestoredPhoto),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(8.dp),
@@ -446,57 +479,163 @@ private fun GarmentGridCard(
                 }
             }
         }
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item.tags.take(2).forEach { tag -> TonalTag(text = tag.label) }
-            }
-        }
+        footer?.invoke()
     }
+}
+
+/** Photos-only tile (default Browse layout): the photo box alone, with title and metadata kept for TalkBack. */
+@Composable
+private fun GarmentPhotoTile(
+    item: UiWardrobeItem,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
+) {
+    val untitled = stringResource(R.string.browse_similar_untitled)
+    val collator = remember { browseCollator() }
+
+    GarmentCardShell(
+        item = item,
+        isSelected = isSelected,
+        description = tileContentDescription(item.name, item.tags, untitled, collator),
+        thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onFavoriteClick = onFavoriteClick,
+        footer = null,
+    )
+}
+
+@Composable
+private fun GarmentGridCard(
+    item: UiWardrobeItem,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
+) {
+    val itemDescription = stringResource(R.string.content_open_item_detail)
+    val selectDescription = stringResource(R.string.content_select_garment)
+    val untitled = stringResource(R.string.browse_similar_untitled)
+    val collator = remember { browseCollator() }
+    val title = cardTitle(item.name, item.tags, untitled)
+    val meta = cardMeta(item.tags, collator)
+
+    GarmentCardShell(
+        item = item,
+        isSelected = isSelected,
+        description = if (isSelectionMode) selectDescription else itemDescription,
+        thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onFavoriteClick = onFavoriteClick,
+        footer = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    GarmentColorDots(item)
+                }
+                Text(
+                    // A blank line keeps the footer height constant when there are no occasions or seasons.
+                    text = meta.ifEmpty { " " },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+    )
 }
 
 @Composable
 private fun GarmentCloudStatusBadge(
-    item: UiWardrobeItem,
+    badge: CardBadge?,
     modifier: Modifier = Modifier,
 ) {
-    val label = item.garmentCloudStatusLabel()
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        contentColor = item.garmentCloudStatusTint(),
-        modifier = modifier.semantics { contentDescription = label },
+    val reducedMotion = LocalReducedMotion.current
+    var shown by remember { mutableStateOf(badge) }
+    var shownAtMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var lastShown by remember { mutableStateOf(badge) }
+    LaunchedEffect(badge) {
+        while (true) {
+            val now = System.currentTimeMillis()
+            val next = visibleBadge(shown, shownAtMs, badge, now)
+            if (next != shown) {
+                shown = next
+                shownAtMs = now
+            }
+            if (next != null) lastShown = next
+            if (shown == badge) break
+            delay(shownAtMs + BADGE_HOLD_MILLIS - now)
+        }
+    }
+    AnimatedVisibility(
+        visible = shown != null,
+        modifier = modifier,
+        enter = EnterTransition.None,
+        exit = if (reducedMotion) ExitTransition.None else fadeOut(animationSpec = tween(BADGE_FADE_MILLIS)),
     ) {
-        if (item.syncStatus == GarmentSyncStatus.Running) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .padding(7.dp)
-                    .size(18.dp),
-                strokeWidth = 2.dp,
-            )
-        } else {
+        lastShown?.let { GarmentCloudBadgePill(it) }
+    }
+}
+
+private const val BADGE_FADE_MILLIS = 200
+
+@Composable
+private fun GarmentCloudBadgePill(badge: CardBadge) {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        contentColor = if (badge.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Icon(
-                imageVector = item.garmentCloudStatusIcon(),
+                imageVector = badge.icon,
                 contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = stringResource(badge.labelRes),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** Up to two swatches, primary then secondary; unknown colours are skipped. */
+@Composable
+private fun GarmentColorDots(item: UiWardrobeItem) {
+    val swatches = listOf(item.primaryColor, item.secondaryColor)
+        .filter { it != DisplayColorLabel.Unknown }
+        .take(2)
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        swatches.forEach { color ->
+            Box(
                 modifier = Modifier
-                    .padding(6.dp)
-                    .size(18.dp),
+                    .size(9.dp)
+                    .background(color.swatchColor(), CircleShape)
+                    .border(1.dp, Color.Black.copy(alpha = .12f), CircleShape),
             )
         }
     }
@@ -531,11 +670,12 @@ internal fun GarmentPhotoPlaceholder(
     modifier: Modifier = Modifier,
     thumbnailMaxEdgePx: Int? = GRID_THUMBNAIL_MAX_EDGE_PX,
     purpose: ImagePurpose = ImagePurpose.Browse,
+    clip: Boolean = true,
 ) {
     val swatchColor = item.primaryColor.swatchColor()
     Box(
         modifier = modifier
-            .clip(MaterialTheme.shapes.large)
+            .then(if (clip) Modifier.clip(MaterialTheme.shapes.large) else Modifier)
             .background(rememberGarmentSwatchBrush(swatchColor)),
         contentAlignment = Alignment.Center,
     ) {
@@ -588,22 +728,6 @@ internal val UiWardrobeItem.hasMissingRestoredPhoto: Boolean
     get() = photoRestoreState.needsAttention
 
 @Composable
-private fun TonalTag(text: String) {
-    Surface(
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
 internal fun EmptyFiltersCard(onResetFilters: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -651,7 +775,7 @@ internal fun List<ClothingItem>.toUiWardrobeItems(
         subtitle = if (item.photoRestoreState.needsAttention) {
             context.getString(R.string.cloud_restore_photo_missing_message)
         } else {
-            item.notes.ifBlank { context.getString(cloud.labelRes) }
+            item.notes
         },
         notes = item.notes,
         photoUri = item.photoUri,

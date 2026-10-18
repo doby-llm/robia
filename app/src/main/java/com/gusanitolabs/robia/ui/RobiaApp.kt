@@ -159,6 +159,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
+import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
@@ -1793,6 +1794,7 @@ private fun RobiaShell(
             wardrobeItemsLoading = wardrobeItemsLoading,
             totalItemCount = items.size,
             filters = browseFilters,
+            browseLayout = settings.browseLayout,
             selectedBrowseItemIds = selectedBrowseItemIds,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
@@ -2586,6 +2588,7 @@ private fun RobiaNavHost(
     wardrobeItemsLoading: Boolean,
     totalItemCount: Int,
     filters: BrowseFilterState,
+    browseLayout: BrowseLayout,
     selectedBrowseItemIds: Set<String>,
     selectedItem: UiWardrobeItem?,
     selectedDomainItem: ClothingItem?,
@@ -2693,6 +2696,7 @@ private fun RobiaNavHost(
             onClearSearch = onClearSearch,
             modelState = modelState,
             onOpenSettings = onOpenSettings,
+            browseLayout = browseLayout,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,

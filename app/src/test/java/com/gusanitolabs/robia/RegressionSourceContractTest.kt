@@ -778,15 +778,16 @@ class RegressionSourceContractTest {
         val app = uiSource()
         val hasMissing = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
             .substringAfter("val UiWardrobeItem.hasMissingRestoredPhoto")
-            .substringBefore("@Composable\nprivate fun TonalTag")
+            .substringBefore("@Composable\ninternal fun EmptyFiltersCard")
+        val gridCard = app.substringAfter("private fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
 
         assertTrue(models.contains("val photoRestoreState: PhotoRestoreState"))
         assertTrue(app.contains("val photoRestoreState: PhotoRestoreState"))
         assertTrue(app.contains("photoRestoreState = item.photoRestoreState"))
         assertTrue(hasMissing.contains("photoRestoreState.needsAttention"))
         assertTrue(!hasMissing.contains("Foto no restaurada"))
-        assertTrue(app.contains("text = item.name"))
-        assertTrue(app.contains("text = item.subtitle"))
+        assertTrue(gridCard.contains("cardTitle("))
+        assertTrue(gridCard.contains("cardMeta("))
     }
 
     @Test
