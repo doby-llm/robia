@@ -103,6 +103,8 @@ import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
+import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.ImagePipeline
@@ -171,6 +173,10 @@ internal fun BrowseWardrobeScreen(
     hasItemsInWardrobe: Boolean,
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    filters: BrowseFilterState,
+    availableTags: List<GarmentTag>,
+    mainColors: List<MainColor>,
+    onFiltersChange: (BrowseFilterState) -> Unit,
     cloudSync: CloudSyncIndicator,
     selectedItemIds: Set<String>,
     onItemSelected: (UiWardrobeItem) -> Unit,
@@ -222,6 +228,10 @@ internal fun BrowseWardrobeScreen(
             FilterBar(
                 hasActiveFilters = hasActiveFilters,
                 activeFilterCount = activeFilterCount,
+                filters = filters,
+                availableTags = availableTags,
+                paletteColors = mainColors,
+                onFiltersChange = onFiltersChange,
                 cloudSync = cloudSync,
                 onFiltersClick = onFiltersClick,
                 onResetFilters = onResetFilters,

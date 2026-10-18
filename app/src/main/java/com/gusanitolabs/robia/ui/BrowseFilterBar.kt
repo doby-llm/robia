@@ -274,6 +274,10 @@ private fun PulsingCloudIcon(tint: Color) {
 internal fun FilterBar(
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    filters: BrowseFilterState,
+    availableTags: List<GarmentTag>,
+    paletteColors: List<MainColor>,
+    onFiltersChange: (BrowseFilterState) -> Unit,
     cloudSync: CloudSyncIndicator,
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
@@ -352,6 +356,14 @@ internal fun FilterBar(
                 if (cloudSync.headline.showsBrowseIndicator) {
                     CloudSyncStatusIcon(indicator = cloudSync, onOpenDataSync = onOpenSettings)
                 }
+            }
+            if (filters.hasActiveFilters) {
+                ActiveFilterChipsRow(
+                    filters = filters,
+                    availableTags = availableTags,
+                    paletteColors = paletteColors,
+                    onFiltersChange = onFiltersChange,
+                )
             }
             if (searchInProgress) {
                 Row(

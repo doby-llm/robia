@@ -134,6 +134,57 @@ class BrowseFilterStateTest {
     }
 
     @Test
+    fun chipRemovalDropsOnlyItsOwnNotSetEntry() {
+        val filters = BrowseFilterState()
+            .toggleUnsetCategory("category")
+            .toggleUnsetCategory("season")
+            .toggleFavoritesOnly()
+            .togglePaletteColor(red.id)
+            .toggleUnsetCategory("category")
+
+        assertEquals(setOf("season"), filters.selectedUnsetTagCategoryIds)
+        assertTrue(filters.favoritesOnly)
+        assertEquals(setOf(red.id), filters.selectedPaletteColorIds)
+    }
+
+    @Test
+    fun chipRemovalDropsOnlyItsOwnColourEntry() {
+        val filters = BrowseFilterState()
+            .togglePaletteColor(red.id)
+            .togglePaletteColor(black.id)
+            .togglePaletteColor(red.id)
+
+        assertEquals(setOf(black.id), filters.selectedPaletteColorIds)
+        assertEquals(1, filters.activeFilterCount)
+    }
+
+    @Test
+    fun chipRemovalOfFavouritesKeepsEveryOtherEntry() {
+        val filters = BrowseFilterState()
+            .selectTags(dresses, summer)
+            .togglePaletteColor(red.id)
+            .toggleFavoritesOnly()
+            .toggleFavoritesOnly()
+
+        assertFalse(filters.favoritesOnly)
+        assertEquals(setOf(dresses.id, summer.id), filters.selectedTagIds)
+        assertEquals(setOf(red.id), filters.selectedPaletteColorIds)
+    }
+
+    @Test
+    fun tagSelectionAndNotSetDoNotClearEachOther() {
+        val withNotSet = BrowseFilterState().toggleUnsetCategory("category").toggleTag(dresses)
+
+        assertEquals(setOf("category"), withNotSet.selectedUnsetTagCategoryIds)
+        assertEquals(setOf(dresses.id), withNotSet.selectedTagIds)
+
+        val notSetAfterTagRemoved = withNotSet.removeTag(dresses.id)
+
+        assertEquals(setOf("category"), notSetAfterTagRemoved.selectedUnsetTagCategoryIds)
+        assertTrue(notSetAfterTagRemoved.selectedTagIds.isEmpty())
+    }
+
+    @Test
     fun sortingUsesTheLocaleCollatorSoNtildeComesAfterN() {
         val labels = listOf("Ñu", "Nz", "Mesa", "Árbol")
 

@@ -1673,7 +1673,8 @@ private fun RobiaShell(
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            // AdvancedFilters draws its own top bar (Close, title, Reset).
+            if (currentRoute != RobiaRoute.AdvancedFilters) CenterAlignedTopAppBar(
                 navigationIcon = {
                     if (currentRoute == RobiaRoute.Browse && selectedBrowseItemIds.isNotEmpty()) {
                         IconButton(onClick = { selectedBrowseItemIds = emptySet() }) {
@@ -2681,6 +2682,10 @@ private fun RobiaNavHost(
             onSelectionToggle = onBrowseSelectionToggle,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
+            filters = filters,
+            availableTags = availableTags,
+            mainColors = mainColors,
+            onFiltersChange = onFiltersChange,
             onResetFilters = onResetFilters,
             attentions = browseAttentions,
             mergeProposalCard = mergeProposalCard,
