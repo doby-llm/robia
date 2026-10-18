@@ -13,16 +13,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -40,8 +37,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,7 +50,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -157,7 +160,6 @@ internal fun BatchAddClothingScreen(
     }
 
     val processedCount = drafts.count { it.status.isTerminal }
-    val activeCount = drafts.count(BatchDraftItem::isProcessingActive)
     val needsReviewCount = drafts.count {
         it.status == BatchDraftStatus.NeedsReview && !it.explicitlyAccepted
     }
@@ -170,44 +172,60 @@ internal fun BatchAddClothingScreen(
     val saveStateDescription = stringResource(
         if (canSave) R.string.batch_save_enabled_state else R.string.batch_save_disabled_state,
     )
-    val saveHelper = if (drafts.isEmpty()) {
-        stringResource(R.string.batch_helper_empty)
-    } else {
-        stringResource(
-            if (activeCount > 0) R.string.batch_helper_active_summary else R.string.batch_helper_summary,
-            acceptedCount,
-            activeCount,
-            needsReviewCount,
-            failedCount,
-            interruptedCount,
-        )
+    val attentionLine = batchAttentionLine(needsReviewCount, failedCount, interruptedCount)
+    val remainingCount = drafts.size - processedCount
+    val context = LocalContext.current
+    val localize: (GarmentTag) -> String = { tag -> tag.localizedTagLabel(context) }
+    val collator = remember { browseCollator() }
+    val etaEstimator = remember { BatchEtaEstimator { System.currentTimeMillis() } }
+    var countedProcessed by remember { mutableIntStateOf(processedCount) }
+    var eta by remember { mutableStateOf<BatchEta?>(null) }
+    LaunchedEffect(processedCount, drafts.size) {
+        repeat(processedCount - countedProcessed) { etaEstimator.onTerminal() }
+        countedProcessed = processedCount
+        eta = if (remainingCount > 0) etaEstimator.estimate(remainingCount) else null
     }
+    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
     ) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 160.dp),
+        LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 144.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 24.dp,
+                end = 16.dp,
+                bottom = with(density) { bottomBarHeightPx.toDp() } + 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 BatchProgressHeader(
                     totalCount = drafts.size,
                     processedCount = processedCount,
                     progress = progress,
-                    helper = saveHelper,
+                    eta = eta,
                 )
             }
+            if (drafts.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.batch_helper_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             items(drafts, key = BatchDraftItem::id) { draft ->
-                BatchDraftTile(
+                BatchDraftRow(
                     draft = draft,
                     position = draft.orderIndex + 1,
                     totalCount = drafts.size,
+                    summary = batchRowSummary(draft, availableTags, localize, collator),
                     onRetry = { onRetryDraft(draft) },
                     onDiscard = { onDiscardDraft(draft) },
                     onClick = {
@@ -221,7 +239,9 @@ internal fun BatchAddClothingScreen(
         Surface(
             tonalElevation = 3.dp,
             shadowElevation = 6.dp,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .onSizeChanged { bottomBarHeightPx = it.height },
         ) {
             Column(
                 modifier = Modifier
@@ -229,11 +249,15 @@ internal fun BatchAddClothingScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = saveHelper,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (attentionLine.isNotEmpty()) {
+                    Text(
+                        text = attentionLine
+                            .map { (pluralRes, count) -> pluralStringResource(pluralRes, count, count) }
+                            .joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 saveStatusMessage?.let { message ->
                     Text(
                         text = message,
@@ -265,7 +289,7 @@ private fun BatchProgressHeader(
     totalCount: Int,
     processedCount: Int,
     progress: Float,
-    helper: String,
+    eta: BatchEta?,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -282,29 +306,30 @@ private fun BatchProgressHeader(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = stringResource(R.string.batch_processing_count, processedCount, totalCount),
+                text = stringResource(R.string.batch_processed_count, processedCount, totalCount),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            BatchProgressBar(progress = progress)
-            Text(
-                text = helper,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                BatchProgressBar(progress = progress, modifier = Modifier.weight(1f))
+                eta?.let { BatchEtaText(it) }
+            }
         }
     }
 }
 
 @Composable
-private fun BatchProgressBar(progress: Float) {
+private fun BatchProgressBar(progress: Float, modifier: Modifier = Modifier) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 300),
         label = "batchProgress",
     )
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(8.dp)
             .clip(CircleShape)
@@ -321,10 +346,26 @@ private fun BatchProgressBar(progress: Float) {
 }
 
 @Composable
-private fun BatchDraftTile(
+private fun BatchEtaText(eta: BatchEta) {
+    val text = when (eta) {
+        BatchEta.AlmostDone -> stringResource(R.string.batch_eta_almost_done)
+        is BatchEta.Seconds -> stringResource(R.string.batch_eta_seconds, eta.s)
+        is BatchEta.Minutes -> stringResource(R.string.batch_eta_minutes, eta.m)
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun BatchDraftRow(
     draft: BatchDraftItem,
     position: Int,
     totalCount: Int,
+    summary: String,
     onClick: () -> Unit,
     onRetry: () -> Unit,
     onDiscard: () -> Unit,
@@ -334,7 +375,8 @@ private fun BatchDraftTile(
     } else {
         stringResource(draft.status.labelRes)
     }
-    val tileDescription = stringResource(R.string.batch_tile_content_description, position, totalCount, status)
+    val rowDescription = stringResource(R.string.batch_tile_content_description, position, totalCount, status)
+    val summaryIsError = draft.status == BatchDraftStatus.Failed && draft.errorMessage != null
     val backgroundPreparing by SegmentationModuleGates.get(LocalContext.current).preparing.collectAsState()
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -342,7 +384,7 @@ private fun BatchDraftTile(
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = tileDescription
+                contentDescription = rowDescription
                 stateDescription = status
             }
             .alpha(if (draft.status == BatchDraftStatus.Queued) 0.62f else 1f)
@@ -351,39 +393,55 @@ private fun BatchDraftTile(
                 onClick = onClick,
             ),
     ) {
-        Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             BatchPhotoPreview(
                 photoUri = draft.photoUri,
                 sourceRevision = draft.id,
                 isProcessing = draft.status == BatchDraftStatus.Processing,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(3f / 4f),
+                modifier = Modifier.size(width = 72.dp, height = 88.dp),
+                shape = MaterialTheme.shapes.medium,
             )
-            BatchStatusBadge(
-                status = draft.status,
-                isAccepted = draft.isAcceptedForSave(),
-                backgroundPreparing = backgroundPreparing,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-            )
-        }
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = draft.errorMessage ?: status,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (draft.isRetryableForBatch()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onRetry) { Text(stringResource(R.string.batch_retry)) }
-                    TextButton(onClick = onDiscard) { Text(stringResource(R.string.discard_changes)) }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.batch_row_position, position, totalCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    BatchStatusBadge(
+                        status = draft.status,
+                        isAccepted = draft.isAcceptedForSave(),
+                        backgroundPreparing = backgroundPreparing,
+                    )
+                }
+                if (summary.isNotEmpty()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (summaryIsError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (draft.isRetryableForBatch()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = onRetry) { Text(stringResource(R.string.batch_retry)) }
+                        TextButton(onClick = onDiscard) { Text(stringResource(R.string.discard_changes)) }
+                    }
                 }
             }
         }
@@ -396,10 +454,11 @@ private fun BatchPhotoPreview(
     sourceRevision: String,
     isProcessing: Boolean,
     modifier: Modifier = Modifier,
+    shape: Shape = MaterialTheme.shapes.large,
 ) {
     Box(
         modifier = modifier
-            .clip(MaterialTheme.shapes.large)
+            .clip(shape)
             .background(
                 Brush.verticalGradient(
                     listOf(
