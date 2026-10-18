@@ -25,7 +25,7 @@ object EmbeddingRecipe {
     const val KNN_TOP = 3
     const val SEARCH_IMAGE_WEIGHT = 0.7f
     const val SEARCH_TEXT_WEIGHT = 0.3f
-    val SUGGEST_OCCASIONS_DEFAULT_OFF = setOf("category-accessories", "category-jewelry")
+    val SUGGEST_OCCASIONS_DEFAULT_OFF = setOf("category-accessories", "category-jewelry", "category-socks", "category-underwear")
 
     /** Label descriptions for the default categories and occasions; copied from tools/embedding-precision/labels.py. */
     val DEFAULT_LABEL_DESCRIPTIONS: Map<String, String> = mapOf(
@@ -46,8 +46,10 @@ object EmbeddingRecipe {
         "category-shirts" to "a shirt: collared top with buttons down the front",
         "category-vests" to "a vest: sleeveless upper garment worn over another top",
         "category-jewelry" to "jewelry: necklace, earrings, bracelet or ring",
-        "category-accessories" to "an accessory: belt, scarf, hat, sunglasses or a similar item",
+        "category-accessories" to "an accessory: a belt or waist belt, a scarf, a hat, sunglasses or a similar item",
         "category-coats" to "a coat: long, warm outerwear reaching the thighs or knees",
+        "category-socks" to "socks or tights: hosiery worn on the feet and legs",
+        "category-underwear" to "underwear: bra, briefs, boxers or lingerie worn under clothes",
         "occasion-active" to "sportswear for exercise, the gym or running",
         "occasion-statement" to "a bold, eye-catching piece with a striking color, pattern or design",
         "occasion-dressed-up" to "an elegant outfit for going out, dinners or parties",

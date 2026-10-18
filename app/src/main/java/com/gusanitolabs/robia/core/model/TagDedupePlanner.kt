@@ -62,4 +62,7 @@ object TagDedupePlanner {
 object DefaultTagSeeds {
     fun withoutDeleted(defaults: List<GarmentTag>, deletedTagIds: Set<String>): List<GarmentTag> =
         defaults.filter { tag -> tag.id !in deletedTagIds }
+
+    fun forSeed(defaults: List<GarmentTag>, tombstoneRevisionById: Map<String, Long>): List<GarmentTag> =
+        withoutDeleted(defaults, tombstoneRevisionById.keys)
 }
