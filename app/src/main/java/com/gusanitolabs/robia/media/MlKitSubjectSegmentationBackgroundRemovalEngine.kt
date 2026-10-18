@@ -171,9 +171,8 @@ private suspend fun <T> processOnce(
 /** Decodes the photo with EXIF orientation applied and its long edge at most [SEGMENTATION_MAX_EDGE_PX]. */
 private fun decodeForSegmentation(context: Context, sourceUri: Uri): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    context.contentResolver.openInputStream(sourceUri)?.use { input ->
-        BitmapFactory.decodeStream(input, null, bounds)
-    } ?: error("Unable to open source photo")
+    val boundsStream = context.contentResolver.openInputStream(sourceUri) ?: error("Unable to open source photo")
+    boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
     check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Source photo has no readable size" }
 
     val options = BitmapFactory.Options().apply {

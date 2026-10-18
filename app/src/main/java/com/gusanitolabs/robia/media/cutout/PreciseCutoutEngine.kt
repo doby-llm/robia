@@ -361,7 +361,8 @@ internal fun workSize(width: Int, height: Int): Pair<Int, Int> {
  */
 internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: error("Unable to open source photo")
+    val input = context.contentResolver.openInputStream(uri) ?: error("Unable to open source photo")
+    input.use { BitmapFactory.decodeStream(it, null, bounds) }
     check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Source photo has no readable size" }
     val longEdge = max(bounds.outWidth, bounds.outHeight)
     var sample = 1

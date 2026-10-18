@@ -172,24 +172,18 @@ object ClothingImageStore {
         return ImageMetrics(width = width, height = height, byteSize = byteSize)
     }
 
+    /** Header-only size read. A bounds-only decode returns null, so the size is read from the options it fills. */
     fun readImageDimensions(context: Context, imageUri: Uri): Pair<Int, Int>? {
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(imageUri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, options)
-        } ?: return null
-        val width = options.outWidth
-        val height = options.outHeight
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        val input = context.contentResolver.openInputStream(imageUri) ?: return null
+        input.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val width = bounds.outWidth
+        val height = bounds.outHeight
         return if (width > 0 && height > 0) width to height else null
     }
 
     fun estimateCentralLuminance(context: Context, imageUri: Uri): Float? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(imageUri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, bounds)
-        } ?: return null
-        val width = bounds.outWidth
-        val height = bounds.outHeight
-        if (width <= 0 || height <= 0) return null
+        val (width, height) = readImageDimensions(context, imageUri) ?: return null
 
         val options = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
