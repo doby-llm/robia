@@ -23,6 +23,8 @@ interface WardrobeSyncGateway {
     suspend fun cancelMerge()
     /** Attention "Keep without photo": clears the photo guard of one garment only. No remote blob is deleted. */
     suspend fun keepWithoutPhoto(garmentId: String)
+    /** Settings "Refresh" on the Drive space row: one listing, then [WardrobeSyncState.driveUsage] is updated. */
+    suspend fun refreshDriveUsage()
 }
 
 object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
@@ -35,6 +37,7 @@ object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
     override suspend fun confirmMerge() = Unit
     override suspend fun cancelMerge() = Unit
     override suspend fun keepWithoutPhoto(garmentId: String) = Unit
+    override suspend fun refreshDriveUsage() = Unit
 }
 
 /** Testable queue-only gateway that never talks to Google services. */
@@ -61,6 +64,7 @@ class RecordingWardrobeSyncGateway(
     override suspend fun confirmMerge() = Unit
     override suspend fun cancelMerge() = Unit
     override suspend fun keepWithoutPhoto(garmentId: String) = Unit
+    override suspend fun refreshDriveUsage() = Unit
 }
 
 data class WardrobeSyncState(
@@ -76,6 +80,8 @@ data class WardrobeSyncState(
     val conflict: Boolean = false,
     /** The last cycle or user resolution that reached its outcome; null until one has run in this process. */
     val lastCycle: SyncCycleSummary? = null,
+    /** Last measured Drive space of Robia; null until a sync or a refresh has measured it. */
+    val driveUsage: DriveUsage? = null,
 ) {
     val canAttemptGoogleDriveSync: Boolean
         get() = connectionStatus == DriveSyncConnectionStatus.Connected

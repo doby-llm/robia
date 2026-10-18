@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.ui
 
+import android.text.format.DateUtils
+import android.text.format.Formatter
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,24 +13,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.sync.DriveUsage
 
 /**
- * Google Drive sub-screen: the status card, then the Drive actions Settings had under "Data sync", unchanged in behaviour.
- * Every action calls a callback the shell already owns, so no sync or deletion logic lives here.
+ * Google Drive sub-screen: the status card, the space Robia uses, then the Drive actions Settings had under "Data sync",
+ * unchanged in behaviour. Every action calls a callback the shell already owns, so no sync or deletion logic lives here.
  */
 @Composable
 internal fun DriveSettingsScreen(
@@ -39,8 +45,10 @@ internal fun DriveSettingsScreen(
     driveBackupDeletionState: DriveBackupDeletionState,
     onCloudSetupClick: () -> Unit,
     onDeleteBackupClick: () -> Unit,
+    driveUsage: DriveUsage? = null,
+    onRefreshDriveUsageClick: () -> Unit = {},
 ) {
-    val canDeleteBackup = driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
+    val isConnected = driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
         driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
     val setupTitleRes = if (
         driveBackupDeletionState == DriveBackupDeletionState.Complete ||
@@ -98,6 +106,56 @@ internal fun DriveSettingsScreen(
                 }
             }
         }
+        if (isConnected) {
+            item {
+                val context = LocalContext.current
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.drive_usage_title),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                text = driveUsage?.let { usage ->
+                                    stringResource(
+                                        R.string.drive_usage_value,
+                                        Formatter.formatShortFileSize(context, usage.totalBytes),
+                                        usage.photoCount,
+                                    )
+                                } ?: stringResource(R.string.drive_usage_unknown),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            driveUsage?.let { usage ->
+                                val measuredAgo = DateUtils.getRelativeTimeSpanString(
+                                    usage.measuredAtEpochMillis,
+                                    System.currentTimeMillis(),
+                                    DateUtils.MINUTE_IN_MILLIS,
+                                ).toString()
+                                Text(
+                                    text = stringResource(R.string.drive_usage_updated, measuredAgo),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        IconButton(onClick = onRefreshDriveUsageClick) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.drive_usage_refresh))
+                        }
+                    }
+                }
+            }
+        }
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -109,7 +167,7 @@ internal fun DriveSettingsScreen(
                         title = stringResource(setupTitleRes),
                         onClick = onCloudSetupClick,
                     )
-                    if (canDeleteBackup) {
+                    if (isConnected) {
                         Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
                         SettingsNavRow(
                             icon = Icons.Rounded.Delete,
