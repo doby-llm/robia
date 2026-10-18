@@ -94,7 +94,8 @@ class PdfLayoutTest {
         val page = computePdfLayout(typical.copy(notes = ""), measurer).pages.single()
 
         assertNull(page.notes)
-        assertTrue("photo height ${page.photo!!.h} should exceed 430 pt", page.photo!!.h > 430f)
+        val photo = page.photo!!
+        assertTrue("photo height ${photo.h} should exceed 430 pt", photo.h > 430f)
         assertInsideMarginsAndFooter(page)
     }
 
