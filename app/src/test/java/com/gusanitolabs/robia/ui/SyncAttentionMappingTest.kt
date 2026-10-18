@@ -50,10 +50,15 @@ class SyncAttentionMappingTest {
             "app/src/main/res/values/strings.xml",
             "app/src/main/res/values-es/strings.xml",
             "app/src/main/res/values-de/strings.xml",
-            "app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt",
         ).forEach { relativePath ->
             assertFalse(relativePath, source(relativePath).contains("garment_sync_failed_retryable"))
         }
+        assertFalse("ui", uiSource().contains("garment_sync_failed_retryable"))
+    }
+
+    private fun uiSource(): String = Path.of("app/src/main/java/com/gusanitolabs/robia/ui").let { dir ->
+        val d = if (Files.isDirectory(dir)) dir else Path.of("..").resolve(dir)
+        d.toFile().listFiles { file -> file.name.endsWith(".kt") }.orEmpty().sortedBy { it.name }.joinToString("\n") { it.readText() }
     }
 
     private fun source(relativePath: String): String {

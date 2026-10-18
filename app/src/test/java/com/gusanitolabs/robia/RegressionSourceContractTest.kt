@@ -207,9 +207,9 @@ class RegressionSourceContractTest {
 
     @Test
     fun browseFilterBar_keepsDividerWithLeftFilterGroupBeforeSyncSpinner() {
-        val filterBar = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
-            .substringAfter("private fun FilterBar(")
-            .substringBefore("@Composable\n@OptIn(ExperimentalFoundationApi::class)")
+        val filterBar = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseFilterBar.kt")
+            .substringAfter("fun FilterBar(")
+            .substringBefore("@Composable\nprivate fun BrowseSearchField(")
 
         val filterChipIndex = filterBar.indexOf("FilterChip(")
         val dividerIndex = filterBar.indexOf(".height(24.dp)")
@@ -257,16 +257,17 @@ class RegressionSourceContractTest {
         assertTrue(app.contains("val wardrobeItemsLoading = !performanceFixtureMode && loadedClothingItems == null"))
         assertTrue(app.contains("wardrobeItemsLoading = wardrobeItemsLoading"))
 
-        val browseScreen = app
-            .substringAfter("private fun BrowseWardrobeScreen(")
-            .substringBefore("@Composable\nprivate fun FilterBar(")
+        val browseGrid = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
+        val browseScreen = browseGrid
+            .substringAfter("fun BrowseWardrobeScreen(")
+            .substringBefore("@Composable\nprivate fun BrowseImagePrefetch(")
 
         assertTrue(browseScreen.contains("isInitialLoading: Boolean"))
         assertTrue(browseScreen.contains("if (isInitialLoading)"))
         assertTrue(browseScreen.contains("BrowseWardrobeLoadingCard()"))
         assertTrue(browseScreen.contains("} else if (items.isEmpty())"))
 
-        val loadingCard = app
+        val loadingCard = browseGrid
             .substringAfter("private fun BrowseWardrobeLoadingCard()")
             .substringBefore("@Composable\n@OptIn(ExperimentalFoundationApi::class)")
 
@@ -458,7 +459,7 @@ class RegressionSourceContractTest {
             .substringBefore("private suspend fun restoreFreshInstallOnceIfNeeded()")
         val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
         val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val app = uiSource()
         val strings = source("app/src/main/res/values/strings.xml")
 
         assertTrue(gateway.contains("data class RetryRestoredPhoto"))
@@ -591,12 +592,13 @@ class RegressionSourceContractTest {
     @Test
     fun restoredPhotoRetry_compilesGenericSuccessAndUsesComposableAccessibilityText() {
         val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/DriveWardrobeRepository.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
-        val retryButton = app
+        val app = uiSource()
+        val itemDetail = source("app/src/main/java/com/gusanitolabs/robia/ui/ItemDetailScreen.kt")
+        val retryButton = itemDetail
             .substringAfter("if (item.hasMissingRestoredPhoto)")
             .substringBefore("item.notes.takeIf")
-        val itemDetailScreen = app
-            .substringAfter("private fun ItemDetailScreen(")
+        val itemDetailScreen = itemDetail
+            .substringAfter("fun ItemDetailScreen(")
             .substringBefore("@Composable\nprivate fun DetailMediaCard(")
 
         assertTrue(driveRepository.contains("?.let { photo -> DriveSyncResult.Success(photo) }"))
@@ -628,9 +630,9 @@ class RegressionSourceContractTest {
     @Test
     fun settings_isDedicatedRouteAndDiagnosticsStayDeveloperGated() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
-        val settingsScreen = app
-            .substringAfter("private fun SettingsScreen(")
-            .substringBefore("@StringRes\nprivate fun CloudSyncIndicator.setupSummaryRes")
+        val settingsScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/SettingsScreen.kt")
+            .substringAfter("fun SettingsScreen(")
+            .substringBefore("@Composable\ninternal fun SettingsSection(")
 
         assertTrue(app.contains("data object Settings : RobiaRoute"))
         assertTrue(app.contains("pushRoute(RobiaRoute.Settings)"))
@@ -713,7 +715,7 @@ class RegressionSourceContractTest {
         val repository = source("app/src/main/java/com/gusanitolabs/robia/data/LocalRepositories.kt")
         val dao = source("app/src/main/java/com/gusanitolabs/robia/data/local/Dao.kt")
         val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val app = uiSource()
 
         assertTrue(models.contains("data class PhotoRestoreState"))
         assertTrue(models.contains("val retryAttemptCount: Int = 0"))
@@ -761,9 +763,9 @@ class RegressionSourceContractTest {
     @Test
     fun affectedGarmentIdentityUsesDomainPhotoRestoreStateInsteadOfLocalizedFailureText() {
         val models = source("app/src/main/java/com/gusanitolabs/robia/core/model/ClothingModels.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
-        val hasMissing = app
-            .substringAfter("private val UiWardrobeItem.hasMissingRestoredPhoto")
+        val app = uiSource()
+        val hasMissing = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
+            .substringAfter("val UiWardrobeItem.hasMissingRestoredPhoto")
             .substringBefore("@Composable\nprivate fun TonalTag")
 
         assertTrue(models.contains("val photoRestoreState: PhotoRestoreState"))
@@ -810,7 +812,7 @@ class RegressionSourceContractTest {
         val driveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/DriveWardrobeRepository.kt")
         val googleDriveRepository = source("app/src/main/java/com/gusanitolabs/robia/sync/GoogleDriveWardrobeRepository.kt")
         val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val app = uiSource()
         val strings = source("app/src/main/res/values/strings.xml")
 
         assertTrue(models.contains("enum class DriveBackupDeletionState"))
@@ -835,7 +837,7 @@ class RegressionSourceContractTest {
     fun driveBackupDeletion_handlesTerminalOutcomesAndInterruptionsWithoutResumingSync() {
         val models = source("app/src/main/java/com/gusanitolabs/robia/core/model/SyncModels.kt")
         val processor = source("app/src/main/java/com/gusanitolabs/robia/sync/WardrobeSyncOutboxProcessor.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val app = uiSource()
         val strings = source("app/src/main/res/values/strings.xml")
 
         assertTrue(models.contains("Deleting"))
@@ -902,7 +904,7 @@ class RegressionSourceContractTest {
 
     @Test
     fun garmentPdfExport_keepsRequiredMetadataGridOrder() {
-        val mapper = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val mapper = source("app/src/main/java/com/gusanitolabs/robia/ui/ItemDetailScreen.kt")
             .substringAfter("private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShareItem(")
             .substringBefore("@Composable\nprivate fun shareColorName")
 
@@ -924,7 +926,7 @@ class RegressionSourceContractTest {
         val imageStore = source("app/src/main/java/com/gusanitolabs/robia/media/ClothingImageStore.kt")
         val boundedImage = source("app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt")
         val pipeline = source("app/src/main/java/com/gusanitolabs/robia/media/ImagePipeline.kt")
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val app = uiSource()
         val batch = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
         val addEdit = source("app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt")
         val colorReview = source("app/src/main/java/com/gusanitolabs/robia/ui/ColorReviewScreen.kt")
@@ -1046,6 +1048,11 @@ class RegressionSourceContractTest {
         assertTrue(imageStore.contains("source.renameTo(target)"))
         assertTrue(driveRepository.contains("withRetry { streamBlobToFile("))
         assertTrue(driveRepository.contains("DriveApiResult.StorageFull"))
+    }
+
+    private fun uiSource(): String = Path.of("app/src/main/java/com/gusanitolabs/robia/ui").let { dir ->
+        val d = if (Files.isDirectory(dir)) dir else Path.of("..").resolve(dir)
+        d.toFile().listFiles { file -> file.name.endsWith(".kt") }.orEmpty().sortedBy { it.name }.joinToString("\n") { it.readText() }
     }
 
     private fun source(relativePath: String): String {
