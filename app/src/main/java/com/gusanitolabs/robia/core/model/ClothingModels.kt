@@ -118,4 +118,8 @@ data class RobiaSettings(
     val browseColumns: Int = 2,
     /** Developer switch in SG2a (default off); SG2b makes it a user setting with default on. */
     val preciseCutoutEnabled: Boolean = false,
+    /** Google account the Drive backup belongs to; set at the first authorization, changed only by "Use this account". */
+    val driveBoundAccountEmail: String? = null,
+    /** Google account of the latest authorization; a value other than [driveBoundAccountEmail] blocks every Drive write. */
+    val driveAuthorizedAccountEmail: String? = null,
 )

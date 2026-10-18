@@ -25,6 +25,12 @@ interface WardrobeSyncGateway {
     suspend fun keepWithoutPhoto(garmentId: String)
     /** Settings "Refresh" on the Drive space row: one listing, then [WardrobeSyncState.driveUsage] is updated. */
     suspend fun refreshDriveUsage()
+    /** Attention "Use this account": rebinds the backup to the signed-in account, then runs the merge-on-connect flow. */
+    suspend fun useThisDriveAccount()
+    /** Attention "Disconnect": stops Drive sync; nothing is uploaded, restored or deleted. */
+    suspend fun disconnectDrive()
+    /** Settings "Check photos": one read-only comparison of local files, the Drive listing and the remote snapshot. */
+    suspend fun checkPhotos(): DriveSyncResult<PhotoIntegrityReport>
 }
 
 object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
@@ -38,6 +44,9 @@ object NoOpWardrobeSyncGateway : WardrobeSyncGateway {
     override suspend fun cancelMerge() = Unit
     override suspend fun keepWithoutPhoto(garmentId: String) = Unit
     override suspend fun refreshDriveUsage() = Unit
+    override suspend fun useThisDriveAccount() = Unit
+    override suspend fun disconnectDrive() = Unit
+    override suspend fun checkPhotos(): DriveSyncResult<PhotoIntegrityReport> = DriveSyncResult.Success(PhotoIntegrityReport())
 }
 
 /** Testable queue-only gateway that never talks to Google services. */
@@ -65,6 +74,9 @@ class RecordingWardrobeSyncGateway(
     override suspend fun cancelMerge() = Unit
     override suspend fun keepWithoutPhoto(garmentId: String) = Unit
     override suspend fun refreshDriveUsage() = Unit
+    override suspend fun useThisDriveAccount() = Unit
+    override suspend fun disconnectDrive() = Unit
+    override suspend fun checkPhotos(): DriveSyncResult<PhotoIntegrityReport> = DriveSyncResult.Success(PhotoIntegrityReport())
 }
 
 data class WardrobeSyncState(
@@ -87,9 +99,7 @@ data class WardrobeSyncState(
         get() = connectionStatus == DriveSyncConnectionStatus.Connected
 
     val hasConflictingAccountBinding: Boolean
-        get() = authorizedAccountEmail != null &&
-            expectedAccountEmail != null &&
-            !authorizedAccountEmail.equals(expectedAccountEmail, ignoreCase = true)
+        get() = accountsConflict(authorizedAccountEmail, expectedAccountEmail)
 
     companion object {
         fun notConfigured(): WardrobeSyncState = WardrobeSyncState(

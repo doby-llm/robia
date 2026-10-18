@@ -31,6 +31,8 @@ enum class SyncAttentionAction {
     KeepThisPhone,
     ConfirmMerge,
     CancelMerge,
+    UseThisAccount,
+    DisconnectDrive,
 }
 
 internal data class AttentionPresentation(
@@ -70,6 +72,11 @@ internal fun SyncAttentionKind.presentation(): AttentionPresentation = when (thi
         titleRes = R.string.sync_merge_title,
         bodyRes = R.string.sync_merge_body,
         actions = listOf(SyncAttentionAction.ConfirmMerge, SyncAttentionAction.CancelMerge),
+    )
+    SyncAttentionKind.AccountMismatch -> AttentionPresentation(
+        titleRes = R.string.account_mismatch_title,
+        bodyRes = R.string.account_mismatch_body,
+        actions = listOf(SyncAttentionAction.UseThisAccount, SyncAttentionAction.DisconnectDrive),
     )
 }
 
@@ -138,4 +145,6 @@ private fun SyncAttentionAction.labelRes(): Int = when (this) {
     SyncAttentionAction.KeepThisPhone -> R.string.sync_conflict_keep_phone
     SyncAttentionAction.ConfirmMerge -> R.string.sync_merge_confirm
     SyncAttentionAction.CancelMerge -> R.string.cancel
+    SyncAttentionAction.UseThisAccount -> R.string.account_mismatch_use_this
+    SyncAttentionAction.DisconnectDrive -> R.string.drive_disconnect
 }

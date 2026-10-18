@@ -29,6 +29,7 @@ class SyncAttentionMappingTest {
                 SyncAttentionKind.PhotoUploadFailed to listOf(SyncAttentionAction.Retry),
                 SyncAttentionKind.BackupConflict to listOf(SyncAttentionAction.UseBackup, SyncAttentionAction.KeepThisPhone),
                 SyncAttentionKind.MergeConfirmation to listOf(SyncAttentionAction.ConfirmMerge, SyncAttentionAction.CancelMerge),
+                SyncAttentionKind.AccountMismatch to listOf(SyncAttentionAction.UseThisAccount, SyncAttentionAction.DisconnectDrive),
             ),
             SyncAttentionKind.values().associateWith { kind -> kind.presentation().actions },
         )

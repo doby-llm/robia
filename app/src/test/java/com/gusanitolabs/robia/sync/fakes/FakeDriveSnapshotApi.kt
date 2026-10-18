@@ -5,6 +5,7 @@ import com.gusanitolabs.robia.sync.DriveApiResult
 import com.gusanitolabs.robia.sync.DriveBlob
 import com.gusanitolabs.robia.sync.DriveFileMetadata
 import com.gusanitolabs.robia.sync.DriveSnapshotApi
+import com.gusanitolabs.robia.sync.UploadedBlobInfo
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -57,7 +58,12 @@ class FakeDriveSnapshotApi(
 
     override suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>> {
         listCalls.incrementAndGet()
-        return DriveApiResult.Success(files.keys.sorted().map { name -> DriveFileMetadata(id = idOf(name), name = name) })
+        // Like the real listing, each file carries its size: the planner reuses a blob only while the size matches.
+        return DriveApiResult.Success(
+            files.entries.sortedBy { entry -> entry.key }.map { (name, bytes) ->
+                DriveFileMetadata(id = idOf(name), name = name, size = bytes.size.toLong())
+            },
+        )
     }
 
     override suspend fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> =
@@ -69,10 +75,10 @@ class FakeDriveSnapshotApi(
         bytes: ByteArray,
         mimeType: String?,
         fileId: String?,
-    ): DriveApiResult<Unit> {
+    ): DriveApiResult<UploadedBlobInfo> {
         blobUploads.incrementAndGet()
         files[blobPath] = bytes
-        return DriveApiResult.Success(Unit)
+        return DriveApiResult.Success(UploadedBlobInfo(size = bytes.size.toLong(), sha256 = sha256Hex(bytes)))
     }
 
     override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {

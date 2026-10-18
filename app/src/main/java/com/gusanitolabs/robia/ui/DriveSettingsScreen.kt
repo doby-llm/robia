@@ -15,6 +15,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +41,10 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.sync.DriveSyncResult
 import com.gusanitolabs.robia.sync.DriveUsage
+import com.gusanitolabs.robia.sync.PhotoIntegrityReport
+import com.gusanitolabs.robia.sync.PhotoIntegrityStatus
 import kotlinx.coroutines.launch
 
 /**
@@ -55,11 +62,18 @@ internal fun DriveSettingsScreen(
     onDeleteBackupClick: () -> Unit,
     driveUsage: DriveUsage? = null,
     onRefreshDriveUsageClick: suspend () -> Unit = {},
+    /** "Check photos" row; null hides the row. Read-only: nothing is deleted or rewritten. */
+    onCheckPhotosClick: (suspend () -> DriveSyncResult<PhotoIntegrityReport>)? = null,
+    onRestorePhotoClick: (garmentId: String) -> Unit = {},
+    onBackUpNowClick: () -> Unit = {},
 ) {
     val isConnected = driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
         driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
     val refreshScope = rememberCoroutineScope()
     var refreshingDriveUsage by remember { mutableStateOf(false) }
+    var photoCheckOpen by remember { mutableStateOf(false) }
+    var photoCheck by remember { mutableStateOf<PhotoIntegrityReport?>(null) }
+    var photoCheckFailed by remember { mutableStateOf(false) }
     val setupTitleRes = if (
         driveBackupDeletionState == DriveBackupDeletionState.Complete ||
         driveBackupDeletionState == DriveBackupDeletionState.NeedsAttention
@@ -194,6 +208,24 @@ internal fun DriveSettingsScreen(
                         onClick = onCloudSetupClick,
                     )
                     if (isConnected) {
+                        onCheckPhotosClick?.let { checkPhotos ->
+                            Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                            SettingsNavRow(
+                                icon = Icons.Rounded.Search,
+                                title = stringResource(R.string.check_photos_title),
+                                onClick = {
+                                    photoCheck = null
+                                    photoCheckFailed = false
+                                    photoCheckOpen = true
+                                    refreshScope.launch {
+                                        when (val result = checkPhotos()) {
+                                            is DriveSyncResult.Success -> { photoCheck = result.value }
+                                            else -> { photoCheckFailed = true }
+                                        }
+                                    }
+                                },
+                            )
+                        }
                         Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
                         SettingsNavRow(
                             icon = Icons.Rounded.Delete,
@@ -207,4 +239,78 @@ internal fun DriveSettingsScreen(
             }
         }
     }
+    if (photoCheckOpen) {
+        PhotoCheckDialog(
+            report = photoCheck,
+            failed = photoCheckFailed,
+            onRestorePhotoClick = onRestorePhotoClick,
+            onBackUpNowClick = {
+                photoCheckOpen = false
+                onBackUpNowClick()
+            },
+            onDismiss = { photoCheckOpen = false },
+        )
+    }
+}
+
+/** Result of "Check photos": a count when all is well, otherwise each problem with the action that fixes it. */
+@Composable
+private fun PhotoCheckDialog(
+    report: PhotoIntegrityReport?,
+    failed: Boolean,
+    onRestorePhotoClick: (garmentId: String) -> Unit,
+    onBackUpNowClick: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.check_photos_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    failed -> Text(stringResource(R.string.check_photos_failed))
+                    report == null -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    report.problems.isEmpty() -> Text(stringResource(R.string.check_photos_all_ok, report.okCount))
+                    else -> {
+                        Text(stringResource(R.string.check_photos_problems, report.problems.size))
+                        report.problems.forEach { entry ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = entry.garmentName.ifBlank { entry.garmentId },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    Text(
+                                        text = stringResource(entry.status.labelRes()),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (entry.status == PhotoIntegrityStatus.MissingLocalFile) {
+                                    TextButton(onClick = { onRestorePhotoClick(entry.garmentId) }) {
+                                        Text(stringResource(R.string.check_photos_restore))
+                                    }
+                                }
+                            }
+                        }
+                        if (report.problems.any { entry -> entry.status == PhotoIntegrityStatus.NotYetUploaded }) {
+                            Button(onClick = onBackUpNowClick, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(R.string.check_photos_back_up_now))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) } },
+    )
+}
+
+@StringRes
+private fun PhotoIntegrityStatus.labelRes(): Int = when (this) {
+    PhotoIntegrityStatus.Ok -> R.string.check_photos_title
+    PhotoIntegrityStatus.MissingLocalFile -> R.string.check_photos_missing_local
+    PhotoIntegrityStatus.MissingOnDrive -> R.string.check_photos_missing_drive
+    PhotoIntegrityStatus.SizeMismatch -> R.string.check_photos_size_mismatch
+    PhotoIntegrityStatus.NotYetUploaded -> R.string.check_photos_not_uploaded
 }

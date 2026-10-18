@@ -15,6 +15,9 @@ class DriveFileIndex(files: List<DriveFileMetadata>) {
 
     fun idOf(name: String): String? = filesByName[name]?.id
 
+    /** The size Drive lists for this file; null when the listing does not carry one. */
+    fun sizeOf(name: String): Long? = filesByName[name]?.size
+
     fun namesWithPrefix(prefix: String): List<String> = filesByName.keys
         .filter { name -> name.startsWith(prefix) }
         .sorted()
