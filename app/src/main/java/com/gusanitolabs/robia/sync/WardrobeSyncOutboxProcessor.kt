@@ -163,6 +163,8 @@ class WardrobeSyncOutboxProcessor(
                 restoreSyncLogRepository.setEnabled(settings.developerModeEnabled)
                 recordSettingsChanges(settings)
                 WardrobeSyncStateInputs(
+                    authorizedAccountEmail = settings.driveAuthorizedAccountEmail,
+                    expectedAccountEmail = settings.driveBoundAccountEmail,
                     connectionStatus = settings.driveSyncConnectionStatus,
                     pendingOperationCount = pendingCount + metadataPendingCount,
                     attentionOperationCount = attentionCount + metadataAttentionCount,
@@ -252,7 +254,8 @@ class WardrobeSyncOutboxProcessor(
     override suspend fun enqueue(operation: WardrobeSyncOperation) {
         withContext(dispatcher) {
             if (operation is WardrobeSyncOperation.DeleteCloudBackup) {
-                deleteCloudBackup()
+                // A purge on another account's Drive is never run: the user chooses the account first.
+                if (!accountMismatchHeld()) deleteCloudBackup()
                 return@withContext
             }
             when (settingsRepository.settings.first().driveSyncConnectionStatus) {
@@ -429,6 +432,28 @@ class WardrobeSyncOutboxProcessor(
         withContext(dispatcher) { driveRepository.refreshDriveUsage() }
     }
 
+    override suspend fun useThisDriveAccount() {
+        withContext(dispatcher) {
+            val authorized = settingsRepository.settings.first().driveAuthorizedAccountEmail ?: return@withContext
+            // The user's choice rebinds the backup; the merge-on-connect flow then proposes what to keep, never an overwrite.
+            settingsRepository.setDriveBoundAccountEmail(authorized)
+            enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
+        }
+    }
+
+    override suspend fun disconnectDrive() {
+        withContext(dispatcher) { settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected) }
+    }
+
+    override suspend fun checkPhotos(): DriveSyncResult<PhotoIntegrityReport> = withContext(dispatcher) {
+        driveRepository.checkPhotos(snapshotRepository.exportSnapshot())
+    }
+
+    /** True while the signed-in Drive account is not the one the backup belongs to: no upload, restore or purge may run. */
+    private suspend fun accountMismatchHeld(): Boolean = settingsRepository.settings.first().let { settings ->
+        accountsConflict(settings.driveAuthorizedAccountEmail, settings.driveBoundAccountEmail)
+    }
+
     /** Explicit Retry from the attention button only; automatic cycles never release these rows. */
     private suspend fun retryAttention(kind: SyncAttentionKind) {
         val reasonCode = when (kind) {
@@ -473,6 +498,7 @@ class WardrobeSyncOutboxProcessor(
 
     /** Does not toggle global processing/progress: only the selected garment becomes Running. */
     private suspend fun retryRestoredPhoto(garmentId: String) {
+        if (accountMismatchHeld()) return
         mutex.withLock {
             val retryCorrelationId = UUID.randomUUID().toString().take(8)
             restoreSyncLogRepository.append(
@@ -718,6 +744,7 @@ class WardrobeSyncOutboxProcessor(
 
     private suspend fun restoreFreshInstallOnceIfNeeded() {
         if (hasAttemptedFreshInstallRestore || restoreProgress.value?.isRetryableTerminal == true) return
+        if (accountMismatchHeld()) return
 
         val settings = settingsRepository.settings.first()
         if (settings.driveFreshInstallRestoreAttempted) {
@@ -776,6 +803,8 @@ class WardrobeSyncOutboxProcessor(
                 if (status == DriveSyncConnectionStatus.Disconnected) SyncRunResult.AuthBlocked else SyncRunResult.NeedsUser,
             )
         }
+        // A different Google account waits for the user's choice (AccountMismatch); nothing is uploaded, restored or purged.
+        if (accountMismatchHeld()) return recordIdleCycle(idleStartedAt, SyncRunResult.NeedsUser)
         // An unresolved conflict or an unconfirmed merge holds every upload until the user chooses.
         if (!forceImport && settingsRepository.syncConflict.first()) return recordIdleCycle(idleStartedAt, SyncRunResult.Conflict)
         if (!mergeConfirmed && pendingMergeSummary.value != null) return recordIdleCycle(idleStartedAt, SyncRunResult.NeedsUser)
@@ -1411,6 +1440,8 @@ class WardrobeSyncOutboxProcessor(
             conflict = inputs.conflict,
             lastCycle = inputs.lastCycle,
             driveUsage = inputs.driveUsage,
+            authorizedAccountEmail = inputs.authorizedAccountEmail,
+            expectedAccountEmail = inputs.expectedAccountEmail,
         )
     }
 
@@ -1442,6 +1473,8 @@ sealed interface SyncRunResult {
 enum class SyncTrigger { Foreground, Background }
 
 private data class WardrobeSyncStateInputs(
+    val authorizedAccountEmail: String?,
+    val expectedAccountEmail: String?,
     val connectionStatus: DriveSyncConnectionStatus,
     val pendingOperationCount: Int,
     val attentionOperationCount: Int,
@@ -1465,7 +1498,12 @@ private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList
     if (needsPhotoRestoreAttention) add(SyncAttention(SyncAttentionKind.PhotoUnrecoverable))
     if (driveFullCount > 0) add(SyncAttention(SyncAttentionKind.DriveFull))
     if (photoUploadFailedCount > 0) add(SyncAttention(SyncAttentionKind.PhotoUploadFailed))
+    if (accountsConflict(authorizedAccountEmail, expectedAccountEmail)) add(SyncAttention(SyncAttentionKind.AccountMismatch))
 }
+
+/** True when the signed-in account and the backup's account are both known and differ (case-insensitive). */
+internal fun accountsConflict(authorizedEmail: String?, boundEmail: String?): Boolean =
+    authorizedEmail != null && boundEmail != null && !authorizedEmail.equals(boundEmail, ignoreCase = true)
 
 private fun WardrobeSyncSnapshot.withWriter(deviceId: String): WardrobeSyncSnapshot =
     copy(metadata = metadata.copy(writerDeviceId = deviceId))

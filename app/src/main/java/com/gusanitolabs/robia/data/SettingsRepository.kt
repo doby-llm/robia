@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.data
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -47,6 +48,10 @@ interface SettingsRepository {
     val syncConflictRemoteRevision: Flow<Long>
     /** Opens the conflict against [remoteRevision], or clears it and its revision when [conflict] is false. */
     suspend fun setSyncConflict(conflict: Boolean, remoteRevision: Long = 0L)
+    /** Google account the Drive backup belongs to; null clears it. Default no-op for fakes that do not model accounts. */
+    suspend fun setDriveBoundAccountEmail(email: String?) {}
+    /** Google account of the latest authorization; null clears it. Default no-op for fakes that do not model accounts. */
+    suspend fun setDriveAuthorizedAccountEmail(email: String?) {}
 }
 
 class DataStoreSettingsRepository(
@@ -175,6 +180,18 @@ class DataStoreSettingsRepository(
             }
         }
     }
+
+    override suspend fun setDriveBoundAccountEmail(email: String?) {
+        dataStore.edit { preferences -> setOrRemove(preferences, driveBoundAccountEmailKey, email) }
+    }
+
+    override suspend fun setDriveAuthorizedAccountEmail(email: String?) {
+        dataStore.edit { preferences -> setOrRemove(preferences, driveAuthorizedAccountEmailKey, email) }
+    }
+
+    private fun setOrRemove(preferences: MutablePreferences, key: Preferences.Key<String>, value: String?) {
+        if (value.isNullOrBlank()) preferences.remove(key) else preferences[key] = value
+    }
 }
 
 /** Maps stored preferences to settings; absent or unknown values fall back to the defaults. */
@@ -192,6 +209,8 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         browseLayout = preferences[browseLayoutKey].toBrowseLayout(),
         browseColumns = preferences[browseColumnsKey].toBrowseColumns(),
         preciseCutoutEnabled = preferences[preciseCutoutEnabledKey] ?: false,
+        driveBoundAccountEmail = preferences[driveBoundAccountEmailKey]?.takeIf(String::isNotBlank),
+        driveAuthorizedAccountEmail = preferences[driveAuthorizedAccountEmailKey]?.takeIf(String::isNotBlank),
     )
 }
 
@@ -227,3 +246,5 @@ private val lastKnownRemoteRevisionKey = longPreferencesKey("sync_last_known_rem
 private val lastKnownRemoteWriterDeviceIdKey = stringPreferencesKey("sync_last_known_remote_writer")
 private val syncConflictKey = booleanPreferencesKey("sync_conflict")
 private val syncConflictRemoteRevisionKey = longPreferencesKey("sync_conflict_remote_revision")
+private val driveBoundAccountEmailKey = stringPreferencesKey("drive_bound_account_email")
+private val driveAuthorizedAccountEmailKey = stringPreferencesKey("drive_authorized_account_email")

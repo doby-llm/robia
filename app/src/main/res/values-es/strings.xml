@@ -733,4 +733,19 @@
     <string name="drive_usage_updated">Actualizado %1$s</string>
     <string name="drive_usage_unknown">Sin medir todavía</string>
     <string name="drive_usage_refresh">Actualizar</string>
+    <!-- D02 -->
+    <string name="check_photos_title">Comprobar fotos</string>
+    <string name="check_photos_all_ok">Las %1$d fotos están a salvo en Google Drive</string>
+    <string name="check_photos_problems">%1$d fotos necesitan atención</string>
+    <string name="check_photos_missing_local">Falta en este teléfono</string>
+    <string name="check_photos_missing_drive">Falta en Google Drive</string>
+    <string name="check_photos_not_uploaded">Aún no tiene copia de seguridad</string>
+    <string name="check_photos_size_mismatch">Copia dañada</string>
+    <string name="check_photos_restore">Restaurar foto</string>
+    <string name="check_photos_back_up_now">Hacer copia ahora</string>
+    <string name="check_photos_failed">No se pudieron comprobar las fotos ahora. Inténtalo más tarde.</string>
+    <string name="account_mismatch_title">Otra cuenta de Google</string>
+    <string name="account_mismatch_body">Robia se guardó con otra cuenta de Google. No se subirá nada hasta que elijas.</string>
+    <string name="account_mismatch_use_this">Usar esta cuenta</string>
+    <string name="drive_disconnect">Desconectar</string>
 </resources>

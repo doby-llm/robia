@@ -1,7 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 /** Things only the user can fix. Derived from the database and settings; rendered by the UI (S05). */
-enum class SyncAttentionKind { SignInRequired, DriveFull, PhotoUnrecoverable, PhotoUploadFailed, BackupConflict, MergeConfirmation }
+enum class SyncAttentionKind { SignInRequired, DriveFull, PhotoUnrecoverable, PhotoUploadFailed, BackupConflict, MergeConfirmation, AccountMismatch }
 
 data class SyncAttention(
     val kind: SyncAttentionKind,

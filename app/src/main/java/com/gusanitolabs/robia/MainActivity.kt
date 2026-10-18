@@ -15,12 +15,14 @@ import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
+import com.gusanitolabs.robia.sync.fetchDriveAccountEmail
 import com.gusanitolabs.robia.ui.RobiaApp
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val EXTRA_PERFORMANCE_FIXTURE_URIS = "com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS"
@@ -161,6 +163,18 @@ class MainActivity : ComponentActivity() {
             }
     }
 
+    /**
+     * The first authorization binds the backup to this account; later ones record the account that signed in, so a different
+     * account is held back until the user chooses. E-mail addresses are stored, never logged.
+     */
+    private suspend fun recordDriveAccount(accessToken: String) {
+        val email = fetchDriveAccountEmail(accessToken)
+        if (settingsRepository.settings.first().driveBoundAccountEmail == null && email != null) {
+            settingsRepository.setDriveBoundAccountEmail(email)
+        }
+        settingsRepository.setDriveAuthorizedAccountEmail(email)
+    }
+
     private fun persistDriveAuthorizationResult(result: AuthorizationResult) {
         setCloudAuthorizationInFlight(false)
         val grantedDriveScope = result.grantedScopes.any { scope ->
@@ -177,6 +191,7 @@ class MainActivity : ComponentActivity() {
             tokenPresent = tokenPresent,
         )
         lifecycleScope.launch {
+            if (authorized) recordDriveAccount(result.accessToken.orEmpty())
             settingsRepository.setDriveSyncConnectionStatus(
                 if (authorized) {
                     DriveSyncConnectionStatus.Connected

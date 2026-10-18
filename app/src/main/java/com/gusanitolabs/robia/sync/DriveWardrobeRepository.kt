@@ -27,6 +27,9 @@ interface DriveWardrobeRepository {
     suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult>
     /** One listing of the app data folder for the Settings figure; never part of a normal sync. */
     suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage>
+    /** Read-only "Check photos": one listing and the remote snapshot JSON, compared with the local photo files of [snapshot]. */
+    suspend fun checkPhotos(snapshot: WardrobeSyncSnapshot): DriveSyncResult<PhotoIntegrityReport> =
+        DriveSyncResult.Failure(UnsupportedOperationException("Photo check is not available for this Drive adapter."))
 }
 
 class NotConfiguredDriveWardrobeRepository(

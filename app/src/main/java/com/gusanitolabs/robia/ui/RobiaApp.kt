@@ -1436,6 +1436,8 @@ private fun RobiaShell(
             SyncAttentionAction.KeepThisPhone -> onKeepThisPhone()
             SyncAttentionAction.ConfirmMerge -> onConfirmMerge()
             SyncAttentionAction.CancelMerge -> onCancelMerge()
+            SyncAttentionAction.UseThisAccount -> scope.launch { syncGateway.useThisDriveAccount() }
+            SyncAttentionAction.DisconnectDrive -> scope.launch { syncGateway.disconnectDrive() }
         }
     }
 

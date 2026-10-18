@@ -5,6 +5,7 @@ import com.gusanitolabs.robia.sync.DriveApiResult
 import com.gusanitolabs.robia.sync.DriveBlob
 import com.gusanitolabs.robia.sync.DriveFileMetadata
 import com.gusanitolabs.robia.sync.DriveSnapshotApi
+import com.gusanitolabs.robia.sync.UploadedBlobInfo
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -69,10 +70,10 @@ class FakeDriveSnapshotApi(
         bytes: ByteArray,
         mimeType: String?,
         fileId: String?,
-    ): DriveApiResult<Unit> {
+    ): DriveApiResult<UploadedBlobInfo> {
         blobUploads.incrementAndGet()
         files[blobPath] = bytes
-        return DriveApiResult.Success(Unit)
+        return DriveApiResult.Success(UploadedBlobInfo(size = bytes.size.toLong(), sha256 = sha256Hex(bytes)))
     }
 
     override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {
