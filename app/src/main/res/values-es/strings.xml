@@ -275,7 +275,7 @@
     <string name="quick_edit_brightness_content_description">Herramienta de brillo</string>
     <string name="quick_edit_temperature_content_description">Herramienta de temperatura</string>
     <string name="quick_edit_selected_tool_label">Herramienta seleccionada: %1$s</string>
-    <string name="quick_edit_apply_on_save_hint">La vista previa se actualiza en vivo; Guardar se activa cuando coincide con el resultado.</string>
+    <string name="quick_edit_apply_on_save_hint">La vista previa se actualiza en vivo; Listo guarda el cambio.</string>
     <string name="quick_edit_preview_loading">Actualizando vista previa…</string>
     <string name="quick_edit_temperature_preset_content_description">Temperatura: %1$s, %2$s</string>
     <string name="quick_edit_temperature_selected">seleccionada</string>
@@ -291,6 +291,16 @@
     <string name="quick_edit_before_label">Antes de editar</string>
     <string name="quick_edit_saved_status">Edición rápida guardada; colores y detalles detectados de nuevo.</string>
     <string name="quick_edit_save_failed">No se pudo guardar la edición rápida.</string>
+    <string name="photo_editor_title">Editar foto</string>
+    <string name="photo_editor_tab_cutout">Recorte</string>
+    <string name="photo_editor_tab_light">Luz</string>
+    <string name="refine_keep">Mantener</string>
+    <string name="refine_remove">Quitar</string>
+    <string name="refine_brush">Pincel</string>
+    <string name="refine_hint">Toca o desliza sobre una parte para mantenerla o quitarla.</string>
+    <string name="refine_no_source_hint">La foto original no está disponible aquí, así que las partes quitadas por completo no se pueden recuperar; usa Quitar y Deshacer.</string>
+    <string name="refine_undo">Deshacer</string>
+    <string name="refine_reset">Restablecer</string>
     <string name="colors_section">Colores</string>
 
     <string name="raw_color_required">Valor de color original</string>

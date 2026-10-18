@@ -14,11 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -38,12 +35,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Brightness6
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.DeviceThermostat
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -57,11 +51,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -83,8 +75,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -112,8 +102,6 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
 import com.gusanitolabs.robia.media.EditorPhotoState
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
-import com.gusanitolabs.robia.media.QuickEditAdjustments
-import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
 import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
@@ -123,7 +111,6 @@ import com.gusanitolabs.robia.suggestions.diagnosticLines
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -132,7 +119,6 @@ import java.util.Locale
 import java.util.UUID
 
 private const val EDITOR_PREVIEW_MAX_EDGE_PX = 512
-private const val QUICK_EDIT_PREVIEW_MAX_EDGE_PX = 512
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -684,21 +670,22 @@ fun AddEditClothingScreen(
     BackHandler { requestClose() }
 
     if (showQuickEdit && !canonicalPhotoUri.isNullOrBlank()) {
-        val quickEditBaseUri = editorPhotoState.quickEditComparisonBaseUri ?: canonicalPhotoUri.orEmpty()
-        QuickEditDialog(
+        PhotoEditorScreen(
             photoUri = canonicalPhotoUri.orEmpty(),
-            beforePhotoUri = quickEditBaseUri,
-            photoAspectRatio = photoAspectRatio,
-            onDismiss = { showQuickEdit = false },
-            onSave = { draft ->
-                val currentPhotoUri = draft.sourceUri
+            onCancel = { showQuickEdit = false },
+            onDiagnostic = { line -> developerDiagnostics = developerDiagnostics + line },
+            onDone = { cutoutUri, adjustments ->
                 coroutineScope.launch {
                     showQuickEdit = false
                     isPhotoProcessing = true
                     photoProcessingStage = PhotoProcessingStage.ApplyingQuickEdit
                     val editedResult = runCatching {
                         withContext(Dispatchers.IO) {
-                            QuickEditImageProcessor.applyAdjustments(context, currentPhotoUri, draft.adjustments)
+                            QuickEditImageProcessor.applyAdjustments(
+                                context,
+                                cutoutUri ?: Uri.parse(canonicalPhotoUri.orEmpty()),
+                                adjustments,
+                            )
                         }
                     }
                     editedResult.fold(
@@ -1573,395 +1560,6 @@ private fun PhotoPreview(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun QuickEditDialog(
-    photoUri: String,
-    beforePhotoUri: String,
-    photoAspectRatio: Float?,
-    onDismiss: () -> Unit,
-    onSave: (QuickEditDraftState) -> Unit,
-) {
-    val context = LocalContext.current
-    var brightness by rememberSaveable { mutableStateOf(0f) }
-    var temperature by rememberSaveable { mutableStateOf(0f) }
-    var selectedTool by rememberSaveable { mutableStateOf(QuickEditTool.Brightness) }
-    var showBefore by remember { mutableStateOf(false) }
-    var draftPreviewUri by remember(photoUri) { mutableStateOf(photoUri) }
-    var renderedPreviewDraft by remember(photoUri) { mutableStateOf<QuickEditDraftState?>(null) }
-    var previewGenerationId by remember(photoUri) { mutableStateOf(0L) }
-    var previewRendering by remember { mutableStateOf(false) }
-    var showPreviewLoading by remember { mutableStateOf(false) }
-    val sourcePhotoUri = remember(photoUri) { Uri.parse(photoUri) }
-    val currentDraft = remember(
-        sourcePhotoUri,
-        brightness,
-        temperature,
-        previewGenerationId,
-    ) {
-        QuickEditDraftState(
-            sourceUri = sourcePhotoUri,
-            adjustments = QuickEditAdjustments(brightness, temperature),
-            previewGenerationId = previewGenerationId,
-        )
-    }
-    val previewUri = if (showBefore) beforePhotoUri else draftPreviewUri
-    val saveableDraft = renderedPreviewDraft?.takeIf { renderedDraft ->
-        // Save must consume the exact draft generation that produced the visible preview.
-        renderedDraft == currentDraft && !previewRendering
-    }
-
-    LaunchedEffect(photoUri, brightness, temperature) {
-        val generationId = previewGenerationId + 1
-        previewGenerationId = generationId
-        previewRendering = true
-        renderedPreviewDraft = null
-        val draft = QuickEditDraftState(
-            sourceUri = sourcePhotoUri,
-            adjustments = QuickEditAdjustments(brightness, temperature),
-            previewGenerationId = generationId,
-        )
-        val renderedUri = withContext(Dispatchers.IO) {
-            QuickEditImageProcessor.renderDraftPreview(context, draft)
-        }
-        if (generationId == previewGenerationId) {
-            draftPreviewUri = renderedUri.toString()
-            renderedPreviewDraft = draft
-            previewRendering = false
-        }
-    }
-
-    LaunchedEffect(previewRendering) {
-        if (previewRendering) {
-            delay(180)
-            showPreviewLoading = previewRendering
-        } else {
-            showPreviewLoading = false
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.quick_edit_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(photoAspectRatio ?: 3f / 4f)
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
-                                showBefore = true
-                                try {
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        if (event.changes.none { it.pressed }) break
-                                    }
-                                } finally {
-                                    showBefore = false
-                                }
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    BoundedGarmentImage(
-                        photoUri = previewUri,
-                        thumbnailMaxEdgePx = QUICK_EDIT_PREVIEW_MAX_EDGE_PX,
-                        purpose = ImagePurpose.Editor,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    if (showPreviewLoading && !showBefore) {
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(12.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.46f))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
-                            Text(
-                                text = stringResource(R.string.quick_edit_preview_loading),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                            )
-                        }
-                    }
-                    Text(
-                        text = if (showBefore) stringResource(R.string.quick_edit_before_label) else stringResource(R.string.quick_edit_hold_compare_hint),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(12.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.46f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    QuickEditToolIconButton(
-                        icon = Icons.Rounded.Brightness6,
-                        label = stringResource(R.string.quick_edit_brightness_content_description),
-                        selected = selectedTool == QuickEditTool.Brightness,
-                        onClick = { selectedTool = QuickEditTool.Brightness },
-                    )
-                    QuickEditToolIconButton(
-                        icon = Icons.Rounded.DeviceThermostat,
-                        label = stringResource(R.string.quick_edit_temperature_content_description),
-                        selected = selectedTool == QuickEditTool.Temperature,
-                        onClick = { selectedTool = QuickEditTool.Temperature },
-                    )
-                }
-
-                val selectedToolLabel = when (selectedTool) {
-                    QuickEditTool.Brightness -> stringResource(R.string.quick_edit_brightness)
-                    QuickEditTool.Temperature -> stringResource(R.string.quick_edit_temperature)
-                }
-                Text(
-                    text = stringResource(R.string.quick_edit_selected_tool_label, selectedToolLabel),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-                Text(
-                    text = stringResource(R.string.quick_edit_apply_on_save_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-
-                when (selectedTool) {
-                    QuickEditTool.Brightness -> {
-                        Text(stringResource(R.string.quick_edit_brightness_hint), style = MaterialTheme.typography.bodySmall)
-                        QuickEditBrightnessSlider(
-                            value = brightness,
-                            onValueChange = { brightness = it },
-                        )
-                    }
-                    QuickEditTool.Temperature -> {
-                        Text(stringResource(R.string.quick_edit_temperature_hint), style = MaterialTheme.typography.bodySmall)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            QuickEditTemperaturePreset(
-                                labelRes = R.string.quick_edit_temperature_cooler,
-                                value = -1f,
-                                selectedValue = temperature,
-                                modifier = Modifier.weight(1f),
-                            ) { temperature = it }
-                            QuickEditTemperaturePreset(
-                                labelRes = R.string.quick_edit_temperature_cool,
-                                value = -0.5f,
-                                selectedValue = temperature,
-                                modifier = Modifier.weight(1f),
-                            ) { temperature = it }
-                            QuickEditTemperaturePreset(
-                                labelRes = R.string.quick_edit_temperature_neutral,
-                                value = 0f,
-                                selectedValue = temperature,
-                                modifier = Modifier.weight(1f),
-                            ) { temperature = it }
-                            QuickEditTemperaturePreset(
-                                labelRes = R.string.quick_edit_temperature_warm,
-                                value = 0.5f,
-                                selectedValue = temperature,
-                                modifier = Modifier.weight(1f),
-                            ) { temperature = it }
-                            QuickEditTemperaturePreset(
-                                labelRes = R.string.quick_edit_temperature_warmer,
-                                value = 1f,
-                                selectedValue = temperature,
-                                modifier = Modifier.weight(1f),
-                            ) { temperature = it }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = saveableDraft != null,
-                onClick = { saveableDraft?.let(onSave) },
-            ) {
-                Text(stringResource(R.string.save_item))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun QuickEditToolIconButton(
-    icon: ImageVector,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    IconButton(
-        onClick = onClick,
-        colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
-            contentColor = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        ),
-        modifier = Modifier
-            .size(48.dp)
-            .semantics {
-                contentDescription = label
-                this.selected = selected
-            },
-    ) {
-        Icon(imageVector = icon, contentDescription = null)
-    }
-}
-
-@Composable
-private fun QuickEditBrightnessSlider(
-    value: Float,
-    onValueChange: (Float) -> Unit,
-) {
-    val normalizedValue = ((value.coerceIn(-1f, 1f) + 1f) / 2f).coerceIn(0f, 1f)
-    val sliderContentDescription = stringResource(R.string.quick_edit_brightness_content_description)
-    val thumbSize = 24.dp
-
-    fun updateValue(pointerX: Float, width: Int) {
-        if (width <= 0) return
-        val normalized = (pointerX / width).coerceIn(0f, 1f)
-        onValueChange((normalized * 2f) - 1f)
-    }
-
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .semantics { contentDescription = sliderContentDescription }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    updateValue(down.position.x, size.width)
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pressedChange = event.changes.firstOrNull { change -> change.pressed } ?: break
-                        updateValue(pressedChange.position.x, size.width)
-                    }
-                }
-            },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(normalizedValue)
-                .height(6.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-        )
-        Box(
-            modifier = Modifier
-                .padding(start = (maxWidth - thumbSize) * normalizedValue)
-                .size(thumbSize)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .border(2.dp, MaterialTheme.colorScheme.surfaceContainerLowest, CircleShape),
-        )
-    }
-}
-
-@Composable
-private fun QuickEditTemperaturePreset(
-    labelRes: Int,
-    value: Float,
-    selectedValue: Float,
-    modifier: Modifier = Modifier,
-    onSelected: (Float) -> Unit,
-) {
-    val selected = selectedValue == value
-    val label = stringResource(labelRes)
-    val selectedStatus = stringResource(
-        if (selected) R.string.quick_edit_temperature_selected else R.string.quick_edit_temperature_not_selected,
-    )
-    val contentDescription = stringResource(
-        R.string.quick_edit_temperature_preset_content_description,
-        label,
-        selectedStatus,
-    )
-    val swatchColor = when (value) {
-        -1f -> Color(0xFF0B4FB3)
-        -0.5f -> Color(0xFF5FA8FF)
-        0f -> MaterialTheme.colorScheme.surfaceContainerHigh
-        0.5f -> Color(0xFFFFB36B)
-        else -> Color(0xFFE56A1F)
-    }
-    Box(
-        modifier = modifier
-            .size(48.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .clickable { onSelected(value) }
-            .semantics {
-                this.contentDescription = contentDescription
-                this.selected = selected
-            }
-            .padding(2.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(swatchColor)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (selected) {
-                    Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
-                }
-            }
-            if (selected) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun CardSection(
     title: String,
@@ -2131,8 +1729,6 @@ private fun DetailTonalTag(text: String) {
 private fun GarmentTag.localizedLabel(): String = localizedTagLabel()
 
 private enum class ColorPickerTarget { Primary, Secondary }
-
-private enum class QuickEditTool { Brightness, Temperature }
 
 private data class PendingPhotoInput(
     val id: Long,
