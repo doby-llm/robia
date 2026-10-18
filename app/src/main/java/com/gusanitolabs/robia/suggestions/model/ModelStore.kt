@@ -67,12 +67,11 @@ class HttpModelSource(private val url: String) : ModelSource {
 /**
  * Downloads the pinned model into `rootDir` (partial file, then verified final file). Resumes with a Range request;
  * a server that ignores Range (200) restarts the file from zero. The defaults are the Gemma model; the precise cutout
- * pack passes its own [url], [fileName] and [expectedSha256].
+ * pack passes its own [source] (the URL lives in [HttpModelSource]), [fileName] and [expectedSha256].
  */
 class ModelStore(
     private val rootDir: File,
-    url: String = EmbeddingRecipe.MODEL_URL,
-    private val source: ModelSource = HttpModelSource(url),
+    private val source: ModelSource,
     private val isUnmetered: () -> Boolean,
     private val freeSpace: () -> Long = { rootDir.usableSpace },
     private val expectedSha256: String = EmbeddingRecipe.MODEL_SHA256,
