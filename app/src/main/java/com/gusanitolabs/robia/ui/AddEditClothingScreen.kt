@@ -82,6 +82,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -98,6 +99,7 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.designsystem.PopIn
 import com.gusanitolabs.robia.core.designsystem.aiSurface
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -803,6 +805,10 @@ fun AddEditClothingScreen(
                     backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
                     isPhotoProcessing = isPhotoProcessing,
                     processingStage = photoProcessingStage,
+                    rawSourceUri = editorPhotoState.rawSourceUri,
+                    foregroundUri = editorPhotoState.foregroundUri,
+                    primaryColor = primaryPaletteColor,
+                    secondaryColor = secondaryPaletteColor,
                     onCaptureStatusChange = { captureStatus = it },
                     onPhotoSelected = ::queuePhotoForProcessing,
                     onRetryPhotoProcessing = photoRetrySource?.let { retryInput ->
@@ -1235,6 +1241,10 @@ private fun PhotoCaptureCardWithLaunchers(
     backgroundFallbackModuleMissing: Boolean = false,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
+    rawSourceUri: String? = null,
+    foregroundUri: String? = null,
+    primaryColor: MainColor? = null,
+    secondaryColor: MainColor? = null,
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
     onRetryPhotoProcessing: (() -> Unit)?,
@@ -1282,6 +1292,10 @@ private fun PhotoCaptureCardWithLaunchers(
         backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
         isPhotoProcessing = isPhotoProcessing,
         processingStage = processingStage,
+        rawSourceUri = rawSourceUri,
+        foregroundUri = foregroundUri,
+        primaryColor = primaryColor,
+        secondaryColor = secondaryColor,
         onRetryPhotoProcessing = onRetryPhotoProcessing,
         onQuickEditClick = onQuickEditClick,
         quickEditStatus = quickEditStatus,
@@ -1310,6 +1324,10 @@ private fun PhotoCaptureCard(
     backgroundFallbackModuleMissing: Boolean = false,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
+    rawSourceUri: String? = null,
+    foregroundUri: String? = null,
+    primaryColor: MainColor? = null,
+    secondaryColor: MainColor? = null,
     onRetryPhotoProcessing: (() -> Unit)?,
     onQuickEditClick: (() -> Unit)?,
     quickEditStatus: String?,
@@ -1333,6 +1351,10 @@ private fun PhotoCaptureCard(
                 isProcessing = isPhotoProcessing,
                 processingStep = processingStage?.let(::processingStep),
                 processingLabel = processingLabel,
+                rawSourceUri = rawSourceUri,
+                foregroundUri = foregroundUri,
+                primaryColor = primaryColor,
+                secondaryColor = secondaryColor,
                 modifier = Modifier.fillMaxWidth(),
                 aspectRatio = photoAspectRatio ?: 4f / 3f,
                 onEmptyPhotoClick = onCameraClick,
@@ -1434,6 +1456,10 @@ private fun PhotoPreview(
     isProcessing: Boolean = false,
     processingStep: Int? = null,
     processingLabel: String? = null,
+    rawSourceUri: String? = null,
+    foregroundUri: String? = null,
+    primaryColor: MainColor? = null,
+    secondaryColor: MainColor? = null,
     modifier: Modifier = Modifier,
     aspectRatio: Float = 3f / 4f,
     onEmptyPhotoClick: (() -> Unit)? = null,
@@ -1442,6 +1468,11 @@ private fun PhotoPreview(
     val uri = photoUri?.takeIf { it.isNotBlank() }
     val emptyPhotoContentDescription = stringResource(R.string.content_open_camera)
     val quickEditContentDescription = stringResource(R.string.content_quick_edit_photo)
+    // The shimmer only runs while processing; once the foreground exists the raw photo fades behind it.
+    val shimmerForeground = foregroundUri?.takeIf { isProcessing && it.isNotBlank() }
+    val rawAlpha = rememberRawPhotoAlpha(fadeRaw = shimmerForeground != null)
+    val swatches = listOfNotNull(primaryColor, secondaryColor).map { it.swatchColor() }
+    val swatchesVisible = photoSwatchesVisible(isProcessing, hasPhoto = uri != null, swatchCount = swatches.size)
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1465,13 +1496,22 @@ private fun PhotoPreview(
         ) {
             if (uri != null) {
                 BoundedGarmentImage(
-                    photoUri = uri,
+                    photoUri = if (shimmerForeground != null) rawSourceUri?.takeIf { it.isNotBlank() } ?: uri else uri,
                     thumbnailMaxEdgePx = EDITOR_PREVIEW_MAX_EDGE_PX,
                     purpose = ImagePurpose.Editor,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = rawAlpha },
                 )
-                if (isProcessing) {
+                if (shimmerForeground != null) {
+                    MaskedShimmer(foregroundUri = shimmerForeground, modifier = Modifier.fillMaxSize())
+                } else if (isProcessing) {
                     SweepOverlay(modifier = Modifier.fillMaxSize())
+                }
+                Box(modifier = Modifier.align(Alignment.BottomStart).padding(14.dp)) {
+                    PopIn(visible = swatchesVisible) {
+                        PhotoColorSwatches(colors = swatches)
+                    }
                 }
                 if (!isProcessing && onQuickEditClick != null) {
                     IconButton(
