@@ -41,7 +41,7 @@
 
 ## U03 — Filters: grouped screen, Reset, active-filter row, OR/AND semantics
 - **Reqs:** REQ-BR-05, REQ-FI-01..04 · UX-DEC-002, UX-DEC-003 · TS§3 · mockups `filters.html`, `browse.html` · **Predecessors:** U00, U01, U02 · **Successors:** Z02
-- **Files:** `ui/BrowseFilterBar.kt`, `ui/AdvancedFiltersScreen.kt`, `ui/BrowseGrid.kt` (only the `FilterBar(...)` call site inside `BrowseWardrobeScreen` to pass `onResetFilters`; U02 owns the rest of this file), `RegressionSourceContractTest.kt` (only if the FilterBar order test anchors move; order must stay as TS§3).
+- **Files (PLAN-CHANGE 2 adds `ui/RobiaApp.kt`: the `BrowseWardrobeScreen(` call plumbing for filters/tags/colours/onFiltersChange and the shell `topBar` condition hiding it on `AdvancedFilters`, nothing else):** `ui/BrowseFilterBar.kt`, `ui/AdvancedFiltersScreen.kt`, `ui/BrowseGrid.kt` (only the `FilterBar(...)` call site inside `BrowseWardrobeScreen` to pass `onResetFilters`; U02 owns the rest of this file), `RegressionSourceContractTest.kt` (only if the FilterBar order test anchors move; order must stay as TS§3).
 - **In scope:** TS§3 exactly; pure `matches` with unit tests over the semantics table in the brief.
 - **Out of scope:** search behaviour, similar-to, empty-state reset semantics (unchanged).
 - **Acceptance:** V-U03-1..4, V-Z2-03, V-Z2-04. **Review:** independent (filter semantics + no lost filter path).
