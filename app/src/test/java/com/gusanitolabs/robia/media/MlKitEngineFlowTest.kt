@@ -1,16 +1,17 @@
 package com.gusanitolabs.robia.media
 
-import com.google.mlkit.common.MlKitException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class MlKitEngineFlowTest {
-    private fun moduleUnavailable() = MlKitException("Waiting for the module to be downloaded", MlKitException.UNAVAILABLE)
+    private class ModuleUnavailable : RuntimeException("Waiting for the module to be downloaded")
+
+    private val isModuleUnavailable: (Throwable) -> Boolean = { it is ModuleUnavailable }
 
     @Test
-    fun unavailableThenSuccess_waitsOnceAndProcessesOnce_thenRemoves() = runBlocking {
+    fun unavailableThenSuccess_waitsOnceAndProcessesOnce() = runBlocking {
         var ensures = 0
         var processes = 0
 
@@ -18,9 +19,10 @@ class MlKitEngineFlowTest {
             ensureModule = { ensures++ },
             process = {
                 processes++
-                if (processes == 1) throw moduleUnavailable()
+                if (processes == 1) throw ModuleUnavailable()
                 "foreground"
             },
+            isModuleUnavailable = isModuleUnavailable,
         )
 
         assertEquals("foreground", result)
@@ -29,25 +31,25 @@ class MlKitEngineFlowTest {
     }
 
     @Test
-    fun unavailableTwice_propagatesModelUnavailableAfterOneRetry() = runBlocking {
+    fun unavailableTwice_propagatesAfterOneRetry() = runBlocking {
         var ensures = 0
         var processes = 0
 
-        val thrown = assertThrows(MlKitException::class.java) {
+        assertThrows(ModuleUnavailable::class.java) {
             runBlocking {
                 runWithModuleRetry(
                     ensureModule = { ensures++ },
                     process = {
                         processes++
-                        throw moduleUnavailable()
+                        throw ModuleUnavailable()
                     },
+                    isModuleUnavailable = isModuleUnavailable,
                 )
             }
         }
 
         assertEquals(2, ensures)
         assertEquals(2, processes)
-        assertEquals(BackgroundRemovalFailureReason.MODEL_UNAVAILABLE, segmentationFailureReason(thrown))
     }
 
     @Test
@@ -63,6 +65,7 @@ class MlKitEngineFlowTest {
                         processes++
                         error("segmenter exploded")
                     },
+                    isModuleUnavailable = isModuleUnavailable,
                 )
             }
         }

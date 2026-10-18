@@ -106,26 +106,30 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine : BackgroundRemovalEngine 
 
 private val MODULE_WAIT_TIMEOUT = 60.seconds
 
+internal fun isModuleUnavailableError(throwable: Throwable): Boolean =
+    throwable is MlKitException && throwable.errorCode == MlKitException.UNAVAILABLE
+
 internal fun segmentationFailureReason(throwable: Throwable): BackgroundRemovalFailureReason =
-    if (throwable is MlKitException && throwable.errorCode == MlKitException.UNAVAILABLE) {
+    if (isModuleUnavailableError(throwable)) {
         BackgroundRemovalFailureReason.MODEL_UNAVAILABLE
     } else {
         BackgroundRemovalFailureReason.SEGMENTATION_FAILED
     }
 
 /**
- * Waits for the module, runs [process], and on UNAVAILABLE waits once more and runs it once more.
- * A second UNAVAILABLE (or any other error) propagates to the caller's fallback.
+ * Waits for the module, runs [process], and on a module-unavailable error waits once more and runs it once more.
+ * A second unavailable error (or any other error) propagates to the caller's fallback.
  */
 internal suspend fun <T> runWithModuleRetry(
     ensureModule: suspend () -> Unit,
     process: suspend () -> T,
+    isModuleUnavailable: (Throwable) -> Boolean = ::isModuleUnavailableError,
 ): T {
     ensureModule()
     return try {
         process()
-    } catch (throwable: MlKitException) {
-        if (throwable.errorCode != MlKitException.UNAVAILABLE) throw throwable
+    } catch (throwable: Throwable) {
+        if (!isModuleUnavailable(throwable)) throw throwable
         ensureModule()
         process()
     }
