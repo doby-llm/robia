@@ -862,44 +862,59 @@ class RegressionSourceContractTest {
     @Test
     fun garmentPdfExport_usesMobileReferenceLayoutAndBundledBrandAsset() {
         val exporter = source("app/src/main/java/com/gusanitolabs/robia/media/GarmentShareExporter.kt")
+        val layout = source("app/src/main/java/com/gusanitolabs/robia/media/PdfLayout.kt")
 
         listOf(
             "ROBIA_LOGO_ASSET = \"robia_logo.png\"",
-            "MIN_PDF_PAGE_HEIGHT = 1280",
+            "PDF_PAGE_WIDTH = 595",
+            "PDF_PAGE_HEIGHT = 842",
+            "R.font.inter_regular",
+            "R.font.inter_semibold",
+            "R.font.inter_bold",
             "drawBitmapFitContain",
-            "ENABLE_PDF_IMAGE_GRADIENT_OVERLAY = true",
-            "drawImageGradientOverlay",
-            "drawColorRow",
-            "drawMetadataGrid",
-            "GarmentShareMetadataIcon",
+            "pdfTitle(",
+            "computePdfLayout(",
             "Created with Robia",
         ).forEach { marker ->
             assertTrue("Expected garment PDF marker: $marker", exporter.contains(marker))
         }
+        listOf("fun computePdfLayout(", "fun pdfTitle(", "interface PdfTextMeasurer").forEach { marker ->
+            assertTrue("Expected PDF layout marker: $marker", layout.contains(marker))
+        }
 
-        assertTrue("PDF fields should wrap/fit instead of drawing ellipses", !exporter.contains("…"))
-        assertTrue("PDF fields should not draw ASCII ellipses", !exporter.contains("..."))
-        assertTrue("Metadata grid values should be allowed to wrap to all lines", exporter.contains("maxLines = Int.MAX_VALUE"))
+        assertTrue("PdfLayout must stay free of android.* types", !layout.contains("import android."))
+        assertTrue("PDF fields should wrap instead of drawing ellipses", !exporter.contains("…") && !layout.contains("…"))
+        assertTrue("PDF fields should not draw ASCII ellipses", !exporter.contains("...") && !layout.contains("..."))
+        assertTrue("PDF text should never be ellipsized", !exporter.contains("ellipsize") && !exporter.contains("TruncateAt"))
+        assertTrue("PDF text should be allowed to wrap to all lines", exporter.contains("setMaxLines(Int.MAX_VALUE)"))
     }
 
     @Test
     fun garmentPdfExport_containsImageAndPromotesColorHierarchy() {
         val exporter = source("app/src/main/java/com/gusanitolabs/robia/media/GarmentShareExporter.kt")
+        val layout = source("app/src/main/java/com/gusanitolabs/robia/media/PdfLayout.kt")
+        val photo = exporter
+            .substringAfter("private fun drawPhoto(")
+            .substringBefore("private fun drawBitmapFitContain(")
         val bitmapFit = exporter
             .substringAfter("private fun drawBitmapFitContain(")
-            .substringBefore("private fun drawImageGradientOverlay")
-        val colorChip = exporter
-            .substringAfter("private fun drawColorChip(")
-            .substringBefore("private fun drawMetadataGrid")
+            .substringBefore("private fun drawSwatch(")
+        val swatch = exporter
+            .substringAfter("private fun drawSwatch(")
+            .substringBefore("private fun drawMetadata(")
 
         assertTrue("PDF image export should contain-fit instead of cover-crop", bitmapFit.contains("val scale = min("))
         assertTrue("PDF image export should not use cover-crop scaling", !bitmapFit.contains("val scale = maxOf("))
-        assertTrue("PDF image frame should share its height calculation", exporter.contains("imageFrameHeight(image)"))
-
-        assertTrue("Color cards should use a card-height constant", exporter.contains("COLOR_CARD_HEIGHT = 104f"))
-        assertTrue("Color names should visually match metadata value hierarchy", colorChip.contains("textPaint(size = 24f"))
-        assertTrue("Color swatches should read as large color samples", colorChip.contains("drawCircle(swatchCenterX, swatchCenterY, 29f"))
-        assertTrue("Color card page-height measurement should match draw height", exporter.contains("+ COLOR_CARD_HEIGHT + 48f"))
+        assertTrue("PDF photo should be filtered when scaled", exporter.contains("Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG"))
+        assertTrue("PDF backdrop gradient should be painted inside the rounded photo box only", photo.contains("drawRoundRect(frame, PHOTO_RADIUS"))
+        assertTrue("Nothing should be drawn over the PDF photo", !photo.contains("drawRect(") && !exporter.contains("drawImageGradientOverlay"))
+        assertTrue("PDF photo should grow up to 600 pt when space is free", layout.contains("PHOTO_MAX_HEIGHT = 600f"))
+        assertTrue("PDF photo should start at 430 pt", layout.contains("PHOTO_MIN_HEIGHT = 430f"))
+        assertTrue("Title should auto-fit from 30 to 22 pt", layout.contains("(30 downTo 22)"))
+        assertTrue("Notes should auto-fit from 12.5 to 10 pt", layout.contains("(25 downTo 20)"))
+        assertTrue("Colour names should use the 12.5 pt SemiBold hierarchy", swatch.contains("textPaint(fonts.semiBold, 12.5f"))
+        assertTrue("Colour swatches should keep their 28 pt size", layout.contains("SWATCH_SIZE = 28f"))
+        assertTrue("Metadata values should use the 13 pt SemiBold hierarchy", exporter.contains("textPaint(fonts.semiBold, 13f"))
     }
 
     @Test

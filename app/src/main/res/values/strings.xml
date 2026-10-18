@@ -644,4 +644,6 @@
     <!-- T01 -->
     <string name="tag_socks">Socks</string>
     <string name="tag_underwear">Underwear</string>
+    <!-- U09 -->
+    <string name="pdf_title_fallback">Garment</string>
 </resources>
