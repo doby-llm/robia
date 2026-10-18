@@ -181,13 +181,11 @@ private fun aiShimmerBrush(phase: Float, spanPx: Float): Brush {
     val direction = Offset(sin(radians).toFloat(), -cos(radians).toFloat())
     val start = direction * (phase * spanPx)
     return Brush.linearGradient(
-        colorStops = listOf(
-            0f to ShimmerBase,
-            0.45f to ShimmerMid,
-            0.5f to ShimmerBand,
-            0.55f to ShimmerMid,
-            1f to ShimmerBase,
-        ),
+        0f to ShimmerBase,
+        0.45f to ShimmerMid,
+        0.5f to ShimmerBand,
+        0.55f to ShimmerMid,
+        1f to ShimmerBase,
         start = start,
         end = start + direction * spanPx,
         tileMode = TileMode.Repeated,
