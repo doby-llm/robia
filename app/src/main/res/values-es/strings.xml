@@ -644,4 +644,6 @@
     <!-- T01 -->
     <string name="tag_socks">Calcetines</string>
     <string name="tag_underwear">Ropa interior</string>
+    <!-- U09 -->
+    <string name="pdf_title_fallback">Prenda</string>
 </resources>
