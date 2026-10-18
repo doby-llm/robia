@@ -234,6 +234,14 @@ class LocalTagRepository(
         if (tagDao.mainColorCount() == 0) {
             tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
         }
+        // Gray is newer than the palette most installs were seeded with: add it once, unless the user deleted it.
+        val gray = DefaultTags.mainColors.first { color -> color.id == GRAY_COLOR_ID }
+        val tombstonedColorIds = syncTombstoneDao?.getAllForSync().orEmpty()
+            .filter { tombstone -> tombstone.entityType == "main_color" }
+            .map(SyncTombstoneEntity::entityId)
+        if (shouldSeedGray(tagDao.getMainColorsForSync().map(MainColorEntity::id), tombstonedColorIds)) {
+            tagDao.seedMainColors(listOf(gray.toEntity()))
+        }
         return mergeDuplicateTags(categoryId = null)
     }
 
@@ -273,6 +281,12 @@ class LocalTagRepository(
 }
 
 private const val DEDUPE_LOG_TAG = "TagDedupe"
+
+internal const val GRAY_COLOR_ID = "gray"
+
+/** Gray is added to an install that lacks it, and never re-added once the user deleted it (a `main_color` tombstone). */
+internal fun shouldSeedGray(existingColorIds: Collection<String>, tombstonedColorIds: Collection<String>): Boolean =
+    GRAY_COLOR_ID !in existingColorIds && GRAY_COLOR_ID !in tombstonedColorIds
 
 private fun PendingGarmentSyncWorkEntity.toDomain(): PendingGarmentSyncWork = PendingGarmentSyncWork(
     id = id,

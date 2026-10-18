@@ -47,6 +47,7 @@ object DefaultTags {
         MainColor(id = "black", name = "Black", hex = "#1F1F1F", sortOrder = 10, isDefault = true),
         MainColor(id = "white", name = "White", hex = "#F8F9FA", sortOrder = 20, isDefault = true),
         MainColor(id = "gray-charcoal", name = "Beige / Cream", hex = "#D8C3A5", sortOrder = 30, isDefault = true),
+        MainColor(id = "gray", name = "Gray", hex = "#8A8A8A", sortOrder = 35, isDefault = true),
         MainColor(id = "brown", name = "Brown", hex = "#8B6848", sortOrder = 40, isDefault = true),
         MainColor(id = "navy-blue", name = "Navy / Blue", hex = "#315F8E", sortOrder = 60, isDefault = true),
         MainColor(id = "green", name = "Green", hex = "#5F6F48", sortOrder = 70, isDefault = true),
