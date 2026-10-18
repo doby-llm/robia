@@ -129,3 +129,13 @@ Mockups: `mockups/index.html` (ábrelos en el navegador; las animaciones se muev
 - **Recorte (benchmark de modelos nuevos):**
   - Ni los modelos de recorte dedicados ni LaMa mejoran el pipeline propuesto. Se mantiene v11.
   - El límite real es detectar la percha (pinzas pequeñas, perchas de madera). Queda como siguiente paso.
+
+## Ajustes de recorte (cambio de plan 1, 18-10)
+- En Settings › Cutout podrás elegir:
+  - Método: Automático o Estándar.
+  - Quitar perchas: sí / no.
+  - Detección de percha: Normal o Alta. Alta quita perchas de madera y más pinzas; en las pruebas no se comió ninguna prenda.
+  - Bordes: suaves o nítidos.
+  - Velocidad del batch: equilibrada o ahorro de memoria.
+- En el editor de foto, «Rehacer recorte» repite el recorte de una foto nueva con Estándar, Preciso o Preciso sin quitar percha.
+- Los valores por defecto dan el mismo resultado que el plan aprobado.

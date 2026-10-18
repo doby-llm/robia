@@ -125,3 +125,6 @@ Source: `feedback/2026-10-17-manu-rev2-feedback.md` (R16–R20). Evidence: `arti
 
 ## G-APPROVAL (2026-10-18)
 Manu: "APROBADO" on revision 3 (Telegram). Execution model (Manu): the planner does not implement; coordinator = Claude Sonnet 5.5 effort high; workers and independent reviewers = Claude Haiku 5.5 effort high. Independent review list extended with D02 (photo integrity).
+
+## PLAN-CHANGE 1 (2026-10-18) — cutout settings (SEG-DEC-009)
+Manu asked for user-selectable cutout settings ("modelos usado, detección de percha y demás"); answers 1A 2A 3A (`feedback/2026-10-18-manu-cutout-settings.md`). Decision: task SG4 (wave W6, after SG2b + SG3 + B01) with Settings › Cutout (method, remove hangers, hanger detection Normal/High, edges, batch speed) and "Redo cutout" in the photo editor. No matting-model picker: the measured alternatives were worse or do not fit a phone (SEG-DEC-008), so offering them would be a trap. Hanger High = threshold 0.12, measured on 142 photos: of 17 changed results, about 12 better (wooden and clip hangers removed), 1 worse (#45 hook tip), no garment loss (`artifacts/inv-r3-hanger-sensitivity.md`). Default stays Normal. Independent review required.

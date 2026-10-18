@@ -99,5 +99,13 @@ Levels: **CI** = unit/JVM test or build check run by GitHub Actions on the PR; *
 | V-Z2-25 | Z02 | DEV | Settings › Google Drive shows "Space used" with size and photo count; refresh works; value ≈ Google Drive › Manage apps › Robia | PASS/FAIL |
 | V-Z2-26 | Z02 | DEV | Check photos on the real wardrobe: "All N photos are safe" or an actionable list; nothing deleted | PASS/FAIL |
 | V-Z2-27 | Z02 | DEV | Sign in to Drive with a second Google account: "Different Google account" attention, no upload until a choice is made | PASS/FAIL |
+| V-SG4-1 | SG4 | CI | `CutoutOptionsTest`: engine × pack × sensitivity table; `batchCutouts`; legacy `preciseCutoutEnabled` true→Automatic, false→Standard | pass |
+| V-SG4-2 | SG4 | CI | `AlphaRefinerTest`: Sharp transition narrower than Soft; Soft output byte-identical to before for default calls | pass |
+| V-SG4-3 | SG4 | CI | hanger tests: `removeHanger=false` → selection untouched, detector fake not called; threshold reaches both passes | pass |
+| V-SG4-4 | SG4 | CI | `RefineSessionTest`: `replaceBase` + undo restores previous base and edits | pass |
+| V-SG4-5 | SG4 | REV | defaults (Automatic, hangers on, Normal, Soft, Balanced) reproduce the SG2a/SG2b path; no matting-model picker; no numeric thresholds in UI | confirmed |
+| V-Z2-28 | Z02 | DEV | Settings › Cutout: each option changes the next new photo as described; Standard hides hanger options; pack absent → "Needs precise cutout" | PASS/FAIL |
+| V-Z2-29 | Z02 | DEV | Hanger detection High on 5 photos with wooden or clip hangers: hanger removed, no garment part lost | PASS/FAIL |
+| V-Z2-30 | Z02 | DEV | Editor › Redo cutout (new photo): Standard / Precise / Precise without hanger removal each replace the cutout; Undo returns; ✕ saves nothing; button hidden on saved garments | PASS/FAIL |
 | G-SEG-1 | SG2a | DEV | Developer > Run cutout benchmark on Manu's phone (Poco F3), plugged in, cool, battery saver off: median no-hanger ≤ 4000 ms, hanger ≤ 9000 ms (includes the hanger-first stage), peak PSS ≤ 1300 MB | PASS/FAIL |
 | G-SEG-2 | SG2b | DEV | ≥ 10 garments, pack ON vs OFF, OK/NOK each; pass rule SEG-DEC-006 | PASS/FAIL |

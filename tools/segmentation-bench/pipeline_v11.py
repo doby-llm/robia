@@ -62,12 +62,12 @@ def hanger_mask(det, sam, rgb, sel):
     def plausible(b):
         x0, y0, x1, y1 = b
         return (x1 - x0) >= 0.35 * gw and y0 < gy0 + 0.25 * gh and y1 < gy0 + 0.5 * gh
-    hs, _, _ = detect(det, rgb, 0.25)
+    HT = float(os.environ.get("HTHR", "0.25")); hs, _, _ = detect(det, rgb, HT)
     hs = [hb for hb in hs if plausible(hb["box"])]
     if not hs:
         cy0 = max(gy0 - int(0.15 * gh), 0); cy1 = min(gy0 + int(0.35 * gh), h)
         cx0 = max(gx0 - int(0.1 * gw), 0); cx1 = min(gx1 + int(0.1 * gw), w)
-        hb2, _, _ = detect(det, np.ascontiguousarray(rgb[cy0:cy1, cx0:cx1]), 0.25)
+        hb2, _, _ = detect(det, np.ascontiguousarray(rgb[cy0:cy1, cx0:cx1]), HT)
         for hb in hb2:
             bx = hb["box"]; hb["box"] = [bx[0] + cx0, bx[1] + cy0, bx[2] + cx0, bx[3] + cy0]
         hs = [hb for hb in hb2 if plausible(hb["box"])]
