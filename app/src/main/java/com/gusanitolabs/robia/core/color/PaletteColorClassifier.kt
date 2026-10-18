@@ -63,6 +63,7 @@ private fun MainColor.isNeutralCandidate(): Boolean = id in NEUTRAL_PALETTE_IDS
 private val NEUTRAL_PALETTE_IDS = setOf(
     "black",
     "white",
+    "gray",
     "gray-charcoal",
     "brown",
 )

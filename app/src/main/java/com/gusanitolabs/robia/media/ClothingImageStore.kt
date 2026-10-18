@@ -142,7 +142,7 @@ object ClothingImageStore {
         palette: List<MainColor>,
     ): PaletteColorDiagnostics {
         if (palette.isEmpty()) return PaletteColorDiagnostics(paletteSize = 0)
-        val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream)
+        val bitmap = decodeForColors(context, imageUri)
             ?: return PaletteColorDiagnostics(paletteSize = palette.size)
         return bitmap.useForColors { source ->
             val sampleStep = colorSampleStep(source)
@@ -380,6 +380,22 @@ object ClothingImageStore {
             compress(Bitmap.CompressFormat.WEBP, DRIVE_WEBP_QUALITY, output)
         }
 
+    private fun decodeForColors(context: Context, imageUri: Uri): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            readImageDimensions(context, imageUri)?.let { (width, height) -> inSampleSize = colorDecodeSampleSize(width, height) }
+        }
+        return context.contentResolver.openInputStream(imageUri)?.use { input -> BitmapFactory.decodeStream(input, null, options) }
+    }
+
+    private fun colorDecodeSampleSize(width: Int, height: Int): Int {
+        val longEdge = maxOf(width, height)
+        var sampleSize = 1
+        while (longEdge / (sampleSize * 2) >= COLOR_MIN_DECODE_LONG_EDGE) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
     private fun colorSampleStep(bitmap: Bitmap): Int {
         val maxDimension = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
         return (maxDimension / 96).coerceAtLeast(1)
@@ -521,6 +537,7 @@ object ClothingImageStore {
     private const val THUMBNAIL_JPEG_QUALITY = 82
     private const val TRANSPARENT_CROP_ALPHA_THRESHOLD = 24
     private const val LUMINANCE_MAX_DECODE_SIZE = 192
+    private const val COLOR_MIN_DECODE_LONG_EDGE = 512
     private const val LUMINANCE_TARGET_SAMPLE_GRID = 48
     private const val MIN_CROP_CONTENT_SIZE = 16
     private const val MIN_CROP_PADDING_PX = 8

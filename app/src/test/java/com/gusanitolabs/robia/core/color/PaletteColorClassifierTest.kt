@@ -25,9 +25,17 @@ class PaletteColorClassifierTest {
         val cream = classifier.nearestColor(palette, RgbColor.fromHexOrNull("#D9CBB5")!!)
         val nearWhite = classifier.nearestColor(palette, RgbColor.fromHexOrNull("#EEEEEE")!!)
 
-        assertTrue(gray?.color?.id in setOf("black", "white", "gray-charcoal", "brown"))
+        assertTrue(gray?.color?.id in setOf("black", "white", "gray", "gray-charcoal", "brown"))
         assertEquals("gray-charcoal", cream?.color?.id)
         assertEquals("white", nearWhite?.color?.id)
+    }
+
+    @Test
+    fun midGrayMapsToGrayAndBeigeStillMapsToGrayCharcoal() {
+        val classifier = PaletteColorClassifier.Default
+
+        assertEquals("gray", classifier.nearestColor(palette, RgbColor.fromHexOrNull("#808080")!!)?.color?.id)
+        assertEquals("gray-charcoal", classifier.nearestColor(palette, RgbColor.fromHexOrNull("#D8C3A5")!!)?.color?.id)
     }
 
     @Test
