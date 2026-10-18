@@ -1126,17 +1126,24 @@ private fun RobiaShell(
     fun processQueuedBatchDrafts() {
         batchProcessingCoordinator.processQueued(
             drafts = { batchDrafts.toList() },
-            processDraft = { draft ->
-                processBatchDraft(
+            cutout = { draft ->
+                cutoutStage(
                     draft = draft,
                     context = context,
                     backgroundRemover = batchBackgroundRemover,
                     mainColors = mainColors,
-                    availableTags = availableTags,
-                    suggestionService = suggestionService,
-                    onDraftUpdated = ::updateBatchDraft,
                 )
             },
+            suggest = { draft, cutout ->
+                suggestStage(
+                    draft = draft,
+                    cutout = cutout,
+                    suggestionService = suggestionService,
+                    availableTags = availableTags,
+                    context = context,
+                )
+            },
+            publish = ::updateBatchDraft,
             onInterrupted = { draft ->
                 val current = batchDrafts.firstOrNull { it.id == draft.id }
                 current

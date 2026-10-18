@@ -52,7 +52,7 @@ class RegressionSourceContractTest {
         assertTrue(batch.contains("get() = this == BatchDraftStatus.Ready || this == BatchDraftStatus.NeedsReview"))
         assertTrue(batch.contains("internal fun BatchDraftItem.retryForBatch()"))
         assertTrue(batch.contains("status = BatchDraftStatus.Queued"))
-        assertTrue(coordinator.contains("val ownedDraftIds = drafts().map(BatchDraftItem::id).toSet()"))
+        assertTrue(coordinator.contains("val ownedDraftIds = drafts().map(BatchDraftItem::id).toMutableSet()"))
         assertTrue(coordinator.contains("draft.id in ownedDraftIds && draft.isProcessingActive()"))
         assertTrue(coordinator.contains("interruptActiveDrafts?.invoke()"))
     }
@@ -67,7 +67,12 @@ class RegressionSourceContractTest {
         assertTrue(batchScreen.contains("BatchDraftStatus.Interrupted"))
         assertTrue(batchScreen.contains("internal fun BatchDraftItem.interruptedForBatch(message: String): BatchDraftItem?"))
         assertTrue(batchScreen.contains("if (isProcessingActive())"))
-        assertTrue(batchScreen.contains("catch (throwable: CancellationException)"))
+        assertTrue(
+            batchScreen
+                .substringAfter("internal fun BatchDraftItem.interruptedForBatch(")
+                .substringBefore("internal fun List<BatchDraftItem>.canSaveBatch()")
+                .contains("status = BatchDraftStatus.Interrupted"),
+        )
         assertTrue(batchScreen.contains("status = BatchDraftStatus.Interrupted"))
         assertTrue(app.contains("?.interruptedForBatch(context.getString(R.string.batch_interrupted_message))"))
     }
@@ -76,7 +81,7 @@ class RegressionSourceContractTest {
     fun batchStatusBadge_labelsAcceptedNeedsReviewWithVisualStatus() {
         val badge = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
             .substringAfter("private fun BatchStatusBadge(")
-            .substringBefore("internal suspend fun processBatchDraft(")
+            .substringBefore("private val BatchDraftStatus.isSelectable")
 
         assertTrue(badge.contains("val visualStatus = if (isAccepted) BatchDraftStatus.Ready else status"))
         assertTrue(badge.contains("text = if (backgroundPreparing && visualStatus == BatchDraftStatus.Processing) {"))
@@ -86,15 +91,20 @@ class RegressionSourceContractTest {
     }
 
     @Test
-    fun batchCoordinator_processesAll60QueuedItemsSeriallyToTerminalStates() {
+    fun batchCoordinator_pipelinesCutoutsAndPublishesFinalStatesInOrder() {
         val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
 
         assertTrue(coordinator.contains("processingJob?.isActive == true"))
-        assertTrue(coordinator.contains("while (true)"))
-        assertTrue(coordinator.contains("firstOrNull { it.status == BatchDraftStatus.Queued }"))
+        assertTrue(coordinator.contains("restartRequested = true"))
+        assertTrue(coordinator.contains("BatchParallelism.cutouts()"))
+        assertTrue(coordinator.contains("Semaphore(parallelism)"))
+        assertTrue(coordinator.contains("publishInOrder@ while (true)"))
+        assertTrue(coordinator.contains("batch_item idx="))
         assertTrue(app.contains("BatchProcessingCoordinator(batchProcessingScope)"))
+        assertTrue(app.contains("cutout = { draft ->"))
+        assertTrue(app.contains("suggest = { draft, cutout ->"))
         assertTrue(batchScreen.contains("private val BatchDraftStatus.isTerminal"))
     }
 
