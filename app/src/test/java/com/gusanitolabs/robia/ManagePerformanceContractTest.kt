@@ -37,7 +37,7 @@ class ManagePerformanceContractTest {
 
     private fun uiSource(): String = Path.of("app/src/main/java/com/gusanitolabs/robia/ui").let { dir ->
         val d = if (Files.isDirectory(dir)) dir else Path.of("..").resolve(dir)
-        Files.list(d).use { s -> s.filter { it.toString().endsWith(".kt") }.sorted().map { Files.readString(it) }.toList() }.joinToString("\n")
+        d.toFile().listFiles { file -> file.name.endsWith(".kt") }.orEmpty().sortedBy { it.name }.joinToString("\n") { it.readText() }
     }
 
     private fun source(relativePath: String): String {
