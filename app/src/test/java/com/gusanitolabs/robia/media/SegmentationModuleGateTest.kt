@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.media
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
@@ -74,6 +75,35 @@ class SegmentationModuleGateTest {
         assertEquals(60_000L, clock.elapsedMs)
         assertEquals(1, port.installRequests)
         assertEquals(listOf(true, false), preparing)
+    }
+
+    @Test
+    fun preparingFlow_isTrueDuringWaitAndClearsAfterInstall() = runBlocking {
+        val port = FakeModulePort(installedAfterPolls = 3)
+        val clock = VirtualClock()
+        val seenDuringWait = mutableListOf<Boolean>()
+        lateinit var gate: SegmentationModuleGate
+        gate = SegmentationModuleGate(port, { ms ->
+            seenDuringWait += gate.preparing.value
+            clock.delay(ms)
+        })
+
+        assertFalse(gate.preparing.value)
+        assertEquals(GateResult.Available, gate.ensureAvailable(60.seconds))
+
+        assertEquals(listOf(true, true), seenDuringWait)
+        assertFalse(gate.preparing.value)
+    }
+
+    @Test
+    fun preparingFlow_clearsAfterTimeout() = runBlocking {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val clock = VirtualClock()
+        val gate = SegmentationModuleGate(port, clock::delay)
+
+        assertTrue(gate.ensureAvailable(6.seconds) is GateResult.Unavailable)
+
+        assertFalse(gate.preparing.value)
     }
 
     @Test

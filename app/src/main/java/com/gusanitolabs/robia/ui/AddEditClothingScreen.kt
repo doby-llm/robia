@@ -70,6 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -111,6 +112,7 @@ import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
 import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
+import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -1543,10 +1545,11 @@ private fun PhotoCaptureCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val processingLabel = if (processingStage != null) {
-                stringResource(processingStage.labelRes)
-            } else {
-                null
+            val backgroundPreparing by SegmentationModuleGates.get(LocalContext.current).preparing.collectAsState()
+            val processingLabel = when {
+                isPhotoProcessing && backgroundPreparing -> stringResource(R.string.background_removal_preparing)
+                processingStage != null -> stringResource(processingStage.labelRes)
+                else -> null
             }
             PhotoPreview(
                 photoUri = photoUri,

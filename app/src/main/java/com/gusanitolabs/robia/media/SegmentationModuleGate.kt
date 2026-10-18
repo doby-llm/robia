@@ -7,6 +7,10 @@ import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -57,6 +61,12 @@ class SegmentationModuleGate(
     private val port: ModuleInstallPort,
     private val delayFn: suspend (Long) -> Unit = { delay(it) },
 ) {
+    private val activeWaits = AtomicInteger(0)
+    private val _preparing = MutableStateFlow(false)
+
+    /** True while at least one [ensureAvailable] call is waiting for the module to install. */
+    val preparing: StateFlow<Boolean> = _preparing.asStateFlow()
+
     suspend fun ensureAvailable(
         timeout: Duration = 60.seconds,
         onPreparing: (Boolean) -> Unit = {},
@@ -65,6 +75,7 @@ class SegmentationModuleGate(
         if (!port.requestInstall()) return GateResult.Unavailable("Module install request was rejected")
 
         onPreparing(true)
+        markWaiting(true)
         try {
             var waitedMs = 0L
             while (waitedMs < timeout.inWholeMilliseconds) {
@@ -74,8 +85,13 @@ class SegmentationModuleGate(
             }
             return GateResult.Unavailable("Module not available after $timeout")
         } finally {
+            markWaiting(false)
             onPreparing(false)
         }
+    }
+
+    private fun markWaiting(waiting: Boolean) {
+        _preparing.value = activeWaits.addAndGet(if (waiting) 1 else -1) > 0
     }
 
     private companion object {

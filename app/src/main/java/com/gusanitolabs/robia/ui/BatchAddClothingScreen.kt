@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,7 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -333,6 +335,7 @@ private fun BatchDraftTile(
         stringResource(draft.status.labelRes)
     }
     val tileDescription = stringResource(R.string.batch_tile_content_description, position, totalCount, status)
+    val backgroundPreparing by SegmentationModuleGates.get(LocalContext.current).preparing.collectAsState()
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -360,6 +363,7 @@ private fun BatchDraftTile(
             BatchStatusBadge(
                 status = draft.status,
                 isAccepted = draft.isAcceptedForSave(),
+                backgroundPreparing = backgroundPreparing,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp),
@@ -440,6 +444,7 @@ private fun BatchPhotoPreview(
 private fun BatchStatusBadge(
     status: BatchDraftStatus,
     isAccepted: Boolean,
+    backgroundPreparing: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val visualStatus = if (isAccepted) BatchDraftStatus.Ready else status
@@ -473,7 +478,11 @@ private fun BatchStatusBadge(
                 else -> Unit
             }
             Text(
-                text = stringResource(visualStatus.labelRes),
+                text = if (backgroundPreparing && visualStatus == BatchDraftStatus.Processing) {
+                    stringResource(R.string.background_removal_preparing)
+                } else {
+                    stringResource(visualStatus.labelRes)
+                },
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
             )
