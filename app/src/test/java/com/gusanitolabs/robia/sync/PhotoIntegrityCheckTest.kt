@@ -90,6 +90,24 @@ class PhotoIntegrityCheckTest {
         assertEquals(0, report.orphanBlobCount)
     }
 
+    @Test
+    fun aPhotoThatOpensWithAnUnknownSizeIsPresentNotMissing() {
+        val snapshot = WardrobeSyncSnapshot(photos = listOf(photo("a", blobA, size = 10L)))
+
+        val report = checkPhotoIntegrity(listOf(LocalPhotoRef("a", fileLength = UNKNOWN_LOCAL_LENGTH)), files, snapshot)
+
+        assertEquals(PhotoIntegrityStatus.Ok, report.entries.single().status)
+    }
+
+    @Test
+    fun aLocalLengthIsTheColumnSizeThenTheDescriptorSizeAndNegativeMeansUnknown() {
+        assertEquals(9L, localPhotoLength(columnSize = 9L, statSize = -1L))
+        assertEquals(7L, localPhotoLength(columnSize = -1L, statSize = 7L))
+        assertEquals(7L, localPhotoLength(columnSize = null, statSize = 7L))
+        assertEquals(UNKNOWN_LOCAL_LENGTH, localPhotoLength(columnSize = -1L, statSize = -1L))
+        assertEquals(UNKNOWN_LOCAL_LENGTH, localPhotoLength(columnSize = null, statSize = null))
+    }
+
     private fun photo(garmentId: String, blobPath: String, size: Long) = GarmentPhotoRecord(
         garmentId = garmentId,
         localUri = "content://photos/$garmentId",

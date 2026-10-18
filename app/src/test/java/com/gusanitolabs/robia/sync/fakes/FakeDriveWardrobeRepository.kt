@@ -21,14 +21,19 @@ internal class FakeDriveWardrobeRepository(
     /** The `remote` argument of each upload, so tests can see which photo records the processor passed. */
     val upsertRemotes = mutableListOf<WardrobeSyncSnapshot?>()
     var recordsFetches = 0
+    var manifestFetches = 0
     /** Full-snapshot fetches (the restore path), so a test can see that a restore really ran. */
     var snapshotFetches = 0
     /** When set, fetching the manifest throws, as an unexpected crash in the Drive client would. */
     var manifestThrows: Throwable? = null
     /** Runs as the full backup download starts: the window in which a local edit can land. */
     var onSnapshotFetch: (() -> Unit)? = null
+    /** Every call that would write to Drive or to the phone's restored photos; a held account must leave all of them at zero. */
+    var deleteBackupCalls = 0
+    var retryRestoredPhotoCalls = 0
 
     override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> {
+        manifestFetches++
         manifestThrows?.let { throw it }
         return manifest
     }
@@ -44,8 +49,10 @@ internal class FakeDriveWardrobeRepository(
         return snapshot
     }
 
-    override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> =
-        DriveSyncResult.Failure(IllegalStateException("not used by sync tests"))
+    override suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener?): DriveSyncResult<GarmentPhotoRecord> {
+        retryRestoredPhotoCalls++
+        return DriveSyncResult.Failure(IllegalStateException("not used by sync tests"))
+    }
 
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
@@ -57,8 +64,10 @@ internal class FakeDriveWardrobeRepository(
         return upsertResult ?: DriveSyncResult.Success(DriveManifest.fromSnapshot(snapshot))
     }
 
-    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> =
-        DriveSyncResult.Success(DriveBackupDeletionResult())
+    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> {
+        deleteBackupCalls++
+        return DriveSyncResult.Success(DriveBackupDeletionResult())
+    }
 
     override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> =
         DriveSyncResult.Failure(IllegalStateException("not used by sync tests"))

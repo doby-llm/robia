@@ -58,7 +58,12 @@ class FakeDriveSnapshotApi(
 
     override suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>> {
         listCalls.incrementAndGet()
-        return DriveApiResult.Success(files.keys.sorted().map { name -> DriveFileMetadata(id = idOf(name), name = name) })
+        // Like the real listing, each file carries its size: the planner reuses a blob only while the size matches.
+        return DriveApiResult.Success(
+            files.entries.sortedBy { entry -> entry.key }.map { (name, bytes) ->
+                DriveFileMetadata(id = idOf(name), name = name, size = bytes.size.toLong())
+            },
+        )
     }
 
     override suspend fun listBlobPathsWithPrefix(accessToken: String, blobPathPrefix: String): DriveApiResult<List<String>> =

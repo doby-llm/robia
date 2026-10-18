@@ -35,11 +35,79 @@ class AccountBindingTest {
         processor.enqueue(WardrobeSyncOperation.ExportFullSnapshot())
         processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
         processor.enqueue(WardrobeSyncOperation.DeleteCloudBackup())
+        processor.enqueue(WardrobeSyncOperation.RetryRestoredPhoto("a"))
 
         assertTrue(drive.upserts.isEmpty())
         assertTrue(snapshots.imports.isEmpty())
+        assertEquals(0, drive.deleteBackupCalls)
+        assertEquals(0, drive.snapshotFetches)
+        assertEquals(0, drive.retryRestoredPhotoCalls)
         val state = withTimeout(5_000) { processor.state.first { state -> state.hasConflictingAccountBinding } }
         assertTrue(state.attention.any { attention -> attention.kind == SyncAttentionKind.AccountMismatch })
+    }
+
+    @Test
+    fun useBackupUnderAMismatchFetchesAndWritesNothing() = runBlocking {
+        val snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a", "b"))
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(snapshotWithGarments("c")))
+        val processor = processorWith(accounts(bound = "owner@example.com", authorized = "other@example.com"), snapshots, drive)
+
+        processor.useBackup()
+
+        assertEquals(0, drive.snapshotFetches)
+        assertTrue(snapshots.replacements.isEmpty())
+        assertTrue(drive.upserts.isEmpty())
+    }
+
+    @Test
+    fun keepThisPhoneUnderAMismatchFetchesAndUploadsNothing() = runBlocking {
+        val snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a", "b"))
+        val drive = FakeDriveWardrobeRepository(manifest = DriveSyncResult.Success(DriveManifest(revision = 3L)))
+        val processor = processorWith(accounts(bound = "owner@example.com", authorized = "other@example.com"), snapshots, drive)
+
+        processor.keepThisPhone()
+
+        assertEquals(0, drive.manifestFetches)
+        assertTrue(drive.upserts.isEmpty())
+        assertTrue(snapshots.replacements.isEmpty())
+    }
+
+    @Test
+    fun aBoundBackupIsHeldWhileTheSignedInAccountIsUnknown() = runBlocking {
+        val snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a"))
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(snapshotWithGarments("b")))
+        val processor = processorWith(accounts(bound = "owner@example.com", authorized = null), snapshots, drive)
+
+        processor.enqueue(WardrobeSyncOperation.ExportFullSnapshot())
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+        processor.enqueue(WardrobeSyncOperation.DeleteCloudBackup())
+
+        assertTrue(processor.state.first().hasConflictingAccountBinding)
+        assertTrue(drive.upserts.isEmpty())
+        assertTrue(snapshots.imports.isEmpty())
+        assertEquals(0, drive.deleteBackupCalls)
+    }
+
+    @Test
+    fun aFailedLookupKeepsTheAddressAlreadyOnRecord() {
+        assertEquals("owner@example.com", authorizedEmailAfterLookup(looked = null, onRecord = "owner@example.com"))
+        assertEquals("other@example.com", authorizedEmailAfterLookup(looked = "other@example.com", onRecord = "owner@example.com"))
+        assertNull(authorizedEmailAfterLookup(looked = null, onRecord = null))
+    }
+
+    @Test
+    fun useThisAccountWhileDisconnectedRebindsNothing() = runBlocking {
+        val snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("a", "b"))
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(snapshotWithGarments("b", "c", "d")))
+        val settings = accounts(bound = "owner@example.com", authorized = "other@example.com", status = DriveSyncConnectionStatus.Disconnected)
+        val processor = processorWith(settings, snapshots, drive)
+
+        processor.useThisDriveAccount()
+
+        assertEquals("owner@example.com", settings.settings.first().driveBoundAccountEmail)
+        assertNull(processor.state.first().pendingMergeSummary)
+        assertTrue(drive.upserts.isEmpty())
+        assertTrue(snapshots.imports.isEmpty())
     }
 
     @Test
@@ -78,8 +146,11 @@ class AccountBindingTest {
         assertFalse(processor.state.first().hasConflictingAccountBinding)
     }
 
-    private fun accounts(bound: String?, authorized: String?): AccountSettings =
-        AccountSettings(FakeSettingsRepository(status = DriveSyncConnectionStatus.Connected), bound, authorized)
+    private fun accounts(
+        bound: String?,
+        authorized: String?,
+        status: DriveSyncConnectionStatus = DriveSyncConnectionStatus.Connected,
+    ): AccountSettings = AccountSettings(FakeSettingsRepository(status = status), bound, authorized)
 
     /** The wiring of newTestProcessor, with account settings in place of the plain fake. */
     private fun processorWith(

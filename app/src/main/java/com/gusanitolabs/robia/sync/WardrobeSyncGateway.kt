@@ -99,9 +99,7 @@ data class WardrobeSyncState(
         get() = connectionStatus == DriveSyncConnectionStatus.Connected
 
     val hasConflictingAccountBinding: Boolean
-        get() = authorizedAccountEmail != null &&
-            expectedAccountEmail != null &&
-            !authorizedAccountEmail.equals(expectedAccountEmail, ignoreCase = true)
+        get() = accountsConflict(authorizedAccountEmail, expectedAccountEmail)
 
     companion object {
         fun notConfigured(): WardrobeSyncState = WardrobeSyncState(

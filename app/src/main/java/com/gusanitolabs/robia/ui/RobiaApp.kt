@@ -215,9 +215,11 @@ import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
+import com.gusanitolabs.robia.sync.DriveSyncResult
 import com.gusanitolabs.robia.sync.SyncCycleSummary
 import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
+import com.gusanitolabs.robia.sync.PhotoIntegrityReport
 import com.gusanitolabs.robia.sync.SyncAttention
 import com.gusanitolabs.robia.sync.SyncAttentionKind
 import com.gusanitolabs.robia.sync.SyncRunResult
@@ -455,6 +457,8 @@ fun RobiaApp(
                 scope.launch { syncGateway.clearRestoreSyncLog() }
             },
             onRefreshDriveUsageClick = { syncGateway.refreshDriveUsage() },
+            onCheckPhotosClick = { syncGateway.checkPhotos() },
+            onBackUpNowClick = { scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) } },
             onSaveItem = { item, capture ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -839,6 +843,9 @@ private fun RobiaShell(
     onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
     onRefreshDriveUsageClick: suspend () -> Unit = {},
+    /** Null hides the "Check photos" row. */
+    onCheckPhotosClick: (suspend () -> DriveSyncResult<PhotoIntegrityReport>)? = null,
+    onBackUpNowClick: () -> Unit = {},
     suggestionService: SuggestionService,
     onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
     onSaveItems: (List<ClothingItem>, Map<String, SuggestionCapture>) -> Unit,
@@ -1945,6 +1952,8 @@ private fun RobiaShell(
             onCloudSetupClick = ::requestCloudSetup,
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
             onRefreshDriveUsageClick = onRefreshDriveUsageClick,
+            onCheckPhotosClick = onCheckPhotosClick,
+            onBackUpNowClick = onBackUpNowClick,
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
@@ -2686,6 +2695,8 @@ private fun RobiaNavHost(
     onCloudSetupClick: () -> Unit,
     onDeleteBackupClick: () -> Unit,
     onRefreshDriveUsageClick: suspend () -> Unit,
+    onCheckPhotosClick: (suspend () -> DriveSyncResult<PhotoIntegrityReport>)? = null,
+    onBackUpNowClick: () -> Unit = {},
     onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
@@ -2868,6 +2879,10 @@ private fun RobiaNavHost(
             onDeleteBackupClick = onDeleteBackupClick,
             driveUsage = syncState.driveUsage,
             onRefreshDriveUsageClick = onRefreshDriveUsageClick,
+            // Hidden while the signed-in account is not the one the backup belongs to.
+            onCheckPhotosClick = if (syncState.hasConflictingAccountBinding) null else onCheckPhotosClick,
+            onRestorePhotoClick = onRetryRestoredPhoto,
+            onBackUpNowClick = onBackUpNowClick,
         )
         RobiaRoute.Settings -> SettingsScreen(
             innerPadding = innerPadding,

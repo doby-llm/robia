@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.sync
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
@@ -24,7 +25,9 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImageBlob
 import com.gusanitolabs.robia.media.magicHex
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -190,14 +193,20 @@ class GoogleDriveWardrobeRepository(
         DriveSyncResult.Success(checkPhotoIntegrity(local, files, remote))
     }
 
-    /** Byte length of the phone's copy of this photo; null when it is missing or unreadable. Read-only. */
+    /** Byte length of the phone's copy of this photo; null when it is missing or cannot be opened. Read-only. */
     private fun GarmentPhotoRecord.localFileLength(): Long? = localSourceUri().let { uri ->
         runCatching {
             if (uri.scheme == "file") {
                 File(uri.path.orEmpty()).takeIf(File::isFile)?.length()
             } else {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
-                    descriptor.length.takeIf { length -> length >= 0L }
+                // The SIZE column is best effort; only the open decides whether the photo is present.
+                val columnSize = runCatching {
+                    context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                    }
+                }.getOrNull()
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                    localPhotoLength(columnSize = columnSize, statSize = descriptor.statSize)
                 }
             }
         }.getOrNull()
@@ -237,7 +246,7 @@ class GoogleDriveWardrobeRepository(
     private suspend fun <T> withAccessToken(
         operation: suspend (accessToken: String) -> DriveSyncResult<T>,
     ): DriveSyncResult<T> {
-        val authorizationResult = runCatching {
+        val authorizationResult = try {
             withTimeout(AUTHORIZATION_TIMEOUT_MILLIS) {
                 authorizationClient.authorize(
                     AuthorizationRequest.builder()
@@ -245,7 +254,12 @@ class GoogleDriveWardrobeRepository(
                         .build(),
                 ).await()
             }
-        }.getOrElse { throwable ->
+        } catch (timeout: TimeoutCancellationException) {
+            return DriveSyncResult.Failure(timeout)
+        } catch (cancellation: CancellationException) {
+            // The caller was cancelled: that is not a Drive failure and must keep propagating.
+            throw cancellation
+        } catch (throwable: Throwable) {
             return DriveSyncResult.Failure(throwable)
         }
 
@@ -365,9 +379,11 @@ internal fun planPhotoUploads(
     when (state) {
         is LocalPhotoState.Guarded -> PhotoUploadAction.CopyRemote(state.garmentId)
         is LocalPhotoState.Unreadable -> PhotoUploadAction.Fail(state.garmentId)
+        // A blob whose listed size differs from the record is damaged: uploading under the same key repairs it.
         is LocalPhotoState.Readable ->
             if (known != null && (known.sourceHash == state.sourceHash || known.holdsLocalBytes(state.sourceHash)) &&
-                !PhotoBlobKeys.isLegacyKey(known.blobPath) && index.idOf(known.blobPath) != null
+                !PhotoBlobKeys.isLegacyKey(known.blobPath) && index.idOf(known.blobPath) != null &&
+                index.sizeOf(known.blobPath) == known.byteSize
             ) {
                 PhotoUploadAction.Reuse(state.garmentId, known)
             } else {
@@ -448,12 +464,21 @@ internal class PhotoUploadPipeline(
                 is PhotoUploadAction.Reuse -> uploaded += photo.withPreviousBlob(action.previous)
                 is PhotoUploadAction.CopyRemote -> {
                     protectedGarmentIds += action.garmentId
-                    val kept = remoteByGarmentId[action.garmentId]
-                        ?: previous[action.garmentId]?.let { known -> photo.withPreviousBlob(known) }
-                    if (kept != null && index.idOf(kept.blobPath) != null) {
+                    // Same lookup as the restore: the first candidate that resolves to a blob in Drive is the one kept.
+                    val candidates = listOfNotNull(
+                        remoteByGarmentId[action.garmentId],
+                        previous[action.garmentId]?.let { known -> photo.withPreviousBlob(known) },
+                    )
+                    val kept = candidates.firstNotNullOfOrNull { candidate ->
+                        index.resolveBlobPath(candidate.blobPath, candidate.garmentId)?.let { blobPath ->
+                            candidate.copy(blobPath = blobPath)
+                        }
+                    }
+                    if (kept != null) {
                         uploaded += kept
-                    } else if (kept != null) {
+                    } else if (candidates.isNotEmpty()) {
                         // The guard stays on the phone; the snapshot does not claim a blob Drive does not hold.
+                        failures += PhotoUploadFailure(action.garmentId)
                         onUnclaimedPhoto(action.garmentId)
                     }
                 }
@@ -641,6 +666,19 @@ data class UploadedBlobInfo(
     val sha256: String?,
 )
 
+/**
+ * What Drive stored, from the upload response. Drive reports the size as a JSON string or a number; a missing,
+ * null or blank field is unknown (null), and the checksum is lower-cased for comparison.
+ */
+internal fun parseUploadedBlobInfo(body: String): UploadedBlobInfo {
+    val stored = JSONObject(body)
+    val checksum = if (stored.isNull("sha256Checksum")) null else stored.optString("sha256Checksum")
+    return UploadedBlobInfo(
+        size = stored.optLong("size", -1L).takeIf { size -> size >= 0L },
+        sha256 = checksum?.takeIf(String::isNotBlank)?.lowercase(),
+    )
+}
+
 data class DriveFileMetadata(
     val id: String,
     val modifiedTime: String? = null,
@@ -801,14 +839,8 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             .toString()
         return multipartRequest(method, url, accessToken, metadata, bytes, mimeType ?: PHOTO_BLOB_MIME_TYPE) { body ->
-            // Drive reports size as a string; a response that is not JSON fails the upload, which keeps the previous record.
-            val stored = JSONObject(body)
-            DriveApiResult.Success(
-                UploadedBlobInfo(
-                    size = stored.optLong("size", -1L).takeIf { size -> size >= 0L },
-                    sha256 = stored.optString("sha256Checksum").takeIf(String::isNotBlank)?.lowercase(),
-                ),
-            )
+            // A response that is not JSON fails the upload, which keeps the previous record.
+            DriveApiResult.Success(parseUploadedBlobInfo(body))
         }
     }
 
@@ -1322,9 +1354,14 @@ private suspend fun restoreOnePhoto(
 // Exact paths are authoritative; a legacy path is only used when exactly one candidate exists.
 // exact_blob_not_found: ambiguous candidates deliberately stay in terminal attention.
 private fun DriveFileIndex.resolveFileId(blobPath: String, garmentId: String): String? =
-    idOf(blobPath) ?: namesWithPrefix(DriveFolderNaming.photoBlobPrefix(garmentId))
-        .singleOrNull()
-        ?.let { candidate -> idOf(candidate) }
+    resolveBlobPath(blobPath, garmentId)?.let { name -> idOf(name) }
+
+/** The blob name in Drive that holds this photo: the exact path, or the one legacy blob under the garment's prefix. */
+private fun DriveFileIndex.resolveBlobPath(blobPath: String, garmentId: String): String? =
+    blobPath.takeIf { path -> idOf(path) != null }
+        ?: namesWithPrefix(DriveFolderNaming.photoBlobPrefix(garmentId))
+            .singleOrNull()
+            ?.takeIf { candidate -> idOf(candidate) != null }
 
 private fun String.safeFileStem(): String = replace(Regex("[^A-Za-z0-9._-]"), "_")
 
@@ -1496,7 +1533,7 @@ private fun Throwable.diagnosticSummary(): String = buildString {
  * Callers keep it out of logs.
  */
 internal suspend fun fetchDriveAccountEmail(accessToken: String): String? = withContext(Dispatchers.IO) {
-    runCatching {
+    try {
         val connection = (
             URL("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)").openConnection() as HttpURLConnection
         ).apply {
@@ -1506,13 +1543,20 @@ internal suspend fun fetchDriveAccountEmail(accessToken: String): String? = with
             readTimeout = 30_000
         }
         try {
-            if (connection.responseCode !in 200..299) return@runCatching null
-            val body = connection.inputStream.bufferedReader().use { reader -> reader.readText() }
-            JSONObject(body).optJSONObject("user")?.optString("emailAddress")?.takeIf(String::isNotBlank)
+            if (connection.responseCode !in 200..299) {
+                null
+            } else {
+                val body = connection.inputStream.bufferedReader().use { reader -> reader.readText() }
+                JSONObject(body).optJSONObject("user")?.optString("emailAddress")?.takeIf(String::isNotBlank)
+            }
         } finally {
             connection.disconnect()
         }
-    }.getOrNull()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        null
+    }
 }
 
 private fun String?.toPhotoExtension(): String? = when (this?.lowercase()) {

@@ -434,7 +434,16 @@ class WardrobeSyncOutboxProcessor(
 
     override suspend fun useThisDriveAccount() {
         withContext(dispatcher) {
-            val authorized = settingsRepository.settings.first().driveAuthorizedAccountEmail ?: return@withContext
+            val settings = settingsRepository.settings.first()
+            // Only a connected phone can merge: a rebind while disconnected would change the account with nothing to merge.
+            if (settings.driveSyncConnectionStatus !in setOf(
+                    DriveSyncConnectionStatus.Connected,
+                    DriveSyncConnectionStatus.NeedsAttention,
+                )
+            ) {
+                return@withContext
+            }
+            val authorized = settings.driveAuthorizedAccountEmail ?: return@withContext
             // The user's choice rebinds the backup; the merge-on-connect flow then proposes what to keep, never an overwrite.
             settingsRepository.setDriveBoundAccountEmail(authorized)
             enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))
@@ -1063,6 +1072,7 @@ class WardrobeSyncOutboxProcessor(
 
     /** "Use backup": clears local garments only after the remote snapshot is fetched and decoded. */
     private suspend fun useBackupLocked(): SyncRunResult {
+        if (accountMismatchHeld()) return SyncRunResult.NeedsUser
         val remote = when (val fetched = driveRepository.fetchSnapshot()) {
             is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
@@ -1083,6 +1093,7 @@ class WardrobeSyncOutboxProcessor(
      * A newer revision written since then reopens the conflict at that revision: the user sees it again before anything is uploaded.
      */
     private suspend fun acceptRemoteRevisionAsKnown(): SyncRunResult {
+        if (accountMismatchHeld()) return SyncRunResult.NeedsUser
         val manifest = when (val fetched = driveRepository.fetchManifest()) {
             is DriveSyncResult.Success -> fetched.value
             is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
@@ -1501,9 +1512,15 @@ private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList
     if (accountsConflict(authorizedAccountEmail, expectedAccountEmail)) add(SyncAttention(SyncAttentionKind.AccountMismatch))
 }
 
-/** True when the signed-in account and the backup's account are both known and differ (case-insensitive). */
+/**
+ * True when the backup is bound to an account and the signed-in account is either unknown or a different one
+ * (case-insensitive). An unknown account is not allowed to write to a bound backup.
+ */
 internal fun accountsConflict(authorizedEmail: String?, boundEmail: String?): Boolean =
-    authorizedEmail != null && boundEmail != null && !authorizedEmail.equals(boundEmail, ignoreCase = true)
+    boundEmail != null && (authorizedEmail == null || !authorizedEmail.equals(boundEmail, ignoreCase = true))
+
+/** The e-mail to keep after an authorization: a failed lookup (null) keeps the address already on record. */
+internal fun authorizedEmailAfterLookup(looked: String?, onRecord: String?): String? = looked ?: onRecord
 
 private fun WardrobeSyncSnapshot.withWriter(deviceId: String): WardrobeSyncSnapshot =
     copy(metadata = metadata.copy(writerDeviceId = deviceId))

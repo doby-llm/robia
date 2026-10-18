@@ -3,11 +3,23 @@ package com.gusanitolabs.robia.sync
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 
-/** A garment photo on this phone. [fileLength] is null when its local file is missing or cannot be read. */
+/**
+ * A garment photo on this phone. [fileLength] is null when its local file is missing or cannot be opened, and
+ * [UNKNOWN_LOCAL_LENGTH] when the file opens but its provider reports no size: that photo is present.
+ */
 data class LocalPhotoRef(
     val garmentId: String,
     val fileLength: Long?,
 )
+
+const val UNKNOWN_LOCAL_LENGTH = -1L
+
+/**
+ * Length of an opened local photo: the provider's SIZE column when it reports one, else the descriptor's stat size.
+ * Negative values mean "not reported" (FileProvider returns -1 here), so an opened file is never treated as missing.
+ */
+fun localPhotoLength(columnSize: Long?, statSize: Long?): Long =
+    columnSize?.takeIf { size -> size >= 0L } ?: statSize?.takeIf { size -> size >= 0L } ?: UNKNOWN_LOCAL_LENGTH
 
 enum class PhotoIntegrityStatus { Ok, MissingLocalFile, MissingOnDrive, SizeMismatch, NotYetUploaded }
 

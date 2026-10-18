@@ -15,6 +15,7 @@ import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
+import com.gusanitolabs.robia.sync.authorizedEmailAfterLookup
 import com.gusanitolabs.robia.sync.fetchDriveAccountEmail
 import com.gusanitolabs.robia.ui.RobiaApp
 import com.google.android.gms.auth.api.identity.AuthorizationClient
@@ -169,10 +170,12 @@ class MainActivity : ComponentActivity() {
      */
     private suspend fun recordDriveAccount(accessToken: String) {
         val email = fetchDriveAccountEmail(accessToken)
-        if (settingsRepository.settings.first().driveBoundAccountEmail == null && email != null) {
+        val settings = settingsRepository.settings.first()
+        if (settings.driveBoundAccountEmail == null && email != null) {
             settingsRepository.setDriveBoundAccountEmail(email)
         }
-        settingsRepository.setDriveAuthorizedAccountEmail(email)
+        // A failed lookup keeps the address already on record instead of clearing it.
+        settingsRepository.setDriveAuthorizedAccountEmail(authorizedEmailAfterLookup(email, settings.driveAuthorizedAccountEmail))
     }
 
     private fun persistDriveAuthorizationResult(result: AuthorizationResult) {
