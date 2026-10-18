@@ -42,6 +42,32 @@ class GarmentFieldRowsTest {
     }
 
     @Test
+    fun sheetHintOnlyForSuggestedTagsOfTheSheetsOwnCategory() {
+        val seasonIds = listOf("s-summer", "s-winter")
+
+        // Category was suggested; the Season sheet has nothing suggested in its own category.
+        assertFalse(sheetShowsSuggestedHint(listOf("cat-shirt", "s-summer"), setOf("cat-shirt"), seasonIds))
+        assertTrue(sheetShowsSuggestedHint(listOf("s-summer"), setOf("s-summer"), seasonIds))
+        assertFalse(sheetShowsSuggestedHint(listOf("s-summer"), emptySet(), seasonIds))
+    }
+
+    @Test
+    fun colorAiMarkerWhileEitherColourIsModelSuggested() {
+        assertTrue(isColorAiSuggested(primaryGeneration = 3L, secondaryGeneration = null))
+        assertTrue(isColorAiSuggested(primaryGeneration = null, secondaryGeneration = 3L))
+        assertTrue(isColorAiSuggested(primaryGeneration = 3L, secondaryGeneration = 3L))
+        assertFalse(isColorAiSuggested(primaryGeneration = null, secondaryGeneration = null))
+    }
+
+    @Test
+    fun colorValueShowsRolesOnlyWhenTheySuggestOneIsMissing() {
+        assertEquals("Navy · Ivory", colorFieldValueText(primary = "Navy", secondary = "Ivory", none = none))
+        assertEquals("Navy", colorFieldValueText(primary = "Navy", secondary = null, none = none))
+        assertEquals("None · Ivory", colorFieldValueText(primary = null, secondary = "Ivory", none = none))
+        assertEquals(none, colorFieldValueText(primary = null, secondary = null, none = none))
+    }
+
+    @Test
     fun multiSelectToggleAddsAndRemovesOnlyThatTag() {
         val tags = listOf("o-work", "o-beach")
         val beach = occasion("o-beach", "Beach")

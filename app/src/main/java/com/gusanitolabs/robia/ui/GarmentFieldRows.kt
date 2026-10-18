@@ -53,6 +53,26 @@ internal fun isAiSuggested(selectedIds: Collection<String>, modelOwnedIds: Colle
     return selectedIds.isNotEmpty() && selectedIds.all { id -> id in owned }
 }
 
+/** The Colours row shows the AI marker while either colour still holds a model suggestion. */
+internal fun isColorAiSuggested(primaryGeneration: Long?, secondaryGeneration: Long?): Boolean =
+    primaryGeneration != null || secondaryGeneration != null
+
+/** Colours value: both names with roles, a lone primary as its name, a lone secondary as "None · name", or [none]. */
+internal fun colorFieldValueText(primary: String?, secondary: String?, none: String): String =
+    when {
+        primary != null && secondary != null -> "$primary · $secondary"
+        primary != null -> primary
+        secondary != null -> "$none · $secondary"
+        else -> none
+    }
+
+/** The sheet hint shows only when a selected tag is suggested and belongs to this sheet's own category. */
+internal fun sheetShowsSuggestedHint(
+    selectedIds: Collection<String>,
+    suggestedIds: Set<String>,
+    categoryTagIds: Collection<String>,
+): Boolean = selectedIds.any { id -> id in suggestedIds && id in categoryTagIds }
+
 /** Same selection rule the metadata chips always used: multi toggles the tag, single replaces the category's tags. */
 internal fun List<String>.toggleTag(
     tag: GarmentTag,
@@ -189,7 +209,7 @@ fun TagPickerSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                if (selectedIds.any { id -> id in suggestedIds }) {
+                if (sheetShowsSuggestedHint(selectedIds, suggestedIds, categoryTagIds)) {
                     Text(
                         text = stringResource(R.string.field_suggested_hint),
                         style = MaterialTheme.typography.bodySmall,

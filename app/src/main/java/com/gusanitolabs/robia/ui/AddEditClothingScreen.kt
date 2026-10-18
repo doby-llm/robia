@@ -844,6 +844,7 @@ fun AddEditClothingScreen(
                 fitValue = fitValue,
                 primaryColor = primaryPaletteColor,
                 secondaryColor = secondaryPaletteColor,
+                colorsAiSuggested = isColorAiSuggested(modelPrimaryColorGeneration, modelSecondaryColorGeneration),
                 onSelectedTagIdsChange = { updateUserSelectedTagIds(it) },
                 onFitValueChange = { fitValue = it },
                 onColorTargetPick = { target -> colorPickerTarget = target },
@@ -988,6 +989,7 @@ private fun GarmentFieldRowsCard(
     fitValue: Int?,
     primaryColor: MainColor?,
     secondaryColor: MainColor?,
+    colorsAiSuggested: Boolean,
     onSelectedTagIdsChange: (List<String>) -> Unit,
     onFitValueChange: (Int?) -> Unit,
     onColorTargetPick: (ColorPickerTarget) -> Unit,
@@ -1011,7 +1013,7 @@ private fun GarmentFieldRowsCard(
     ) { tag -> tag.localizedTagLabel(context) }
 
     val fits = fitValue.indicatesFits()
-    val colorValue = listOfNotNull(primaryColor?.name, secondaryColor?.name).joinToString(" · ").ifEmpty { none }
+    val colorValue = colorFieldValueText(primary = primaryColor?.name, secondary = secondaryColor?.name, none = none)
     val colorSwatches = listOfNotNull(primaryColor?.hex?.toComposeColor(), secondaryColor?.hex?.toComposeColor())
 
     Card(
@@ -1045,7 +1047,7 @@ private fun GarmentFieldRowsCard(
                 icon = Icons.Outlined.Palette,
                 label = stringResource(R.string.colors_section),
                 value = colorValue,
-                aiSuggested = false,
+                aiSuggested = colorsAiSuggested,
                 onClick = { showColorTargetChooser = true },
                 swatches = colorSwatches,
             )
