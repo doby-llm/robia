@@ -1,11 +1,20 @@
 package com.gusanitolabs.robia.media.cutout
 
 import kotlin.math.max
-import kotlin.math.min
 
 private const val HARD_THRESHOLD = 0.5f
 private const val HARD_DILATION_PX = 2
 private const val UNDO_DEPTH = 10
+
+/**
+ * Pixels whose stored alpha is below this have no colour to restore: the stored PNG has RGB 0 under alpha 0, and the
+ * original photo is not kept with the garment. Keep never raises them, so they cannot turn into black.
+ */
+internal const val UNRESTORABLE_ALPHA = 0.05f
+
+/** The alpha after a Keep mask [mask] (0..1) on a pixel with [current] alpha and [base] stored alpha. */
+internal fun keepAlpha(current: Float, base: Float, mask: Float): Float =
+    if (base < UNRESTORABLE_ALPHA) current else max(current, mask)
 
 /**
  * Cutout state of the photo editor (SG3): the photo's alpha, changed by Keep and Remove masks, with a bounded undo stack.
@@ -37,8 +46,8 @@ internal class RefineSession(
     fun currentAlpha(): FloatArray = current.copyOf()
 
     /**
-     * Keep raises the alpha to the mask (`max(alpha, m)`); Remove scales it by `1 - m`. A [hard] mask (smart selection) is
-     * thresholded at 0.5 and dilated by [HARD_DILATION_PX]; a soft mask (brush) is used as it is.
+     * Keep raises the alpha to the mask (`max(alpha, m)`, see [keepAlpha]); Remove scales it by `1 - m`. A [hard] mask
+     * (smart selection) is thresholded at 0.5 and dilated by a disc of [HARD_DILATION_PX]; a soft mask (brush) is used as it is.
      */
     fun apply(mode: Mode, mask: FloatArray, hard: Boolean) {
         require(mask.size == w * h) { "Mask must be ${w}x$h" }
@@ -47,7 +56,7 @@ internal class RefineSession(
         current = FloatArray(current.size) { i ->
             val m = effective[i].coerceIn(0f, 1f)
             when (mode) {
-                Mode.Keep -> max(current[i], m)
+                Mode.Keep -> keepAlpha(current[i], base[i], m)
                 Mode.Remove -> current[i] * (1f - m)
             }
         }
@@ -74,21 +83,22 @@ internal class RefineSession(
     private fun threshold(mask: FloatArray): FloatArray =
         FloatArray(mask.size) { i -> if (mask[i] >= HARD_THRESHOLD) 1f else 0f }
 
-    /** Square max filter of [radius], separable: a horizontal pass, then a vertical one. */
+    /** Disc max filter of [radius] (dx² + dy² ≤ radius²), so the grown edge is round rather than square. */
     private fun dilate(mask: FloatArray, radius: Int): FloatArray {
-        val horizontal = FloatArray(mask.size)
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                var best = 0f
-                for (xx in max(0, x - radius)..min(w - 1, x + radius)) best = max(best, mask[y * w + xx])
-                horizontal[y * w + x] = best
-            }
-        }
+        val reach = radius * radius
         val out = FloatArray(mask.size)
         for (y in 0 until h) {
             for (x in 0 until w) {
                 var best = 0f
-                for (yy in max(0, y - radius)..min(h - 1, y + radius)) best = max(best, horizontal[yy * w + x])
+                for (dy in -radius..radius) {
+                    val yy = y + dy
+                    if (yy < 0 || yy >= h) continue
+                    for (dx in -radius..radius) {
+                        val xx = x + dx
+                        if (dx * dx + dy * dy > reach || xx < 0 || xx >= w) continue
+                        best = max(best, mask[yy * w + xx])
+                    }
+                }
                 out[y * w + x] = best
             }
         }

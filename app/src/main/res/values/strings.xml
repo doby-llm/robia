@@ -275,7 +275,7 @@
     <string name="quick_edit_brightness_content_description">Brightness tool</string>
     <string name="quick_edit_temperature_content_description">Temperature tool</string>
     <string name="quick_edit_selected_tool_label">Selected tool: %1$s</string>
-    <string name="quick_edit_apply_on_save_hint">Preview updates live; Save unlocks when it matches the result.</string>
+    <string name="quick_edit_apply_on_save_hint">Preview updates live; Done saves the change.</string>
     <string name="quick_edit_preview_loading">Updating preview…</string>
     <string name="quick_edit_temperature_preset_content_description">Temperature: %1$s, %2$s</string>
     <string name="quick_edit_temperature_selected">selected</string>
@@ -298,7 +298,7 @@
     <string name="refine_remove">Remove</string>
     <string name="refine_brush">Brush</string>
     <string name="refine_hint">Tap or swipe over a part to keep or remove it.</string>
-    <string name="refine_no_source_hint">The original photo is not available, so removed parts cannot be restored.</string>
+    <string name="refine_no_source_hint">The original photo is not available here, so fully removed parts cannot be restored; use Remove and Undo.</string>
     <string name="refine_undo">Undo</string>
     <string name="refine_reset">Reset</string>
     <string name="colors_section">Colors</string>

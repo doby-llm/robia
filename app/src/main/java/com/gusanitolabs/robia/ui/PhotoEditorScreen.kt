@@ -19,11 +19,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Brightness6
@@ -68,6 +72,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -95,15 +101,13 @@ import androidx.compose.ui.window.DialogProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.media.AlphaRefiner
 import com.gusanitolabs.robia.media.ClothingImageStore
-import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.QuickEditAdjustments
-import com.gusanitolabs.robia.media.QuickEditDraftState
-import com.gusanitolabs.robia.media.QuickEditImageProcessor
 import com.gusanitolabs.robia.media.cutout.MediaPipeInteractiveSelector
 import com.gusanitolabs.robia.media.cutout.RefineSession
 import com.gusanitolabs.robia.media.cutout.brushMask
 import com.gusanitolabs.robia.media.cutout.brushRadiusPx
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -123,7 +127,9 @@ private const val BRUSH_FEATHER_DP = 6f
 private const val MIN_ZOOM = 1f
 private const val MAX_ZOOM = 4f
 private const val CHECKER_CELL_DP = 12f
-private const val LIGHT_PREVIEW_MAX_EDGE_PX = 512
+// Same offsets as QuickEditImageProcessor, which applies the Light adjustments on Done; keep them in step.
+private const val LIGHT_BRIGHTNESS_OFFSET = 110f
+private const val LIGHT_TEMPERATURE_OFFSET = 46f
 
 private enum class EditorTab { Cutout, Light }
 
@@ -153,7 +159,8 @@ fun PhotoEditorScreen(
     val noSourceHint = stringResource(R.string.refine_no_source_hint)
     val snackbarHostState = remember { SnackbarHostState() }
     val selector = remember { lazy { MediaPipeInteractiveSelector(context) } }
-    val selectMutex = remember { Mutex() }
+    // Guards every read of photo.source and every use of the selector, so dispose can close and recycle after they finish.
+    val sourceMutex = remember { Mutex() }
 
     var tab by rememberSaveable { mutableStateOf(EditorTab.Cutout) }
     var mode by rememberSaveable { mutableStateOf(RefineSession.Mode.Keep) }
@@ -166,9 +173,6 @@ fun PhotoEditorScreen(
     var photo by remember(photoUri) { mutableStateOf<CutoutPhoto?>(null) }
     var revision by remember(photoUri) { mutableIntStateOf(0) }
     var preview by remember(photoUri) { mutableStateOf<ImageBitmap?>(null) }
-    var lightSource by remember(photoUri) { mutableStateOf<Uri?>(null) }
-    var lightPreviewUri by remember(photoUri) { mutableStateOf(photoUri) }
-    var previewRendering by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(MIN_ZOOM) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
@@ -183,7 +187,14 @@ fun PhotoEditorScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            if (selector.isInitialized()) selector.value.close()
+            val leaving = photo
+            // Runs outside the composition scope, which is cancelled here and would not wait for a running select or save.
+            CoroutineScope(Dispatchers.Default).launch {
+                sourceMutex.withLock {
+                    if (selector.isInitialized()) selector.value.close()
+                    leaving?.source?.recycle()
+                }
+            }
         }
     }
 
@@ -200,27 +211,11 @@ fun PhotoEditorScreen(
     LaunchedEffect(photo, revision) {
         val current = photo ?: return@LaunchedEffect
         preview = withContext(Dispatchers.Default) {
-            val alphaBytes = toAlphaBytes(current.session.currentAlpha())
-            composeWithAlpha(argbOf(current.source), alphaBytes, current.source.width, current.source.height).asImageBitmap()
+            sourceMutex.withLock {
+                val alphaBytes = toAlphaBytes(current.session.currentAlpha())
+                composeWithAlpha(argbOf(current.source), alphaBytes, current.source.width, current.source.height).asImageBitmap()
+            }
         }
-    }
-
-    LaunchedEffect(tab, photo, revision) {
-        if (tab != EditorTab.Light) return@LaunchedEffect
-        val current = photo ?: return@LaunchedEffect
-        lightSource = if (current.session.isChanged) {
-            withContext(Dispatchers.IO) { writeCutout(context, current) }
-        } else {
-            Uri.parse(photoUri)
-        }
-    }
-
-    LaunchedEffect(lightSource, brightness, temperature) {
-        val source = lightSource ?: return@LaunchedEffect
-        previewRendering = true
-        val draft = QuickEditDraftState(sourceUri = source, adjustments = QuickEditAdjustments(brightness, temperature))
-        lightPreviewUri = withContext(Dispatchers.IO) { QuickEditImageProcessor.renderDraftPreview(context, draft) }.toString()
-        previewRendering = false
     }
 
     LaunchedEffect(pulse) {
@@ -242,7 +237,7 @@ fun PhotoEditorScreen(
 
     fun runSmartSelection(points: List<Offset>, current: CutoutPhoto) {
         scope.launch {
-            selectMutex.withLock {
+            sourceMutex.withLock {
                 val w = current.source.width
                 val h = current.source.height
                 val union = FloatArray(w * h)
@@ -301,10 +296,18 @@ fun PhotoEditorScreen(
         val current = photo ?: return
         saving = true
         scope.launch {
-            val cutoutUri = if (current.session.isChanged) {
-                runCatching { withContext(Dispatchers.IO) { writeCutout(context, current) } }
-            } else {
-                Result.success(null)
+            val cutoutUri = try {
+                Result.success(
+                    if (current.session.isChanged) {
+                        sourceMutex.withLock { withContext(Dispatchers.IO) { writeCutout(context, current) } }
+                    } else {
+                        null
+                    },
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                Result.failure(throwable)
             }
             cutoutUri.fold(
                 onSuccess = { uri -> onDone(uri, adjustments) },
@@ -326,7 +329,7 @@ fun PhotoEditorScreen(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onCancel) {
@@ -404,23 +407,28 @@ fun PhotoEditorScreen(
                 ) {
                     val current = photo
                     if (tab == EditorTab.Light) {
-                        BoundedGarmentImage(
-                            photoUri = lightPreviewUri,
-                            thumbnailMaxEdgePx = LIGHT_PREVIEW_MAX_EDGE_PX,
-                            purpose = ImagePurpose.Editor,
-                            modifier = Modifier.fillMaxSize().graphicsLayer {
-                                scaleX = zoom
-                                scaleY = zoom
-                                translationX = pan.x
-                                translationY = pan.y
-                            },
-                        )
+                        // Hold shows the original photo as it was before this editor; otherwise the cutout with the Light filter.
+                        val lightImage = if (showBefore) current?.source?.asImageBitmap() else preview
+                        lightImage?.let { bitmap ->
+                            Image(
+                                bitmap = bitmap,
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                colorFilter = if (showBefore) null else lightColorFilter(adjustments),
+                                modifier = Modifier.fillMaxSize().graphicsLayer {
+                                    scaleX = zoom
+                                    scaleY = zoom
+                                    translationX = pan.x
+                                    translationY = pan.y
+                                },
+                            )
+                        }
                         if (showBefore) {
                             PreviewChip(stringResource(R.string.quick_edit_before_label), Modifier.align(Alignment.BottomCenter))
                         } else {
                             PreviewChip(stringResource(R.string.quick_edit_hold_compare_hint), Modifier.align(Alignment.BottomCenter))
                         }
-                        if (previewRendering && !showBefore) {
+                        if (preview == null && !showBefore) {
                             PreviewChip(stringResource(R.string.quick_edit_preview_loading), Modifier.align(Alignment.TopCenter))
                         }
                     } else {
@@ -501,7 +509,10 @@ fun PhotoEditorScreen(
                     }
                 }
 
-                TabRow(selectedTabIndex = tab.ordinal) {
+                TabRow(
+                    selectedTabIndex = tab.ordinal,
+                    modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
+                ) {
                     Tab(
                         selected = tab == EditorTab.Cutout,
                         onClick = { tab = EditorTab.Cutout },
@@ -747,17 +758,47 @@ private fun composeWithAlpha(argb: IntArray, alpha: ByteArray, width: Int, heigh
     return Bitmap.createBitmap(out, width, height, Bitmap.Config.ARGB_8888)
 }
 
-/** Done path for a changed cutout: AlphaRefiner edges on the edited alpha, RGB from the stored PNG, one new PNG. */
+/**
+ * The Light transform as a colour matrix: brightness adds the same offset to every channel, temperature moves red up and
+ * blue down (the same translation as QuickEditImageProcessor). Shown in memory, so the preview writes no file.
+ */
+private fun lightColorFilter(adjustments: QuickEditAdjustments): ColorFilter {
+    val brightnessOffset = adjustments.brightness.coerceIn(-1f, 1f) * LIGHT_BRIGHTNESS_OFFSET
+    val warmth = adjustments.temperature.coerceIn(-1f, 1f) * LIGHT_TEMPERATURE_OFFSET
+    return ColorFilter.colorMatrix(
+        ColorMatrix(
+            floatArrayOf(
+                1f, 0f, 0f, 0f, warmth + brightnessOffset,
+                0f, 1f, 0f, 0f, brightnessOffset,
+                0f, 0f, 1f, 0f, brightnessOffset - warmth,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
+}
+
+/**
+ * Done path for a changed cutout: AlphaRefiner edges on the edited alpha, RGB from the stored PNG, then the same
+ * alpha crop as the garment import. The only write of the editor; the uncropped intermediate is removed.
+ */
 private fun writeCutout(context: Context, photo: CutoutPhoto): Uri {
     val source = photo.source
     val argb = argbOf(source)
     val alpha = AlphaRefiner.refine(argb, photo.session.currentAlpha(), source.width, source.height)
     val bitmap = composeWithAlpha(argb, alpha, source.width, source.height)
-    return try {
+    val intermediate = try {
         ClothingImageStore.writeProcessedBitmap(context, bitmap, prefix = "cutout-edit")
     } finally {
         bitmap.recycle()
     }
+    val cropped = try {
+        ClothingImageStore.cropTransparentPixels(context, intermediate)
+    } catch (throwable: Throwable) {
+        context.contentResolver.delete(intermediate, null, null)
+        throw throwable
+    }
+    if (cropped != intermediate) context.contentResolver.delete(intermediate, null, null)
+    return cropped
 }
 
 @Composable

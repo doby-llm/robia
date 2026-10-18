@@ -275,7 +275,7 @@
     <string name="quick_edit_brightness_content_description">Helligkeitswerkzeug</string>
     <string name="quick_edit_temperature_content_description">Temperaturwerkzeug</string>
     <string name="quick_edit_selected_tool_label">Ausgewähltes Werkzeug: %1$s</string>
-    <string name="quick_edit_apply_on_save_hint">Die Vorschau aktualisiert sich live; Speichern wird aktiv, sobald sie dem Ergebnis entspricht.</string>
+    <string name="quick_edit_apply_on_save_hint">Die Vorschau aktualisiert sich live; Fertig speichert die Änderung.</string>
     <string name="quick_edit_preview_loading">Vorschau wird aktualisiert…</string>
     <string name="quick_edit_temperature_preset_content_description">Temperatur: %1$s, %2$s</string>
     <string name="quick_edit_temperature_selected">ausgewählt</string>
@@ -298,7 +298,7 @@
     <string name="refine_remove">Entfernen</string>
     <string name="refine_brush">Pinsel</string>
     <string name="refine_hint">Tippe oder wische über einen Teil, um ihn zu behalten oder zu entfernen.</string>
-    <string name="refine_no_source_hint">Das Originalfoto ist nicht verfügbar, daher können entfernte Teile nicht wiederhergestellt werden.</string>
+    <string name="refine_no_source_hint">Das Originalfoto ist hier nicht verfügbar, daher können vollständig entfernte Teile nicht wiederhergestellt werden; nutze Entfernen und Rückgängig.</string>
     <string name="refine_undo">Rückgängig</string>
     <string name="refine_reset">Zurücksetzen</string>
     <string name="colors_section">Farben</string>

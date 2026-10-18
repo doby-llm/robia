@@ -13,20 +13,54 @@ class RefineSessionTest {
 
     private fun filled(value: Float) = FloatArray(w * h) { value }
 
+    /** A stored alpha above the no-source threshold, so Keep has something to restore onto. */
+    private val soft = 0.2f
+
     private fun pointMask(x: Int, y: Int, value: Float = 1f) = FloatArray(w * h).also { it[y * w + x] = value }
 
     private fun RefineSession.alphaAt(x: Int, y: Int) = currentAlpha()[y * w + x]
 
     @Test
-    fun keep_hardMask_isDilatedTwoPixels_andLeavesFarPixelsAlone() {
-        val session = RefineSession(w, h, filled(0f))
+    fun keep_hardMask_isDilatedByADiscOfTwoPixels_andLeavesFarPixelsAlone() {
+        val session = RefineSession(w, h, filled(soft))
 
         session.apply(RefineSession.Mode.Keep, pointMask(6, 6), hard = true)
 
         assertEquals(1f, session.alphaAt(6, 6), 0f)
-        assertEquals(1f, session.alphaAt(4, 4), 0f)
-        assertEquals(1f, session.alphaAt(8, 8), 0f)
-        assertEquals(0f, session.alphaAt(9, 9), 0f)
+        assertEquals(1f, session.alphaAt(8, 6), 0f)
+        assertEquals(1f, session.alphaAt(6, 4), 0f)
+        assertEquals(1f, session.alphaAt(7, 7), 0f)
+        assertEquals(soft, session.alphaAt(4, 4), 0f)
+        assertEquals(soft, session.alphaAt(8, 8), 0f)
+        assertEquals(soft, session.alphaAt(9, 6), 0f)
+    }
+
+    @Test
+    fun keep_fullyTransparentBasePixel_staysTransparent() {
+        val base = filled(1f).also { it[6 * w + 6] = 0f }
+        val session = RefineSession(w, h, base)
+        session.apply(RefineSession.Mode.Remove, pointMask(6, 6, value = 1f), hard = false)
+
+        session.apply(RefineSession.Mode.Keep, pointMask(6, 6, value = 1f), hard = false)
+
+        assertEquals(0f, session.alphaAt(6, 6), 0f)
+    }
+
+    @Test
+    fun keep_partiallyTransparentBasePixel_canBeRestored() {
+        val session = RefineSession(w, h, filled(0.5f))
+        session.apply(RefineSession.Mode.Remove, pointMask(6, 6, value = 1f), hard = false)
+
+        session.apply(RefineSession.Mode.Keep, pointMask(6, 6, value = 1f), hard = false)
+
+        assertEquals(1f, session.alphaAt(6, 6), 0f)
+    }
+
+    @Test
+    fun keepAlpha_belowTheUnrestorableThreshold_neverRaises() {
+        assertEquals(0f, keepAlpha(current = 0f, base = 0f, mask = 1f), 0f)
+        assertEquals(0.04f, keepAlpha(current = 0.04f, base = 0.04f, mask = 1f), 0f)
+        assertEquals(1f, keepAlpha(current = 0.5f, base = 0.5f, mask = 1f), 0f)
     }
 
     @Test
@@ -45,7 +79,8 @@ class RefineSessionTest {
         session.apply(RefineSession.Mode.Remove, pointMask(6, 6), hard = true)
 
         assertEquals(0f, session.alphaAt(6, 6), 0f)
-        assertEquals(0f, session.alphaAt(4, 4), 0f)
+        assertEquals(0f, session.alphaAt(6, 4), 0f)
+        assertEquals(1f, session.alphaAt(4, 4), 0f)
         assertEquals(1f, session.alphaAt(1, 1), 0f)
     }
 
@@ -73,7 +108,7 @@ class RefineSessionTest {
 
     @Test
     fun undo_restoresEveryStepOfTenChanges() {
-        val session = RefineSession(w, h, filled(0f))
+        val session = RefineSession(w, h, filled(soft))
         val snapshots = mutableListOf(session.currentAlpha())
         repeat(10) { x ->
             session.apply(RefineSession.Mode.Keep, pointMask(x, 0, value = 0.6f), hard = false)
@@ -91,7 +126,7 @@ class RefineSessionTest {
 
     @Test
     fun undo_keepsOnlyTheLastTenChanges() {
-        val session = RefineSession(w, h, filled(0f))
+        val session = RefineSession(w, h, filled(soft))
         val afterFirst = run {
             session.apply(RefineSession.Mode.Keep, pointMask(0, 0), hard = false)
             session.currentAlpha()
