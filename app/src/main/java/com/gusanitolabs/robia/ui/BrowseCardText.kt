@@ -1,0 +1,86 @@
+package com.gusanitolabs.robia.ui
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Error
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.GarmentSyncStatus
+import java.text.Collator
+import java.util.Locale
+
+internal const val BADGE_HOLD_MILLIS = 1200L
+
+private const val CATEGORY_ID = "category"
+private const val SEASON_ID = "season"
+private const val OCCASION_ID = "occasion"
+private const val CARD_META_SEPARATOR = " · "
+
+internal data class CardBadge(
+    val icon: ImageVector,
+    val labelRes: Int,
+    val isError: Boolean,
+)
+
+internal enum class BrowseCell { Tile, Card }
+
+internal fun browseCollator(): Collator = Collator.getInstance(Locale.getDefault()).apply { strength = Collator.PRIMARY }
+
+/** Name when present, otherwise the category label, otherwise the untitled fallback. */
+internal fun cardTitle(name: String, tags: List<UiTag>, untitled: String): String {
+    val trimmed = name.trim()
+    if (trimmed.isNotBlank()) return trimmed
+    return tags.firstOrNull { it.categoryId == CATEGORY_ID }?.label ?: untitled
+}
+
+/** Occasions alphabetically, then seasons alphabetically, joined with a middle dot. Empty when neither is set. */
+internal fun cardMeta(tags: List<UiTag>, collator: Collator): String {
+    val occasions = tags.filter { it.categoryId == OCCASION_ID }.map { it.label }.sortedWith(collator)
+    val seasons = tags.filter { it.categoryId == SEASON_ID }.map { it.label }.sortedWith(collator)
+    return (occasions + seasons).joinToString(CARD_META_SEPARATOR)
+}
+
+/** Accessibility label of a photos-only tile: the title, then the metadata when there is any. */
+internal fun tileContentDescription(
+    name: String,
+    tags: List<UiTag>,
+    untitled: String,
+    collator: Collator = browseCollator(),
+): String {
+    val title = cardTitle(name, tags, untitled)
+    val meta = cardMeta(tags, collator)
+    return if (meta.isEmpty()) title else "$title, $meta"
+}
+
+internal fun browseCellFor(layout: BrowseLayout): BrowseCell = when (layout) {
+    BrowseLayout.PhotosOnly -> BrowseCell.Tile
+    BrowseLayout.PhotosWithDetails -> BrowseCell.Card
+}
+
+/** The badge for a sync status; pass the status after `resolveForConnection`. Synced and LocalOnly show nothing. */
+internal fun badgeFor(status: GarmentSyncStatus): CardBadge? = when (status) {
+    GarmentSyncStatus.Synced,
+    GarmentSyncStatus.LocalOnly -> null
+    GarmentSyncStatus.Dirty,
+    GarmentSyncStatus.Queued,
+    GarmentSyncStatus.FailedRetryable -> CardBadge(Icons.Rounded.CloudUpload, R.string.badge_waiting, isError = false)
+    GarmentSyncStatus.Running -> CardBadge(Icons.Rounded.CloudUpload, R.string.badge_uploading, isError = false)
+    GarmentSyncStatus.NeedsUserAction -> CardBadge(Icons.Rounded.Error, R.string.badge_needs_attention, isError = true)
+    GarmentSyncStatus.AuthBlocked -> CardBadge(Icons.Rounded.CloudOff, R.string.badge_sign_in, isError = true)
+}
+
+/** A sync error keeps its own badge; otherwise photo-restore attention shows "Needs attention". */
+internal fun cardBadgeFor(status: GarmentSyncStatus, photoNeedsAttention: Boolean): CardBadge? {
+    val syncBadge = badgeFor(status)
+    return when {
+        syncBadge?.isError == true -> syncBadge
+        photoNeedsAttention -> CardBadge(Icons.Rounded.Error, R.string.badge_needs_attention, isError = true)
+        else -> syncBadge
+    }
+}
+
+/** Keeps a shown badge for [BADGE_HOLD_MILLIS] so it does not blink; a badge that was not shown yet appears at once. */
+internal fun visibleBadge(previous: CardBadge?, shownAtMs: Long, current: CardBadge?, nowMs: Long): CardBadge? =
+    if (previous != null && nowMs - shownAtMs < BADGE_HOLD_MILLIS) previous else current
