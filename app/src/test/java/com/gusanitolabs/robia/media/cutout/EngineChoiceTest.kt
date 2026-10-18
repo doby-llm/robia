@@ -25,6 +25,7 @@ class EngineChoiceTest {
             cutoutFallbackChain(
                 precise = { calls += "precise"; "precise-result" },
                 mlKit = { calls += "mlkit"; "mlkit-result" },
+                isRemoved = { true },
             )
         }
 
@@ -34,9 +35,11 @@ class EngineChoiceTest {
 
     @Test
     fun fallbackChain_goesToMlKitWhenPreciseIsOffTimedOutOrFails() {
-        val offOrTimedOut = runBlocking { cutoutFallbackChain(precise = { null }, mlKit = { "mlkit-result" }) }
+        val offOrTimedOut = runBlocking {
+            cutoutFallbackChain(precise = { null }, mlKit = { "mlkit-result" }, isRemoved = { true })
+        }
         val failed = runBlocking {
-            cutoutFallbackChain(precise = { error("model missing") }, mlKit = { "mlkit-result" })
+            cutoutFallbackChain(precise = { error("model missing") }, mlKit = { "mlkit-result" }, isRemoved = { true })
         }
 
         assertEquals("mlkit-result", offOrTimedOut)
@@ -52,6 +55,7 @@ class EngineChoiceTest {
                 cutoutFallbackChain(
                     precise = { throw CancellationException("cancelled by the caller") },
                     mlKit = { mlKitCalled = true; "mlkit-result" },
+                    isRemoved = { true },
                 )
             }
         }

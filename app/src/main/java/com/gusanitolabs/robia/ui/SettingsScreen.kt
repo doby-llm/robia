@@ -110,6 +110,7 @@ import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -336,6 +337,8 @@ internal fun SettingsScreen(
                                                         context = context,
                                                         engine = PreciseCutoutEngine(File(app.filesDir, CutoutPackManifest.DIRECTORY)),
                                                     ).measure(photos)
+                                                } catch (cancellation: CancellationException) {
+                                                    throw cancellation
                                                 } catch (failure: Exception) {
                                                     context.getString(
                                                         R.string.dev_benchmark_failed,

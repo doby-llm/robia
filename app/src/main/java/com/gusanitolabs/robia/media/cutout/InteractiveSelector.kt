@@ -27,16 +27,24 @@ internal class MediaPipeInteractiveSelector(context: Context) : InteractiveSelec
 
     override fun select(bitmap: Bitmap, x: Int, y: Int): FloatArray {
         val keypoint = NormalizedKeypoint.create(x.toFloat() / bitmap.width, y.toFloat() / bitmap.height)
-        val result = segmenter.segment(
-            BitmapImageBuilder(bitmap).build(),
-            InteractiveSegmenterLegacy.RegionOfInterest.create(keypoint),
-        )
-        val mask = result.confidenceMasks().get()[0]
-        check(mask.width == bitmap.width && mask.height == bitmap.height) { "Selection mask size does not match the photo" }
-        val floats = ByteBufferExtractor.extract(mask).duplicate().apply { rewind() }
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-        return FloatArray(bitmap.width * bitmap.height).also { floats.get(it) }
+        val input = BitmapImageBuilder(bitmap).build()
+        try {
+            val result = segmenter.segment(input, InteractiveSegmenterLegacy.RegionOfInterest.create(keypoint))
+            val masks = result.confidenceMasks().get()
+            try {
+                val mask = masks[0]
+                check(mask.width == bitmap.width && mask.height == bitmap.height) { "Selection mask size does not match the photo" }
+                val floats = ByteBufferExtractor.extract(mask).duplicate().apply { rewind() }
+                    .order(ByteOrder.nativeOrder())
+                    .asFloatBuffer()
+                return FloatArray(bitmap.width * bitmap.height).also { floats.get(it) }
+            } finally {
+                // Copied out above; the native mask memory is released here.
+                masks.forEach { it.close() }
+            }
+        } finally {
+            input.close()
+        }
     }
 
     override fun close() {

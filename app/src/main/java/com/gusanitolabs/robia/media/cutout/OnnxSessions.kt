@@ -25,8 +25,12 @@ internal class OnnxSessions(private val packDir: File) : AutoCloseable {
 
     /** Runs [session] and returns every output flattened, in model output order. */
     fun run(session: OrtSession, inputs: Map<String, FloatTensor>): List<FloatArray> {
-        val tensors = inputs.mapValues { (_, input) -> OnnxTensor.createTensor(environment, FloatBuffer.wrap(input.data), input.shape) }
+        // Filled one tensor at a time so that a createTensor failure still closes the ones already made.
+        val tensors = LinkedHashMap<String, OnnxTensor>()
         try {
+            inputs.forEach { (name, input) ->
+                tensors[name] = OnnxTensor.createTensor(environment, FloatBuffer.wrap(input.data), input.shape)
+            }
             session.run(tensors).use { result ->
                 return (0 until result.size()).map { index ->
                     val buffer = (result.get(index) as OnnxTensor).floatBuffer.duplicate()
@@ -41,10 +45,23 @@ internal class OnnxSessions(private val packDir: File) : AutoCloseable {
     private fun open(fileName: String): OrtSession =
         environment.createSession(File(packDir, fileName).absolutePath, options).also { opened += it }
 
+    /** Closes every session even when one close fails; [options] is always closed. The first failure is rethrown. */
     override fun close() {
-        opened.forEach { it.close() }
+        var failure: Throwable? = null
+        for (session in opened) {
+            try {
+                session.close()
+            } catch (closeFailure: Throwable) {
+                failure = failure?.apply { addSuppressed(closeFailure) } ?: closeFailure
+            }
+        }
         opened.clear()
-        options.close()
+        try {
+            options.close()
+        } catch (closeFailure: Throwable) {
+            failure = failure?.apply { addSuppressed(closeFailure) } ?: closeFailure
+        }
+        failure?.let { throw it }
     }
 
     internal companion object {

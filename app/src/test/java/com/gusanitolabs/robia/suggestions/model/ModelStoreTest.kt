@@ -29,12 +29,14 @@ class ModelStoreTest {
         source: ModelSource,
         unmetered: Boolean = true,
         expectedSha256: String = payloadSha,
+        expectedSizeBytes: Long? = null,
     ) = ModelStore(
         rootDir = modelsDir,
         source = source,
         isUnmetered = { unmetered },
         freeSpace = { Long.MAX_VALUE },
         expectedSha256 = expectedSha256,
+        expectedSizeBytes = expectedSizeBytes,
     )
 
     @Test
@@ -153,6 +155,81 @@ class ModelStoreTest {
 
         assertEquals(ModelState.Failed(ModelFailure.CorruptDownload), result)
         assertFalse(File(packFile, "sam_mask_decoder_multi.onnx").exists())
+    }
+
+    @Test
+    fun packFile_truncatedFinalFileIsNotReady() {
+        val packFile = File(temp.root, "cutout_pack").apply { mkdirs() }
+        File(packFile, "u2netp.onnx").writeBytes(payload.copyOfRange(0, 4_000))
+        File(packFile, "u2netp.onnx.sha256").writeText(payloadSha)
+
+        val store = ModelStore(
+            rootDir = packFile,
+            source = ModelSource { error("source must not be opened when the file is present") },
+            isUnmetered = { true },
+            freeSpace = { Long.MAX_VALUE },
+            expectedSha256 = payloadSha,
+            fileName = "u2netp.onnx",
+            expectedSizeBytes = payload.size.toLong(),
+        )
+
+        assertEquals(ModelState.NotDownloaded, store.state.value)
+    }
+
+    @Test
+    fun packFile_correctSizeAndHashIsReady() {
+        val packFile = File(temp.root, "cutout_pack").apply { mkdirs() }
+        File(packFile, "u2netp.onnx").writeBytes(payload)
+        File(packFile, "u2netp.onnx.sha256").writeText(payloadSha)
+
+        val store = ModelStore(
+            rootDir = packFile,
+            source = ModelSource { error("source must not be opened when the file is present") },
+            isUnmetered = { true },
+            freeSpace = { Long.MAX_VALUE },
+            expectedSha256 = payloadSha,
+            fileName = "u2netp.onnx",
+            expectedSizeBytes = payload.size.toLong(),
+        )
+
+        assertTrue(store.state.value is ModelState.Ready)
+    }
+
+    @Test
+    fun packFile_wrongSizeDownloadIsRejectedAndNothingIsKept() {
+        val packFile = File(temp.root, "cutout_pack").apply { mkdirs() }
+        val store = ModelStore(
+            rootDir = packFile,
+            source = ModelSource { ModelResponse(200, 4_000L, ByteArrayInputStream(payload.copyOfRange(0, 4_000))) },
+            isUnmetered = { true },
+            freeSpace = { Long.MAX_VALUE },
+            expectedSha256 = payloadSha,
+            fileName = "u2netp.onnx",
+            expectedSizeBytes = payload.size.toLong(),
+        )
+
+        val result = runBlocking { store.download() }
+
+        assertEquals(ModelState.Failed(ModelFailure.CorruptDownload), result)
+        assertFalse(File(packFile, "u2netp.onnx").exists())
+        assertFalse(File(packFile, "u2netp.onnx.part").exists())
+    }
+
+    @Test
+    fun gemmaDefaults_readyWithoutSizeCheck() {
+        modelsDir.mkdirs()
+        finalFile.writeBytes(payload.copyOfRange(0, 4_000))
+        sidecar.writeText(payloadSha)
+
+        val store = ModelStore(
+            rootDir = modelsDir,
+            source = ModelSource { error("source must not be opened when the file is present") },
+            isUnmetered = { true },
+            freeSpace = { Long.MAX_VALUE },
+            expectedSha256 = payloadSha,
+        )
+
+        assertTrue(store.state.value is ModelState.Ready)
     }
 
     private fun sha256Hex(bytes: ByteArray): String =

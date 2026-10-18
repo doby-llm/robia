@@ -5,10 +5,6 @@ import android.net.Uri
 import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import com.gusanitolabs.robia.media.cutout.cutoutFallbackChain
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.seconds
-
-private val PRECISE_TIMEOUT = 30.seconds
 
 /**
  * Coordinates background removal while preserving original-photo fallback semantics.
@@ -21,14 +17,14 @@ class PhotoBackgroundRemover(
         cutoutFallbackChain(
             precise = { preciseResult(context, sourceUri) },
             mlKit = { mlKitResult(context, sourceUri) },
+            isRemoved = { it.status == BackgroundRemovalStatus.REMOVED },
         )
 
-    /** Null when the precise engine is off, unavailable, timed out, or did not remove the background. */
+    /** Null when the precise engine is off or unavailable; the chain applies the timeout and the REMOVED check. */
     private suspend fun preciseResult(context: Context, sourceUri: Uri): BackgroundRemovalResult? {
         if (!CutoutEngineRegistry.isPreciseActive()) return null
         val preciseEngine = CutoutEngineRegistry.precise?.invoke() ?: return null
-        return withTimeoutOrNull(PRECISE_TIMEOUT) { preciseEngine.removeBackground(context, sourceUri) }
-            ?.takeIf { it.status == BackgroundRemovalStatus.REMOVED }
+        return preciseEngine.removeBackground(context, sourceUri)
     }
 
     private suspend fun mlKitResult(context: Context, sourceUri: Uri): BackgroundRemovalResult =

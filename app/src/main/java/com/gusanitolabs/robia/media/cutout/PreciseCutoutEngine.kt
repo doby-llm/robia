@@ -47,37 +47,49 @@ internal class PreciseCutoutEngine(
     private val packDir: File,
     private val selectorFactory: (Context) -> InteractiveSelector = ::MediaPipeInteractiveSelector,
 ) : BackgroundRemovalEngine {
-    override suspend fun removeBackground(context: Context, sourceUri: Uri): BackgroundRemovalResult = withContext(Dispatchers.Default) {
-        val timings = LinkedHashMap<String, Long>()
-        val work = timings.timed("decode") { decodeWorkBitmap(context, sourceUri) }
-        try {
-            val argb = IntArray(work.width * work.height).also { work.getPixels(it, 0, work.width, 0, 0, work.width, work.height) }
-            val callerContext = coroutineContext
-            val alpha = OnnxSessions(packDir).use { models ->
-                selectorFactory(context).use { selector ->
-                    CutoutRun(models, selector, work, argb, timings, checkpoint = { callerContext.ensureActive() }).alpha()
+    /**
+     * One photo at a time per process ([CutoutEngineRegistry.withPreciseGate]); the caller's 30 s budget includes the wait
+     * for that gate. The budget cannot pre-empt a native ONNX or MediaPipe call: a call that is already running finishes
+     * first, and the checkpoints between stages stop the rest of the pipeline.
+     */
+    override suspend fun removeBackground(context: Context, sourceUri: Uri): BackgroundRemovalResult =
+        CutoutEngineRegistry.withPreciseGate {
+            withContext(Dispatchers.Default) {
+                val timings = LinkedHashMap<String, Long>()
+                val work = timings.timed("decode") { decodeWorkBitmap(context, sourceUri) }
+                try {
+                    val argb = IntArray(work.width * work.height).also { work.getPixels(it, 0, work.width, 0, 0, work.width, work.height) }
+                    val callerContext = coroutineContext
+                    val alpha = OnnxSessions(packDir).use { models ->
+                        selectorFactory(context).use { selector ->
+                            CutoutRun(models, selector, work, argb, timings, checkpoint = { callerContext.ensureActive() }).alpha()
+                        }
+                    }
+                    val composed = Bitmap.createBitmap(work.width, work.height, Bitmap.Config.ARGB_8888)
+                    val cropped = try {
+                        composed.setPixels(IntArray(argb.size) { i -> ((alpha[i].toInt() and 0xFF) shl 24) or (argb[i] and 0xFFFFFF) }, 0, work.width, 0, 0, work.width, work.height)
+                        cropToAlpha(composed, alpha)
+                    } catch (failure: Throwable) {
+                        composed.recycle()
+                        throw failure
+                    }
+                    val outputUri = try {
+                        ClothingImageStore.writeProcessedBitmap(context, cropped)
+                    } finally {
+                        cropped.recycle()
+                        if (cropped !== composed) composed.recycle()
+                    }
+                    BackgroundRemovalResult(
+                        originalUri = sourceUri,
+                        outputUri = outputUri,
+                        status = BackgroundRemovalStatus.REMOVED,
+                        timings = timings.toMap(),
+                    )
+                } finally {
+                    work.recycle()
                 }
             }
-            val composed = Bitmap.createBitmap(work.width, work.height, Bitmap.Config.ARGB_8888).apply {
-                setPixels(IntArray(argb.size) { i -> ((alpha[i].toInt() and 0xFF) shl 24) or (argb[i] and 0xFFFFFF) }, 0, work.width, 0, 0, work.width, work.height)
-            }
-            val cropped = cropToAlpha(composed, alpha)
-            val outputUri = try {
-                ClothingImageStore.writeProcessedBitmap(context, cropped)
-            } finally {
-                cropped.recycle()
-                if (cropped !== composed) composed.recycle()
-            }
-            BackgroundRemovalResult(
-                originalUri = sourceUri,
-                outputUri = outputUri,
-                status = BackgroundRemovalStatus.REMOVED,
-                timings = timings.toMap(),
-            )
-        } finally {
-            work.recycle()
         }
-    }
 
     private inline fun <T> MutableMap<String, Long>.timed(key: String, block: () -> T): T {
         val started = System.nanoTime()
@@ -258,7 +270,7 @@ private class CutoutRun(
         }
     }
 
-    /** MobileSAM image embedding of the work photo (long edge 1024, so no resize is needed). */
+    /** MobileSAM image embedding of the work photo at its work size (no resize here). */
     private fun samEmbedding(): FloatArray {
         val data = FloatArray(w * h * 3)
         for (i in 0 until w * h) {
@@ -333,8 +345,19 @@ private class CutoutRun(
 }
 
 /**
- * Decodes the photo with EXIF rotation applied and its long edge exactly [WORK_LONG_EDGE_PX]. Mirrored orientations are
- * not flipped back; the phone photos this app takes are not mirrored.
+ * Work size of a photo: a long edge above [WORK_LONG_EDGE_PX] is scaled down to it; a smaller photo keeps its size, as the
+ * reference pipeline (`thumbnail((1024, 1024))`) never enlarges.
+ */
+internal fun workSize(width: Int, height: Int): Pair<Int, Int> {
+    val longSide = max(width, height)
+    if (longSide <= WORK_LONG_EDGE_PX) return width to height
+    val scale = WORK_LONG_EDGE_PX.toFloat() / longSide
+    return (width * scale).roundToInt() to (height * scale).roundToInt()
+}
+
+/**
+ * Decodes the photo with EXIF rotation applied and sized by [workSize]. Mirrored orientations are not flipped back; the
+ * phone photos this app takes are not mirrored.
  */
 internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -350,9 +373,14 @@ internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
     }
     val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         ?: error("Unable to decode source photo")
-    val orientation = context.contentResolver.openInputStream(uri)?.use { input ->
-        ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-    } ?: ExifInterface.ORIENTATION_NORMAL
+    val orientation = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    } catch (failure: Throwable) {
+        decoded.recycle()
+        throw failure
+    }
     val degrees = when (orientation) {
         ExifInterface.ORIENTATION_ROTATE_90 -> 90
         ExifInterface.ORIENTATION_ROTATE_180 -> 180
@@ -365,13 +393,7 @@ internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
         val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
         Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also { decoded.recycle() }
     }
-    val longSide = max(oriented.width, oriented.height)
-    if (longSide == WORK_LONG_EDGE_PX) return oriented
-    val scale = WORK_LONG_EDGE_PX.toFloat() / longSide
-    return Bitmap.createScaledBitmap(
-        oriented,
-        (oriented.width * scale).roundToInt(),
-        (oriented.height * scale).roundToInt(),
-        true,
-    ).also { oriented.recycle() }
+    val (targetWidth, targetHeight) = workSize(oriented.width, oriented.height)
+    if (targetWidth == oriented.width && targetHeight == oriented.height) return oriented
+    return Bitmap.createScaledBitmap(oriented, targetWidth, targetHeight, true).also { oriented.recycle() }
 }

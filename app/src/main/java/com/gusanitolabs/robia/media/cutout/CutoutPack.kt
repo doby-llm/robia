@@ -63,6 +63,7 @@ internal class CutoutPack(
             isUnmetered = isUnmetered,
             expectedSha256 = file.sha256,
             fileName = file.fileName,
+            expectedSizeBytes = file.sizeBytes,
         )
     }
 
