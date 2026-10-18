@@ -4,11 +4,15 @@ import com.google.mlkit.common.MlKitException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MlKitEngineFlowTest {
-    private fun moduleUnavailable() = MlKitException("Waiting for the module to be downloaded", MlKitException.UNAVAILABLE)
+    private class ModuleUnavailable : RuntimeException("Waiting for the module to be downloaded")
+
+    // Constructing MlKitException throws on the JVM, so retry tests inject a stand-in for the UNAVAILABLE code.
+    private val isModuleUnavailable: (Throwable) -> Boolean = { it is ModuleUnavailable }
 
     @Test
     fun unavailableThenSuccess_waitsOnceAndProcessesOnce() = runBlocking {
@@ -19,9 +23,10 @@ class MlKitEngineFlowTest {
             ensureModule = { ensures++ },
             process = {
                 processes++
-                if (processes == 1) throw moduleUnavailable()
+                if (processes == 1) throw ModuleUnavailable()
                 "foreground"
             },
+            isModuleUnavailable = isModuleUnavailable,
         )
 
         assertEquals(SegmentationAttempt.Success("foreground"), attempt)
@@ -38,8 +43,9 @@ class MlKitEngineFlowTest {
             ensureModule = { ensures++ },
             process = {
                 processes++
-                throw moduleUnavailable()
+                throw ModuleUnavailable()
             },
+            isModuleUnavailable = isModuleUnavailable,
         )
 
         assertEquals(BackgroundRemovalFailureReason.MODEL_UNAVAILABLE, (attempt as SegmentationAttempt.Failed).reason)
@@ -58,6 +64,7 @@ class MlKitEngineFlowTest {
                 processes++
                 error("segmenter exploded")
             },
+            isModuleUnavailable = isModuleUnavailable,
         )
 
         assertEquals(BackgroundRemovalFailureReason.SEGMENTATION_FAILED, (attempt as SegmentationAttempt.Failed).reason)
@@ -77,6 +84,7 @@ class MlKitEngineFlowTest {
                     processes++
                     throw CancellationException("cancelled")
                 },
+                isModuleUnavailable = isModuleUnavailable,
             )
         }.exceptionOrNull()
 
@@ -86,16 +94,20 @@ class MlKitEngineFlowTest {
     }
 
     @Test
-    fun segmentationFailureReason_isModelUnavailableOnlyForTheUnavailableCode() {
-        assertTrue(isModuleUnavailableError(moduleUnavailable()))
-        assertEquals(BackgroundRemovalFailureReason.MODEL_UNAVAILABLE, segmentationFailureReason(moduleUnavailable()))
+    fun isModuleUnavailableCode_isTrueOnlyForTheUnavailableCode() {
+        assertTrue(isModuleUnavailableCode(MlKitException.UNAVAILABLE))
+        assertFalse(isModuleUnavailableCode(0))
+    }
+
+    @Test
+    fun segmentationFailureReason_mapsOnlyTheUnavailablePredicateToModelUnavailable() {
         assertEquals(
-            BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
-            segmentationFailureReason(MlKitException("bad input", MlKitException.INVALID_ARGUMENT)),
+            BackgroundRemovalFailureReason.MODEL_UNAVAILABLE,
+            segmentationFailureReason(ModuleUnavailable(), isModuleUnavailable),
         )
         assertEquals(
             BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
-            segmentationFailureReason(IllegalStateException("segmenter exploded")),
+            segmentationFailureReason(IllegalStateException("segmenter exploded"), isModuleUnavailable),
         )
     }
 

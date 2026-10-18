@@ -110,8 +110,11 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine : BackgroundRemovalEngine 
 
 private val MODULE_WAIT_TIMEOUT = 60.seconds
 
+/** Pure code check, so the rule is testable on the JVM (constructing [MlKitException] is not). */
+internal fun isModuleUnavailableCode(errorCode: Int): Boolean = errorCode == MlKitException.UNAVAILABLE
+
 internal fun isModuleUnavailableError(throwable: Throwable): Boolean =
-    throwable is MlKitException && throwable.errorCode == MlKitException.UNAVAILABLE
+    throwable is MlKitException && isModuleUnavailableCode(throwable.errorCode)
 
 internal fun segmentationFailureReason(
     throwable: Throwable,
