@@ -224,6 +224,7 @@ internal fun BrowseWardrobeScreen(
                 activeFilterCount = activeFilterCount,
                 cloudSync = cloudSync,
                 onFiltersClick = onFiltersClick,
+                onResetFilters = onResetFilters,
                 searchQuery = searchQuery,
                 onSearchQueryChange = onSearchQueryChange,
                 searchMode = searchMode,

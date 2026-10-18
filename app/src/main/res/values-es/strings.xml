@@ -654,4 +654,16 @@
     <string name="badge_uploading">Subiendo</string>
     <string name="badge_needs_attention">Requiere atención</string>
     <string name="badge_sign_in">Inicia sesión</string>
+    <!-- U03 -->
+    <string name="filters_title">Filtros</string>
+    <string name="reset_filters_short">Restablecer</string>
+    <plurals name="filters_show_count">
+        <item quantity="one">Mostrar %1$d prenda</item>
+        <item quantity="other">Mostrar %1$d prendas</item>
+    </plurals>
+    <string name="filters_more">+%1$d más</string>
+    <string name="filters_not_set">Sin definir</string>
+    <string name="filters_favourites_only">Solo favoritos</string>
+    <string name="filters_favourites_body">Mostrar solo las prendas marcadas con un corazón</string>
+    <string name="filters_category_not_set">%1$s: %2$s</string>
 </resources>

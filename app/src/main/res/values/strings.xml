@@ -654,4 +654,16 @@
     <string name="badge_uploading">Uploading</string>
     <string name="badge_needs_attention">Needs attention</string>
     <string name="badge_sign_in">Sign in</string>
+    <!-- U03 -->
+    <string name="filters_title">Filters</string>
+    <string name="reset_filters_short">Reset</string>
+    <plurals name="filters_show_count">
+        <item quantity="one">Show %1$d garment</item>
+        <item quantity="other">Show %1$d garments</item>
+    </plurals>
+    <string name="filters_more">+%1$d more</string>
+    <string name="filters_not_set">Not set</string>
+    <string name="filters_favourites_only">Favourites only</string>
+    <string name="filters_favourites_body">Show only garments marked with a heart</string>
+    <string name="filters_category_not_set">%1$s: %2$s</string>
 </resources>
