@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,7 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -97,6 +99,7 @@ internal data class BatchDraftItem(
     val selectedSecondaryColorId: String? = null,
     val createdAtEpochMillis: Long = System.currentTimeMillis(),
     val suggestionCapture: SuggestionCapture? = null,
+    val backgroundFallback: Boolean = false,
 )
 
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
@@ -332,6 +335,7 @@ private fun BatchDraftTile(
         stringResource(draft.status.labelRes)
     }
     val tileDescription = stringResource(R.string.batch_tile_content_description, position, totalCount, status)
+    val backgroundPreparing by SegmentationModuleGates.get(LocalContext.current).preparing.collectAsState()
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -359,6 +363,7 @@ private fun BatchDraftTile(
             BatchStatusBadge(
                 status = draft.status,
                 isAccepted = draft.isAcceptedForSave(),
+                backgroundPreparing = backgroundPreparing,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp),
@@ -375,7 +380,7 @@ private fun BatchDraftTile(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (draft.status.isRetryable) {
+            if (draft.isRetryableForBatch()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.batch_retry)) }
                     TextButton(onClick = onDiscard) { Text(stringResource(R.string.discard_changes)) }
@@ -439,6 +444,7 @@ private fun BatchPhotoPreview(
 private fun BatchStatusBadge(
     status: BatchDraftStatus,
     isAccepted: Boolean,
+    backgroundPreparing: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val visualStatus = if (isAccepted) BatchDraftStatus.Ready else status
@@ -472,7 +478,11 @@ private fun BatchStatusBadge(
                 else -> Unit
             }
             Text(
-                text = stringResource(visualStatus.labelRes),
+                text = if (backgroundPreparing && visualStatus == BatchDraftStatus.Processing) {
+                    stringResource(R.string.background_removal_preparing)
+                } else {
+                    stringResource(visualStatus.labelRes)
+                },
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
             )
@@ -545,6 +555,7 @@ internal suspend fun processBatchDraft(
                     SuggestionCapture(croppedUri.toString(), outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
                 },
                 errorMessage = resolvedMessage,
+                backgroundFallback = backgroundResult.usedFallback,
             ),
         )
     } catch (throwable: CancellationException) {
@@ -597,11 +608,15 @@ internal fun List<BatchDraftItem>.canSaveBatch(): Boolean =
 internal fun List<BatchDraftItem>.acceptedForSave(requestedDraftIds: Set<String>): List<BatchDraftItem> =
     filter { draft -> draft.id in requestedDraftIds && draft.isAcceptedForSave() }
 
-internal fun BatchDraftItem.retryForBatch(): BatchDraftItem = if (status.isRetryable) {
+internal fun BatchDraftItem.isRetryableForBatch(): Boolean =
+    status.isRetryable || (status == BatchDraftStatus.NeedsReview && backgroundFallback)
+
+internal fun BatchDraftItem.retryForBatch(): BatchDraftItem = if (isRetryableForBatch()) {
     copy(
         status = BatchDraftStatus.Queued,
         explicitlyAccepted = false,
         errorMessage = null,
+        backgroundFallback = false,
     )
 } else {
     this

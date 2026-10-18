@@ -17,6 +17,7 @@ import com.gusanitolabs.robia.data.LocalTagRepository
 import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
+import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.EmbeddingBackfill
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
@@ -161,6 +162,10 @@ class RobiaApplication : Application() {
         })
         appScope.launch {
             modelStore.state.collect { state -> if (state is ModelState.Ready) embeddingBackfill.resume() }
+        }
+        // Requests the optional segmentation module once at startup, off the main thread; the result only warms it.
+        appScope.launch {
+            SegmentationModuleGates.get(this@RobiaApplication).ensureAvailable()
         }
     }
 

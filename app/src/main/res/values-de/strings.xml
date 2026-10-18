@@ -646,4 +646,7 @@
     <string name="tag_underwear">Unterwäsche</string>
     <!-- U09 -->
     <string name="pdf_title_fallback">Kleidungsstück</string>
+    <!-- SG1 -->
+    <string name="background_removal_preparing">Fotooptimierung wird vorbereitet…</string>
+    <string name="background_removal_fallback_module">Die Fotooptimierung wird noch heruntergeladen. Wir haben das Originalfoto behalten; tippe in einem Moment auf Erneut versuchen.</string>
 </resources>

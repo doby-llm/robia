@@ -70,6 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,6 +103,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.media.BackgroundRemovalFailureReason
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
@@ -110,6 +112,7 @@ import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditAdjustments
 import com.gusanitolabs.robia.media.QuickEditDraftState
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
+import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -161,6 +164,7 @@ fun AddEditClothingScreen(
     var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSecondaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var captureStatus by rememberSaveable { mutableStateOf("") }
+    var backgroundFallbackModuleMissing by rememberSaveable { mutableStateOf(false) }
     var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
@@ -410,6 +414,7 @@ fun AddEditClothingScreen(
                     PhotoStatus.BackgroundRemoved
                 }
                 captureStatus = finalStatus
+                backgroundFallbackModuleMissing = result.failure?.reason == BackgroundRemovalFailureReason.MODEL_UNAVAILABLE
                 editorPhotoState = editorPhotoState.copy(
                     croppedForegroundUri = displayUri,
                     currentEditedUri = displayUri,
@@ -468,6 +473,7 @@ fun AddEditClothingScreen(
                 if (token != photoProcessingToken) return
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
+                backgroundFallbackModuleMissing = false
                 editorPhotoState = EditorPhotoState(
                     rawSourceUri = uriString,
                     currentEditedUri = uriString,
@@ -793,6 +799,7 @@ fun AddEditClothingScreen(
                     photoUri = canonicalPhotoUri,
                     photoAspectRatio = photoAspectRatio,
                     captureStatus = captureStatus,
+                    backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
                     isPhotoProcessing = isPhotoProcessing,
                     processingStage = photoProcessingStage,
                     onCaptureStatusChange = { captureStatus = it },
@@ -1448,6 +1455,7 @@ private fun PhotoCaptureCardWithLaunchers(
     photoUri: String?,
     photoAspectRatio: Float?,
     captureStatus: String,
+    backgroundFallbackModuleMissing: Boolean = false,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
     onCaptureStatusChange: (String) -> Unit,
@@ -1494,6 +1502,7 @@ private fun PhotoCaptureCardWithLaunchers(
         photoUri = photoUri,
         photoAspectRatio = photoAspectRatio,
         captureStatus = captureStatus,
+        backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
         isPhotoProcessing = isPhotoProcessing,
         processingStage = processingStage,
         onRetryPhotoProcessing = onRetryPhotoProcessing,
@@ -1521,6 +1530,7 @@ private fun PhotoCaptureCard(
     photoUri: String?,
     photoAspectRatio: Float?,
     captureStatus: String,
+    backgroundFallbackModuleMissing: Boolean = false,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
     onRetryPhotoProcessing: (() -> Unit)?,
@@ -1535,10 +1545,11 @@ private fun PhotoCaptureCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val processingLabel = if (processingStage != null) {
-                stringResource(processingStage.labelRes)
-            } else {
-                null
+            val backgroundPreparing by SegmentationModuleGates.get(LocalContext.current).preparing.collectAsState()
+            val processingLabel = when {
+                isPhotoProcessing && backgroundPreparing -> stringResource(R.string.background_removal_preparing)
+                processingStage != null -> stringResource(processingStage.labelRes)
+                else -> null
             }
             PhotoPreview(
                 photoUri = photoUri,
@@ -1583,7 +1594,11 @@ private fun PhotoCaptureCard(
                 PhotoStatus.Camera -> R.string.camera_selected_status
                 PhotoStatus.Processed -> R.string.photo_processed_status
                 PhotoStatus.BackgroundRemoved -> R.string.background_removal_success_status
-                PhotoStatus.BackgroundFallback -> R.string.background_removal_fallback_status
+                PhotoStatus.BackgroundFallback -> if (backgroundFallbackModuleMissing) {
+                    R.string.background_removal_fallback_module
+                } else {
+                    R.string.background_removal_fallback_status
+                }
                 PhotoStatus.QuickEdited -> R.string.quick_edit_saved_status
                 PhotoStatus.MediaUnavailable -> R.string.media_actions_unavailable_status
                 else -> null

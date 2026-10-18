@@ -79,7 +79,9 @@ class RegressionSourceContractTest {
             .substringBefore("internal suspend fun processBatchDraft(")
 
         assertTrue(badge.contains("val visualStatus = if (isAccepted) BatchDraftStatus.Ready else status"))
-        assertTrue(badge.contains("text = stringResource(visualStatus.labelRes)"))
+        assertTrue(badge.contains("text = if (backgroundPreparing && visualStatus == BatchDraftStatus.Processing) {"))
+        assertTrue(badge.contains("stringResource(R.string.background_removal_preparing)"))
+        assertTrue(badge.contains("stringResource(visualStatus.labelRes)"))
         assertTrue(!badge.contains("text = stringResource(status.labelRes)"))
     }
 

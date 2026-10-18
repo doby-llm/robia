@@ -646,4 +646,7 @@
     <string name="tag_underwear">Ropa interior</string>
     <!-- U09 -->
     <string name="pdf_title_fallback">Prenda</string>
+    <!-- SG1 -->
+    <string name="background_removal_preparing">Preparando el retoque de foto…</string>
+    <string name="background_removal_fallback_module">El retoque de foto todavía se está descargando. Conservamos la foto original; toca Reintentar en un momento.</string>
 </resources>

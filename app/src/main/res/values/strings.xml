@@ -646,4 +646,7 @@
     <string name="tag_underwear">Underwear</string>
     <!-- U09 -->
     <string name="pdf_title_fallback">Garment</string>
+    <!-- SG1 -->
+    <string name="background_removal_preparing">Preparing photo cleanup…</string>
+    <string name="background_removal_fallback_module">Photo cleanup is still downloading. We kept the original photo; tap Retry in a moment.</string>
 </resources>

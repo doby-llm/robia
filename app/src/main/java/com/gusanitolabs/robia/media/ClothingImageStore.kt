@@ -341,7 +341,8 @@ object ClothingImageStore {
     private fun thumbnailDecodeSampleSize(width: Int, height: Int, maxEdgePx: Int): Int {
         val maxDimension = maxOf(width, height).coerceAtLeast(1)
         var sampleSize = 1
-        while (maxDimension / (sampleSize * 2) >= maxEdgePx) {
+        // Keep the decoded long edge >= 2x the target so the bilinear downscale is not a stair-step source (SG1).
+        while (maxDimension / (sampleSize * 2) >= maxEdgePx * 2) {
             sampleSize *= 2
         }
         return sampleSize
