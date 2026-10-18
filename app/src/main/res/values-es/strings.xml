@@ -641,4 +641,7 @@
     </plurals>
     <string name="cloud_status_attention">La sincronización necesita atención</string>
     <string name="cloud_status_open_data_sync">Abrir Sincronización de datos</string>
+    <!-- T01 -->
+    <string name="tag_socks">Calcetines</string>
+    <string name="tag_underwear">Ropa interior</string>
 </resources>

@@ -20,8 +20,10 @@ CATEGORIES = {
     "category-shirts": ("Shirts", "a shirt: collared top with buttons down the front"),
     "category-vests": ("Vests", "a vest: sleeveless upper garment worn over another top"),
     "category-jewelry": ("Jewelry", "jewelry: necklace, earrings, bracelet or ring"),
-    "category-accessories": ("Accessories", "an accessory: belt, scarf, hat, sunglasses or a similar item"),
+    "category-accessories": ("Accessories", "an accessory: a belt or waist belt, a scarf, a hat, sunglasses or a similar item"),
     "category-coats": ("Coats", "a coat: long, warm outerwear reaching the thighs or knees"),
+    "category-socks": ("Socks", "socks or tights: hosiery worn on the feet and legs"),
+    "category-underwear": ("Underwear", "underwear: bra, briefs, boxers or lingerie worn under clothes"),
 }
 
 OCCASIONS = {
