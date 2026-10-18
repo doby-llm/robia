@@ -57,6 +57,7 @@ class GoogleDriveWardrobeRepository(
     private val context: Context,
     private val authorizationClient: AuthorizationClient,
     private val driveScope: Scope,
+    private val driveUsageStore: DriveUsageStore,
     private val api: DriveSnapshotApi = HttpDriveSnapshotApi(),
     override val target: DriveSyncTarget = DriveSyncTarget(),
 ) : DriveWardrobeRepository {
@@ -145,7 +146,28 @@ class GoogleDriveWardrobeRepository(
         sourceHashOf = { photo -> photo.localSourceUri().sourceHash16(context) },
         encode = { photo -> ClothingImageStore.encodeDriveWebp(context, photo.localSourceUri()) },
         onPurgeDeferred = { message -> Log.w(PHOTO_LOG_TAG, message) },
+        onListed = { files -> recordDriveUsage(files) },
     )
+
+    /** Keeps the Settings figure current from a listing the sync already made; a failed write must not fail the sync. */
+    private fun recordDriveUsage(files: List<DriveFileMetadata>) {
+        runCatching { driveUsageStore.write(driveUsageOf(files, now = System.currentTimeMillis())) }
+    }
+
+    override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> = withAccessToken { accessToken ->
+        when (val listed = api.listAll(accessToken)) {
+            is DriveApiResult.Success -> measuredUsage(listed.value)
+            is DriveApiResult.NotFound -> measuredUsage(emptyList())
+            is DriveApiResult.Unauthorized -> authBlocked()
+            is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(listed.failureCause())
+        }
+    }
+
+    private fun measuredUsage(files: List<DriveFileMetadata>): DriveSyncResult<DriveUsage> {
+        val usage = driveUsageOf(files, now = System.currentTimeMillis())
+        runCatching { driveUsageStore.write(usage) }
+        return DriveSyncResult.Success(usage)
+    }
 
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = withAccessToken { accessToken ->
         when (val listed = api.listBackupFiles(accessToken)) {
@@ -230,6 +252,7 @@ class GoogleDriveWardrobeRepository(
                     ClothingImageStore.writeRestoredImageFile(context, garmentId, hash16, source).toString()
                 },
                 progress = progress,
+                onListed = { files -> recordDriveUsage(files) },
             )
         ) {
             is DriveApiResult.Success -> DriveSyncResult.Success(snapshot.copy(photos = restored.value).sortedDeterministically())
@@ -341,6 +364,8 @@ internal class PhotoUploadPipeline(
     private val sourceHashOf: (GarmentPhotoRecord) -> String,
     private val encode: (GarmentPhotoRecord) -> ImageBlob,
     private val onPurgeDeferred: (String) -> Unit = {},
+    /** Receives the app data listing this upload already made, for the Drive usage figure. */
+    private val onListed: (List<DriveFileMetadata>) -> Unit = {},
 ) {
     suspend fun upload(
         accessToken: String,
@@ -350,7 +375,7 @@ internal class PhotoUploadPipeline(
         onPhotoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = { _, _ -> },
     ): DriveSyncResult<PhotoUploadOutcome> {
         val index = when (val listing = api.listAll(accessToken)) {
-            is DriveApiResult.Success -> DriveFileIndex(listing.value)
+            is DriveApiResult.Success -> DriveFileIndex(listing.value).also { onListed(listing.value) }
             is DriveApiResult.NotFound -> DriveFileIndex(emptyList())
             is DriveApiResult.Unauthorized -> return authBlocked()
             is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull ->
@@ -1038,9 +1063,10 @@ internal suspend fun restorePhotoBlobs(
     decodeBounds: (File) -> Pair<Int, Int>?,
     moveToFinal: (garmentId: String, hash16: String, source: File) -> String,
     progress: DriveRestoreProgressListener? = null,
+    onListed: (List<DriveFileMetadata>) -> Unit = {},
 ): DriveApiResult<List<GarmentPhotoRecord>> {
     val index = when (val listed = api.listAll(accessToken)) {
-        is DriveApiResult.Success -> DriveFileIndex(listed.value)
+        is DriveApiResult.Success -> DriveFileIndex(listed.value).also { onListed(listed.value) }
         DriveApiResult.NotFound -> DriveFileIndex(emptyList())
         DriveApiResult.Unauthorized -> return DriveApiResult.Unauthorized
         DriveApiResult.StorageFull -> return DriveApiResult.StorageFull

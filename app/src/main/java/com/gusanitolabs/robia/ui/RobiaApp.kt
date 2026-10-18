@@ -452,6 +452,7 @@ fun RobiaApp(
             onClearRestoreSyncLog = {
                 scope.launch { syncGateway.clearRestoreSyncLog() }
             },
+            onRefreshDriveUsageClick = { syncGateway.refreshDriveUsage() },
             onSaveItem = { item, capture ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -833,6 +834,7 @@ private fun RobiaShell(
     onRequestCloudBackupDeletion: () -> Unit = {},
     onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
+    onRefreshDriveUsageClick: suspend () -> Unit = {},
     suggestionService: SuggestionService,
     onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
     onSaveItems: (List<ClothingItem>, Map<String, SuggestionCapture>) -> Unit,
@@ -1936,6 +1938,7 @@ private fun RobiaShell(
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
             onCloudSetupClick = ::requestCloudSetup,
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
+            onRefreshDriveUsageClick = onRefreshDriveUsageClick,
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
@@ -2676,6 +2679,7 @@ private fun RobiaNavHost(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupClick: () -> Unit,
     onDeleteBackupClick: () -> Unit,
+    onRefreshDriveUsageClick: suspend () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
@@ -2856,6 +2860,8 @@ private fun RobiaNavHost(
             driveBackupDeletionState = driveBackupDeletionState,
             onCloudSetupClick = onCloudSetupClick,
             onDeleteBackupClick = onDeleteBackupClick,
+            driveUsage = syncState.driveUsage,
+            onRefreshDriveUsageClick = onRefreshDriveUsageClick,
         )
         RobiaRoute.Settings -> SettingsScreen(
             innerPadding = innerPadding,
