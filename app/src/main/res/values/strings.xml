@@ -679,4 +679,8 @@
     <string name="language_endonym_es">Español</string>
     <string name="language_endonym_de">Deutsch</string>
     <string name="language_currently">Currently %1$s</string>
+    <!-- U07 -->
+    <string name="processing_step_find">Finding your garment…</string>
+    <string name="processing_step_edges">Cleaning the edges…</string>
+    <string name="processing_step_style">Reading colours and style…</string>
 </resources>
