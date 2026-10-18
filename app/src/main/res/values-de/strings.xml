@@ -350,8 +350,6 @@
     <string name="batch_discard_title">Diesen Batch verwerfen?</string>
     <string name="batch_discard_body">Verarbeitete Fotos und Details werden nicht gespeichert.</string>
     <string name="batch_tile_content_description">Foto %1$d von %2$d, %3$s.</string>
-    <string name="language_settings_title">Sprache</string>
-    <string name="language_settings_body">Robia folgt standardmäßig deiner Systemsprache und ist für Englisch, Spanisch und Deutsch vorbereitet.</string>
     <string name="advanced_filters_title">Erweiterte Filter</string>
     <string name="reset_filters">Alle zurücksetzen</string>
     <string name="filter_category">Kategorie</string>
@@ -484,12 +482,6 @@
     <string name="undo">Rückgängig</string>
     <string name="color_review_discard_title">Änderungen verwerfen?</string>
     <string name="color_review_discard_body">Dadurch wird die gerade ausgeführte Aktion rückgängig gemacht.</string>
-    <string-array name="language_choices">
-        <item>@string/language_system</item>
-        <item>@string/language_english</item>
-        <item>@string/language_spanish</item>
-        <item>@string/language_german</item>
-    </string-array>
     <string name="manage_tab_count">%1$s %2$d</string>
     <string name="tag_description_label">Beschreibung (optional)</string>
     <string name="tag_no_occasions_badge">Keine Anlässe</string>
@@ -670,4 +662,21 @@
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Von Robia vorgeschlagen. Zum Ändern tippen.</string>
     <string name="edit_photo_action">Foto bearbeiten</string>
+    <!-- U05 -->
+    <string name="settings_group_smart_features">Intelligente Funktionen</string>
+    <string name="settings_group_backup">Sicherung</string>
+    <string name="settings_group_general">Allgemein</string>
+    <string name="settings_group_about">Über</string>
+    <string name="settings_google_drive">Google Drive</string>
+    <string name="settings_browse_layout">Ansicht für Durchsuchen</string>
+    <string name="settings_browse_layout_photos_only">Nur Fotos</string>
+    <string name="settings_browse_layout_photos_with_details">Fotos mit Details</string>
+    <string name="settings_value_on">Ein</string>
+    <string name="settings_value_off">Aus</string>
+    <string name="settings_value_not_connected">Nicht verbunden</string>
+    <string name="language_endonym_system">Systemstandard</string>
+    <string name="language_endonym_en">English</string>
+    <string name="language_endonym_es">Español</string>
+    <string name="language_endonym_de">Deutsch</string>
+    <string name="language_currently">Aktuell: %1$s</string>
 </resources>

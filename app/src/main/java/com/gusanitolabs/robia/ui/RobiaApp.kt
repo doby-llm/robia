@@ -288,6 +288,14 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.settings
     }
 
+    data object SmartSuggestionsSettings : RobiaRoute {
+        override val titleRes = R.string.model_settings_section
+    }
+
+    data object DriveSettings : RobiaRoute {
+        override val titleRes = R.string.settings_google_drive
+    }
+
     data object DeveloperSyncLog : RobiaRoute {
         override val titleRes = R.string.restore_sync_log_title
     }
@@ -392,6 +400,9 @@ fun RobiaApp(
             mainColors = mainColors,
             onLanguageSelected = { language ->
                 scope.launch { settingsRepository.setLanguagePreference(language) }
+            },
+            onBrowseLayoutChange = { layout ->
+                scope.launch { settingsRepository.setBrowseLayout(layout) }
             },
             onDeveloperModeUnlocked = {
                 scope.launch { settingsRepository.setDeveloperModeUnlocked(true) }
@@ -799,6 +810,7 @@ private fun RobiaShell(
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
     onLanguageSelected: (LanguagePreference) -> Unit,
+    onBrowseLayoutChange: (BrowseLayout) -> Unit,
     onDeveloperModeUnlocked: () -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
@@ -1911,6 +1923,7 @@ private fun RobiaShell(
             showColorReviewDiscardDialog = showColorReviewDiscardDialog,
             onClearRestoreSyncLog = onClearRestoreSyncLog,
             onLanguageSelected = onLanguageSelected,
+            onBrowseLayoutChange = onBrowseLayoutChange,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
             onCloudSetupClick = ::requestCloudSetup,
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
@@ -2645,6 +2658,7 @@ private fun RobiaNavHost(
     showTagReviewDiscardDialog: Boolean,
     onClearRestoreSyncLog: () -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
+    onBrowseLayoutChange: (BrowseLayout) -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupClick: () -> Unit,
     onDeleteBackupClick: () -> Unit,
@@ -2812,22 +2826,35 @@ private fun RobiaNavHost(
                 suggestionService = suggestionService,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
-        RobiaRoute.LanguageSettings -> LanguageSettingsScreen(innerPadding)
+        RobiaRoute.LanguageSettings -> LanguagePickerScreen(
+            innerPadding = innerPadding,
+            currentLanguage = currentLanguage,
+            onLanguageSelected = onLanguageSelected,
+        )
+        RobiaRoute.SmartSuggestionsSettings -> SmartSuggestionsSettingsScreen(innerPadding = innerPadding)
+        RobiaRoute.DriveSettings -> DriveSettingsScreen(
+            innerPadding = innerPadding,
+            driveSyncConnectionStatus = driveSyncConnectionStatus,
+            cloudSetupSummaryRes = cloudSetupSummaryRes,
+            cloudIndicator = cloudSync,
+            driveBackupDeletionState = driveBackupDeletionState,
+            onCloudSetupClick = onCloudSetupClick,
+            onDeleteBackupClick = onDeleteBackupClick,
+        )
         RobiaRoute.Settings -> SettingsScreen(
             innerPadding = innerPadding,
             currentLanguage = currentLanguage,
             driveSyncConnectionStatus = driveSyncConnectionStatus,
             syncState = syncState,
-            cloudSetupSummaryRes = cloudSetupSummaryRes,
             cloudIndicator = cloudSync,
             developerModeUnlocked = developerModeUnlocked,
             developerModeEnabled = developerModeEnabled,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
-            onLanguageSelected = onLanguageSelected,
             onLanguageClick = { onRouteSelected(RobiaRoute.LanguageSettings) },
-            onCloudSetupClick = onCloudSetupClick,
-            driveBackupDeletionState = driveBackupDeletionState,
-            onDeleteBackupClick = onDeleteBackupClick,
+            onSmartSuggestionsClick = { onRouteSelected(RobiaRoute.SmartSuggestionsSettings) },
+            onDriveClick = { onRouteSelected(RobiaRoute.DriveSettings) },
+            browseLayout = browseLayout,
+            onBrowseLayoutChange = onBrowseLayoutChange,
             onRestoreSyncLogClick = onRestoreSyncLogClick,
         )
         RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
@@ -2842,16 +2869,15 @@ private fun RobiaNavHost(
                 currentLanguage = currentLanguage,
                 driveSyncConnectionStatus = driveSyncConnectionStatus,
                 syncState = syncState,
-                cloudSetupSummaryRes = cloudSetupSummaryRes,
                 cloudIndicator = cloudSync,
                 developerModeUnlocked = developerModeUnlocked,
                 developerModeEnabled = developerModeEnabled,
                 onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
-                onLanguageSelected = onLanguageSelected,
                 onLanguageClick = { onRouteSelected(RobiaRoute.LanguageSettings) },
-                onCloudSetupClick = onCloudSetupClick,
-                driveBackupDeletionState = driveBackupDeletionState,
-                onDeleteBackupClick = onDeleteBackupClick,
+                onSmartSuggestionsClick = { onRouteSelected(RobiaRoute.SmartSuggestionsSettings) },
+                onDriveClick = { onRouteSelected(RobiaRoute.DriveSettings) },
+                browseLayout = browseLayout,
+                onBrowseLayoutChange = onBrowseLayoutChange,
                 onRestoreSyncLogClick = onRestoreSyncLogClick,
             )
         }
@@ -3188,6 +3214,7 @@ private fun RobiaAppPreview() {
             availableTags = emptyList(),
             mainColors = emptyList(),
             onLanguageSelected = {},
+            onBrowseLayoutChange = {},
             onDeveloperModeUnlocked = {},
             onDeveloperModeEnabledChange = {},
             onCloudSetupPromptInteracted = {},
