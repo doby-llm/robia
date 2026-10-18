@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
+import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -490,35 +491,6 @@ private fun BatchStatusBadge(
     }
 }
 
-internal suspend fun processBatchDraft(
-    draft: BatchDraftItem,
-    context: android.content.Context,
-    backgroundRemover: PhotoBackgroundRemover,
-    mainColors: List<MainColor>,
-    availableTags: List<GarmentTag>,
-    suggestionService: SuggestionService,
-    onDraftUpdated: (BatchDraftItem) -> Unit,
-) {
-    onDraftUpdated(
-        draft.copy(
-            status = BatchDraftStatus.Processing,
-            explicitlyAccepted = false,
-            errorMessage = null,
-        ),
-    )
-    when (val cutout = cutoutStage(draft, context, backgroundRemover, mainColors)) {
-        is CutoutStageResult.Failed -> onDraftUpdated(
-            draft.copy(
-                status = BatchDraftStatus.Failed,
-                errorMessage = cutout.message,
-            ),
-        )
-        is CutoutStageResult.Ready -> onDraftUpdated(
-            suggestStage(draft, cutout, suggestionService, availableTags, context),
-        )
-    }
-}
-
 /** Output of the cutout stage (background removal, crop, aspect, palette), before any suggestion. */
 internal sealed interface CutoutStageResult {
     data class Ready(
@@ -544,15 +516,15 @@ internal suspend fun cutoutStage(
         ClothingImageStore.readImageAspectRatio(context, sourceUri)
     }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
     val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
-    val croppedUri = runCatching {
+    val croppedUri = fallbackUnlessCancelled(backgroundResult.outputUri) {
         withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
-    }.getOrDefault(backgroundResult.outputUri)
+    }
     val displayAspectRatio = withContext(Dispatchers.IO) {
         ClothingImageStore.readImageAspectRatio(context, croppedUri)
     }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
-    val matches = runCatching {
+    val matches = fallbackUnlessCancelled(emptyList<PaletteColorMatch>()) {
         withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
-    }.getOrDefault(emptyList())
+    }
     val primaryColorId = matches.getOrNull(0)?.color?.id
     val secondaryColorId = matches.drop(1)
         .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
@@ -570,6 +542,18 @@ internal suspend fun cutoutStage(
     throw throwable
 } catch (throwable: Exception) {
     CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
+}
+
+/**
+ * Runs an optional cutout step (crop, palette) and falls back on failure. Unlike runCatching, a cancellation
+ * always propagates, so a cancelled batch never publishes a fallback draft.
+ */
+internal inline fun <T> fallbackUnlessCancelled(fallback: T, block: () -> T): T = try {
+    block()
+} catch (cancellation: CancellationException) {
+    throw cancellation
+} catch (throwable: Throwable) {
+    fallback
 }
 
 internal suspend fun suggestStage(

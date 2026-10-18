@@ -36,6 +36,7 @@ internal class BatchProcessingCoordinator(
     private var processingJob: Job? = null
     private var interruptActiveDrafts: (() -> Unit)? = null
     private var restartRequested = false
+    private var jobOwnedDraftIds: MutableSet<String> = mutableSetOf()
 
     internal val isRunning: Boolean
         get() = processingJob?.isActive == true
@@ -50,10 +51,13 @@ internal class BatchProcessingCoordinator(
         if (isRunning) {
             // A Retry or a new Queued draft arrived while the job runs. The job picks it up before it ends.
             restartRequested = true
+            // The restarted pass processes these drafts, so cancel() must terminalize them too.
+            jobOwnedDraftIds.addAll(drafts().filter { draft -> draft.status == BatchDraftStatus.Queued }.map(BatchDraftItem::id))
             return
         }
 
-        val ownedDraftIds = drafts().map(BatchDraftItem::id).toSet()
+        val ownedDraftIds = drafts().map(BatchDraftItem::id).toMutableSet()
+        jobOwnedDraftIds = ownedDraftIds
 
         fun terminalizeActiveDrafts() {
             drafts()
@@ -111,6 +115,8 @@ internal class BatchProcessingCoordinator(
                         is CutoutStageResult.Ready -> suggestOrFail(draft, result, suggest)
                     }
                     val suggestMs = elapsedMsSince(suggestStartedAt)
+                    // A cancelled job must not publish a result it finished after cancellation.
+                    coroutineContext.ensureActive()
                     publish(finished)
                     BatchTelemetry.log("batch_item idx=${draft.orderIndex} cutout_ms=${timed.elapsedMs} suggest_ms=$suggestMs wait_ms=$waitMs")
                 }
@@ -163,6 +169,8 @@ private suspend fun timedCutout(
     } catch (throwable: Exception) {
         CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
     }
+    // A cutout that returns after cancellation must not hand its Ready result to the publish step.
+    coroutineContext.ensureActive()
     return TimedCutout(result, elapsedMsSince(startedAt))
 }
 

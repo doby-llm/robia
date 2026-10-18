@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -9,6 +10,7 @@ import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -567,6 +569,75 @@ class BatchProcessingCoordinatorTest {
 
         assertEquals(3, drafts.size)
         assertTrue(drafts.all { it.status == BatchDraftStatus.Ready })
+    }
+
+    @Test
+    fun cancel_terminalizesDraftRetriedWhileTheJobRuns() = runBlocking {
+        val drafts = batchOf(3)
+        val cutoutStarted = CompletableDeferred<Unit>()
+        val coordinator = BatchProcessingCoordinator(this)
+        fun process(): Unit = coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = {
+                cutoutStarted.complete(Unit)
+                awaitCancellation()
+            },
+            suggest = { draft, _ -> draft },
+            publish = { draft -> drafts.replaceById(draft) },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+        )
+
+        process()
+        cutoutStarted.await()
+
+        // Draft 3 was not in the running job's snapshot. The Retry restarts the job, so cancel() must own it.
+        drafts.add(batchItem(3).copy(status = BatchDraftStatus.Failed).retryForBatch())
+        process()
+        coordinator.cancel()
+
+        withTimeout(1_000) {
+            while (drafts.any { it.status == BatchDraftStatus.Processing || it.status == BatchDraftStatus.Queued }) yield()
+        }
+
+        assertEquals(BatchDraftStatus.Interrupted, drafts[3].status)
+    }
+
+    @Test
+    fun cancellation_duringCutoutNeverPublishesReadyOrFallbackDraft() = runBlocking {
+        val drafts = batchOf(1)
+        val published = mutableListOf<BatchDraftItem>()
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = { draft ->
+                // The cutout hands back a result that was produced after the job was cancelled.
+                coordinator.cancel()
+                readyCutout(draft)
+            },
+            suggest = { draft, _ -> draft.copy(status = BatchDraftStatus.Ready) },
+            publish = { draft ->
+                published.add(draft)
+                drafts.replaceById(draft)
+            },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+        )
+
+        repeat(10) { yield() }
+
+        assertTrue(published.none { it.status == BatchDraftStatus.Ready })
+        assertEquals(BatchDraftStatus.Interrupted, drafts.single().status)
+    }
+
+    @Test
+    fun fallbackUnlessCancelled_rethrowsCancellationAndFallsBackOnOtherFailures() {
+        assertEquals("fallback", fallbackUnlessCancelled("fallback") { throw IllegalStateException("crop broke") })
+        try {
+            fallbackUnlessCancelled("fallback") { throw CancellationException("cancelled") }
+            fail("a cancelled optional cutout step must not become a fallback")
+        } catch (expected: CancellationException) {
+            // Expected: the cancellation reaches the coordinator, which publishes nothing.
+        }
     }
 
     private fun batchItem(index: Int) = BatchDraftItem(orderIndex = index, originalPhotoUri = "content://photo/$index")
