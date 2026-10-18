@@ -37,6 +37,8 @@ private fun defaultTagLabelRes(tagId: String): Int? = when (tagId) {
     "category-jewelry" -> R.string.tag_jewelry
     "category-accessories" -> R.string.tag_accessories
     "category-coats" -> R.string.tag_coats
+    "category-socks" -> R.string.tag_socks
+    "category-underwear" -> R.string.tag_underwear
     "season-spring" -> R.string.tag_spring
     "season-summer" -> R.string.tag_summer
     "season-fall" -> R.string.tag_fall

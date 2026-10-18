@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -43,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +69,7 @@ import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import java.text.Collator
 import java.util.Locale
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 private const val DefaultCustomColorHex = "#A8644E"
 private const val ColorsTabId = "colors"
@@ -120,18 +124,25 @@ fun ManageTagsScreen(
     var pendingRestoreDefault by remember { mutableStateOf<RestoreDefaultTarget?>(null) }
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
+    val scope = rememberCoroutineScope()
     val visibleCategories = remember(categories) { categories.filterNot { category -> category.id == "care" } }
     val visibleTags = remember(tags) { tags.filterNot { tag -> tag.categoryId == "care" } }
     val tagsByCategory = remember(visibleTags) { visibleTags.groupBy(GarmentTag::categoryId) }
     val tabIds = remember(visibleCategories) { visibleCategories.map(TagCategory::id) + ColorsTabId }
     val activeTabId = selectedTabId?.takeIf { id -> id in tabIds } ?: tabIds.first()
-    val isColorsTab = activeTabId == ColorsTabId
-    val activeCategory = visibleCategories.firstOrNull { category -> category.id == activeTabId }
+    val pagerState = rememberPagerState(initialPage = pageFor(tabIds, activeTabId)) { tabIds.size }
+    val colorsPage = pageFor(tabIds, ColorsTabId)
     val labelsById = remember(tags, configuration.locales) {
         tags.associate { tag -> tag.id to tag.localizedTagLabel(context) }
     }
-    val activeTags = tagsByCategory[activeTabId].orEmpty().sortedAlphabetically(label = { tag -> labelsById[tag.id] ?: tag.name })
-    val sortedColors = mainColors.sortedAlphabetically(label = MainColor::name)
+
+    LaunchedEffect(pagerState.settledPage) {
+        tabIds.getOrNull(pagerState.settledPage)?.let { id -> onSelectedTabIdChange(id) }
+    }
+    LaunchedEffect(activeTabId) {
+        val page = pageFor(tabIds, activeTabId)
+        if (page != pagerState.currentPage) pagerState.scrollToPage(page)
+    }
 
     Column(
         modifier = Modifier
@@ -157,24 +168,24 @@ fun ManageTagsScreen(
         }
 
         ScrollableTabRow(
-            selectedTabIndex = tabIds.indexOf(activeTabId),
+            selectedTabIndex = pagerState.currentPage,
             modifier = Modifier.fillMaxWidth(),
             containerColor = Color.Transparent,
             edgePadding = 24.dp,
         ) {
-            visibleCategories.forEach { category ->
+            visibleCategories.forEachIndexed { page, category ->
                 val categoryCount = tagsByCategory[category.id].orEmpty().size
                 Tab(
-                    selected = activeTabId == category.id,
-                    onClick = { onSelectedTabIdChange(category.id) },
+                    selected = pagerState.currentPage == page,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(page) } },
                     text = {
                         Text(stringResource(R.string.manage_tab_count, category.localizedName(), categoryCount))
                     },
                 )
             }
             Tab(
-                selected = isColorsTab,
-                onClick = { onSelectedTabIdChange(ColorsTabId) },
+                selected = pagerState.currentPage == colorsPage,
+                onClick = { scope.launch { pagerState.animateScrollToPage(colorsPage) } },
                 text = {
                     Text(
                         stringResource(
@@ -187,67 +198,29 @@ fun ManageTagsScreen(
             )
         }
 
-        LazyColumn(
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = PaddingValues(start = 24.dp, top = 12.dp, end = 24.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (isColorsTab) {
-                item(key = "section-header:$ColorsTabId") {
-                    MainColorsHeader(
-                        colorCount = mainColors.size,
-                        onAddColor = { colorEditorState = ColorEditorState() },
-                        onRestoreDefault = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
-                    )
-                }
-                sortedColors.forEach { color ->
-                    item(key = "color-row:${color.id}", contentType = "color-row") {
-                        ColorListRow(
-                            color = color,
-                            canEdit = true,
-                            canDelete = mainColors.size > 1,
-                            onEdit = { colorEditorState = ColorEditorState(existingColor = color) },
-                            onDelete = { pendingDeleteColor = color },
-                        )
-                    }
-                }
-            } else if (activeCategory != null) {
-                item(key = "section-header:${activeCategory.id}") {
-                    TagCategoryHeader(
-                        category = activeCategory,
-                        tagCount = activeTags.size,
-                        onAddTag = { editorState = TagEditorState(categoryId = activeCategory.id) },
-                        onRestoreDefault = if (activeCategory.id in RestorableTagCategoryIds) {
-                            { pendingRestoreDefault = RestoreDefaultTarget.Tags(activeCategory) }
-                        } else {
-                            null
-                        },
-                    )
-                }
-                if (activeTags.isEmpty()) {
-                    item(key = "section-empty:${activeCategory.id}") {
-                        Text(
-                            text = stringResource(R.string.no_tags_in_category),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    activeTags.forEach { tag ->
-                        item(key = "tag-row:${tag.id}", contentType = "tag-row") {
-                            TagListRow(
-                                tag = tag,
-                                label = labelsById[tag.id] ?: tag.name,
-                                canEdit = true,
-                                onEdit = { editorState = TagEditorState(categoryId = activeCategory.id, existingTag = tag) },
-                                onDelete = { onDeleteTag(tag) },
-                            )
-                        }
-                    }
-                }
-            }
+            beyondViewportPageCount = 0,
+            key = { page -> tabIds[page] },
+        ) { page ->
+            ManageTabPage(
+                tabId = tabIds[page],
+                visibleCategories = visibleCategories,
+                tagsByCategory = tagsByCategory,
+                labelsById = labelsById,
+                mainColors = mainColors,
+                onAddColor = { colorEditorState = ColorEditorState() },
+                onEditColor = { color -> colorEditorState = ColorEditorState(existingColor = color) },
+                onDeleteColor = { color -> pendingDeleteColor = color },
+                onRestoreMainColors = { pendingRestoreDefault = RestoreDefaultTarget.MainColors },
+                onAddTag = { categoryId -> editorState = TagEditorState(categoryId = categoryId) },
+                onEditTag = { categoryId, tag -> editorState = TagEditorState(categoryId = categoryId, existingTag = tag) },
+                onDeleteTag = onDeleteTag,
+                onRestoreTags = { category -> pendingRestoreDefault = RestoreDefaultTarget.Tags(category) },
+            )
         }
     }
 
@@ -298,6 +271,92 @@ fun ManageTagsScreen(
                 pendingRestoreDefault = null
             },
         )
+    }
+}
+
+/** Pager page of [id] in [tabs]; 0 when the id is not a tab, matching the first-tab fallback of the selection. */
+internal fun pageFor(tabs: List<String>, id: String): Int = tabs.indexOf(id).coerceAtLeast(0)
+
+@Composable
+private fun ManageTabPage(
+    tabId: String,
+    visibleCategories: List<TagCategory>,
+    tagsByCategory: Map<String, List<GarmentTag>>,
+    labelsById: Map<String, String>,
+    mainColors: List<MainColor>,
+    onAddColor: () -> Unit,
+    onEditColor: (MainColor) -> Unit,
+    onDeleteColor: (MainColor) -> Unit,
+    onRestoreMainColors: () -> Unit,
+    onAddTag: (String) -> Unit,
+    onEditTag: (String, GarmentTag) -> Unit,
+    onDeleteTag: (GarmentTag) -> Unit,
+    onRestoreTags: (TagCategory) -> Unit,
+) {
+    val isColorsTab = tabId == ColorsTabId
+    val activeCategory = visibleCategories.firstOrNull { category -> category.id == tabId }
+    val activeTags = tagsByCategory[tabId].orEmpty().sortedAlphabetically(label = { tag -> labelsById[tag.id] ?: tag.name })
+    val sortedColors = mainColors.sortedAlphabetically(label = MainColor::name)
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 24.dp, top = 12.dp, end = 24.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (isColorsTab) {
+            item(key = "section-header:$ColorsTabId") {
+                MainColorsHeader(
+                    colorCount = mainColors.size,
+                    onAddColor = onAddColor,
+                    onRestoreDefault = onRestoreMainColors,
+                )
+            }
+            sortedColors.forEach { color ->
+                item(key = "color-row:${color.id}", contentType = "color-row") {
+                    ColorListRow(
+                        color = color,
+                        canEdit = true,
+                        canDelete = mainColors.size > 1,
+                        onEdit = { onEditColor(color) },
+                        onDelete = { onDeleteColor(color) },
+                    )
+                }
+            }
+        } else if (activeCategory != null) {
+            item(key = "section-header:${activeCategory.id}") {
+                TagCategoryHeader(
+                    category = activeCategory,
+                    tagCount = activeTags.size,
+                    onAddTag = { onAddTag(activeCategory.id) },
+                    onRestoreDefault = if (activeCategory.id in RestorableTagCategoryIds) {
+                        { onRestoreTags(activeCategory) }
+                    } else {
+                        null
+                    },
+                )
+            }
+            if (activeTags.isEmpty()) {
+                item(key = "section-empty:${activeCategory.id}") {
+                    Text(
+                        text = stringResource(R.string.no_tags_in_category),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                activeTags.forEach { tag ->
+                    item(key = "tag-row:${tag.id}", contentType = "tag-row") {
+                        TagListRow(
+                            tag = tag,
+                            label = labelsById[tag.id] ?: tag.name,
+                            canEdit = true,
+                            onEdit = { onEditTag(activeCategory.id, tag) },
+                            onDelete = { onDeleteTag(tag) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

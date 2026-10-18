@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EmbeddingRecipeTest {
@@ -13,8 +14,29 @@ class EmbeddingRecipeTest {
             .map(GarmentTag::id)
             .filter { it.startsWith("category-") || it.startsWith("occasion-") }
 
-        assertEquals(25, EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS.size)
+        assertEquals(27, EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS.size)
         assertEquals(defaultIds.toSet(), EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS.keys)
+    }
+
+    @Test
+    fun socksAndUnderwearHaveTheirDescriptionsAndDoNotSuggestOccasions() {
+        assertEquals(
+            "socks or tights: hosiery worn on the feet and legs",
+            EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS.getValue("category-socks"),
+        )
+        assertEquals(
+            "underwear: bra, briefs, boxers or lingerie worn under clothes",
+            EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS.getValue("category-underwear"),
+        )
+        assertTrue(EmbeddingRecipe.SUGGEST_OCCASIONS_DEFAULT_OFF.containsAll(listOf("category-socks", "category-underwear")))
+    }
+
+    @Test
+    fun accessoriesDescriptionIncludesBelts() {
+        assertEquals(
+            "an accessory: a belt or waist belt, a scarf, a hat, sunglasses or a similar item",
+            EmbeddingRecipe.DEFAULT_LABEL_DESCRIPTIONS.getValue("category-accessories"),
+        )
     }
 
     @Test

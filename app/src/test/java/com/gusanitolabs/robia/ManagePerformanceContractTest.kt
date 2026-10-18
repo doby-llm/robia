@@ -25,6 +25,15 @@ class ManagePerformanceContractTest {
     }
 
     @Test
+    fun manageTags_swipesBetweenTabsWithPagerKeyedByTabId() {
+        val manage = source("app/src/main/java/com/gusanitolabs/robia/ui/ManageTagsScreen.kt")
+
+        assertTrue(manage.contains("HorizontalPager("))
+        assertTrue(manage.contains("beyondViewportPageCount = 0"))
+        assertTrue(manage.contains("key = { page -> tabIds[page] }"))
+    }
+
+    @Test
     fun toUiWardrobeItems_isNotComposable() {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
         val declaration = "fun List<ClothingItem>.toUiWardrobeItems("

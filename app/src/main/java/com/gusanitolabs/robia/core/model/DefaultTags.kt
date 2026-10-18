@@ -28,6 +28,8 @@ object DefaultTags {
         GarmentTag(id = "category-jewelry", categoryId = "category", name = "Jewelry", sortOrder = 170, suggestOccasions = false),
         GarmentTag(id = "category-accessories", categoryId = "category", name = "Accessories", sortOrder = 180, suggestOccasions = false),
         GarmentTag(id = "category-coats", categoryId = "category", name = "Coats", sortOrder = 190),
+        GarmentTag(id = "category-socks", categoryId = "category", name = "Socks", sortOrder = 200, suggestOccasions = false),
+        GarmentTag(id = "category-underwear", categoryId = "category", name = "Underwear", sortOrder = 210, suggestOccasions = false),
         GarmentTag(id = "season-spring", categoryId = "season", name = "Spring", sortOrder = 10, isSystem = true),
         GarmentTag(id = "season-summer", categoryId = "season", name = "Summer", sortOrder = 20, isSystem = true),
         GarmentTag(id = "season-fall", categoryId = "season", name = "Fall", sortOrder = 30, isSystem = true),
