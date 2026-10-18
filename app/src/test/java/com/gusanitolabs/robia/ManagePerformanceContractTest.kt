@@ -26,13 +26,18 @@ class ManagePerformanceContractTest {
 
     @Test
     fun toUiWardrobeItems_isNotComposable() {
-        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
-        val declaration = "private fun List<ClothingItem>.toUiWardrobeItems("
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
+        val declaration = "fun List<ClothingItem>.toUiWardrobeItems("
         val declarationIndex = app.indexOf(declaration)
         assertTrue(declarationIndex >= 0)
 
         val precedingLine = app.substring(0, declarationIndex).trimEnd().lineSequence().last().trim()
         assertFalse(precedingLine == "@Composable")
+    }
+
+    private fun uiSource(): String = Path.of("app/src/main/java/com/gusanitolabs/robia/ui").let { dir ->
+        val d = if (Files.isDirectory(dir)) dir else Path.of("..").resolve(dir)
+        Files.list(d).use { s -> s.filter { it.toString().endsWith(".kt") }.sorted().map { Files.readString(it) }.toList() }.joinToString("\n")
     }
 
     private fun source(relativePath: String): String {
