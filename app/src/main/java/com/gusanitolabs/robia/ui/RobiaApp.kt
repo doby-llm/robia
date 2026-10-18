@@ -890,6 +890,7 @@ private fun RobiaShell(
     val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
+    var reviewComplete by remember { mutableStateOf<ReviewCompleteText?>(null) }
     // One first-run prompt at a time; the order lives in nextFirstRunPrompt. Answered cloud/model prompts stay answered in memory until settings catch up.
     var activeFirstRunPrompt by remember { mutableStateOf<FirstRunPrompt?>(null) }
     var answeredFirstRunPrompts by remember { mutableStateOf(emptySet<FirstRunPrompt>()) }
@@ -1281,6 +1282,7 @@ private fun RobiaShell(
         if (updatedItems.isNotEmpty()) onSaveItems(updatedItems, emptyMap())
         activeTagReview = null
         showTagReviewDiscardDialog = false
+        reviewComplete = reviewCompleteText(ReviewCompleteKind.Tags, updatedItems.size)
         replaceRoute(RobiaRoute.ManageTags)
     }
 
@@ -1321,6 +1323,7 @@ private fun RobiaShell(
         activeColorReviewChangeSet = null
         pendingColorReviewChangeSet = null
         showColorReviewDiscardDialog = false
+        reviewComplete = reviewCompleteText(ReviewCompleteKind.Colors, updatedItems.size)
         replaceRoute(RobiaRoute.ManageTags)
     }
 
@@ -1961,6 +1964,9 @@ private fun RobiaShell(
             developerModeEnabled = settings.developerModeEnabled,
             onRetry = onRequestCloudRestoreRetry,
         )
+    }
+    reviewComplete?.let { text ->
+        ReviewCompleteOverlay(text = text, onFinished = { reviewComplete = null })
     }
     }
 }

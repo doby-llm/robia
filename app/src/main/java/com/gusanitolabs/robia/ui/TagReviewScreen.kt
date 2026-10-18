@@ -297,7 +297,12 @@ internal fun TagReviewPromptDialog(
                 onClick = onReview,
                 enabled = modelReady,
                 modifier = Modifier.aiSurface(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = Color.White,
+                    disabledContainerColor = Color.Transparent,
+                    disabledContentColor = Color.White.copy(alpha = 0.6f),
+                ),
             ) {
                 Text(stringResource(R.string.tag_review_prompt_confirm))
             }
