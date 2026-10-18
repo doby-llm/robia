@@ -6,10 +6,12 @@ import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -41,7 +43,11 @@ class PlayModuleInstallPort(context: Context) : ModuleInstallPort {
     private suspend fun withSegmenter(block: suspend (SubjectSegmenter) -> Boolean): Boolean {
         val segmenter = SubjectSegmentation.getClient(subjectSegmenterOptions)
         return try {
-            runCatching { block(segmenter) }.getOrDefault(false)
+            block(segmenter)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            false
         } finally {
             segmenter.close()
         }
@@ -72,18 +78,21 @@ class SegmentationModuleGate(
         onPreparing: (Boolean) -> Unit = {},
     ): GateResult {
         if (port.isAvailable()) return GateResult.Available
-        if (!port.requestInstall()) return GateResult.Unavailable("Module install request was rejected")
 
         onPreparing(true)
         markWaiting(true)
         try {
-            var waitedMs = 0L
-            while (waitedMs < timeout.inWholeMilliseconds) {
-                delayFn(POLL_INTERVAL_MS)
-                waitedMs += POLL_INTERVAL_MS
-                if (port.isAvailable()) return GateResult.Available
-            }
-            return GateResult.Unavailable("Module not available after $timeout")
+            return withTimeoutOrNull<GateResult>(timeout) {
+                if (!port.requestInstall()) return@withTimeoutOrNull GateResult.Unavailable("Module install request was rejected")
+
+                var waitedMs = 0L
+                while (waitedMs < timeout.inWholeMilliseconds) {
+                    delayFn(POLL_INTERVAL_MS)
+                    waitedMs += POLL_INTERVAL_MS
+                    if (port.isAvailable()) return@withTimeoutOrNull GateResult.Available
+                }
+                GateResult.Unavailable("Module not available after $timeout")
+            } ?: GateResult.Unavailable("Module not available after $timeout")
         } finally {
             markWaiting(false)
             onPreparing(false)

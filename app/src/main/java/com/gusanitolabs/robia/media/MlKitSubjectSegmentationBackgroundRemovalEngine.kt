@@ -13,6 +13,7 @@ import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentationResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -42,25 +43,28 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine : BackgroundRemovalEngine 
         val segmenter = SubjectSegmentation.getClient(subjectSegmenterOptions)
 
         try {
-            val result = runCatching {
+            val attempt = try {
                 runWithModuleRetry(
                     ensureModule = { gate.ensureAvailable(timeout = MODULE_WAIT_TIMEOUT) },
                     process = { segmenter.process(InputImage.fromBitmap(source, 0)).await() },
                 )
-            }.getOrElse { throwable ->
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
                 return@withContext sourceUri.originalFallback(throwable.toSegmentationFailure())
+            }
+            val result = when (attempt) {
+                is SegmentationAttempt.Success -> attempt.value
+                is SegmentationAttempt.Failed -> return@withContext sourceUri.originalFallback(
+                    attempt.error.toBackgroundRemovalFailure(attempt.reason),
+                )
             }
 
             val alpha = runCatching { result.refinedAlpha(source) }
                 .getOrElse { throwable ->
                     return@withContext sourceUri.originalFallback(throwable.toSegmentationFailure())
                 }
-                ?: return@withContext sourceUri.originalFallback(
-                    BackgroundRemovalFailure(
-                        reason = BackgroundRemovalFailureReason.MODEL_UNAVAILABLE,
-                        message = "ML Kit did not return a foreground mask.",
-                    ),
-                )
+                ?: return@withContext sourceUri.originalFallback(missingForegroundMaskFailure)
 
             val outputUri = runCatching {
                 source.composeWithAlpha(alpha).useForOutput { bitmap ->
@@ -109,30 +113,56 @@ private val MODULE_WAIT_TIMEOUT = 60.seconds
 internal fun isModuleUnavailableError(throwable: Throwable): Boolean =
     throwable is MlKitException && throwable.errorCode == MlKitException.UNAVAILABLE
 
-internal fun segmentationFailureReason(throwable: Throwable): BackgroundRemovalFailureReason =
-    if (isModuleUnavailableError(throwable)) {
+internal fun segmentationFailureReason(
+    throwable: Throwable,
+    isModuleUnavailable: (Throwable) -> Boolean = ::isModuleUnavailableError,
+): BackgroundRemovalFailureReason =
+    if (isModuleUnavailable(throwable)) {
         BackgroundRemovalFailureReason.MODEL_UNAVAILABLE
     } else {
         BackgroundRemovalFailureReason.SEGMENTATION_FAILED
     }
 
+/** ML Kit returned no alpha: a segmentation failure, not a module-download failure. */
+internal val missingForegroundMaskFailure = BackgroundRemovalFailure(
+    reason = BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
+    message = "ML Kit did not return a foreground mask.",
+)
+
+/** Outcome of [runWithModuleRetry]: the segmenter value, or the reason it could not produce one. */
+internal sealed interface SegmentationAttempt<out T> {
+    data class Success<out T>(val value: T) : SegmentationAttempt<T>
+    data class Failed(val reason: BackgroundRemovalFailureReason, val error: Throwable) : SegmentationAttempt<Nothing>
+}
+
 /**
- * Waits for the module, runs [process], and on a module-unavailable error waits once more and runs it once more.
- * A second unavailable error (or any other error) propagates to the caller's fallback.
+ * Waits for the module, runs [process], and on a module-unavailable failure waits once more and runs it once more.
+ * Any other failure, or a second unavailable failure, is returned as [SegmentationAttempt.Failed].
+ * Cancellation is never turned into a failure: it propagates to the caller.
  */
 internal suspend fun <T> runWithModuleRetry(
     ensureModule: suspend () -> Unit,
     process: suspend () -> T,
     isModuleUnavailable: (Throwable) -> Boolean = ::isModuleUnavailableError,
-): T {
+): SegmentationAttempt<T> {
     ensureModule()
-    return try {
-        process()
-    } catch (throwable: Throwable) {
-        if (!isModuleUnavailable(throwable)) throw throwable
-        ensureModule()
-        process()
+    val first = processOnce(process, isModuleUnavailable)
+    if (first !is SegmentationAttempt.Failed || first.reason != BackgroundRemovalFailureReason.MODEL_UNAVAILABLE) {
+        return first
     }
+    ensureModule()
+    return processOnce(process, isModuleUnavailable)
+}
+
+private suspend fun <T> processOnce(
+    process: suspend () -> T,
+    isModuleUnavailable: (Throwable) -> Boolean,
+): SegmentationAttempt<T> = try {
+    SegmentationAttempt.Success(process())
+} catch (cancellation: CancellationException) {
+    throw cancellation
+} catch (throwable: Throwable) {
+    SegmentationAttempt.Failed(segmentationFailureReason(throwable, isModuleUnavailable), throwable)
 }
 
 /** Decodes the photo with EXIF orientation applied and its long edge at most [SEGMENTATION_MAX_EDGE_PX]. */

@@ -1,10 +1,16 @@
 package com.gusanitolabs.robia.media
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class SegmentationModuleGateTest {
@@ -117,6 +123,45 @@ class SegmentationModuleGateTest {
 
         assertTrue(result is GateResult.Unavailable)
         assertEquals(0L, clock.elapsedMs)
-        assertEquals(emptyList<Boolean>(), preparing)
+        assertEquals(listOf(true, false), preparing)
+        assertFalse(gate.preparing.value)
+    }
+
+    @Test
+    fun requestInstallHangs_timesOutAsUnavailable_andClearsPreparing() = runBlocking {
+        val gate = SegmentationModuleGate(HangingInstallPort())
+        val preparing = mutableListOf<Boolean>()
+
+        val result = gate.ensureAvailable(50.milliseconds, onPreparing = { preparing += it })
+
+        assertTrue(result is GateResult.Unavailable)
+        assertEquals(listOf(true, false), preparing)
+        assertFalse(gate.preparing.value)
+    }
+
+    @Test
+    fun cancellationDuringWait_propagatesAndClearsPreparing() = runBlocking {
+        val gate = SegmentationModuleGate(FakeModulePort(installedAfterPolls = null), { awaitCancellation() })
+        var propagated = false
+        val waiter = launch {
+            try {
+                gate.ensureAvailable(60.seconds)
+            } catch (cancellation: CancellationException) {
+                propagated = true
+                throw cancellation
+            }
+        }
+
+        gate.preparing.first { it }
+        waiter.cancelAndJoin()
+
+        assertTrue(propagated)
+        assertFalse(gate.preparing.value)
+    }
+
+    private class HangingInstallPort : ModuleInstallPort {
+        override suspend fun isAvailable(): Boolean = false
+
+        override suspend fun requestInstall(): Boolean = awaitCancellation()
     }
 }

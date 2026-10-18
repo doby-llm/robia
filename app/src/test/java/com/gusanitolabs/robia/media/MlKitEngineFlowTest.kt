@@ -1,53 +1,48 @@
 package com.gusanitolabs.robia.media
 
+import com.google.mlkit.common.MlKitException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MlKitEngineFlowTest {
-    private class ModuleUnavailable : RuntimeException("Waiting for the module to be downloaded")
-
-    private val isModuleUnavailable: (Throwable) -> Boolean = { it is ModuleUnavailable }
+    private fun moduleUnavailable() = MlKitException("Waiting for the module to be downloaded", MlKitException.UNAVAILABLE)
 
     @Test
     fun unavailableThenSuccess_waitsOnceAndProcessesOnce() = runBlocking {
         var ensures = 0
         var processes = 0
 
-        val result = runWithModuleRetry(
+        val attempt = runWithModuleRetry(
             ensureModule = { ensures++ },
             process = {
                 processes++
-                if (processes == 1) throw ModuleUnavailable()
+                if (processes == 1) throw moduleUnavailable()
                 "foreground"
             },
-            isModuleUnavailable = isModuleUnavailable,
         )
 
-        assertEquals("foreground", result)
+        assertEquals(SegmentationAttempt.Success("foreground"), attempt)
         assertEquals(2, ensures)
         assertEquals(2, processes)
     }
 
     @Test
-    fun unavailableTwice_propagatesAfterOneRetry() = runBlocking {
+    fun unavailableTwice_failsAsModuleUnavailableAfterOneRetry() = runBlocking {
         var ensures = 0
         var processes = 0
 
-        assertThrows(ModuleUnavailable::class.java) {
-            runBlocking {
-                runWithModuleRetry(
-                    ensureModule = { ensures++ },
-                    process = {
-                        processes++
-                        throw ModuleUnavailable()
-                    },
-                    isModuleUnavailable = isModuleUnavailable,
-                )
-            }
-        }
+        val attempt = runWithModuleRetry(
+            ensureModule = { ensures++ },
+            process = {
+                processes++
+                throw moduleUnavailable()
+            },
+        )
 
+        assertEquals(BackgroundRemovalFailureReason.MODEL_UNAVAILABLE, (attempt as SegmentationAttempt.Failed).reason)
         assertEquals(2, ensures)
         assertEquals(2, processes)
     }
@@ -57,21 +52,55 @@ class MlKitEngineFlowTest {
         var ensures = 0
         var processes = 0
 
-        val thrown = assertThrows(IllegalStateException::class.java) {
-            runBlocking {
-                runWithModuleRetry(
-                    ensureModule = { ensures++ },
-                    process = {
-                        processes++
-                        error("segmenter exploded")
-                    },
-                    isModuleUnavailable = isModuleUnavailable,
-                )
-            }
-        }
+        val attempt = runWithModuleRetry(
+            ensureModule = { ensures++ },
+            process = {
+                processes++
+                error("segmenter exploded")
+            },
+        )
 
+        assertEquals(BackgroundRemovalFailureReason.SEGMENTATION_FAILED, (attempt as SegmentationAttempt.Failed).reason)
         assertEquals(1, ensures)
         assertEquals(1, processes)
-        assertEquals(BackgroundRemovalFailureReason.SEGMENTATION_FAILED, segmentationFailureReason(thrown))
+    }
+
+    @Test
+    fun cancellationFromProcess_propagatesAndIsNotRetried() = runBlocking {
+        var ensures = 0
+        var processes = 0
+
+        val thrown = runCatching {
+            runWithModuleRetry(
+                ensureModule = { ensures++ },
+                process = {
+                    processes++
+                    throw CancellationException("cancelled")
+                },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(thrown is CancellationException)
+        assertEquals(1, ensures)
+        assertEquals(1, processes)
+    }
+
+    @Test
+    fun segmentationFailureReason_isModelUnavailableOnlyForTheUnavailableCode() {
+        assertTrue(isModuleUnavailableError(moduleUnavailable()))
+        assertEquals(BackgroundRemovalFailureReason.MODEL_UNAVAILABLE, segmentationFailureReason(moduleUnavailable()))
+        assertEquals(
+            BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
+            segmentationFailureReason(MlKitException("bad input", MlKitException.INVALID_ARGUMENT)),
+        )
+        assertEquals(
+            BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
+            segmentationFailureReason(IllegalStateException("segmenter exploded")),
+        )
+    }
+
+    @Test
+    fun missingForegroundMask_isSegmentationFailedNotModuleUnavailable() {
+        assertEquals(BackgroundRemovalFailureReason.SEGMENTATION_FAILED, missingForegroundMaskFailure.reason)
     }
 }
