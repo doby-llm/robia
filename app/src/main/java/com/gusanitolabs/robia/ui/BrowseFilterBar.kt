@@ -16,6 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
@@ -46,6 +49,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -101,6 +105,8 @@ import kotlinx.coroutines.withContext
 
 internal data class BrowseFilterState(
     val selectedTagIds: Set<String> = emptySet(),
+    /** tagId → categoryId for each entry of [selectedTagIds], kept by the toggle helpers. */
+    val selectedTagCategories: Map<String, String> = emptyMap(),
     val selectedUnsetTagCategoryIds: Set<String> = emptySet(),
     val selectedPaletteColorIds: Set<String> = emptySet(),
     val favoritesOnly: Boolean = false,
@@ -117,13 +123,26 @@ internal data class BrowseFilterState(
             selectedPaletteColorIds.size +
             if (favoritesOnly) 1 else 0
 
+    /** Entries in one category section: its selected tags plus its "Not set" option. */
+    fun activeFilterCountIn(categoryId: String): Int =
+        selectedTagIds.count { tagId -> selectedTagCategories[tagId] == categoryId } +
+            if (categoryId in selectedUnsetTagCategoryIds) 1 else 0
+
+    /**
+     * Within a category the selections are OR (an item passes if it carries any of them, or has no tag of the
+     * category when "Not set" is selected); across categories they are AND; colours are OR; favourites are AND.
+     * A selected tag with no known category stands alone, so it still has to match.
+     */
     fun matches(item: UiWardrobeItem, paletteColors: List<MainColor>): Boolean {
         val assignedTags = item.tags.filter { tag -> tag.id.isNotBlank() && tag.label.isNotBlank() }
         val itemTagIds = assignedTags.map(UiTag::id).toSet()
         val itemTagCategoryIds = assignedTags.map(UiTag::categoryId).toSet()
+        val selectedIdsByCategory = selectedTagIds.groupBy { tagId -> selectedTagCategories[tagId] ?: tagId }
         return (!favoritesOnly || item.isFavorite) &&
-            selectedTagIds.all(itemTagIds::contains) &&
-            selectedUnsetTagCategoryIds.none(itemTagCategoryIds::contains) &&
+            (selectedIdsByCategory.keys + selectedUnsetTagCategoryIds).all { categoryId ->
+                selectedIdsByCategory[categoryId].orEmpty().any(itemTagIds::contains) ||
+                    (categoryId in selectedUnsetTagCategoryIds && categoryId !in itemTagCategoryIds)
+            } &&
             (selectedPaletteColorIds.isEmpty() || item.matchesAnyPaletteColor(selectedPaletteColors(paletteColors)))
     }
 
@@ -255,8 +274,13 @@ private fun PulsingCloudIcon(tint: Color) {
 internal fun FilterBar(
     hasActiveFilters: Boolean,
     activeFilterCount: Int,
+    filters: BrowseFilterState,
+    availableTags: List<GarmentTag>,
+    paletteColors: List<MainColor>,
+    onFiltersChange: (BrowseFilterState) -> Unit,
     cloudSync: CloudSyncIndicator,
     onFiltersClick: () -> Unit,
+    onResetFilters: () -> Unit,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     searchMode: SearchMode,
@@ -279,6 +303,16 @@ internal fun FilterBar(
     // A query typed before the model went missing must not keep filtering while no search field is shown.
     LaunchedEffect(searchVisible) {
         if (!searchVisible) onSearchQueryChange("")
+    }
+
+    // A tag or colour deleted elsewhere must not keep filtering (and showing its raw id) here.
+    LaunchedEffect(availableTags, paletteColors) {
+        val pruned = pruneUnknownFilters(
+            filters = filters,
+            availableTagIds = availableTags.mapTo(mutableSetOf(), GarmentTag::id),
+            paletteColorIds = paletteColors.mapTo(mutableSetOf(), MainColor::id),
+        )
+        if (pruned != filters) onFiltersChange(pruned)
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -309,6 +343,11 @@ internal fun FilterBar(
                     label = { Text(filterLabel) },
                     leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                 )
+                if (hasActiveFilters) {
+                    TextButton(onClick = onResetFilters) {
+                        Text(stringResource(R.string.reset_filters_short))
+                    }
+                }
                 if (!searchVisible) {
                     IconButton(onClick = { showSmartPrompt = true }) {
                         Icon(
@@ -327,6 +366,14 @@ internal fun FilterBar(
                 if (cloudSync.headline.showsBrowseIndicator) {
                     CloudSyncStatusIcon(indicator = cloudSync, onOpenDataSync = onOpenSettings)
                 }
+            }
+            if (filters.hasActiveFilters) {
+                ActiveFilterChipsRow(
+                    filters = filters,
+                    availableTags = availableTags,
+                    paletteColors = paletteColors,
+                    onFiltersChange = onFiltersChange,
+                )
             }
             if (searchInProgress) {
                 Row(
@@ -414,36 +461,131 @@ private fun SimilarGarmentsChip(name: String, onClear: () -> Unit) {
     )
 }
 
-internal fun BrowseFilterState.toggleTag(tag: GarmentTag): BrowseFilterState = copy(
-    selectedTagIds = selectedTagIds.toggle(tag.id),
-    selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds - tag.categoryId,
+/** One chip per active filter, in the order: tags, "Not set" options, colours, favourites. Each ✕ removes only its entry. */
+@Composable
+internal fun ActiveFilterChipsRow(
+    filters: BrowseFilterState,
+    availableTags: List<GarmentTag>,
+    paletteColors: List<MainColor>,
+    onFiltersChange: (BrowseFilterState) -> Unit,
+) {
+    if (!filters.hasActiveFilters) return
+    val context = LocalContext.current
+    val tagsById = availableTags.associateBy(GarmentTag::id)
+    val colorsById = paletteColors.associateBy(MainColor::id)
+    val tagIds = filters.selectedTagIds.toList().sortedAlphabetically(
+        label = { tagId -> tagsById[tagId]?.localizedTagLabel(context) ?: tagId },
+    )
+    val colorIds = filters.selectedPaletteColorIds.toList().sortedAlphabetically(
+        label = { colorId -> colorsById[colorId]?.name ?: colorId },
+    )
+
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(tagIds) { tagId ->
+            ActiveFilterChip(
+                label = tagsById[tagId]?.localizedTagLabel(context) ?: tagId,
+                onRemove = { onFiltersChange(filters.removeTag(tagId)) },
+            )
+        }
+        items(filters.selectedUnsetTagCategoryIds.toList()) { categoryId ->
+            val categoryTitle = categoryTitleRes(categoryId)?.let { stringResource(it) } ?: categoryId
+            ActiveFilterChip(
+                label = stringResource(R.string.filters_category_not_set, categoryTitle, stringResource(R.string.filters_not_set)),
+                onRemove = { onFiltersChange(filters.toggleUnsetCategory(categoryId)) },
+            )
+        }
+        items(colorIds) { colorId ->
+            ActiveFilterChip(
+                label = colorsById[colorId]?.name ?: colorId,
+                swatch = colorsById[colorId]?.swatchColor(),
+                onRemove = { onFiltersChange(filters.togglePaletteColor(colorId)) },
+            )
+        }
+        if (filters.favoritesOnly) {
+            item {
+                ActiveFilterChip(
+                    label = stringResource(R.string.filters_favourites_only),
+                    onRemove = { onFiltersChange(filters.toggleFavoritesOnly()) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveFilterChip(label: String, onRemove: () -> Unit, swatch: Color? = null) {
+    val removeDescription = stringResource(R.string.filter_remove)
+
+    InputChip(
+        selected = true,
+        onClick = onRemove,
+        label = { Text(label) },
+        leadingIcon = if (swatch != null) {
+            { Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(swatch)) }
+        } else {
+            null
+        },
+        trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = removeDescription) },
+    )
+}
+
+private fun categoryTitleRes(categoryId: String): Int? = when (categoryId) {
+    "category" -> R.string.filter_category
+    "season" -> R.string.filter_season
+    "occasion" -> R.string.filter_occasion
+    "location" -> R.string.filter_location
+    else -> null
+}
+
+internal fun BrowseFilterState.toggleTag(tag: GarmentTag): BrowseFilterState {
+    val selected = tag.id in selectedTagIds
+    return copy(
+        selectedTagIds = selectedTagIds.toggle(tag.id),
+        selectedTagCategories = if (selected) {
+            selectedTagCategories - tag.id
+        } else {
+            selectedTagCategories + (tag.id to tag.categoryId)
+        },
+    )
+}
+
+/** Removes exactly one tag entry, as the active-filter chip's ✕ does. */
+internal fun BrowseFilterState.removeTag(tagId: String): BrowseFilterState = copy(
+    selectedTagIds = selectedTagIds - tagId,
+    selectedTagCategories = selectedTagCategories - tagId,
 )
 
-internal fun BrowseFilterState.toggleSingleValueTag(
-    tag: GarmentTag,
-    categoryTags: List<GarmentTag>,
+/**
+ * Drops selected tags (with their category entry) and colours that no longer exist. An empty id set means the list
+ * has not loaded yet, not that everything was deleted, so that kind of selection is left alone.
+ * Returns [filters] itself when nothing has to go.
+ */
+internal fun pruneUnknownFilters(
+    filters: BrowseFilterState,
+    availableTagIds: Set<String>,
+    paletteColorIds: Set<String>,
 ): BrowseFilterState {
-    val categoryTagIds = categoryTags.map(GarmentTag::id).toSet()
-    return copy(
-        selectedTagIds = if (tag.id in selectedTagIds) {
-            selectedTagIds - tag.id
-        } else {
-            (selectedTagIds - categoryTagIds) + tag.id
-        },
-        selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds - tag.categoryId,
+    val unknownTagIds = if (availableTagIds.isEmpty()) {
+        emptySet()
+    } else {
+        filters.selectedTagIds.filterNot(availableTagIds::contains).toSet()
+    }
+    val unknownColorIds = if (paletteColorIds.isEmpty()) {
+        emptySet()
+    } else {
+        filters.selectedPaletteColorIds.filterNot(paletteColorIds::contains).toSet()
+    }
+    if (unknownTagIds.isEmpty() && unknownColorIds.isEmpty()) return filters
+    return filters.copy(
+        selectedTagIds = filters.selectedTagIds - unknownTagIds,
+        selectedTagCategories = filters.selectedTagCategories - unknownTagIds,
+        selectedPaletteColorIds = filters.selectedPaletteColorIds - unknownColorIds,
     )
 }
 
-internal fun BrowseFilterState.toggleUnsetCategory(
-    categoryId: String,
-    categoryTags: List<GarmentTag>,
-): BrowseFilterState {
-    val categoryTagIds = categoryTags.map(GarmentTag::id).toSet()
-    return copy(
-        selectedTagIds = selectedTagIds - categoryTagIds,
-        selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds.toggle(categoryId),
-    )
-}
+internal fun BrowseFilterState.toggleUnsetCategory(categoryId: String): BrowseFilterState = copy(
+    selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds.toggle(categoryId),
+)
 
 internal fun BrowseFilterState.togglePaletteColor(colorId: String): BrowseFilterState = copy(
     selectedPaletteColorIds = selectedPaletteColorIds.toggle(colorId),

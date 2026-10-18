@@ -353,7 +353,6 @@
     <string name="language_settings_title">Language</string>
     <string name="language_settings_body">Robia follows your system language by default and is prepared for English, Spanish, and German.</string>
     <string name="advanced_filters_title">Advanced Filters</string>
-    <string name="advanced_filters_subtitle">Refine your wardrobe view</string>
     <string name="reset_filters">Reset all</string>
     <string name="filter_category">Category</string>
     <string name="filter_season">Season</string>
@@ -654,6 +653,20 @@
     <string name="badge_uploading">Uploading</string>
     <string name="badge_needs_attention">Needs attention</string>
     <string name="badge_sign_in">Sign in</string>
+    <!-- U03 -->
+    <string name="filters_title">Filters</string>
+    <string name="reset_filters_short">Reset</string>
+    <plurals name="filters_show_count">
+        <item quantity="one">Show %1$d garment</item>
+        <item quantity="other">Show %1$d garments</item>
+    </plurals>
+    <string name="filters_more">+%1$d more</string>
+    <string name="filters_not_set">Not set</string>
+    <string name="filters_favourites_only">Favourites only</string>
+    <string name="filters_favourites_body">Show only garments marked with a heart</string>
+    <string name="filters_category_not_set">%1$s: %2$s</string>
+    <string name="filter_remove">Remove filter</string>
+    <string name="filters_close">Close</string>
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Suggested by Robia. Tap to change.</string>
     <string name="edit_photo_action">Edit photo</string>
