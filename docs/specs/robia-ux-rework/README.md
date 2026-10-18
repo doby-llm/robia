@@ -2,7 +2,7 @@
 
 Round 2 of Robia improvements requested by Manu on 2026-10-16 (`feedback/2026-10-16-manu-email.md`, items R1–R15) and his answers to revision 1 (`feedback/2026-10-17-manu-rev1-feedback.md`): Browse (photos-only default + details setting), filters, Manage swipe, garment form/detail, processing feedback, segmentation (reliability, edges, precise cutout pack with hanger-first), photo editor (cutout + light), batch speed and batch list with ETA, review completion screen, PDF (sparse garments), Settings, motion (no haptics) and categories (Socks, Underwear, Accessories with belts).
 
-Status: **Revision 2, awaiting APROBADO**. Revision-1 questions are answered and recorded in `decision-log.md` (headers + rev-2 section).
+Status: **APPROVED (revision 3)** — Manu wrote APROBADO on 2026-10-18 (Telegram, `feedback/2026-10-18-manu-approval.md`). G-APPROVAL passes when this docs PR (#98) is merged. Rev 3 adds U10, C01, D01, D02 (see `decision-log.md` rev-3 section).
 
 | File | Content |
 |---|---|
@@ -20,5 +20,5 @@ Status: **Revision 2, awaiting APROBADO**. Revision-1 questions are answered and
 | `PROMPT_COORDINATOR.md` | copy-paste prompt for the coordinating model |
 | `../../../tools/segmentation-bench/` | Python reference pipeline used for the benchmark |
 
-Roles: planner (this package) → coordinator model (dispatch, review, merge, gates) → implementer model (one task per run).
+Roles: planner (this package; plans only, implements nothing) → coordinator **Claude Sonnet 5.5, effort high** (dispatch, review, merge, gates; `PROMPT_COORDINATOR.md`) → workers **Claude Haiku 5.5, effort high**, one task per run (`PROMPT_WORKER.md`); independent reviewers are separate read-only Haiku 5.5 high runs.
 Previous plan (`docs/specs/robia-embeddings-sync-manage/`) is complete; its open follow-ups stay on issue #22 and are not part of this round.

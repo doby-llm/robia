@@ -1,6 +1,6 @@
 # Tasks — robia-ux-rework
 
-Revision 3 (2026-10-17; rev-1 feedback in `feedback/2026-10-17-manu-rev1-feedback.md`, rev-2 feedback and answers in `feedback/2026-10-17-manu-rev2-feedback.md`). **G-APPROVAL** = Manu writes APROBADO on the planning PR and it is merged. All tasks are `Ready` once G-APPROVAL passes and their predecessors are merged.
+**Approved 2026-10-18.** Revision 3 (2026-10-17; rev-1 feedback in `feedback/2026-10-17-manu-rev1-feedback.md`, rev-2 feedback and answers in `feedback/2026-10-17-manu-rev2-feedback.md`). **G-APPROVAL** = Manu writes APROBADO on the planning PR and it is merged. All tasks are `Ready` once G-APPROVAL passes and their predecessors are merged.
 
 ## Rules for every worker (read first)
 0. Read `briefs/README.md`, then `briefs/TASK-<ID>.md`, then this section, then your rows in `verification-matrix.md`. `technical-specification.md` §N = TS§N; decisions UX-/SEG-/PROC-DEC-NNN in `decision-log.md`. Mockups: `mockups/*.html` (open in a browser; captions are Spanish, UI copy English).

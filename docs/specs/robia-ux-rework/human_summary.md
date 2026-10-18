@@ -111,7 +111,7 @@ Mockups: `mockups/index.html` (ábrelos en el navegador; las animaciones se muev
 - **Velocidad en el móvil:** sigue pendiente de medir (G-SEG-1). Por eso el recorte preciso es opcional y ML Kit sigue siendo el de por defecto.
 
 ## Qué tienes que hacer tú
-1. Aprobar esta revisión con APROBADO, o pedir cambios.
+1. ~~Aprobar esta revisión~~ — **APROBADO el 18-10-2026.** La implementación la hace un coordinador (Sonnet 5.5 high) con workers Haiku 5.5 high.
 2. **G-SEG-1** (~10 min): instalar el APK de prueba, pulsar «Run cutout benchmark» en Developer y pegarme el resultado.
 3. **G-SEG-2** (~15 min): añadir 10 prendas con y sin recorte preciso y decirme si te convence.
 4. **Z02**: repasar la lista final de comprobación en el móvil (incluye medir el tiempo de un batch de 10 fotos).

@@ -121,4 +121,7 @@ Source: `feedback/2026-10-17-manu-rev2-feedback.md` (R16–R20). Evidence: `arti
   - No new Android permission.
 
 - **PROC-DEC-005 (rev 3):** Manu "5. A": U10, C01, D01, D02 join this round before APROBADO (wave W5).
-- **SEG-DEC-008 (rev 3, R21) · proposed (planner):** keep v11 as the precise-cutout pipeline. Dedicated matting models (IS-Net, BEN2, BiRefNet-lite) keep the hanger and, on white doors, the door; BiRefNet-lite does not fit 5 GB at 1024 px; BEN2 ~90 s/photo. LaMa inpainting of the hanger = same result as the median fill at ×3 time. The quality bottleneck is hanger detection (missed clips, wooden clip hangers). Follow-up (not this round): open-vocabulary hanger detector ≤ 100 MB / ≤ 2 s. Evidence `artifacts/inv-r3-matting.md`; generative results in `artifacts/inv-r3-generative.md`.
+- **SEG-DEC-008 (rev 3, R21) · D (approved with the plan):** keep v11 as the precise-cutout pipeline. Dedicated matting models (IS-Net, BEN2, BiRefNet-lite) keep the hanger and, on white doors, the door; BiRefNet-lite does not fit 5 GB at 1024 px; BEN2 ~90 s/photo. LaMa inpainting of the hanger = same result as the median fill at ×3 time. The quality bottleneck is hanger detection (missed clips, wooden clip hangers). Follow-up (not this round): open-vocabulary hanger detector ≤ 100 MB / ≤ 2 s. Evidence `artifacts/inv-r3-matting.md`; generative results in `artifacts/inv-r3-generative.md`.
+
+## G-APPROVAL (2026-10-18)
+Manu: "APROBADO" on revision 3 (Telegram). Execution model (Manu): the planner does not implement; coordinator = Claude Sonnet 5.5 effort high; workers and independent reviewers = Claude Haiku 5.5 effort high. Independent review list extended with D02 (photo integrity).
