@@ -228,9 +228,9 @@ class LocalTagRepository(
     }
 
     override suspend fun seedDefaultsIfNeeded(): Set<String> {
-        val deletedTagIds = garmentTagTombstoneRevisions().keys
+        val tombstoneRevisionById = garmentTagTombstoneRevisions()
         tagDao.seedCategories(DefaultTags.categories.map(TagCategory::toEntity))
-        tagDao.seedTags(DefaultTagSeeds.withoutDeleted(DefaultTags.tags, deletedTagIds).map(GarmentTag::toEntity))
+        tagDao.seedTags(DefaultTagSeeds.forSeed(DefaultTags.tags, tombstoneRevisionById).map(GarmentTag::toEntity))
         if (tagDao.mainColorCount() == 0) {
             tagDao.seedMainColors(DefaultTags.mainColors.map(MainColor::toEntity))
         }
