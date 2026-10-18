@@ -9,6 +9,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -20,6 +22,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -70,6 +74,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -84,7 +89,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -166,6 +174,7 @@ internal data class UiTag(
 )
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun BrowseWardrobeScreen(
     innerPadding: PaddingValues,
     items: List<UiWardrobeItem>,
@@ -200,25 +209,76 @@ internal fun BrowseWardrobeScreen(
     modelState: ModelState,
     onOpenSettings: () -> Unit,
     browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
+    columns: Int = 2,
+    onColumnsChange: (Int) -> Unit = {},
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
     val searchActive = searchQuery.isNotBlank() || similarToName != null
     val gridState = rememberLazyGridState()
     val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
     val backfillProgress by (backfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
+    val effectiveColumns = columns.coerceIn(browseColumnRange(browseLayout))
+    var pinchZoom by remember { mutableFloatStateOf(1f) }
+    var pinching by remember { mutableStateOf(false) }
+    val pinchFeedback by animateFloatAsState(
+        targetValue = if (pinching) pinchZoom.coerceIn(0.94f, 1.06f) else 1f,
+        animationSpec = if (LocalReducedMotion.current) snap() else spring(),
+        label = "browsePinchFeedback",
+    )
+    // The first visible item to keep on screen after a pinch changes the column count.
+    val scrollAnchor = remember { mutableIntStateOf(-1) }
 
     // The search field is the grid's first row and the results reorder the whole grid: start each query at the top.
     LaunchedEffect(searchQuery, similarToName) {
         if (searchActive) gridState.scrollToItem(0)
     }
+    LaunchedEffect(effectiveColumns) {
+        if (scrollAnchor.intValue >= 0) {
+            gridState.scrollToItem(scrollAnchor.intValue)
+            scrollAnchor.intValue = -1
+        }
+    }
     BrowseImagePrefetch(items = items, gridState = gridState)
 
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(effectiveColumns),
         modifier = Modifier
             .fillMaxSize()
-            .padding(innerPadding),
+            .padding(innerPadding)
+            .graphicsLayer {
+                scaleX = pinchFeedback
+                scaleY = pinchFeedback
+            }
+            // Two or more fingers only: one finger keeps scrolling, tapping and long-press selection.
+            .pointerInput(effectiveColumns, browseLayout) {
+                awaitEachGesture {
+                    var zoom = 1f
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    try {
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.changes.count { it.pressed } >= 2) {
+                                pinching = true
+                                zoom *= event.calculateZoom()
+                                pinchZoom = zoom
+                                event.changes.forEach { it.consume() }
+                                val next = nextColumnCount(effectiveColumns, zoom, browseColumnRange(browseLayout))
+                                if (next != effectiveColumns) {
+                                    scrollAnchor.intValue = gridState.firstVisibleItemIndex
+                                    onColumnsChange(next)
+                                    zoom = 1f
+                                    pinchZoom = 1f
+                                }
+                            }
+                        } while (event.changes.any { it.pressed })
+                    } finally {
+                        // A restart of this block (new column count) cancels the gesture: never leave the feedback scaled.
+                        pinching = false
+                        pinchZoom = 1f
+                    }
+                }
+            },
         // innerPadding already carries the bottom bar inset, so the list ends at bar height + 16 dp.
         contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -290,6 +350,7 @@ internal fun BrowseWardrobeScreen(
                     onItemSelected(item)
                 }
             }
+            val animation = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)
             when (browseCellFor(browseLayout)) {
                 BrowseCell.Tile -> GarmentPhotoTile(
                     item = item,
@@ -297,6 +358,7 @@ internal fun BrowseWardrobeScreen(
                     onClick = onClick,
                     onLongClick = { onSelectionToggle(item.id) },
                     onFavoriteClick = { onToggleFavorite(item.id) },
+                    modifier = animation,
                 )
                 BrowseCell.Card -> GarmentGridCard(
                     item = item,
@@ -305,6 +367,7 @@ internal fun BrowseWardrobeScreen(
                     onClick = onClick,
                     onLongClick = { onSelectionToggle(item.id) },
                     onFavoriteClick = { onToggleFavorite(item.id) },
+                    modifier = animation,
                 )
             }
         }
@@ -407,6 +470,7 @@ private fun GarmentCardShell(
     onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
     footer: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val favoriteDescription = stringResource(R.string.content_favorite)
@@ -415,7 +479,7 @@ private fun GarmentCardShell(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .pressScale(interactionSource)
             .border(
@@ -501,6 +565,7 @@ private fun GarmentPhotoTile(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val untitled = stringResource(R.string.browse_similar_untitled)
     val collator = remember { browseCollator() }
@@ -514,6 +579,7 @@ private fun GarmentPhotoTile(
         onLongClick = onLongClick,
         onFavoriteClick = onFavoriteClick,
         footer = null,
+        modifier = modifier,
     )
 }
 
@@ -525,6 +591,7 @@ private fun GarmentGridCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val itemDescription = stringResource(R.string.content_open_item_detail)
     val selectDescription = stringResource(R.string.content_select_garment)
@@ -569,6 +636,7 @@ private fun GarmentGridCard(
                 )
             }
         },
+        modifier = modifier,
     )
 }
 
