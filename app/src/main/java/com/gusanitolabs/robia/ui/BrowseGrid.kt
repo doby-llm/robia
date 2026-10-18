@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,6 +82,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -219,6 +221,9 @@ internal fun BrowseWardrobeScreen(
     val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
     val backfillProgress by (backfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
     val effectiveColumns = columns.coerceIn(browseColumnRange(browseLayout))
+    // Read by the pinch gesture without restarting it: one gesture can change the count several times.
+    val currentColumns by rememberUpdatedState(effectiveColumns)
+    val currentOnColumnsChange by rememberUpdatedState(onColumnsChange)
     var pinchZoom by remember { mutableFloatStateOf(1f) }
     var pinching by remember { mutableStateOf(false) }
     val pinchFeedback by animateFloatAsState(
@@ -252,29 +257,35 @@ internal fun BrowseWardrobeScreen(
                 scaleY = pinchFeedback
             }
             // Two or more fingers only: one finger keeps scrolling, tapping and long-press selection.
-            .pointerInput(effectiveColumns, browseLayout) {
+            .pointerInput(browseLayout) {
                 awaitEachGesture {
-                    var zoom = 1f
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // Set when the second finger lands: the count the whole gesture is measured from.
+                    var startColumns = -1
+                    var requested = -1
+                    var zoom = 1f
                     try {
                         do {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             if (event.changes.count { it.pressed } >= 2) {
+                                if (startColumns < 0) {
+                                    startColumns = currentColumns
+                                    requested = startColumns
+                                }
                                 pinching = true
                                 zoom *= event.calculateZoom()
-                                pinchZoom = zoom
+                                pinchZoom = pinchResidual(zoom)
                                 event.changes.forEach { it.consume() }
-                                val next = nextColumnCount(effectiveColumns, zoom, browseColumnRange(browseLayout))
-                                if (next != effectiveColumns) {
+                                val target = columnsForPinch(startColumns, zoom, browseColumnRange(browseLayout))
+                                if (target != requested) {
+                                    requested = target
                                     scrollAnchor.intValue = gridState.firstVisibleItemIndex
-                                    onColumnsChange(next)
-                                    zoom = 1f
-                                    pinchZoom = 1f
+                                    currentOnColumnsChange(target)
                                 }
                             }
                         } while (event.changes.any { it.pressed })
                     } finally {
-                        // A restart of this block (new column count) cancels the gesture: never leave the feedback scaled.
+                        // Runs on lift and on cancellation alike: never leave the feedback scaled.
                         pinching = false
                         pinchZoom = 1f
                     }
@@ -360,6 +371,7 @@ internal fun BrowseWardrobeScreen(
                     onLongClick = { onSelectionToggle(item.id) },
                     onFavoriteClick = { onToggleFavorite(item.id) },
                     modifier = animation,
+                    columns = effectiveColumns,
                 )
                 BrowseCell.Card -> GarmentGridCard(
                     item = item,
@@ -369,6 +381,7 @@ internal fun BrowseWardrobeScreen(
                     onLongClick = { onSelectionToggle(item.id) },
                     onFavoriteClick = { onToggleFavorite(item.id) },
                     modifier = animation,
+                    columns = effectiveColumns,
                 )
             }
         }
@@ -472,9 +485,11 @@ private fun GarmentCardShell(
     onFavoriteClick: () -> Unit,
     footer: (@Composable () -> Unit)?,
     modifier: Modifier = Modifier,
+    columns: Int = 2,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val favoriteDescription = stringResource(R.string.content_favorite)
+    val favoriteBadge = favoriteBadgeMetrics(columns)
 
     Card(
         shape = MaterialTheme.shapes.large,
@@ -510,24 +525,33 @@ private fun GarmentCardShell(
                 thumbnailMaxEdgePx = thumbnailMaxEdgePx,
                 clip = false,
             )
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            // The transparent wrapper keeps a 32 dp touch target while the visible heart shrinks with the columns.
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(8.dp)
+                    .padding(favoriteBadge.outerPaddingDp.dp)
+                    .defaultMinSize(minWidth = FAVORITE_HIT_AREA_DP.dp, minHeight = FAVORITE_HIT_AREA_DP.dp)
+                    .clip(CircleShape)
                     .semantics {
                         contentDescription = favoriteDescription
                         selected = item.isFavorite
                     }
                     .clickable(onClick = onFavoriteClick),
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(6.dp),
-                )
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                ) {
+                    Icon(
+                        imageVector = if (item.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier
+                            .padding(favoriteBadge.innerPaddingDp.dp)
+                            .size(favoriteBadge.iconSizeDp.dp),
+                    )
+                }
             }
             GarmentCloudStatusBadge(
                 badge = cardBadgeFor(item.syncStatus, item.hasMissingRestoredPhoto),
@@ -567,6 +591,7 @@ private fun GarmentPhotoTile(
     onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
     modifier: Modifier = Modifier,
+    columns: Int = 2,
 ) {
     val untitled = stringResource(R.string.browse_similar_untitled)
     val collator = remember { browseCollator() }
@@ -581,6 +606,7 @@ private fun GarmentPhotoTile(
         onFavoriteClick = onFavoriteClick,
         footer = null,
         modifier = modifier,
+        columns = columns,
     )
 }
 
@@ -593,6 +619,7 @@ private fun GarmentGridCard(
     onLongClick: () -> Unit,
     onFavoriteClick: () -> Unit,
     modifier: Modifier = Modifier,
+    columns: Int = 2,
 ) {
     val itemDescription = stringResource(R.string.content_open_item_detail)
     val selectDescription = stringResource(R.string.content_select_garment)
@@ -638,6 +665,7 @@ private fun GarmentGridCard(
             }
         },
         modifier = modifier,
+        columns = columns,
     )
 }
 
@@ -674,6 +702,9 @@ private fun GarmentCloudStatusBadge(
 }
 
 private const val BADGE_FADE_MILLIS = 200
+
+// Smallest touch target for the favourite heart, whatever the column count.
+private const val FAVORITE_HIT_AREA_DP = 32
 
 @Composable
 private fun GarmentCloudBadgePill(badge: CardBadge) {
