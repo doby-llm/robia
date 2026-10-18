@@ -10,6 +10,7 @@ import com.gusanitolabs.robia.sync.RestoreSyncLogEvent
 import com.gusanitolabs.robia.sync.RestoreSyncLogRepository
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingEngineHolder
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -105,11 +106,6 @@ class DevBenchmark(
         return (System.nanoTime() - started) / NANOS_PER_MS
     }
 
-    private fun List<Long>.median(): Long = sorted()[size / 2]
-
-    /** Nearest-rank 90th percentile. */
-    private fun List<Long>.p90(): Long = sorted()[(size * 9 + 9) / 10 - 1]
-
     private companion object {
         const val RUNS = 5
         const val LABEL_COUNT = 19
@@ -147,47 +143,88 @@ class CutoutBenchmark(
     }
 
     private suspend fun runBenchmark(photoUris: List<Uri>, peakPssKb: AtomicLong): String {
-        val inputs = benchmarkSceneUris() + photoUris
+        val failures = mutableListOf<InputFailure>()
+        val runInputs = benchmarkScenes(failures) + photoUris.mapNotNull { probePhoto(it, failures) }
         val totalMs = mutableListOf<Long>()
         val stageMs = LinkedHashMap<String, MutableList<Long>>()
         var fallbacks = 0
+        var active = runInputs
         repeat(ROUNDS) {
-            for (uri in inputs) {
+            val survivors = mutableListOf<BenchmarkInput>()
+            for (input in active) {
                 val started = System.nanoTime()
-                val result = engine.removeBackground(context, uri)
-                totalMs += (System.nanoTime() - started) / NANOS_PER_MS
-                if (result.status != BackgroundRemovalStatus.REMOVED) fallbacks++
-                for ((stage, millis) in result.timings) stageMs.getOrPut(stage) { mutableListOf() }.add(millis)
+                try {
+                    val result = engine.removeBackground(context, input.uri)
+                    totalMs += (System.nanoTime() - started) / NANOS_PER_MS
+                    if (result.status != BackgroundRemovalStatus.REMOVED) fallbacks++
+                    for ((stage, millis) in result.timings) stageMs.getOrPut(stage) { mutableListOf() }.add(millis)
+                    survivors += input
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: Exception) {
+                    failures += input.failure(failure)
+                }
             }
+            active = survivors
         }
 
-        val report = buildList {
-            add("device=${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE}) API ${Build.VERSION.SDK_INT}")
-            add("samples=${totalMs.size} (${inputs.size} inputs x $ROUNDS rounds)")
-            add("total_ms median=${totalMs.median()} p90=${totalMs.p90()}")
-            for ((stage, millis) in stageMs) add("stage_$stage median=${millis.median()} p90=${millis.p90()}")
-            add("fallbacks=$fallbacks")
-            add("peak_pss_mb=${peakPssKb.get() / KB_PER_MB}")
-        }.joinToString("\n")
-        return report
+        return cutoutBenchmarkReport(
+            deviceLine = "device=${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE}) API ${Build.VERSION.SDK_INT}",
+            runInputs = runInputs.size,
+            okInputs = active.size,
+            rounds = ROUNDS,
+            totalMs = totalMs,
+            stageMs = stageMs,
+            fallbacks = fallbacks,
+            peakPssMb = peakPssKb.get() / KB_PER_MB,
+            failures = failures,
+        )
     }
 
-    /** The bundled synthetic scenes, copied to the cache so the engine can read them through a file Uri. */
-    private fun benchmarkSceneUris(): List<Uri> {
+    /**
+     * The bundled synthetic scenes, copied to the cache so the engine can read them through a file Uri. A scene that fails to
+     * copy is recorded in [failures] and left out.
+     */
+    private fun benchmarkScenes(failures: MutableList<InputFailure>): List<BenchmarkInput> {
         val names = context.assets.list(SCENE_DIRECTORY).orEmpty().filter { it.endsWith(".png") }.sorted()
-        return names.map { name ->
+        return names.mapNotNull { name ->
             val file = File(context.cacheDir, "cutout-benchmark-$name")
-            context.assets.open("$SCENE_DIRECTORY/$name").use { input ->
-                file.outputStream().use { output -> input.copyTo(output) }
+            val input = BenchmarkInput(kind = "scene", uri = Uri.fromFile(file), name = name)
+            try {
+                context.assets.open("$SCENE_DIRECTORY/$name").use { asset ->
+                    file.outputStream().use { output -> asset.copyTo(output) }
+                }
+                input
+            } catch (failure: Exception) {
+                failures += input.failure(failure)
+                null
             }
-            Uri.fromFile(file)
         }
     }
 
-    private fun List<Long>.median(): Long = sorted()[size / 2]
+    /** Opens the photo before the engine runs. A photo that cannot be opened is recorded in [failures] and is not a sample. */
+    private fun probePhoto(uri: Uri, failures: MutableList<InputFailure>): BenchmarkInput? {
+        val input = BenchmarkInput(kind = "photo", uri = uri, name = "${uri.scheme.orEmpty()}:${uri.lastPathSegment ?: "unknown"}")
+        return try {
+            val stream = context.contentResolver.openInputStream(uri) ?: error("Unable to open source photo")
+            stream.close()
+            input
+        } catch (failure: Exception) {
+            failures += input.failure(failure)
+            null
+        }
+    }
 
-    /** Nearest-rank 90th percentile. */
-    private fun List<Long>.p90(): Long = sorted()[(size * 9 + 9) / 10 - 1]
+    /** One line of the failure report: the exception class and message, with the input's full URI and path removed. */
+    private fun BenchmarkInput.failure(failure: Exception): InputFailure {
+        val secrets = listOfNotNull(uri.toString(), uri.path).filter { it.length > 1 }
+        val message = secrets.fold(failure.message.orEmpty()) { text, secret -> text.replace(secret, "<uri>") }
+            .replace('\n', ' ')
+            .ifEmpty { "no message" }
+        return InputFailure(kind = kind, name = name, reason = "${failure.javaClass.simpleName}: $message")
+    }
+
+    private class BenchmarkInput(val kind: String, val uri: Uri, val name: String)
 
     private companion object {
         const val ROUNDS = 2
@@ -197,3 +234,45 @@ class CutoutBenchmark(
         const val KB_PER_MB = 1024L
     }
 }
+
+/** An input that was skipped: [kind] is `scene` or `photo`, [name] is the asset name or `scheme:lastPathSegment`. */
+internal data class InputFailure(val kind: String, val name: String, val reason: String)
+
+/** The `failed_input=` line for one skipped input. */
+internal fun failedInputLine(failure: InputFailure): String =
+    "failed_input=${failure.kind}:${failure.name} reason=${failure.reason}"
+
+/**
+ * The developer report of a [CutoutBenchmark] run. Skipped inputs are listed one per line and are never samples. With no input
+ * left there is nothing to summarise, so the report says so and omits the timings instead of failing.
+ */
+internal fun cutoutBenchmarkReport(
+    deviceLine: String,
+    runInputs: Int,
+    okInputs: Int,
+    rounds: Int,
+    totalMs: List<Long>,
+    stageMs: Map<String, List<Long>>,
+    fallbacks: Int,
+    peakPssMb: Long,
+    failures: List<InputFailure>,
+): String = buildList {
+    add(deviceLine)
+    add("inputs_ok=$okInputs inputs_failed=${failures.size}")
+    val photosSkipped = failures.count { it.kind == "photo" }
+    if (photosSkipped > 0) add("photos_skipped=$photosSkipped")
+    if (okInputs == 0) add("error=no inputs succeeded")
+    failures.forEach { add(failedInputLine(it)) }
+    add("samples=${totalMs.size} ($runInputs inputs x $rounds rounds)")
+    if (totalMs.isNotEmpty()) {
+        add("total_ms median=${totalMs.median()} p90=${totalMs.p90()}")
+        for ((stage, millis) in stageMs) add("stage_$stage median=${millis.median()} p90=${millis.p90()}")
+    }
+    add("fallbacks=$fallbacks")
+    add("peak_pss_mb=$peakPssMb")
+}.joinToString("\n")
+
+private fun List<Long>.median(): Long = sorted()[size / 2]
+
+/** Nearest-rank 90th percentile. */
+private fun List<Long>.p90(): Long = sorted()[(size * 9 + 9) / 10 - 1]
