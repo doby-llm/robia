@@ -102,6 +102,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.media.BackgroundRemovalFailureReason
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
@@ -161,6 +162,7 @@ fun AddEditClothingScreen(
     var selectedPrimaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSecondaryColorId by rememberSaveable { mutableStateOf<String?>(null) }
     var captureStatus by rememberSaveable { mutableStateOf("") }
+    var backgroundFallbackModuleMissing by rememberSaveable { mutableStateOf(false) }
     var colorPickerTarget by rememberSaveable { mutableStateOf<ColorPickerTarget?>(null) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
@@ -410,6 +412,7 @@ fun AddEditClothingScreen(
                     PhotoStatus.BackgroundRemoved
                 }
                 captureStatus = finalStatus
+                backgroundFallbackModuleMissing = result.failure?.reason == BackgroundRemovalFailureReason.MODEL_UNAVAILABLE
                 editorPhotoState = editorPhotoState.copy(
                     croppedForegroundUri = displayUri,
                     currentEditedUri = displayUri,
@@ -468,6 +471,7 @@ fun AddEditClothingScreen(
                 if (token != photoProcessingToken) return
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
+                backgroundFallbackModuleMissing = false
                 editorPhotoState = EditorPhotoState(
                     rawSourceUri = uriString,
                     currentEditedUri = uriString,
@@ -1583,7 +1587,11 @@ private fun PhotoCaptureCard(
                 PhotoStatus.Camera -> R.string.camera_selected_status
                 PhotoStatus.Processed -> R.string.photo_processed_status
                 PhotoStatus.BackgroundRemoved -> R.string.background_removal_success_status
-                PhotoStatus.BackgroundFallback -> R.string.background_removal_fallback_status
+                PhotoStatus.BackgroundFallback -> if (backgroundFallbackModuleMissing) {
+                    R.string.background_removal_fallback_module
+                } else {
+                    R.string.background_removal_fallback_status
+                }
                 PhotoStatus.QuickEdited -> R.string.quick_edit_saved_status
                 PhotoStatus.MediaUnavailable -> R.string.media_actions_unavailable_status
                 else -> null

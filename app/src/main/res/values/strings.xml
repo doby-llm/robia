@@ -641,4 +641,7 @@
     </plurals>
     <string name="cloud_status_attention">Sync needs attention</string>
     <string name="cloud_status_open_data_sync">Open Data sync</string>
+    <!-- SG1 -->
+    <string name="background_removal_preparing">Preparing photo cleanup…</string>
+    <string name="background_removal_fallback_module">Photo cleanup is still downloading. We kept the original photo; tap Retry in a moment.</string>
 </resources>

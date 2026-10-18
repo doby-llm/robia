@@ -97,6 +97,7 @@ internal data class BatchDraftItem(
     val selectedSecondaryColorId: String? = null,
     val createdAtEpochMillis: Long = System.currentTimeMillis(),
     val suggestionCapture: SuggestionCapture? = null,
+    val backgroundFallback: Boolean = false,
 )
 
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
@@ -375,7 +376,7 @@ private fun BatchDraftTile(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (draft.status.isRetryable) {
+            if (draft.isRetryableForBatch()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.batch_retry)) }
                     TextButton(onClick = onDiscard) { Text(stringResource(R.string.discard_changes)) }
@@ -545,6 +546,7 @@ internal suspend fun processBatchDraft(
                     SuggestionCapture(croppedUri.toString(), outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
                 },
                 errorMessage = resolvedMessage,
+                backgroundFallback = backgroundResult.usedFallback,
             ),
         )
     } catch (throwable: CancellationException) {
@@ -597,11 +599,15 @@ internal fun List<BatchDraftItem>.canSaveBatch(): Boolean =
 internal fun List<BatchDraftItem>.acceptedForSave(requestedDraftIds: Set<String>): List<BatchDraftItem> =
     filter { draft -> draft.id in requestedDraftIds && draft.isAcceptedForSave() }
 
-internal fun BatchDraftItem.retryForBatch(): BatchDraftItem = if (status.isRetryable) {
+internal fun BatchDraftItem.isRetryableForBatch(): Boolean =
+    status.isRetryable || (status == BatchDraftStatus.NeedsReview && backgroundFallback)
+
+internal fun BatchDraftItem.retryForBatch(): BatchDraftItem = if (isRetryableForBatch()) {
     copy(
         status = BatchDraftStatus.Queued,
         explicitlyAccepted = false,
         errorMessage = null,
+        backgroundFallback = false,
     )
 } else {
     this

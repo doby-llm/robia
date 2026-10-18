@@ -641,4 +641,7 @@
     </plurals>
     <string name="cloud_status_attention">Synchronisierung braucht Aufmerksamkeit</string>
     <string name="cloud_status_open_data_sync">Datensynchronisierung öffnen</string>
+    <!-- SG1 -->
+    <string name="background_removal_preparing">Fotooptimierung wird vorbereitet…</string>
+    <string name="background_removal_fallback_module">Die Fotooptimierung wird noch heruntergeladen. Wir haben das Originalfoto behalten; tippe in einem Moment auf Erneut versuchen.</string>
 </resources>
