@@ -654,4 +654,7 @@
     <string name="badge_uploading">Uploading</string>
     <string name="badge_needs_attention">Needs attention</string>
     <string name="badge_sign_in">Sign in</string>
+    <!-- U06 -->
+    <string name="field_suggested_hint">✦ Suggested by Robia. Tap to change.</string>
+    <string name="edit_photo_action">Edit photo</string>
 </resources>

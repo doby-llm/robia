@@ -654,4 +654,7 @@
     <string name="badge_uploading">Subiendo</string>
     <string name="badge_needs_attention">Requiere atención</string>
     <string name="badge_sign_in">Inicia sesión</string>
+    <!-- U06 -->
+    <string name="field_suggested_hint">✦ Sugerido por Robia. Toca para cambiar.</string>
+    <string name="edit_photo_action">Editar foto</string>
 </resources>
