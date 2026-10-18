@@ -14,7 +14,8 @@ class MaskOpsTest {
 
     @Test
     fun thirdPoints_oneCentredPointPerVerticalThird() {
-        // A 21×90 block with background above and below: the distance maximum is on the centre column.
+        // A 21×90 block (rows 20..109) with background above and below: the distance maximum is on the centre column.
+        // Thirds follow bench_v3.third_points: top + (bottom - top) * k / 3 -> [20,49), [49,79), [79,109).
         val w = 100
         val h = 130
         val hard = canvas(w, h) { x, y -> x in 40..60 && y in 20..109 }
@@ -23,9 +24,9 @@ class MaskOpsTest {
 
         assertEquals(3, points.size)
         assertTrue(points.all { it.x == 50 })
-        assertTrue(points[0].y in 20 until 50)
-        assertTrue(points[1].y in 50 until 80)
-        assertTrue(points[2].y in 80 until 110)
+        assertTrue(points[0].y in 20 until 49)
+        assertTrue(points[1].y in 49 until 79)
+        assertTrue(points[2].y in 79 until 109)
     }
 
     @Test
