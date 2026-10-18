@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.media.cutout
 
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -10,6 +11,7 @@ import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
 /** The precise → ML Kit chain under virtual time: the 30 s budget and the REMOVED check are part of the chain. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class CutoutFallbackChainTest {
     private data class Outcome(val status: BackgroundRemovalStatus, val source: String)
 
