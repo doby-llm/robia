@@ -514,7 +514,7 @@ class BatchProcessingCoordinatorTest {
                 else -> readyCutout(draft)
             }
         }
-        fun process() = coordinator.processQueued(
+        fun process(): Unit = coordinator.processQueued(
             drafts = { drafts.toList() },
             cutout = cutout,
             suggest = { draft, _ -> draft.copy(status = BatchDraftStatus.Ready) },
@@ -544,7 +544,7 @@ class BatchProcessingCoordinatorTest {
         val drafts = batchOf(2)
         var addedLateDraft = false
         val coordinator = BatchProcessingCoordinator(this)
-        fun process() = coordinator.processQueued(
+        fun process(): Unit = coordinator.processQueued(
             drafts = { drafts.toList() },
             cutout = { draft -> readyCutout(draft) },
             suggest = { draft, _ -> draft.copy(status = BatchDraftStatus.Ready) },
