@@ -4,8 +4,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -46,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.pressScale
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
@@ -65,6 +69,12 @@ internal const val REVIEW_ACCEPT_HIGHLIGHT_MILLIS = 200
 
 /** The accepted card fades and shrinks away over this long; the same timing in both review screens. */
 internal const val REVIEW_ACCEPT_EXIT_MILLIS = 250
+
+/** A resolved card slides this far out, to the right when accepted and to the left when discarded. */
+internal val REVIEW_CARD_EXIT_SLIDE = 40.dp
+
+/** Which way a resolved review card leaves. */
+internal enum class ExitDirection { Accept, Discard }
 
 /** The picker list has a bottom fade and an option count only while more options are below the visible part. */
 internal fun scrollHintVisible(value: Int, max: Int): Boolean = max > 0 && value < max
@@ -108,6 +118,7 @@ internal val ReviewCardActionPadding = PaddingValues(horizontal = 8.dp)
 internal fun ReviewAcceptedCard(
     resolved: Boolean,
     onGone: () -> Unit,
+    direction: ExitDirection = ExitDirection.Accept,
     content: @Composable () -> Unit,
 ) {
     var leaving by remember { mutableStateOf(false) }
@@ -120,9 +131,12 @@ internal fun ReviewAcceptedCard(
             currentOnGone()
         }
     }
+    val slideOffsetPx = with(LocalDensity.current) { REVIEW_CARD_EXIT_SLIDE.roundToPx() }
+    val slideSign = if (direction == ExitDirection.Accept) 1 else -1
     AnimatedVisibility(
         visible = !leaving,
-        exit = fadeOut(animationSpec = tween(REVIEW_ACCEPT_EXIT_MILLIS)) +
+        exit = slideOutHorizontally(animationSpec = tween(REVIEW_ACCEPT_EXIT_MILLIS)) { slideSign * slideOffsetPx } +
+            fadeOut(animationSpec = tween(REVIEW_ACCEPT_EXIT_MILLIS)) +
             shrinkVertically(animationSpec = tween(REVIEW_ACCEPT_EXIT_MILLIS)),
     ) {
         content()
@@ -268,6 +282,7 @@ internal fun BoxScope.ReviewBottomBar(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         tonalElevation = 3.dp,
         shadowElevation = 6.dp,
@@ -279,10 +294,12 @@ internal fun BoxScope.ReviewBottomBar(
         Button(
             onClick = onClick,
             enabled = enabled,
+            interactionSource = interactionSource,
             modifier = Modifier
                 .padding(24.dp)
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(56.dp)
+                .pressScale(interactionSource),
         ) {
             Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(20.dp))
             Text(

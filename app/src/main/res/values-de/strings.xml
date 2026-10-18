@@ -699,4 +699,13 @@
         <item quantity="one">%1$d unterbrochen</item>
         <item quantity="other">%1$d unterbrochen</item>
     </plurals>
+    <!-- U08 -->
+    <plurals name="review_complete_tags">
+        <item quantity="one">Tags bei %1$d Kleidungsstück aktualisiert</item>
+        <item quantity="other">Tags bei %1$d Kleidungsstücken aktualisiert</item>
+    </plurals>
+    <plurals name="review_complete_colors">
+        <item quantity="one">Farbe bei %1$d Kleidungsstück aktualisiert</item>
+        <item quantity="other">Farben bei %1$d Kleidungsstücken aktualisiert</item>
+    </plurals>
 </resources>
