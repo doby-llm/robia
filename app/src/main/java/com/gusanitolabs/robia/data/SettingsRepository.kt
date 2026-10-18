@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.LanguagePreference
@@ -21,6 +22,7 @@ interface SettingsRepository {
     suspend fun setDeveloperModeEnabled(enabled: Boolean)
     suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus)
     suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState)
+    suspend fun setBrowseLayout(layout: BrowseLayout)
     /** Atomically persists deletion intent and pauses sync before remote I/O. */
     suspend fun pauseSyncForDriveBackupDeletion()
     suspend fun markCloudSetupPromptInteracted()
@@ -47,18 +49,7 @@ interface SettingsRepository {
 class DataStoreSettingsRepository(
     private val dataStore: DataStore<Preferences>,
 ) : SettingsRepository {
-    override val settings: Flow<RobiaSettings> = dataStore.data.map { preferences ->
-        val developerModeUnlocked = preferences[developerModeUnlockedKey] ?: false
-        RobiaSettings(
-            languagePreference = preferences[languageKey].toLanguagePreference(),
-            developerModeUnlocked = developerModeUnlocked,
-            developerModeEnabled = developerModeUnlocked && (preferences[developerModeEnabledKey] ?: false),
-            driveSyncConnectionStatus = preferences[driveSyncConnectionStatusKey].toDriveSyncConnectionStatus(),
-            cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false,
-            driveFreshInstallRestoreAttempted = preferences[driveFreshInstallRestoreAttemptedKey] ?: false,
-            driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
-        )
-    }
+    override val settings: Flow<RobiaSettings> = dataStore.data.map { preferences -> preferences.toRobiaSettings() }
 
     override suspend fun setLanguagePreference(languagePreference: LanguagePreference) {
         dataStore.edit { preferences ->
@@ -90,6 +81,10 @@ class DataStoreSettingsRepository(
 
     override suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState) {
         dataStore.edit { preferences -> preferences[driveBackupDeletionStateKey] = state.name }
+    }
+
+    override suspend fun setBrowseLayout(layout: BrowseLayout) {
+        dataStore.edit { preferences -> preferences[browseLayoutKey] = layout.name }
     }
 
     override suspend fun pauseSyncForDriveBackupDeletion() {
@@ -169,30 +164,48 @@ class DataStoreSettingsRepository(
             }
         }
     }
-
-    private fun String?.toLanguagePreference(): LanguagePreference =
-        LanguagePreference.entries.firstOrNull { it.storageValue == this } ?: LanguagePreference.System
-
-    private fun String?.toDriveSyncConnectionStatus(): DriveSyncConnectionStatus =
-        DriveSyncConnectionStatus.entries.firstOrNull { it.name == this } ?: DriveSyncConnectionStatus.NotConfigured
-
-    private fun String?.toDriveBackupDeletionState(): DriveBackupDeletionState =
-        DriveBackupDeletionState.entries.firstOrNull { it.name == this } ?: DriveBackupDeletionState.None
-
-    private companion object {
-        val languageKey = stringPreferencesKey("language")
-        val developerModeUnlockedKey = booleanPreferencesKey("developer_mode_unlocked")
-        val developerModeEnabledKey = booleanPreferencesKey("developer_mode_enabled")
-        val driveSyncConnectionStatusKey = stringPreferencesKey("drive_sync_connection_status")
-        val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
-        val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
-        val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
-        val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
-        val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
-        val deviceIdKey = stringPreferencesKey("sync_device_id")
-        val lastKnownRemoteRevisionKey = longPreferencesKey("sync_last_known_remote_revision")
-        val lastKnownRemoteWriterDeviceIdKey = stringPreferencesKey("sync_last_known_remote_writer")
-        val syncConflictKey = booleanPreferencesKey("sync_conflict")
-        val syncConflictRemoteRevisionKey = longPreferencesKey("sync_conflict_remote_revision")
-    }
 }
+
+/** Maps stored preferences to settings; absent or unknown values fall back to the defaults. */
+internal fun Preferences.toRobiaSettings(): RobiaSettings {
+    val preferences = this
+    val developerModeUnlocked = preferences[developerModeUnlockedKey] ?: false
+    return RobiaSettings(
+        languagePreference = preferences[languageKey].toLanguagePreference(),
+        developerModeUnlocked = developerModeUnlocked,
+        developerModeEnabled = developerModeUnlocked && (preferences[developerModeEnabledKey] ?: false),
+        driveSyncConnectionStatus = preferences[driveSyncConnectionStatusKey].toDriveSyncConnectionStatus(),
+        cloudSetupPromptInteracted = preferences[cloudSetupPromptInteractedKey] ?: false,
+        driveFreshInstallRestoreAttempted = preferences[driveFreshInstallRestoreAttemptedKey] ?: false,
+        driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
+        browseLayout = preferences[browseLayoutKey].toBrowseLayout(),
+    )
+}
+
+private fun String?.toLanguagePreference(): LanguagePreference =
+    LanguagePreference.entries.firstOrNull { it.storageValue == this } ?: LanguagePreference.System
+
+private fun String?.toDriveSyncConnectionStatus(): DriveSyncConnectionStatus =
+    DriveSyncConnectionStatus.entries.firstOrNull { it.name == this } ?: DriveSyncConnectionStatus.NotConfigured
+
+private fun String?.toDriveBackupDeletionState(): DriveBackupDeletionState =
+    DriveBackupDeletionState.entries.firstOrNull { it.name == this } ?: DriveBackupDeletionState.None
+
+private fun String?.toBrowseLayout(): BrowseLayout =
+    BrowseLayout.entries.firstOrNull { it.name == this } ?: BrowseLayout.PhotosOnly
+
+private val languageKey = stringPreferencesKey("language")
+private val developerModeUnlockedKey = booleanPreferencesKey("developer_mode_unlocked")
+private val developerModeEnabledKey = booleanPreferencesKey("developer_mode_enabled")
+private val driveSyncConnectionStatusKey = stringPreferencesKey("drive_sync_connection_status")
+private val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_prompt_interacted")
+private val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
+private val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
+private val browseLayoutKey = stringPreferencesKey("browse_layout")
+private val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
+private val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
+private val deviceIdKey = stringPreferencesKey("sync_device_id")
+private val lastKnownRemoteRevisionKey = longPreferencesKey("sync_last_known_remote_revision")
+private val lastKnownRemoteWriterDeviceIdKey = stringPreferencesKey("sync_last_known_remote_writer")
+private val syncConflictKey = booleanPreferencesKey("sync_conflict")
+private val syncConflictRemoteRevisionKey = longPreferencesKey("sync_conflict_remote_revision")

@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync.fakes
 
+import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
@@ -239,6 +240,8 @@ internal class FakeSettingsRepository(
 
     override suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState) =
         update { it.copy(driveBackupDeletionState = state) }
+
+    override suspend fun setBrowseLayout(layout: BrowseLayout) = update { it.copy(browseLayout = layout) }
 
     override suspend fun pauseSyncForDriveBackupDeletion() =
         update { it.copy(driveSyncConnectionStatus = DriveSyncConnectionStatus.Disabled) }
