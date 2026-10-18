@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.data
 
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.BrowseLayout
@@ -8,6 +9,7 @@ import org.junit.Test
 
 class SettingsMappingTest {
     private val browseLayoutKey = stringPreferencesKey("browse_layout")
+    private val browseColumnsKey = intPreferencesKey("browse_columns")
 
     @Test
     fun absentBrowseLayout_defaultsToPhotosOnly() {
@@ -33,5 +35,21 @@ class SettingsMappingTest {
         val preferences = mutablePreferencesOf(browseLayoutKey to "Garbage")
 
         assertEquals(BrowseLayout.PhotosOnly, preferences.toRobiaSettings().browseLayout)
+    }
+
+    @Test
+    fun absentBrowseColumns_defaultsToTwo() {
+        assertEquals(2, mutablePreferencesOf().toRobiaSettings().browseColumns)
+    }
+
+    @Test
+    fun browseColumnsOutOfRange_fallsBackToTwo() {
+        assertEquals(2, mutablePreferencesOf(browseColumnsKey to 5).toRobiaSettings().browseColumns)
+        assertEquals(2, mutablePreferencesOf(browseColumnsKey to 1).toRobiaSettings().browseColumns)
+    }
+
+    @Test
+    fun storedBrowseColumnsInRange_isRead() {
+        assertEquals(3, mutablePreferencesOf(browseColumnsKey to 3).toRobiaSettings().browseColumns)
     }
 }

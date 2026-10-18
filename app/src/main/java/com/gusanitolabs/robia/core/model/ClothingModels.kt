@@ -114,6 +114,8 @@ data class RobiaSettings(
     val driveFreshInstallRestoreAttempted: Boolean = false,
     val driveBackupDeletionState: DriveBackupDeletionState = DriveBackupDeletionState.None,
     val browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
+    /** Pinch-chosen Browse column count; clamped to [browseColumnRange] when shown. */
+    val browseColumns: Int = 2,
     /** Developer switch in SG2a (default off); SG2b makes it a user setting with default on. */
     val preciseCutoutEnabled: Boolean = false,
 )

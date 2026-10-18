@@ -404,6 +404,9 @@ fun RobiaApp(
             onBrowseLayoutChange = { layout ->
                 scope.launch { settingsRepository.setBrowseLayout(layout) }
             },
+            onBrowseColumnsChange = { columns ->
+                scope.launch { settingsRepository.setBrowseColumns(columns) }
+            },
             onDeveloperModeUnlocked = {
                 scope.launch { settingsRepository.setDeveloperModeUnlocked(true) }
             },
@@ -812,6 +815,7 @@ private fun RobiaShell(
     mainColors: List<MainColor>,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
+    onBrowseColumnsChange: (Int) -> Unit,
     onDeveloperModeUnlocked: () -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
@@ -1813,6 +1817,7 @@ private fun RobiaShell(
             totalItemCount = items.size,
             filters = browseFilters,
             browseLayout = settings.browseLayout,
+            browseColumns = settings.browseColumns,
             selectedBrowseItemIds = selectedBrowseItemIds,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
@@ -1929,6 +1934,7 @@ private fun RobiaShell(
             onClearRestoreSyncLog = onClearRestoreSyncLog,
             onLanguageSelected = onLanguageSelected,
             onBrowseLayoutChange = onBrowseLayoutChange,
+            onBrowseColumnsChange = onBrowseColumnsChange,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
             onCloudSetupClick = ::requestCloudSetup,
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
@@ -2612,6 +2618,7 @@ private fun RobiaNavHost(
     totalItemCount: Int,
     filters: BrowseFilterState,
     browseLayout: BrowseLayout,
+    browseColumns: Int,
     selectedBrowseItemIds: Set<String>,
     selectedItem: UiWardrobeItem?,
     selectedDomainItem: ClothingItem?,
@@ -2668,6 +2675,7 @@ private fun RobiaNavHost(
     onClearRestoreSyncLog: () -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
+    onBrowseColumnsChange: (Int) -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupClick: () -> Unit,
     onDeleteBackupClick: () -> Unit,
@@ -2726,6 +2734,8 @@ private fun RobiaNavHost(
             modelState = modelState,
             onOpenSettings = onOpenSettings,
             browseLayout = browseLayout,
+            columns = browseColumns,
+            onColumnsChange = onBrowseColumnsChange,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,
@@ -3227,6 +3237,7 @@ private fun RobiaAppPreview() {
             mainColors = emptyList(),
             onLanguageSelected = {},
             onBrowseLayoutChange = {},
+            onBrowseColumnsChange = {},
             onDeveloperModeUnlocked = {},
             onDeveloperModeEnabledChange = {},
             onCloudSetupPromptInteracted = {},
