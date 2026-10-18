@@ -25,6 +25,8 @@ interface DriveWardrobeRepository {
     ): DriveSyncResult<DriveManifest>
     /** Deletes only Robia's remote appDataFolder backup; it never changes local clothes. */
     suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult>
+    /** One listing of the app data folder for the Settings figure; never part of a normal sync. */
+    suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage>
 }
 
 class NotConfiguredDriveWardrobeRepository(
@@ -41,6 +43,7 @@ class NotConfiguredDriveWardrobeRepository(
         onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = notConfigured()
+    override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> = notConfigured()
 
     private fun <T> notConfigured(): DriveSyncResult<T> =
         DriveSyncResult.Blocked(reason, "Google Drive sync is not configured yet.")
@@ -79,6 +82,9 @@ class InMemoryDriveWardrobeRepository(
         manifest = DriveManifest.fromSnapshot(snapshot)
         return DriveSyncResult.Success(DriveBackupDeletionResult())
     }
+
+    override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> =
+        DriveSyncResult.Success(driveUsageOf(emptyList(), now = 0L))
 }
 
 fun interface DriveRestoreProgressListener {

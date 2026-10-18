@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.BrowseLayout
@@ -23,6 +24,7 @@ interface SettingsRepository {
     suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus)
     suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState)
     suspend fun setBrowseLayout(layout: BrowseLayout)
+    suspend fun setBrowseColumns(columns: Int)
     suspend fun setPreciseCutoutEnabled(enabled: Boolean)
     /** Atomically persists deletion intent and pauses sync before remote I/O. */
     suspend fun pauseSyncForDriveBackupDeletion()
@@ -86,6 +88,10 @@ class DataStoreSettingsRepository(
 
     override suspend fun setBrowseLayout(layout: BrowseLayout) {
         dataStore.edit { preferences -> preferences[browseLayoutKey] = layout.name }
+    }
+
+    override suspend fun setBrowseColumns(columns: Int) {
+        dataStore.edit { preferences -> preferences[browseColumnsKey] = columns }
     }
 
     override suspend fun setPreciseCutoutEnabled(enabled: Boolean) {
@@ -184,6 +190,7 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         driveFreshInstallRestoreAttempted = preferences[driveFreshInstallRestoreAttemptedKey] ?: false,
         driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
         browseLayout = preferences[browseLayoutKey].toBrowseLayout(),
+        browseColumns = preferences[browseColumnsKey].toBrowseColumns(),
         preciseCutoutEnabled = preferences[preciseCutoutEnabledKey] ?: false,
     )
 }
@@ -200,6 +207,9 @@ private fun String?.toDriveBackupDeletionState(): DriveBackupDeletionState =
 private fun String?.toBrowseLayout(): BrowseLayout =
     BrowseLayout.entries.firstOrNull { it.name == this } ?: BrowseLayout.PhotosOnly
 
+/** Missing or outside the widest Browse range (2..4) falls back to 2 columns. */
+private fun Int?.toBrowseColumns(): Int = this?.takeIf { it in 2..4 } ?: 2
+
 private val languageKey = stringPreferencesKey("language")
 private val developerModeUnlockedKey = booleanPreferencesKey("developer_mode_unlocked")
 private val developerModeEnabledKey = booleanPreferencesKey("developer_mode_enabled")
@@ -208,6 +218,7 @@ private val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_p
 private val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
 private val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
 private val browseLayoutKey = stringPreferencesKey("browse_layout")
+private val browseColumnsKey = intPreferencesKey("browse_columns")
 private val preciseCutoutEnabledKey = booleanPreferencesKey("precise_cutout_enabled")
 private val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
 private val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")

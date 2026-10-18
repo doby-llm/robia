@@ -404,6 +404,9 @@ fun RobiaApp(
             onBrowseLayoutChange = { layout ->
                 scope.launch { settingsRepository.setBrowseLayout(layout) }
             },
+            onBrowseColumnsChange = { columns ->
+                scope.launch { settingsRepository.setBrowseColumns(columns) }
+            },
             onDeveloperModeUnlocked = {
                 scope.launch { settingsRepository.setDeveloperModeUnlocked(true) }
             },
@@ -449,6 +452,7 @@ fun RobiaApp(
             onClearRestoreSyncLog = {
                 scope.launch { syncGateway.clearRestoreSyncLog() }
             },
+            onRefreshDriveUsageClick = { syncGateway.refreshDriveUsage() },
             onSaveItem = { item, capture ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -811,6 +815,7 @@ private fun RobiaShell(
     mainColors: List<MainColor>,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
+    onBrowseColumnsChange: (Int) -> Unit,
     onDeveloperModeUnlocked: () -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
@@ -829,6 +834,7 @@ private fun RobiaShell(
     onRequestCloudBackupDeletion: () -> Unit = {},
     onRetryRestoredPhoto: (String) -> Unit = {},
     onClearRestoreSyncLog: () -> Unit = {},
+    onRefreshDriveUsageClick: suspend () -> Unit = {},
     suggestionService: SuggestionService,
     onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
     onSaveItems: (List<ClothingItem>, Map<String, SuggestionCapture>) -> Unit,
@@ -1811,6 +1817,7 @@ private fun RobiaShell(
             totalItemCount = items.size,
             filters = browseFilters,
             browseLayout = settings.browseLayout,
+            browseColumns = settings.browseColumns,
             selectedBrowseItemIds = selectedBrowseItemIds,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
@@ -1927,9 +1934,11 @@ private fun RobiaShell(
             onClearRestoreSyncLog = onClearRestoreSyncLog,
             onLanguageSelected = onLanguageSelected,
             onBrowseLayoutChange = onBrowseLayoutChange,
+            onBrowseColumnsChange = onBrowseColumnsChange,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
             onCloudSetupClick = ::requestCloudSetup,
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
+            onRefreshDriveUsageClick = onRefreshDriveUsageClick,
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
@@ -2609,6 +2618,7 @@ private fun RobiaNavHost(
     totalItemCount: Int,
     filters: BrowseFilterState,
     browseLayout: BrowseLayout,
+    browseColumns: Int,
     selectedBrowseItemIds: Set<String>,
     selectedItem: UiWardrobeItem?,
     selectedDomainItem: ClothingItem?,
@@ -2665,9 +2675,11 @@ private fun RobiaNavHost(
     onClearRestoreSyncLog: () -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
+    onBrowseColumnsChange: (Int) -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupClick: () -> Unit,
     onDeleteBackupClick: () -> Unit,
+    onRefreshDriveUsageClick: suspend () -> Unit,
     onRestoreSyncLogClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
@@ -2722,6 +2734,8 @@ private fun RobiaNavHost(
             modelState = modelState,
             onOpenSettings = onOpenSettings,
             browseLayout = browseLayout,
+            columns = browseColumns,
+            onColumnsChange = onBrowseColumnsChange,
         )
         RobiaRoute.ManageTags -> ManageTagsScreen(
             innerPadding = innerPadding,
@@ -2846,6 +2860,8 @@ private fun RobiaNavHost(
             driveBackupDeletionState = driveBackupDeletionState,
             onCloudSetupClick = onCloudSetupClick,
             onDeleteBackupClick = onDeleteBackupClick,
+            driveUsage = syncState.driveUsage,
+            onRefreshDriveUsageClick = onRefreshDriveUsageClick,
         )
         RobiaRoute.Settings -> SettingsScreen(
             innerPadding = innerPadding,
@@ -3221,6 +3237,7 @@ private fun RobiaAppPreview() {
             mainColors = emptyList(),
             onLanguageSelected = {},
             onBrowseLayoutChange = {},
+            onBrowseColumnsChange = {},
             onDeveloperModeUnlocked = {},
             onDeveloperModeEnabledChange = {},
             onCloudSetupPromptInteracted = {},

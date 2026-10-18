@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,6 +69,8 @@ class WardrobeSyncOutboxProcessor(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** Vectors waiting for a Drive upload; null only in tests that do not model embeddings. */
     private val embeddingRepository: EmbeddingRepository? = null,
+    /** The last measured Drive space; null in tests that do not model it. */
+    private val driveUsageStore: DriveUsageStore? = null,
     /** Called after a restore imported the remote garments, so the backfill can fill vectors that the backup lacked. */
     private val onRestoreImported: () -> Unit = {},
     /** Monotonic milliseconds for the request rate guard; wall-clock changes must not stretch a deferral. */
@@ -148,6 +151,7 @@ class WardrobeSyncOutboxProcessor(
                 wardrobeRepository.observeGarmentNeedsUserActionCount(DRIVE_FULL_REASON),
                 wardrobeRepository.observeGarmentNeedsUserActionCount(PHOTO_UPLOAD_FAILED_REASON),
                 lastCycle,
+                driveUsageStore?.latest ?: flowOf(null),
             ) { values ->
                 val settings = values[0] as RobiaSettings
                 val pendingCount = values[1] as Int
@@ -170,6 +174,7 @@ class WardrobeSyncOutboxProcessor(
                     driveFullCount = values[10] as Int,
                     photoUploadFailedCount = values[11] as Int,
                     lastCycle = values[12] as SyncCycleSummary?,
+                    driveUsage = values[13] as DriveUsage?,
                 )
             }.combine(restoreProgress) { inputs, progress ->
                 inputs.connectionStatus.toWardrobeSyncState(inputs, progress)
@@ -410,6 +415,18 @@ class WardrobeSyncOutboxProcessor(
             val kept = mutex.withLock { wardrobeRepository.keepGarmentWithoutRestoredPhoto(garmentId) }
             if (kept) runCycle(reason = "keep_without_photo", trigger = SyncTrigger.Foreground, forceSnapshot = true, forceImport = false)
         }
+    }
+
+    override suspend fun refreshDriveUsage() {
+        if (settingsRepository.settings.first().driveSyncConnectionStatus !in setOf(
+                DriveSyncConnectionStatus.Connected,
+                DriveSyncConnectionStatus.NeedsAttention,
+            )
+        ) {
+            return
+        }
+        // A failed listing keeps the last measured value on screen; the row shows its own update time.
+        withContext(dispatcher) { driveRepository.refreshDriveUsage() }
     }
 
     /** Explicit Retry from the attention button only; automatic cycles never release these rows. */
@@ -1393,6 +1410,7 @@ class WardrobeSyncOutboxProcessor(
             pendingMergeSummary = inputs.pendingMergeSummary,
             conflict = inputs.conflict,
             lastCycle = inputs.lastCycle,
+            driveUsage = inputs.driveUsage,
         )
     }
 
@@ -1435,6 +1453,7 @@ private data class WardrobeSyncStateInputs(
     val driveFullCount: Int,
     val photoUploadFailedCount: Int,
     val lastCycle: SyncCycleSummary?,
+    val driveUsage: DriveUsage?,
 )
 
 private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList {

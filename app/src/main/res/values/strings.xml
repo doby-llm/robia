@@ -727,4 +727,10 @@
         <item quantity="one">Colour updated on %1$d garment</item>
         <item quantity="other">Colours updated on %1$d garments</item>
     </plurals>
+    <!-- D01 -->
+    <string name="drive_usage_title">Space used in Google Drive</string>
+    <string name="drive_usage_value">%1$s · %2$d photos</string>
+    <string name="drive_usage_updated">Updated %1$s</string>
+    <string name="drive_usage_unknown">Not measured yet</string>
+    <string name="drive_usage_refresh">Refresh</string>
 </resources>
