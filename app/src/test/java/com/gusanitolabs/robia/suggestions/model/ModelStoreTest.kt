@@ -117,6 +117,44 @@ class ModelStoreTest {
         assertTrue(result is ModelState.Ready)
     }
 
+    @Test
+    fun packFile_usesItsOwnNameAndPinnedHash() {
+        val packFile = File(temp.root, "cutout_pack").apply { mkdirs() }
+        val store = ModelStore(
+            rootDir = packFile,
+            source = ModelSource { ModelResponse(200, payload.size.toLong(), ByteArrayInputStream(payload)) },
+            isUnmetered = { true },
+            freeSpace = { Long.MAX_VALUE },
+            expectedSha256 = payloadSha,
+            fileName = "u2netp.onnx",
+        )
+
+        val result = runBlocking { store.download() }
+
+        assertTrue(result is ModelState.Ready)
+        assertArrayEquals(payload, File(packFile, "u2netp.onnx").readBytes())
+        assertTrue(File(packFile, "u2netp.onnx.sha256").readText().contains(payloadSha))
+        assertFalse(File(packFile, EmbeddingRecipe.MODEL_FILE_NAME).exists())
+    }
+
+    @Test
+    fun packFile_wrongHashIsRejectedAndNothingIsKept() {
+        val packFile = File(temp.root, "cutout_pack").apply { mkdirs() }
+        val store = ModelStore(
+            rootDir = packFile,
+            source = ModelSource { ModelResponse(200, payload.size.toLong(), ByteArrayInputStream(payload)) },
+            isUnmetered = { true },
+            freeSpace = { Long.MAX_VALUE },
+            expectedSha256 = "0".repeat(64),
+            fileName = "sam_mask_decoder_multi.onnx",
+        )
+
+        val result = runBlocking { store.download() }
+
+        assertEquals(ModelState.Failed(ModelFailure.CorruptDownload), result)
+        assertFalse(File(packFile, "sam_mask_decoder_multi.onnx").exists())
+    }
+
     private fun sha256Hex(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 }

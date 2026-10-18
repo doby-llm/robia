@@ -1,8 +1,11 @@
 package com.gusanitolabs.robia.suggestions
 
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Debug
+import com.gusanitolabs.robia.media.BackgroundRemovalEngine
+import com.gusanitolabs.robia.media.BackgroundRemovalStatus
 import com.gusanitolabs.robia.sync.RestoreSyncLogEvent
 import com.gusanitolabs.robia.sync.RestoreSyncLogRepository
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingEngineHolder
@@ -13,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
@@ -112,6 +116,83 @@ class DevBenchmark(
         const val PSS_SAMPLE_MS = 200L
         const val IMAGE_ASSET = "benchmark/garment.png"
         const val VECTOR_ASSET = "benchmark/garment_vector.b64"
+        const val NANOS_PER_MS = 1_000_000L
+        const val KB_PER_MB = 1024L
+    }
+}
+
+/**
+ * Developer measurement of the background removal engine (the G-SEG-1 instrument): runs [ROUNDS] rounds over the bundled
+ * synthetic cutout scenes and the given garment photos, then reports the total and per-stage median and p90 and the peak PSS.
+ */
+class CutoutBenchmark(
+    private val context: Context,
+    private val engine: BackgroundRemovalEngine,
+) {
+    suspend fun measure(photoUris: List<Uri>): String = withContext(Dispatchers.Default) {
+        coroutineScope {
+            val peakPssKb = AtomicLong(0)
+            val sampler = launch {
+                while (isActive) {
+                    peakPssKb.getAndUpdate { max(it, Debug.getPss()) }
+                    delay(PSS_SAMPLE_MS)
+                }
+            }
+            try {
+                runBenchmark(photoUris, peakPssKb)
+            } finally {
+                sampler.cancel()
+            }
+        }
+    }
+
+    private suspend fun runBenchmark(photoUris: List<Uri>, peakPssKb: AtomicLong): String {
+        val inputs = benchmarkSceneUris() + photoUris
+        val totalMs = mutableListOf<Long>()
+        val stageMs = LinkedHashMap<String, MutableList<Long>>()
+        var fallbacks = 0
+        repeat(ROUNDS) {
+            for (uri in inputs) {
+                val started = System.nanoTime()
+                val result = engine.removeBackground(context, uri)
+                totalMs += (System.nanoTime() - started) / NANOS_PER_MS
+                if (result.status != BackgroundRemovalStatus.REMOVED) fallbacks++
+                for ((stage, millis) in result.timings) stageMs.getOrPut(stage) { mutableListOf() }.add(millis)
+            }
+        }
+
+        val report = buildList {
+            add("device=${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE}) API ${Build.VERSION.SDK_INT}")
+            add("samples=${totalMs.size} (${inputs.size} inputs x $ROUNDS rounds)")
+            add("total_ms median=${totalMs.median()} p90=${totalMs.p90()}")
+            for ((stage, millis) in stageMs) add("stage_$stage median=${millis.median()} p90=${millis.p90()}")
+            add("fallbacks=$fallbacks")
+            add("peak_pss_mb=${peakPssKb.get() / KB_PER_MB}")
+        }.joinToString("\n")
+        return report
+    }
+
+    /** The bundled synthetic scenes, copied to the cache so the engine can read them through a file Uri. */
+    private fun benchmarkSceneUris(): List<Uri> {
+        val names = context.assets.list(SCENE_DIRECTORY).orEmpty().filter { it.endsWith(".png") }.sorted()
+        return names.map { name ->
+            val file = File(context.cacheDir, "cutout-benchmark-$name")
+            context.assets.open("$SCENE_DIRECTORY/$name").use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            }
+            Uri.fromFile(file)
+        }
+    }
+
+    private fun List<Long>.median(): Long = sorted()[size / 2]
+
+    /** Nearest-rank 90th percentile. */
+    private fun List<Long>.p90(): Long = sorted()[(size * 9 + 9) / 10 - 1]
+
+    private companion object {
+        const val ROUNDS = 2
+        const val SCENE_DIRECTORY = "benchmark/cutout"
+        const val PSS_SAMPLE_MS = 200L
         const val NANOS_PER_MS = 1_000_000L
         const val KB_PER_MB = 1024L
     }

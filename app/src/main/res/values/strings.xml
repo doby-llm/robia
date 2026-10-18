@@ -114,6 +114,15 @@
     <string name="dev_copy">Copy</string>
     <string name="dev_benchmark_running">Running…</string>
     <string name="dev_benchmark_failed">Benchmark failed: %1$s</string>
+    <string name="dev_precise_cutout">Use precise cutout</string>
+    <string name="dev_precise_cutout_summary">Developer only: new photos use the downloaded cutout pack, ML Kit when it is missing or fails</string>
+    <string name="dev_cutout_pack_download">Download cutout pack</string>
+    <string name="dev_cutout_pack_ready">Cutout pack ready</string>
+    <string name="dev_cutout_pack_missing">Cutout pack not downloaded</string>
+    <string name="dev_cutout_pack_waiting">Waiting for Wi-Fi</string>
+    <string name="dev_cutout_pack_downloading">Downloading…</string>
+    <string name="dev_cutout_pack_failed">Download failed</string>
+    <string name="dev_cutout_benchmark">Run cutout benchmark</string>
     <string name="restore_sync_log_title">Developer diagnostics</string>
     <string name="restore_sync_log_summary">View, copy, export, or clear the bounded developer event log</string>
     <string name="restore_sync_log_help">Developer Mode keeps a capped app-private diagnostic event log. It records safe sync and restore phases, counts, photo placeholder reasons, blob paths, byte sizes, content hashes, and sanitized errors. Robia stores backups in Google Drive app data (appDataFolder), so it is normal not to see these files in My Drive.</string>

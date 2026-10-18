@@ -114,6 +114,15 @@
     <string name="dev_copy">Kopieren</string>
     <string name="dev_benchmark_running">Läuft…</string>
     <string name="dev_benchmark_failed">Benchmark fehlgeschlagen: %1$s</string>
+    <string name="dev_precise_cutout">Präzisen Zuschnitt verwenden</string>
+    <string name="dev_precise_cutout_summary">Nur Entwicklung: neue Fotos nutzen das heruntergeladene Zuschnitt-Paket, bei Fehlen oder Fehlern ML Kit</string>
+    <string name="dev_cutout_pack_download">Zuschnitt-Paket herunterladen</string>
+    <string name="dev_cutout_pack_ready">Zuschnitt-Paket bereit</string>
+    <string name="dev_cutout_pack_missing">Zuschnitt-Paket nicht heruntergeladen</string>
+    <string name="dev_cutout_pack_waiting">Warte auf WLAN</string>
+    <string name="dev_cutout_pack_downloading">Wird heruntergeladen…</string>
+    <string name="dev_cutout_pack_failed">Download fehlgeschlagen</string>
+    <string name="dev_cutout_benchmark">Zuschnitt-Benchmark ausführen</string>
     <string name="restore_sync_log_title">Entwicklerdiagnose</string>
     <string name="restore_sync_log_summary">Begrenztes Entwickler-Ereignisprotokoll anzeigen, kopieren, exportieren oder löschen</string>
     <string name="restore_sync_log_help">Der Entwicklermodus führt ein begrenztes app-privates Diagnose-Ereignisprotokoll. Es enthält sichere Synchronisierungs- und Wiederherstellungsphasen, Zähler, Foto-Platzhaltergründe, Blob-Pfade, Größen, Inhalts-Hashes und bereinigte Fehler. Robia speichert Backups in Google Drive-Appdaten (appDataFolder), daher ist es normal, diese Dateien nicht in „Meine Ablage“ zu sehen.</string>

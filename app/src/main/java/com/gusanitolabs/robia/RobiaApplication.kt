@@ -18,6 +18,12 @@ import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
 import com.gusanitolabs.robia.media.SegmentationModuleGates
+import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
+import com.gusanitolabs.robia.media.cutout.CutoutPack
+import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
+import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
+import com.gusanitolabs.robia.media.cutout.useEnginePrecise
+import com.gusanitolabs.robia.ui.BatchParallelism
 import com.gusanitolabs.robia.suggestions.EmbeddingBackfill
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
@@ -39,7 +45,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -79,6 +88,14 @@ class RobiaApplication : Application() {
             isUnmetered = { isUnmeteredNetworkActive() },
         )
     }
+
+    /** The downloadable precise cutout pack (SG2a); ready only when all of its files are verified. */
+    internal val cutoutPack by lazy {
+        CutoutPack(rootDir = File(filesDir, CutoutPackManifest.DIRECTORY), isUnmetered = { isUnmeteredNetworkActive() })
+    }
+
+    /** Mirrors [useEnginePrecise] for the synchronous [CutoutEngineRegistry] reads made per photo. */
+    @Volatile private var preciseCutoutActive = false
 
     val embeddingEngineHolder by lazy {
         EmbeddingEngineHolder(
@@ -167,6 +184,17 @@ class RobiaApplication : Application() {
         appScope.launch {
             SegmentationModuleGates.get(this@RobiaApplication).ensureAvailable()
         }
+        appScope.launch {
+            combine(
+                cutoutPack.ready,
+                settingsRepository.settings.map { it.preciseCutoutEnabled }.distinctUntilChanged(),
+            ) { packReady, enabled -> useEnginePrecise(packReady, enabled) }
+                .collect { active -> preciseCutoutActive = active }
+        }
+        CutoutEngineRegistry.isPreciseActive = { preciseCutoutActive }
+        CutoutEngineRegistry.precise = { PreciseCutoutEngine(packDir = File(filesDir, CutoutPackManifest.DIRECTORY)) }
+        // The precise engine holds one photo's models at a time, so batch cutouts run one after another (B01).
+        BatchParallelism.cutouts = { if (CutoutEngineRegistry.isPreciseActive()) 1 else 2 }
     }
 
     override fun onTrimMemory(level: Int) {

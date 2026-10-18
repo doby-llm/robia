@@ -114,6 +114,15 @@
     <string name="dev_copy">Copiar</string>
     <string name="dev_benchmark_running">Ejecutando…</string>
     <string name="dev_benchmark_failed">Prueba fallida: %1$s</string>
+    <string name="dev_precise_cutout">Usar recorte preciso</string>
+    <string name="dev_precise_cutout_summary">Solo desarrollo: las fotos nuevas usan el paquete de recorte descargado; si falta o falla, ML Kit</string>
+    <string name="dev_cutout_pack_download">Descargar paquete de recorte</string>
+    <string name="dev_cutout_pack_ready">Paquete de recorte listo</string>
+    <string name="dev_cutout_pack_missing">Paquete de recorte no descargado</string>
+    <string name="dev_cutout_pack_waiting">Esperando Wi-Fi</string>
+    <string name="dev_cutout_pack_downloading">Descargando…</string>
+    <string name="dev_cutout_pack_failed">La descarga falló</string>
+    <string name="dev_cutout_benchmark">Ejecutar prueba de recorte</string>
     <string name="restore_sync_log_title">Diagnóstico de desarrollador</string>
     <string name="restore_sync_log_summary">Ver, copiar, exportar o borrar el registro acotado de eventos de desarrollador</string>
     <string name="restore_sync_log_help">El Modo de desarrollador mantiene un registro acotado y privado de eventos de diagnóstico. Guarda fases seguras de sincronización y restauración, conteos, motivos de marcador de foto, rutas de blob, tamaños, hashes de contenido y errores saneados. Robia guarda las copias en datos de app de Google Drive (appDataFolder), así que es normal no ver estos archivos en Mi unidad.</string>
