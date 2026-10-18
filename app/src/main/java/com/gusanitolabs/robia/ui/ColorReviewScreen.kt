@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -60,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
+import com.gusanitolabs.robia.core.designsystem.aiSurface
+import com.gusanitolabs.robia.core.designsystem.pressScale
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -99,7 +103,11 @@ internal fun ColorReviewPromptDialog(
         title = { Text(stringResource(R.string.color_review_prompt_title)) },
         text = { Text(stringResource(R.string.color_review_prompt_body)) },
         confirmButton = {
-            Button(onClick = onReview) {
+            Button(
+                onClick = onReview,
+                modifier = Modifier.aiSurface(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White),
+            ) {
                 Text(stringResource(R.string.color_review_prompt_confirm))
             }
         },
@@ -289,6 +297,7 @@ internal fun ColorReviewScreen(
                 ReviewAcceptedCard(
                     resolved = accepted || discarded,
                     onGone = { hiddenIds.add(candidate.item.id) },
+                    direction = if (discarded) ExitDirection.Discard else ExitDirection.Accept,
                 ) {
                     ColorReviewCandidateCard(
                         candidate = candidate,
@@ -358,6 +367,8 @@ private fun ColorReviewCandidateCard(
     val primaryColor = palette.colorForId(candidate.editablePrimaryColorId)
     val secondaryColor = palette.colorForId(candidate.editableSecondaryColorId)
     val resolved = accepted || discarded
+    val acceptInteraction = remember { MutableInteractionSource() }
+    val discardInteraction = remember { MutableInteractionSource() }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -386,9 +397,11 @@ private fun ColorReviewCandidateCard(
                         onClick = onAccept,
                         enabled = !resolved,
                         contentPadding = ReviewCardActionPadding,
+                        interactionSource = acceptInteraction,
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
+                            .height(48.dp)
+                            .pressScale(acceptInteraction),
                     ) {
                         Text(
                             stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
@@ -401,9 +414,11 @@ private fun ColorReviewCandidateCard(
                         onClick = onDiscard,
                         enabled = !resolved,
                         contentPadding = ReviewCardActionPadding,
+                        interactionSource = discardInteraction,
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
+                            .height(48.dp)
+                            .pressScale(discardInteraction),
                     ) {
                         Text(
                             stringResource(R.string.review_card_discard),

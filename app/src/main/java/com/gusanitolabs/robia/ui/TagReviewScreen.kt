@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -49,12 +51,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.aiSurface
+import com.gusanitolabs.robia.core.designsystem.pressScale
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -288,7 +293,17 @@ internal fun TagReviewPromptDialog(
         title = { Text(stringResource(R.string.tag_review_prompt_title)) },
         text = { Text(stringResource(if (modelReady) R.string.tag_review_prompt_body else R.string.tag_review_needs_model)) },
         confirmButton = {
-            Button(onClick = onReview, enabled = modelReady) {
+            Button(
+                onClick = onReview,
+                enabled = modelReady,
+                modifier = Modifier.aiSurface(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = Color.White,
+                    disabledContainerColor = Color.Transparent,
+                    disabledContentColor = Color.White.copy(alpha = 0.6f),
+                ),
+            ) {
                 Text(stringResource(R.string.tag_review_prompt_confirm))
             }
         },
@@ -519,6 +534,7 @@ internal fun TagReviewScreen(
                 ReviewAcceptedCard(
                     resolved = accepted || discarded,
                     onGone = { hiddenIds.add(garmentId) },
+                    direction = if (discarded) ExitDirection.Discard else ExitDirection.Accept,
                 ) {
                     TagReviewCandidateCard(
                         candidate = candidate,
@@ -625,6 +641,8 @@ private fun TagReviewCandidateCard(
 ) {
     val isChooseManually = candidate.proposal.kind == ProposalKind.ChooseManually
     val resolved = accepted || discarded
+    val acceptInteraction = remember { MutableInteractionSource() }
+    val discardInteraction = remember { MutableInteractionSource() }
     val currentLabels = candidate.proposal.before.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
     val proposedLabels = proposedIds.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
 
@@ -701,9 +719,11 @@ private fun TagReviewCandidateCard(
                         onClick = onAccept,
                         enabled = !resolved,
                         contentPadding = ReviewCardActionPadding,
+                        interactionSource = acceptInteraction,
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
+                            .height(48.dp)
+                            .pressScale(acceptInteraction),
                     ) {
                         if (accepted) {
                             Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -720,9 +740,11 @@ private fun TagReviewCandidateCard(
                         onClick = onDiscard,
                         enabled = !resolved,
                         contentPadding = ReviewCardActionPadding,
+                        interactionSource = discardInteraction,
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp),
+                            .height(48.dp)
+                            .pressScale(discardInteraction),
                     ) {
                         Text(
                             text = stringResource(R.string.review_card_discard),

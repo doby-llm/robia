@@ -708,4 +708,13 @@
         <item quantity="one">%1$d interrupted</item>
         <item quantity="other">%1$d interrupted</item>
     </plurals>
+    <!-- U08 -->
+    <plurals name="review_complete_tags">
+        <item quantity="one">Tags updated on %1$d garment</item>
+        <item quantity="other">Tags updated on %1$d garments</item>
+    </plurals>
+    <plurals name="review_complete_colors">
+        <item quantity="one">Colour updated on %1$d garment</item>
+        <item quantity="other">Colours updated on %1$d garments</item>
+    </plurals>
 </resources>
