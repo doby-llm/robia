@@ -657,4 +657,8 @@
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Sugerido por Robia. Toca para cambiar.</string>
     <string name="edit_photo_action">Editar foto</string>
+    <!-- U07 -->
+    <string name="processing_step_find">Buscando tu prenda…</string>
+    <string name="processing_step_edges">Limpiando los bordes…</string>
+    <string name="processing_step_style">Leyendo colores y estilo…</string>
 </resources>

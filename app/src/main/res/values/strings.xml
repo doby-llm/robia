@@ -657,4 +657,8 @@
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Suggested by Robia. Tap to change.</string>
     <string name="edit_photo_action">Edit photo</string>
+    <!-- U07 -->
+    <string name="processing_step_find">Finding your garment…</string>
+    <string name="processing_step_edges">Cleaning the edges…</string>
+    <string name="processing_step_style">Reading colours and style…</string>
 </resources>
