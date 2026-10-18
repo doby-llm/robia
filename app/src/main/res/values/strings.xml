@@ -291,6 +291,16 @@
     <string name="quick_edit_before_label">Before edit</string>
     <string name="quick_edit_saved_status">Quick edit saved; colors and details re-detected.</string>
     <string name="quick_edit_save_failed">Quick edit could not be saved.</string>
+    <string name="photo_editor_title">Edit photo</string>
+    <string name="photo_editor_tab_cutout">Cutout</string>
+    <string name="photo_editor_tab_light">Light</string>
+    <string name="refine_keep">Keep</string>
+    <string name="refine_remove">Remove</string>
+    <string name="refine_brush">Brush</string>
+    <string name="refine_hint">Tap or swipe over a part to keep or remove it.</string>
+    <string name="refine_no_source_hint">The original photo is not available, so removed parts cannot be restored.</string>
+    <string name="refine_undo">Undo</string>
+    <string name="refine_reset">Reset</string>
     <string name="colors_section">Colors</string>
 
     <string name="raw_color_required">Raw color value</string>

@@ -291,6 +291,16 @@
     <string name="quick_edit_before_label">Vor der Bearbeitung</string>
     <string name="quick_edit_saved_status">Schnellbearbeitung gespeichert; Farben und Details neu erkannt.</string>
     <string name="quick_edit_save_failed">Schnellbearbeitung konnte nicht gespeichert werden.</string>
+    <string name="photo_editor_title">Foto bearbeiten</string>
+    <string name="photo_editor_tab_cutout">Freistellen</string>
+    <string name="photo_editor_tab_light">Licht</string>
+    <string name="refine_keep">Behalten</string>
+    <string name="refine_remove">Entfernen</string>
+    <string name="refine_brush">Pinsel</string>
+    <string name="refine_hint">Tippe oder wische über einen Teil, um ihn zu behalten oder zu entfernen.</string>
+    <string name="refine_no_source_hint">Das Originalfoto ist nicht verfügbar, daher können entfernte Teile nicht wiederhergestellt werden.</string>
+    <string name="refine_undo">Rückgängig</string>
+    <string name="refine_reset">Zurücksetzen</string>
     <string name="colors_section">Farben</string>
 
     <string name="raw_color_required">Rohfarbwert</string>
