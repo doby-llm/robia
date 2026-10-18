@@ -337,8 +337,6 @@
     <string name="batch_status_interrupted">Interrupted</string>
     <string name="batch_retry">Retry</string>
     <string name="batch_keep_original_accept">Keep original and accept</string>
-    <string name="batch_helper_active_summary">Processing %2$d items… Save becomes available after processing finishes. Accepted %1$d. Review %3$d. Failed %4$d. Interrupted %5$d.</string>
-    <string name="batch_helper_summary">Accepted %1$d. Review %3$d. Failed %4$d. Interrupted %5$d.</string>
     <string name="batch_helper_processing">Processing %1$d items…</string>
     <string name="batch_helper_failed">Resolve %1$d failed items.</string>
     <string name="batch_helper_interrupted">Retry or discard %1$d interrupted items.</string>
@@ -683,4 +681,22 @@
     <string name="processing_step_find">Finding your garment…</string>
     <string name="processing_step_edges">Cleaning the edges…</string>
     <string name="processing_step_style">Reading colours and style…</string>
+    <!-- B02 -->
+    <string name="batch_processed_count">%1$d of %2$d processed</string>
+    <string name="batch_row_position">%1$d of %2$d</string>
+    <string name="batch_eta_seconds">About %1$d s left</string>
+    <string name="batch_eta_minutes">About %1$d min left</string>
+    <string name="batch_eta_almost_done">Almost done</string>
+    <plurals name="batch_attention_review">
+        <item quantity="one">%1$d needs review</item>
+        <item quantity="other">%1$d need review</item>
+    </plurals>
+    <plurals name="batch_attention_failed">
+        <item quantity="one">%1$d failed</item>
+        <item quantity="other">%1$d failed</item>
+    </plurals>
+    <plurals name="batch_attention_interrupted">
+        <item quantity="one">%1$d interrupted</item>
+        <item quantity="other">%1$d interrupted</item>
+    </plurals>
 </resources>
