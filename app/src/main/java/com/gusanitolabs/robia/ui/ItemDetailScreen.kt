@@ -17,20 +17,16 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,7 +74,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -86,7 +81,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
@@ -209,6 +203,7 @@ internal fun ItemDetailScreen(
     val pdfShareErrorMessage = stringResource(R.string.pdf_share_error)
     val noShareAppMessage = stringResource(R.string.share_no_app_error)
     val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
+    val untitled = stringResource(R.string.browse_similar_untitled)
     val pdfShareItem = item.toGarmentShareItem()
     val app = context.applicationContext as RobiaApplication
     val diagnosticsRecomputeDoneMessage = stringResource(R.string.dev_recompute_embedding_done)
@@ -237,7 +232,7 @@ internal fun ItemDetailScreen(
     ) {
         item {
             Text(
-                text = item.name,
+                text = cardTitle(item.name, item.tags, untitled),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
@@ -361,7 +356,7 @@ internal fun ItemDetailScreen(
             }
         }
         item { ColorMetricsCard(item) }
-        item { DetailMetadataGrid(item = item, onEditClick = onEditClick) }
+        item { DetailFieldRows(item = item) }
         if (showDiagnostics && diagnosticsGarment != null) {
             item {
                 SuggestionDiagnosticsCard(
@@ -585,107 +580,58 @@ private fun ColorSwatch(
 }
 
 @Composable
-private fun DetailMetadataGrid(
-    item: UiWardrobeItem,
-    onEditClick: () -> Unit,
-) {
-    val tags = item.tags
-    val metadata = listOf(
-        DetailMetadataItem(categoryIconFor("category"), stringResource(R.string.metadata_category), tags.labelsInCategory("category")),
-        DetailMetadataItem(categoryIconFor("season"), stringResource(R.string.metadata_season), tags.labelsInCategory("season")),
-        DetailMetadataItem(Icons.Rounded.Straighten, stringResource(R.string.metadata_fit), item.fitValue?.fitLabel()),
-        DetailMetadataItem(categoryIconFor("location"), stringResource(R.string.metadata_location), tags.labelsInCategory("location")),
-        DetailMetadataItem(categoryIconFor("occasion"), stringResource(R.string.metadata_occasions), tags.labelsInCategory("occasion")),
-    )
+private fun DetailFieldRows(item: UiWardrobeItem) {
+    val collator = remember { browseCollator() }
+    val none = stringResource(R.string.none)
+    fun valueIn(categoryId: String): String = fieldValueText(
+        selected = item.tags.filter { tag -> tag.categoryId == categoryId },
+        collator = collator,
+        none = none,
+    ) { tag -> tag.label }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.metadata_section),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            GarmentFieldRow(
+                icon = categoryIconFor("category"),
+                label = stringResource(R.string.metadata_category),
+                value = valueIn("category"),
+                aiSuggested = false,
+                onClick = null,
             )
-            metadata.chunked(2).forEach { rowItems ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    rowItems.forEach { metadataItem ->
-                        DetailMetadataCard(
-                            icon = metadataItem.icon,
-                            label = metadataItem.label,
-                            value = metadataItem.value,
-                            onEditClick = onEditClick,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                        )
-                    }
-                    if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailMetadataCard(
-    icon: ImageVector,
-    label: String,
-    value: String?,
-    onEditClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier.clickable(onClick = onEditClick),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
+            GarmentFieldRow(
+                icon = categoryIconFor("occasion"),
+                label = stringResource(R.string.metadata_occasions),
+                value = valueIn("occasion"),
+                aiSuggested = false,
+                onClick = null,
             )
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            GarmentFieldRow(
+                icon = categoryIconFor("season"),
+                label = stringResource(R.string.metadata_season),
+                value = valueIn("season"),
+                aiSuggested = false,
+                onClick = null,
             )
-            Text(
-                text = value ?: stringResource(R.string.not_set),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            GarmentFieldRow(
+                icon = categoryIconFor("location"),
+                label = stringResource(R.string.metadata_location),
+                value = valueIn("location"),
+                aiSuggested = false,
+                onClick = null,
+            )
+            GarmentFieldRow(
+                icon = Icons.Rounded.Straighten,
+                label = stringResource(R.string.metadata_fit),
+                value = item.fitValue?.fitLabel() ?: none,
+                aiSuggested = false,
+                onClick = null,
             )
         }
     }
 }
-
-private data class DetailMetadataItem(
-    val icon: ImageVector,
-    val label: String,
-    val value: String?,
-)
-
-private fun List<UiTag>.labelsInCategory(categoryId: String): String? =
-    filter { tag -> tag.categoryId == categoryId }
-        .joinToString { tag -> tag.label }
-        .takeIf { labels -> labels.isNotBlank() }
 
 private fun Context.launchShareChooser(
     uri: Uri,
