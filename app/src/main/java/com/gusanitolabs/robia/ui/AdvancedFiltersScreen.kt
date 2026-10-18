@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -135,7 +136,7 @@ internal fun AdvancedFiltersScreen(
                     IconButton(onClick = onShowResults) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.cancel),
+                            contentDescription = stringResource(R.string.filters_close),
                         )
                     }
                 },
@@ -227,7 +228,7 @@ internal fun AdvancedFiltersScreen(
             item {
                 FilterCard(
                     title = stringResource(R.string.filter_color_palette),
-                    icon = null,
+                    icon = Icons.Rounded.Palette,
                     count = filters.selectedPaletteColorIds.size,
                 ) {
                     ColorPaletteGrid(
@@ -350,41 +351,71 @@ private fun FilterTagChips(
     onUnsetToggled: () -> Unit,
 ) {
     val context = LocalContext.current
-    val sortedTags = tags.sortedAlphabetically(label = { tag -> tag.localizedTagLabel(context) })
     var expanded by rememberSaveable(categoryId) { mutableStateOf(false) }
-    val visibleTags = if (expanded) sortedTags else sortedTags.take(VISIBLE_TAG_CHIPS)
+    val slots = tagChipSlots(tags = tags, expanded = expanded, label = { tag -> tag.localizedTagLabel(context) })
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        visibleTags.forEach { tag ->
-            val selected = tag.id in selectedTagIds
-            FilterChip(
-                selected = selected,
-                onClick = { onTagToggled(tag) },
-                label = { Text(tag.localizedLabel()) },
-                leadingIcon = if (selected) {
-                    { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                } else {
-                    null
-                },
-            )
+        slots.forEach { slot ->
+            when (slot) {
+                is TagChipSlot.Tag -> {
+                    val tag = slot.tag
+                    val selected = tag.id in selectedTagIds
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onTagToggled(tag) },
+                        label = { Text(tag.localizedLabel()) },
+                        leadingIcon = if (selected) {
+                            { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else {
+                            null
+                        },
+                    )
+                }
+                is TagChipSlot.More -> FilterChip(
+                    selected = false,
+                    onClick = { expanded = true },
+                    label = { Text(stringResource(R.string.filters_more, slot.hiddenCount)) },
+                )
+                TagChipSlot.NotSet -> {
+                    val notSetSelected = categoryId in selectedUnsetTagCategoryIds
+                    FilterChip(
+                        selected = notSetSelected,
+                        onClick = onUnsetToggled,
+                        label = { Text(stringResource(R.string.filters_not_set)) },
+                        leadingIcon = if (notSetSelected) {
+                            { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
         }
-        if (!expanded && sortedTags.size > VISIBLE_TAG_CHIPS) {
-            FilterChip(
-                selected = false,
-                onClick = { expanded = true },
-                label = { Text(stringResource(R.string.filters_more, sortedTags.size - VISIBLE_TAG_CHIPS)) },
-            )
-        }
-        val notSetSelected = categoryId in selectedUnsetTagCategoryIds
-        FilterChip(
-            selected = notSetSelected,
-            onClick = onUnsetToggled,
-            label = { Text(stringResource(R.string.filters_not_set)) },
-            leadingIcon = if (notSetSelected) {
-                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-            } else {
-                null
-            },
-        )
+    }
+}
+
+/** One chip of a tag section, in display order. */
+internal sealed interface TagChipSlot {
+    data class Tag(val tag: GarmentTag) : TagChipSlot
+    data class More(val hiddenCount: Int) : TagChipSlot
+    data object NotSet : TagChipSlot
+}
+
+/**
+ * Chip order of one tag section: the tags sorted by [label] (locale collation), the first [VISIBLE_TAG_CHIPS] of
+ * them unless [expanded], then "+N more" when some are hidden, and "Not set" always last.
+ */
+internal fun tagChipSlots(
+    tags: List<GarmentTag>,
+    expanded: Boolean,
+    label: (GarmentTag) -> String,
+): List<TagChipSlot> {
+    val sorted = tags.sortedAlphabetically(label = label)
+    val visible = if (expanded) sorted else sorted.take(VISIBLE_TAG_CHIPS)
+    val hiddenCount = sorted.size - visible.size
+    return buildList {
+        visible.forEach { tag -> add(TagChipSlot.Tag(tag)) }
+        if (hiddenCount > 0) add(TagChipSlot.More(hiddenCount))
+        add(TagChipSlot.NotSet)
     }
 }
 

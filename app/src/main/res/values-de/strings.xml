@@ -353,7 +353,6 @@
     <string name="language_settings_title">Sprache</string>
     <string name="language_settings_body">Robia folgt standardmäßig deiner Systemsprache und ist für Englisch, Spanisch und Deutsch vorbereitet.</string>
     <string name="advanced_filters_title">Erweiterte Filter</string>
-    <string name="advanced_filters_subtitle">Verfeinere deine Garderobenansicht</string>
     <string name="reset_filters">Alle zurücksetzen</string>
     <string name="filter_category">Kategorie</string>
     <string name="filter_season">Saison</string>
@@ -666,6 +665,8 @@
     <string name="filters_favourites_only">Nur Favoriten</string>
     <string name="filters_favourites_body">Nur Kleidungsstücke mit Herz anzeigen</string>
     <string name="filters_category_not_set">%1$s: %2$s</string>
+    <string name="filter_remove">Filter entfernen</string>
+    <string name="filters_close">Schliessen</string>
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Von Robia vorgeschlagen. Zum Ändern tippen.</string>
     <string name="edit_photo_action">Foto bearbeiten</string>

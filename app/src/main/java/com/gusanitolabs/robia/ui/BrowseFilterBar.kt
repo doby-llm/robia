@@ -305,6 +305,16 @@ internal fun FilterBar(
         if (!searchVisible) onSearchQueryChange("")
     }
 
+    // A tag or colour deleted elsewhere must not keep filtering (and showing its raw id) here.
+    LaunchedEffect(availableTags, paletteColors) {
+        val pruned = pruneUnknownFilters(
+            filters = filters,
+            availableTagIds = availableTags.mapTo(mutableSetOf(), GarmentTag::id),
+            paletteColorIds = paletteColors.mapTo(mutableSetOf(), MainColor::id),
+        )
+        if (pruned != filters) onFiltersChange(pruned)
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         if (similarToName != null) {
             SimilarGarmentsChip(name = similarToName, onClear = onClearSimilar)
@@ -504,7 +514,7 @@ internal fun ActiveFilterChipsRow(
 
 @Composable
 private fun ActiveFilterChip(label: String, onRemove: () -> Unit, swatch: Color? = null) {
-    val removeDescription = stringResource(R.string.browse_search_clear)
+    val removeDescription = stringResource(R.string.filter_remove)
 
     InputChip(
         selected = true,
@@ -544,6 +554,34 @@ internal fun BrowseFilterState.removeTag(tagId: String): BrowseFilterState = cop
     selectedTagIds = selectedTagIds - tagId,
     selectedTagCategories = selectedTagCategories - tagId,
 )
+
+/**
+ * Drops selected tags (with their category entry) and colours that no longer exist. An empty id set means the list
+ * has not loaded yet, not that everything was deleted, so that kind of selection is left alone.
+ * Returns [filters] itself when nothing has to go.
+ */
+internal fun pruneUnknownFilters(
+    filters: BrowseFilterState,
+    availableTagIds: Set<String>,
+    paletteColorIds: Set<String>,
+): BrowseFilterState {
+    val unknownTagIds = if (availableTagIds.isEmpty()) {
+        emptySet()
+    } else {
+        filters.selectedTagIds.filterNot(availableTagIds::contains).toSet()
+    }
+    val unknownColorIds = if (paletteColorIds.isEmpty()) {
+        emptySet()
+    } else {
+        filters.selectedPaletteColorIds.filterNot(paletteColorIds::contains).toSet()
+    }
+    if (unknownTagIds.isEmpty() && unknownColorIds.isEmpty()) return filters
+    return filters.copy(
+        selectedTagIds = filters.selectedTagIds - unknownTagIds,
+        selectedTagCategories = filters.selectedTagCategories - unknownTagIds,
+        selectedPaletteColorIds = filters.selectedPaletteColorIds - unknownColorIds,
+    )
+}
 
 internal fun BrowseFilterState.toggleUnsetCategory(categoryId: String): BrowseFilterState = copy(
     selectedUnsetTagCategoryIds = selectedUnsetTagCategoryIds.toggle(categoryId),
