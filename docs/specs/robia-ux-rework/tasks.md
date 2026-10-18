@@ -143,5 +143,10 @@
 - **In scope:** steps 1-5 of the brief. **Out of scope:** original-photo backup, key format change, deleting orphans.
 - **Acceptance:** V-D02-1..6, V-Z2-26, V-Z2-27. **Review:** independent (no path may delete or overwrite a photo; account mismatch blocks every write).
 
-## Z02 — Device checklist
+## SG4 — Cutout settings + Redo cutout (PLAN-CHANGE 1, 2026-10-18)
+- **Reqs:** REQ-SG-08, REQ-SG-09 · SEG-DEC-009 · TS§SG4 · **Predecessors:** SG2b (`PreciseCutoutSettings.kt`, setting), SG3 (`PhotoEditorScreen.kt`, `RefineSession.kt`), B01 (`BatchParallelism`) · **Successors:** Z02
+- **Files:** `core/model/ClothingModels.kt` (`RobiaSettings` cutout fields), `data/SettingsRepository.kt`, new `media/cutout/CutoutOptions.kt`, `media/cutout/CutoutEngineRegistry.kt`, `media/cutout/PreciseCutoutEngine.kt`, `media/cutout/HangerRemoval.kt`, `media/AlphaRefiner.kt`, `media/MlKitSubjectSegmentationBackgroundRemovalEngine.kt` (edge profile argument only), `ui/PreciseCutoutSettings.kt`, `ui/SettingsScreen.kt` (row title only), `ui/PhotoEditorScreen.kt`, `media/cutout/RefineSession.kt`, `RobiaApplication.kt` (registry/BatchParallelism wiring only), test fakes of `SettingsRepository`, tests.
+- **Acceptance:** V-SG4-1..5, V-Z2-28..30. **Review:** independent (defaults equal today's behaviour; migration of `preciseCutoutEnabled`; Redo never writes until Done).
+
+
 - **Predecessors:** all above merged · **Files:** `docs/specs/robia-ux-rework/artifacts/device-checklist.md` · **Acceptance:** checklist with every V-Z2 row, latest main staging APK link, grouped A (no cloud), B (photos/segmentation), C (mockup comparison).

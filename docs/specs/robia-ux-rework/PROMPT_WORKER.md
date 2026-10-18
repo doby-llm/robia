@@ -18,6 +18,6 @@ Plan: docs/specs/robia-ux-rework/
 
 Notes for the coordinator:
 - One task per run, following the waves and leases in `implementation-plan.md` (max 3 workers in parallel).
-- Independent review required for U03, U06, T01, SG1, SG2a, SG3, B01, D02 (`decision-log.md` PROC-DEC-002, `implementation-plan.md`).
+- Independent review required for U03, U06, T01, SG1, SG2a, SG3, SG4, B01, D02 (`decision-log.md` PROC-DEC-002, `implementation-plan.md`).
 - Device gates: G-SEG-1 after SG2a merges (message in `briefs/TASK-SG2a.md`), G-SEG-2 after SG2b (message in `briefs/TASK-SG2b.md`). Relay them to Manu in Spanish with the latest main-push `robia-staging-apk` link.
 - If a run stops with a question, answer it from the plan (quote the line) or decide low-risk details yourself and record them; material scope/UX changes go to Manu.
