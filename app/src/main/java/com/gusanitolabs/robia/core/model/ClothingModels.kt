@@ -103,6 +103,8 @@ enum class LanguagePreference(val storageValue: String?) {
     German("de"),
 }
 
+enum class BrowseLayout { PhotosOnly, PhotosWithDetails }
+
 data class RobiaSettings(
     val languagePreference: LanguagePreference = LanguagePreference.System,
     val developerModeUnlocked: Boolean = false,
@@ -111,4 +113,5 @@ data class RobiaSettings(
     val cloudSetupPromptInteracted: Boolean = false,
     val driveFreshInstallRestoreAttempted: Boolean = false,
     val driveBackupDeletionState: DriveBackupDeletionState = DriveBackupDeletionState.None,
+    val browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
 )
