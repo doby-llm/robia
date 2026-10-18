@@ -666,4 +666,7 @@
     <string name="filters_favourites_only">Solo favoritos</string>
     <string name="filters_favourites_body">Mostrar solo las prendas marcadas con un corazón</string>
     <string name="filters_category_not_set">%1$s: %2$s</string>
+    <!-- U06 -->
+    <string name="field_suggested_hint">✦ Sugerido por Robia. Toca para cambiar.</string>
+    <string name="edit_photo_action">Editar foto</string>
 </resources>

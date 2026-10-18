@@ -666,4 +666,7 @@
     <string name="filters_favourites_only">Nur Favoriten</string>
     <string name="filters_favourites_body">Nur Kleidungsstücke mit Herz anzeigen</string>
     <string name="filters_category_not_set">%1$s: %2$s</string>
+    <!-- U06 -->
+    <string name="field_suggested_hint">✦ Von Robia vorgeschlagen. Zum Ändern tippen.</string>
+    <string name="edit_photo_action">Foto bearbeiten</string>
 </resources>
