@@ -717,4 +717,10 @@
         <item quantity="one">Farbe bei %1$d Kleidungsstück aktualisiert</item>
         <item quantity="other">Farben bei %1$d Kleidungsstücken aktualisiert</item>
     </plurals>
+    <!-- D01 -->
+    <string name="drive_usage_title">Speicherplatz in Google Drive belegt</string>
+    <string name="drive_usage_value">%1$s · %2$d Fotos</string>
+    <string name="drive_usage_updated">Aktualisiert %1$s</string>
+    <string name="drive_usage_unknown">Noch nicht gemessen</string>
+    <string name="drive_usage_refresh">Aktualisieren</string>
 </resources>

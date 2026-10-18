@@ -7,6 +7,7 @@ import com.gusanitolabs.robia.sync.DriveBackupDeletionResult
 import com.gusanitolabs.robia.sync.DriveManifest
 import com.gusanitolabs.robia.sync.DriveRestoreProgressListener
 import com.gusanitolabs.robia.sync.DriveSyncResult
+import com.gusanitolabs.robia.sync.DriveUsage
 import com.gusanitolabs.robia.sync.DriveWardrobeRepository
 
 /** Remote Drive backup. Each call returns the configured result; uploads are recorded even when they fail. */
@@ -58,4 +59,7 @@ internal class FakeDriveWardrobeRepository(
 
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> =
         DriveSyncResult.Success(DriveBackupDeletionResult())
+
+    override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> =
+        DriveSyncResult.Failure(IllegalStateException("not used by sync tests"))
 }

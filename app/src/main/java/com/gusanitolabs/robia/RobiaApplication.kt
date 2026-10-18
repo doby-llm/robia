@@ -33,6 +33,7 @@ import com.gusanitolabs.robia.suggestions.model.HttpModelSource
 import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.suggestions.model.ModelStore
 import com.gusanitolabs.robia.sync.DriveSyncScheduler
+import com.gusanitolabs.robia.sync.DriveUsageStore
 import com.gusanitolabs.robia.sync.FileRestoreSyncLogRepository
 import com.gusanitolabs.robia.sync.GoogleDriveWardrobeRepository
 import com.gusanitolabs.robia.sync.LocalWardrobeSyncSnapshotRepository
@@ -146,6 +147,9 @@ class RobiaApplication : Application() {
 
     val restoreSyncLogRepository by lazy { FileRestoreSyncLogRepository(applicationContext) }
 
+    // One instance shared by the Drive repository (writes) and the sync processor (state), so the Settings row follows it.
+    val driveUsageStore by lazy { DriveUsageStore(File(applicationContext.filesDir, "sync/drive_usage.json")) }
+
     val syncGateway: WardrobeSyncOutboxProcessor by lazy {
         WardrobeSyncOutboxProcessor(
             settingsRepository = settingsRepository,
@@ -155,11 +159,13 @@ class RobiaApplication : Application() {
                 context = applicationContext,
                 authorizationClient = Identity.getAuthorizationClient(this),
                 driveScope = Scope(DRIVE_APPDATA_SCOPE),
+                driveUsageStore = driveUsageStore,
             ),
             restoreSyncLogRepository = restoreSyncLogRepository,
             syncWorkScheduler = DriveSyncScheduler(applicationContext),
             scope = appScope,
             embeddingRepository = embeddingRepository,
+            driveUsageStore = driveUsageStore,
             onRestoreImported = { embeddingBackfill.resume() },
         )
     }
