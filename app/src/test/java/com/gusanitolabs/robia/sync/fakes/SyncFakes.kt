@@ -243,6 +243,8 @@ internal class FakeSettingsRepository(
 
     override suspend fun setBrowseLayout(layout: BrowseLayout) = update { it.copy(browseLayout = layout) }
 
+    override suspend fun setPreciseCutoutEnabled(enabled: Boolean) = update { it.copy(preciseCutoutEnabled = enabled) }
+
     override suspend fun pauseSyncForDriveBackupDeletion() =
         update { it.copy(driveSyncConnectionStatus = DriveSyncConnectionStatus.Disabled) }
 

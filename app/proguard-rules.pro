@@ -4,3 +4,8 @@
 -keepattributes Signature, *Annotation*, InnerClasses, EnclosingMethod
 -dontwarn com.google.ai.edge.litertlm.**
 -keep class kotlin.Metadata { *; }
+-keep class ai.onnxruntime.** { *; }
+-keep class com.google.mediapipe.** { *; }
+# Compile-time annotations and the MediaPipe proto classes (a separate artifact) are not packaged; nothing needs them at runtime.
+-dontwarn com.google.auto.value.**
+-dontwarn com.google.mediapipe.proto.**

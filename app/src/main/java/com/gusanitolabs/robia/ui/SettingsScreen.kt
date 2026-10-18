@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -94,22 +95,29 @@ import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.LanguagePreference
+import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.data.toDomain
+import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
+import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
+import com.gusanitolabs.robia.suggestions.CutoutBenchmark
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.garmentTextInput
 import com.gusanitolabs.robia.suggestions.rankSimilar
 import com.gusanitolabs.robia.suggestions.sortNewestFirst
 import com.gusanitolabs.robia.suggestions.sha256Hex16
 import com.gusanitolabs.robia.suggestions.model.ModelDownloadWorker
+import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
@@ -137,6 +145,10 @@ internal fun SettingsScreen(
     var benchmarkText by remember { mutableStateOf<String?>(null) }
     var benchmarkRunning by remember { mutableStateOf(false) }
     var showBrowseLayoutDialog by rememberSaveable { mutableStateOf(false) }
+    val cutoutSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
+    val cutoutPackState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
+    var cutoutBenchmarkText by remember { mutableStateOf<String?>(null) }
+    var cutoutBenchmarkRunning by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -263,6 +275,92 @@ internal fun SettingsScreen(
                                 }
                             },
                         )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_precise_cutout)) },
+                            supportingContent = { Text(stringResource(R.string.dev_precise_cutout_summary)) },
+                            leadingContent = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) },
+                            trailingContent = {
+                                Switch(
+                                    checked = cutoutSettings.preciseCutoutEnabled,
+                                    onCheckedChange = { enabled ->
+                                        scope.launch { app.settingsRepository.setPreciseCutoutEnabled(enabled) }
+                                    },
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                scope.launch { app.settingsRepository.setPreciseCutoutEnabled(!cutoutSettings.preciseCutoutEnabled) }
+                            },
+                        )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_cutout_pack_download)) },
+                            supportingContent = { Text(stringResource(cutoutPackStatusRes(cutoutPackState))) },
+                            trailingContent = {
+                                TextButton(
+                                    enabled = cutoutPackState !is ModelState.Ready && cutoutPackState !is ModelState.Downloading,
+                                    onClick = { scope.launch { app.cutoutPack.download() } },
+                                ) {
+                                    Text(stringResource(R.string.dev_run))
+                                }
+                            },
+                        )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_cutout_benchmark)) },
+                            supportingContent = {
+                                val result = cutoutBenchmarkText
+                                if (cutoutBenchmarkRunning) {
+                                    Text(stringResource(R.string.dev_benchmark_running))
+                                } else if (result != null) {
+                                    Text(
+                                        text = result,
+                                        fontFamily = FontFamily.Monospace,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                Row {
+                                    TextButton(
+                                        enabled = !cutoutBenchmarkRunning,
+                                        onClick = {
+                                            cutoutBenchmarkRunning = true
+                                            scope.launch {
+                                                cutoutBenchmarkText = try {
+                                                    val photos = app.wardrobeRepository.observeActiveItems().first()
+                                                        .sortedByDescending { it.createdAtEpochMillis }
+                                                        .mapNotNull { it.photoUri }
+                                                        .take(CUTOUT_BENCHMARK_PHOTOS)
+                                                        .map { Uri.parse(it) }
+                                                    CutoutBenchmark(
+                                                        context = context,
+                                                        engine = PreciseCutoutEngine(File(app.filesDir, CutoutPackManifest.DIRECTORY)),
+                                                    ).measure(photos)
+                                                } catch (cancellation: CancellationException) {
+                                                    throw cancellation
+                                                } catch (failure: Exception) {
+                                                    context.getString(
+                                                        R.string.dev_benchmark_failed,
+                                                        failure.message ?: failure.javaClass.simpleName,
+                                                    )
+                                                } finally {
+                                                    cutoutBenchmarkRunning = false
+                                                }
+                                            }
+                                        },
+                                    ) {
+                                        Text(stringResource(R.string.dev_run))
+                                    }
+                                    TextButton(
+                                        enabled = cutoutBenchmarkText != null && !cutoutBenchmarkRunning,
+                                        onClick = { clipboard.setText(AnnotatedString(cutoutBenchmarkText.orEmpty())) },
+                                    ) {
+                                        Text(stringResource(R.string.dev_copy))
+                                    }
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -283,6 +381,17 @@ internal fun SettingsScreen(
             onDismiss = { showBrowseLayoutDialog = false },
         )
     }
+}
+
+private const val CUTOUT_BENCHMARK_PHOTOS = 5
+
+@StringRes
+private fun cutoutPackStatusRes(state: ModelState): Int = when (state) {
+    is ModelState.Ready -> R.string.dev_cutout_pack_ready
+    is ModelState.Downloading, ModelState.Verifying -> R.string.dev_cutout_pack_downloading
+    ModelState.WaitingForWifi -> R.string.dev_cutout_pack_waiting
+    is ModelState.Failed -> R.string.dev_cutout_pack_failed
+    ModelState.NotDownloaded -> R.string.dev_cutout_pack_missing
 }
 
 @Composable

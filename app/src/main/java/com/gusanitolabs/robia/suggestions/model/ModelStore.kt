@@ -66,7 +66,9 @@ class HttpModelSource(private val url: String) : ModelSource {
 
 /**
  * Downloads the pinned model into `rootDir` (partial file, then verified final file). Resumes with a Range request;
- * a server that ignores Range (200) restarts the file from zero.
+ * a server that ignores Range (200) restarts the file from zero. The defaults are the Gemma model; the precise cutout
+ * pack passes its own [source] (the URL lives in [HttpModelSource]), [fileName], [expectedSha256] and [expectedSizeBytes].
+ * A null [expectedSizeBytes] (the Gemma default) skips the size check.
  */
 class ModelStore(
     private val rootDir: File,
@@ -74,11 +76,13 @@ class ModelStore(
     private val isUnmetered: () -> Boolean,
     private val freeSpace: () -> Long = { rootDir.usableSpace },
     private val expectedSha256: String = EmbeddingRecipe.MODEL_SHA256,
+    private val fileName: String = EmbeddingRecipe.MODEL_FILE_NAME,
+    private val expectedSizeBytes: Long? = null,
 ) {
     private val lock = Mutex()
-    private val finalFile = File(rootDir, EmbeddingRecipe.MODEL_FILE_NAME)
-    private val partFile = File(rootDir, "${EmbeddingRecipe.MODEL_FILE_NAME}.part")
-    private val sidecar = File(rootDir, "${EmbeddingRecipe.MODEL_FILE_NAME}.sha256")
+    private val finalFile = File(rootDir, fileName)
+    private val partFile = File(rootDir, "$fileName.part")
+    private val sidecar = File(rootDir, "$fileName.sha256")
     private val mutableState = MutableStateFlow<ModelState>(
         if (isReady()) ModelState.Ready(finalFile.path) else ModelState.NotDownloaded,
     )
@@ -151,6 +155,10 @@ class ModelStore(
         }
 
         mutableState.value = ModelState.Verifying
+        if (!sizeMatches(partFile)) {
+            deleteAll()
+            return ModelState.Failed(ModelFailure.CorruptDownload)
+        }
         val actual = if (resumed) sha256Of(partFile) else digest.digest().toHex()
         if (!actual.equals(expectedSha256, ignoreCase = true)) {
             deleteAll()
@@ -166,7 +174,9 @@ class ModelStore(
     }
 
     private fun isReady(): Boolean =
-        finalFile.isFile && sidecar.isFile && sidecar.readText().contains(expectedSha256)
+        finalFile.isFile && sidecar.isFile && sidecar.readText().contains(expectedSha256) && sizeMatches(finalFile)
+
+    private fun sizeMatches(file: File): Boolean = expectedSizeBytes == null || file.length() == expectedSizeBytes
 
     private fun publish(state: ModelState): ModelState {
         mutableState.value = state

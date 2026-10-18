@@ -19,6 +19,8 @@ data class BackgroundRemovalResult(
     val outputUri: Uri,
     val status: BackgroundRemovalStatus,
     val failure: BackgroundRemovalFailure? = null,
+    /** Per-stage milliseconds for engines that report them (the precise cutout pipeline); empty otherwise. */
+    val timings: Map<String, Long> = emptyMap(),
 ) {
     val usedFallback: Boolean = outputUri == originalUri || status == BackgroundRemovalStatus.ORIGINAL_FALLBACK
 }

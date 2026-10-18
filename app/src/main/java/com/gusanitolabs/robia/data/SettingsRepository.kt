@@ -23,6 +23,7 @@ interface SettingsRepository {
     suspend fun setDriveSyncConnectionStatus(status: DriveSyncConnectionStatus)
     suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState)
     suspend fun setBrowseLayout(layout: BrowseLayout)
+    suspend fun setPreciseCutoutEnabled(enabled: Boolean)
     /** Atomically persists deletion intent and pauses sync before remote I/O. */
     suspend fun pauseSyncForDriveBackupDeletion()
     suspend fun markCloudSetupPromptInteracted()
@@ -85,6 +86,10 @@ class DataStoreSettingsRepository(
 
     override suspend fun setBrowseLayout(layout: BrowseLayout) {
         dataStore.edit { preferences -> preferences[browseLayoutKey] = layout.name }
+    }
+
+    override suspend fun setPreciseCutoutEnabled(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[preciseCutoutEnabledKey] = enabled }
     }
 
     override suspend fun pauseSyncForDriveBackupDeletion() {
@@ -179,6 +184,7 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         driveFreshInstallRestoreAttempted = preferences[driveFreshInstallRestoreAttemptedKey] ?: false,
         driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
         browseLayout = preferences[browseLayoutKey].toBrowseLayout(),
+        preciseCutoutEnabled = preferences[preciseCutoutEnabledKey] ?: false,
     )
 }
 
@@ -202,6 +208,7 @@ private val cloudSetupPromptInteractedKey = booleanPreferencesKey("cloud_setup_p
 private val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_fresh_install_restore_attempted")
 private val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
 private val browseLayoutKey = stringPreferencesKey("browse_layout")
+private val preciseCutoutEnabledKey = booleanPreferencesKey("precise_cutout_enabled")
 private val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
 private val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
 private val deviceIdKey = stringPreferencesKey("sync_device_id")

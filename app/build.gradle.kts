@@ -83,6 +83,9 @@ android {
             if (hasRobiaCiDebugSigning) {
                 signingConfig = signingConfigs.getByName("robiaCiDebug")
             }
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
         }
 
         release {
@@ -107,6 +110,9 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
             matchingFallbacks += listOf("release")
         }
     }
@@ -119,6 +125,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    androidResources {
+        // MediaPipe reads its bundled .tflite straight from the APK, so it must stay uncompressed.
+        noCompress += "tflite"
     }
 }
 
@@ -142,7 +153,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.litertlm.android)
+    implementation(libs.mediapipe.tasks.vision)
     implementation(libs.mlkit.subject.segmentation)
+    implementation(libs.onnxruntime.android)
     implementation(libs.play.services.auth)
     implementation(libs.play.services.base)
     implementation(libs.skydoves.colorpicker.compose)
@@ -161,6 +174,8 @@ dependencies {
     testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
     // Android's org.json is a stub on the JVM unit-test classpath; this is the real implementation.
     testImplementation("org.json:json:20240303")
+    // runTest virtual time for the precise → ML Kit timeout test (CutoutFallbackChainTest).
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
