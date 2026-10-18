@@ -350,8 +350,6 @@
     <string name="batch_discard_title">¿Descartar este lote?</string>
     <string name="batch_discard_body">Las fotos procesadas y los detalles no se guardarán.</string>
     <string name="batch_tile_content_description">Foto %1$d de %2$d, %3$s.</string>
-    <string name="language_settings_title">Idioma</string>
-    <string name="language_settings_body">Robia sigue el idioma del sistema por defecto y está preparada para inglés, español y alemán.</string>
     <string name="advanced_filters_title">Filtros avanzados</string>
     <string name="reset_filters">Restablecer todo</string>
     <string name="filter_category">Categoría</string>
@@ -484,12 +482,6 @@
     <string name="undo">Deshacer</string>
     <string name="color_review_discard_title">¿Descartar cambios?</string>
     <string name="color_review_discard_body">Esto deshace la acción que acabas de hacer.</string>
-    <string-array name="language_choices">
-        <item>@string/language_system</item>
-        <item>@string/language_english</item>
-        <item>@string/language_spanish</item>
-        <item>@string/language_german</item>
-    </string-array>
     <string name="manage_tab_count">%1$s %2$d</string>
     <string name="tag_description_label">Descripción (opcional)</string>
     <string name="tag_no_occasions_badge">Sin ocasiones</string>
@@ -670,6 +662,23 @@
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Sugerido por Robia. Toca para cambiar.</string>
     <string name="edit_photo_action">Editar foto</string>
+    <!-- U05 -->
+    <string name="settings_group_smart_features">Funciones inteligentes</string>
+    <string name="settings_group_backup">Copia de seguridad</string>
+    <string name="settings_group_general">General</string>
+    <string name="settings_group_about">Acerca de</string>
+    <string name="settings_google_drive">Google Drive</string>
+    <string name="settings_browse_layout">Diseño de Explorar</string>
+    <string name="settings_browse_layout_photos_only">Solo fotos</string>
+    <string name="settings_browse_layout_photos_with_details">Fotos con detalles</string>
+    <string name="settings_value_on">Activado</string>
+    <string name="settings_value_off">Desactivado</string>
+    <string name="settings_value_not_connected">No conectado</string>
+    <string name="language_endonym_system">Predeterminado del sistema</string>
+    <string name="language_endonym_en">English</string>
+    <string name="language_endonym_es">Español</string>
+    <string name="language_endonym_de">Deutsch</string>
+    <string name="language_currently">Actualmente: %1$s</string>
     <!-- U07 -->
     <string name="processing_step_find">Buscando tu prenda…</string>
     <string name="processing_step_edges">Limpiando los bordes…</string>
