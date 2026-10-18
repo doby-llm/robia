@@ -82,6 +82,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -98,6 +99,7 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.designsystem.PopIn
 import com.gusanitolabs.robia.core.designsystem.aiSurface
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -803,6 +805,10 @@ fun AddEditClothingScreen(
                     backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
                     isPhotoProcessing = isPhotoProcessing,
                     processingStage = photoProcessingStage,
+                    rawSourceUri = editorPhotoState.rawSourceUri,
+                    foregroundUri = editorPhotoState.foregroundUri,
+                    primaryColor = primaryPaletteColor,
+                    secondaryColor = secondaryPaletteColor,
                     onCaptureStatusChange = { captureStatus = it },
                     onPhotoSelected = ::queuePhotoForProcessing,
                     onRetryPhotoProcessing = photoRetrySource?.let { retryInput ->
@@ -1235,6 +1241,10 @@ private fun PhotoCaptureCardWithLaunchers(
     backgroundFallbackModuleMissing: Boolean = false,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
+    rawSourceUri: String? = null,
+    foregroundUri: String? = null,
+    primaryColor: MainColor? = null,
+    secondaryColor: MainColor? = null,
     onCaptureStatusChange: (String) -> Unit,
     onPhotoSelected: (String, String) -> Unit,
     onRetryPhotoProcessing: (() -> Unit)?,
@@ -1282,6 +1292,10 @@ private fun PhotoCaptureCardWithLaunchers(
         backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
         isPhotoProcessing = isPhotoProcessing,
         processingStage = processingStage,
+        rawSourceUri = rawSourceUri,
+        foregroundUri = foregroundUri,
+        primaryColor = primaryColor,
+        secondaryColor = secondaryColor,
         onRetryPhotoProcessing = onRetryPhotoProcessing,
         onQuickEditClick = onQuickEditClick,
         quickEditStatus = quickEditStatus,
@@ -1310,6 +1324,10 @@ private fun PhotoCaptureCard(
     backgroundFallbackModuleMissing: Boolean = false,
     isPhotoProcessing: Boolean,
     processingStage: PhotoProcessingStage?,
+    rawSourceUri: String? = null,
+    foregroundUri: String? = null,
+    primaryColor: MainColor? = null,
+    secondaryColor: MainColor? = null,
     onRetryPhotoProcessing: (() -> Unit)?,
     onQuickEditClick: (() -> Unit)?,
     quickEditStatus: String?,
@@ -1323,15 +1341,20 @@ private fun PhotoCaptureCard(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val backgroundPreparing by SegmentationModuleGates.get(LocalContext.current).preparing.collectAsState()
-            val processingLabel = when {
-                isPhotoProcessing && backgroundPreparing -> stringResource(R.string.background_removal_preparing)
-                processingStage != null -> stringResource(processingStage.labelRes)
-                else -> null
+            val processingLabel = if (isPhotoProcessing && backgroundPreparing) {
+                stringResource(R.string.background_removal_preparing)
+            } else {
+                null
             }
             PhotoPreview(
                 photoUri = photoUri,
                 isProcessing = isPhotoProcessing,
+                processingStep = processingStage?.let(::processingStep),
                 processingLabel = processingLabel,
+                rawSourceUri = rawSourceUri,
+                foregroundUri = foregroundUri,
+                primaryColor = primaryColor,
+                secondaryColor = secondaryColor,
                 modifier = Modifier.fillMaxWidth(),
                 aspectRatio = photoAspectRatio ?: 4f / 3f,
                 onEmptyPhotoClick = onCameraClick,
@@ -1431,7 +1454,12 @@ private fun PhotoCaptureCard(
 private fun PhotoPreview(
     photoUri: String?,
     isProcessing: Boolean = false,
+    processingStep: Int? = null,
     processingLabel: String? = null,
+    rawSourceUri: String? = null,
+    foregroundUri: String? = null,
+    primaryColor: MainColor? = null,
+    secondaryColor: MainColor? = null,
     modifier: Modifier = Modifier,
     aspectRatio: Float = 3f / 4f,
     onEmptyPhotoClick: (() -> Unit)? = null,
@@ -1440,98 +1468,107 @@ private fun PhotoPreview(
     val uri = photoUri?.takeIf { it.isNotBlank() }
     val emptyPhotoContentDescription = stringResource(R.string.content_open_camera)
     val quickEditContentDescription = stringResource(R.string.content_quick_edit_photo)
-    Box(
-        modifier = modifier
-            .aspectRatio(aspectRatio)
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .then(
-                if (uri == null && onEmptyPhotoClick != null) {
-                    Modifier
-                        .clickable(onClick = onEmptyPhotoClick)
-                        .semantics { contentDescription = emptyPhotoContentDescription }
-                } else {
-                    Modifier
-                },
-            ),
-        contentAlignment = Alignment.Center,
+    // The shimmer only runs while processing; once the foreground exists the raw photo fades behind it.
+    val shimmerForeground = foregroundUri?.takeIf { isProcessing && it.isNotBlank() }
+    val rawAlpha = rememberRawPhotoAlpha(fadeRaw = shimmerForeground != null)
+    val swatches = listOfNotNull(primaryColor, secondaryColor).map { it.swatchColor() }
+    val swatchesVisible = photoSwatchesVisible(isProcessing, hasPhoto = uri != null, swatchCount = swatches.size)
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (uri != null) {
-            val processingOverlayColors = rememberProcessingOverlayColors(uri, isProcessing)
-            BoundedGarmentImage(
-                photoUri = uri,
-                thumbnailMaxEdgePx = EDITOR_PREVIEW_MAX_EDGE_PX,
-                purpose = ImagePurpose.Editor,
-                modifier = Modifier.fillMaxSize(),
-            )
-            if (!isProcessing && onQuickEditClick != null) {
-                IconButton(
-                    onClick = onQuickEditClick,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
-                        .semantics { contentDescription = quickEditContentDescription },
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            if (isProcessing) {
-                Box(
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspectRatio)
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .then(
+                    if (uri == null && onEmptyPhotoClick != null) {
+                        Modifier
+                            .clickable(onClick = onEmptyPhotoClick)
+                            .semantics { contentDescription = emptyPhotoContentDescription }
+                    } else {
+                        Modifier
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (uri != null) {
+                BoundedGarmentImage(
+                    photoUri = if (shimmerForeground != null) rawSourceUri?.takeIf { it.isNotBlank() } ?: uri else uri,
+                    thumbnailMaxEdgePx = EDITOR_PREVIEW_MAX_EDGE_PX,
+                    purpose = ImagePurpose.Editor,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(processingOverlayColors.scrimColor),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.padding(24.dp),
+                        .graphicsLayer { alpha = rawAlpha },
+                )
+                if (shimmerForeground != null) {
+                    MaskedShimmer(foregroundUri = shimmerForeground, modifier = Modifier.fillMaxSize())
+                } else if (isProcessing) {
+                    SweepOverlay(modifier = Modifier.fillMaxSize())
+                }
+                Box(modifier = Modifier.align(Alignment.BottomStart).padding(14.dp)) {
+                    PopIn(visible = swatchesVisible) {
+                        PhotoColorSwatches(colors = swatches)
+                    }
+                }
+                if (!isProcessing && onQuickEditClick != null) {
+                    IconButton(
+                        onClick = onQuickEditClick,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+                            .semantics { contentDescription = quickEditContentDescription },
                     ) {
-                        CircularProgressIndicator(color = processingOverlayColors.contentColor)
-                        processingLabel?.let { label ->
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = processingOverlayColors.contentColor,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(24.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Style,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(56.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.photo_placeholder),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (onEmptyPhotoClick != null) {
+                        Text(
+                            text = stringResource(R.string.photo_placeholder_tap_camera),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
-        } else {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(24.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Style,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(56.dp),
-                )
-                Text(
-                    text = stringResource(R.string.photo_placeholder),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (onEmptyPhotoClick != null) {
-                    Text(
-                        text = stringResource(R.string.photo_placeholder_tap_camera),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+        }
+        if (isProcessing && processingStep != null) {
+            SegmentedProgress(
+                current = processingStep,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            ProcessingStageLabel(
+                step = processingStep,
+                label = processingLabel,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
     }
 }
@@ -2103,7 +2140,7 @@ private data class PendingPhotoInput(
     val sourceStatus: String,
 )
 
-private enum class PhotoProcessingStage(val labelRes: Int) {
+internal enum class PhotoProcessingStage(val labelRes: Int) {
     RemovingBackground(R.string.processing_stage_removing_background),
     CroppingPicture(R.string.processing_stage_cropping_picture),
     ExtractingColor(R.string.processing_stage_extracting_color),

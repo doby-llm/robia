@@ -34,7 +34,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -398,7 +397,6 @@ private fun BatchPhotoPreview(
     isProcessing: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val processingOverlayColors = rememberProcessingOverlayColors(photoUri, isProcessing)
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.large)
@@ -429,14 +427,7 @@ private fun BatchPhotoPreview(
             )
         }
         if (isProcessing) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(processingOverlayColors.scrimColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(color = processingOverlayColors.contentColor)
-            }
+            SweepOverlay(modifier = Modifier.fillMaxSize())
         }
     }
 }

@@ -670,4 +670,8 @@
     <!-- U06 -->
     <string name="field_suggested_hint">✦ Von Robia vorgeschlagen. Zum Ändern tippen.</string>
     <string name="edit_photo_action">Foto bearbeiten</string>
+    <!-- U07 -->
+    <string name="processing_step_find">Kleidungsstück wird gefunden…</string>
+    <string name="processing_step_edges">Ränder werden bereinigt…</string>
+    <string name="processing_step_style">Farben und Stil werden erkannt…</string>
 </resources>
