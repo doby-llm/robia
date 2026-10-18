@@ -86,9 +86,9 @@ class DefaultTagsTest {
     }
 
     @Test
-    fun onlyJewelryAndAccessoriesAreExcludedFromOccasionSuggestions() {
+    fun onlyJewelryAccessoriesSocksAndUnderwearAreExcludedFromOccasionSuggestions() {
         assertEquals(
-            listOf("category-jewelry", "category-accessories"),
+            listOf("category-jewelry", "category-accessories", "category-socks", "category-underwear"),
             DefaultTags.tags.filterNot(GarmentTag::suggestOccasions).map(GarmentTag::id),
         )
         assertFalse(DefaultTags.defaultSuggestOccasions("category-jewelry"))
