@@ -120,6 +120,11 @@ android {
         compose = true
         buildConfig = true
     }
+
+    androidResources {
+        // MediaPipe reads its bundled .tflite straight from the APK, so it must stay uncompressed.
+        noCompress += "tflite"
+    }
 }
 
 kotlin {
@@ -142,7 +147,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.litertlm.android)
+    implementation(libs.mediapipe.tasks.vision)
     implementation(libs.mlkit.subject.segmentation)
+    implementation(libs.onnxruntime.android)
     implementation(libs.play.services.auth)
     implementation(libs.play.services.base)
     implementation(libs.skydoves.colorpicker.compose)

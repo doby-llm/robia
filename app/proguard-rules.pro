@@ -4,3 +4,5 @@
 -keepattributes Signature, *Annotation*, InnerClasses, EnclosingMethod
 -dontwarn com.google.ai.edge.litertlm.**
 -keep class kotlin.Metadata { *; }
+-keep class ai.onnxruntime.** { *; }
+-keep class com.google.mediapipe.** { *; }
