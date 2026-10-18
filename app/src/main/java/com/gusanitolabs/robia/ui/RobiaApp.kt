@@ -419,6 +419,8 @@ fun RobiaApp(
             onRequestCloudSetup = onRequestCloudSetup,
             onConfirmMerge = { scope.launch { syncGateway.confirmMerge() } },
             onCancelMerge = { scope.launch { syncGateway.cancelMerge() } },
+            onUseThisDriveAccount = { scope.launch { syncGateway.useThisDriveAccount() } },
+            onDisconnectDrive = { scope.launch { syncGateway.disconnectDrive() } },
             onUseBackup = { scope.launch { syncGateway.useBackup() } },
             onKeepThisPhone = { scope.launch { syncGateway.keepThisPhone() } },
             onRetryAttention = { kind ->
@@ -821,6 +823,8 @@ private fun RobiaShell(
     onCloudSetupPromptInteracted: () -> Unit,
     onRequestCloudSetup: () -> Unit,
     onConfirmMerge: () -> Unit,
+    onUseThisDriveAccount: () -> Unit = {},
+    onDisconnectDrive: () -> Unit = {},
     onCancelMerge: () -> Unit,
     onUseBackup: () -> Unit = {},
     onKeepThisPhone: () -> Unit = {},
@@ -1436,8 +1440,8 @@ private fun RobiaShell(
             SyncAttentionAction.KeepThisPhone -> onKeepThisPhone()
             SyncAttentionAction.ConfirmMerge -> onConfirmMerge()
             SyncAttentionAction.CancelMerge -> onCancelMerge()
-            SyncAttentionAction.UseThisAccount -> scope.launch { syncGateway.useThisDriveAccount() }
-            SyncAttentionAction.DisconnectDrive -> scope.launch { syncGateway.disconnectDrive() }
+            SyncAttentionAction.UseThisAccount -> onUseThisDriveAccount()
+            SyncAttentionAction.DisconnectDrive -> onDisconnectDrive()
         }
     }
 
