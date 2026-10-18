@@ -58,7 +58,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -452,10 +452,11 @@ fun PhotoEditorScreen(
                                 )
                             }
                         }
+                        val pulseColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
                         pulse?.let { mark ->
                             Canvas(Modifier.fillMaxSize()) {
                                 drawCircle(
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                    color = pulseColor,
                                     radius = PULSE_RADIUS_DP.dp.toPx(),
                                     center = mark.at,
                                 )
