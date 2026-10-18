@@ -350,7 +350,15 @@ internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
     }
     val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         ?: error("Unable to decode source photo")
-    val degrees = context.contentResolver.openInputStream(uri)?.use { ExifInterface(it).rotationDegrees } ?: 0
+    val orientation = context.contentResolver.openInputStream(uri)?.use { input ->
+        ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    } ?: ExifInterface.ORIENTATION_NORMAL
+    val degrees = when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> 90
+        ExifInterface.ORIENTATION_ROTATE_180 -> 180
+        ExifInterface.ORIENTATION_ROTATE_270 -> 270
+        else -> 0
+    }
     val oriented = if (degrees == 0) {
         decoded
     } else {

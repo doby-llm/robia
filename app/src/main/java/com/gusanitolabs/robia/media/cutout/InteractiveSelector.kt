@@ -6,7 +6,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.ByteBufferExtractor
 import com.google.mediapipe.tasks.components.containers.NormalizedKeypoint
 import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.vision.interactivesegmenter.InteractiveSegmenter
+import com.google.mediapipe.tasks.vision.interactivesegmenterlegacy.InteractiveSegmenterLegacy
 import java.nio.ByteOrder
 
 /** Selects the whole object under one point (S2 prompts). Implementations are created once per photo and closed after it. */
@@ -17,9 +17,9 @@ internal interface InteractiveSelector : AutoCloseable {
 
 /** MediaPipe Interactive Segmenter with the bundled `magic_touch.tflite` (Apache-2.0, see [CutoutPack]). */
 internal class MediaPipeInteractiveSelector(context: Context) : InteractiveSelector {
-    private val segmenter: InteractiveSegmenter = InteractiveSegmenter.createFromOptions(
+    private val segmenter: InteractiveSegmenterLegacy = InteractiveSegmenterLegacy.createFromOptions(
         context,
-        InteractiveSegmenter.InteractiveSegmenterOptions.builder()
+        InteractiveSegmenterLegacy.InteractiveSegmenterLegacyOptions.builder()
             .setBaseOptions(BaseOptions.builder().setModelAssetPath(MAGIC_TOUCH_ASSET).build())
             .setOutputConfidenceMasks(true)
             .build(),
@@ -29,7 +29,7 @@ internal class MediaPipeInteractiveSelector(context: Context) : InteractiveSelec
         val keypoint = NormalizedKeypoint.create(x.toFloat() / bitmap.width, y.toFloat() / bitmap.height)
         val result = segmenter.segment(
             BitmapImageBuilder(bitmap).build(),
-            InteractiveSegmenter.RegionOfInterest.create(keypoint),
+            InteractiveSegmenterLegacy.RegionOfInterest.create(keypoint),
         )
         val mask = result.confidenceMasks().get()[0]
         check(mask.width == bitmap.width && mask.height == bitmap.height) { "Selection mask size does not match the photo" }
