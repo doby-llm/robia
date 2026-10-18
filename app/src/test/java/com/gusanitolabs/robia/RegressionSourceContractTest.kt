@@ -86,15 +86,20 @@ class RegressionSourceContractTest {
     }
 
     @Test
-    fun batchCoordinator_processesAll60QueuedItemsSeriallyToTerminalStates() {
+    fun batchCoordinator_pipelinesCutoutsAndPublishesFinalStatesInOrder() {
         val coordinator = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchProcessingCoordinator.kt")
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val batchScreen = source("app/src/main/java/com/gusanitolabs/robia/ui/BatchAddClothingScreen.kt")
 
         assertTrue(coordinator.contains("processingJob?.isActive == true"))
-        assertTrue(coordinator.contains("while (true)"))
-        assertTrue(coordinator.contains("firstOrNull { it.status == BatchDraftStatus.Queued }"))
+        assertTrue(coordinator.contains("restartRequested = true"))
+        assertTrue(coordinator.contains("BatchParallelism.cutouts()"))
+        assertTrue(coordinator.contains("Semaphore(parallelism)"))
+        assertTrue(coordinator.contains("publishInOrder@ while (true)"))
+        assertTrue(coordinator.contains("batch_item idx="))
         assertTrue(app.contains("BatchProcessingCoordinator(batchProcessingScope)"))
+        assertTrue(app.contains("cutout = { draft ->"))
+        assertTrue(app.contains("suggest = { draft, cutout ->"))
         assertTrue(batchScreen.contains("private val BatchDraftStatus.isTerminal"))
     }
 

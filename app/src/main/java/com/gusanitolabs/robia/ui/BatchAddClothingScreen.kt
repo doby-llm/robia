@@ -506,74 +506,115 @@ internal suspend fun processBatchDraft(
             errorMessage = null,
         ),
     )
-    try {
-        val sourceUri = Uri.parse(draft.originalPhotoUri)
-        val sourceAspectRatio = withContext(Dispatchers.IO) {
-            ClothingImageStore.readImageAspectRatio(context, sourceUri)
-        }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
-        val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
-        val croppedUri = runCatching {
-            withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
-        }.getOrDefault(backgroundResult.outputUri)
-        val displayAspectRatio = withContext(Dispatchers.IO) {
-            ClothingImageStore.readImageAspectRatio(context, croppedUri)
-        }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
-        val matches = runCatching {
-            withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
-        }.getOrDefault(emptyList())
-        val primaryColorId = matches.getOrNull(0)?.color?.id
-        val secondaryColorId = matches.drop(1)
-            .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
-            ?.color
-            ?.id
-        val suggestion = suggestionService.suggestForPhoto(
-            photoUri = croppedUri,
-            tags = availableTags,
-            selectedCategoryId = availableTags.firstOrNull { tag -> tag.categoryId == "category" && tag.id in draft.selectedTagIds }?.id,
-        )
-        val needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri
-        val resolvedStatus = if (needsOriginalFallbackReview) BatchDraftStatus.NeedsReview else BatchDraftStatus.Ready
-        val resolvedMessage = if (needsOriginalFallbackReview) {
-            context.getString(R.string.batch_original_fallback_message)
-        } else {
-            null
-        }
-        val ready = suggestion as? SuggestionOutcome.Ready
-        onDraftUpdated(
-            draft.copy(
-                photoUri = croppedUri.toString(),
-                photoAspectRatio = displayAspectRatio,
-                status = resolvedStatus,
-                selectedPrimaryColorId = primaryColorId,
-                selectedSecondaryColorId = secondaryColorId,
-                selectedTagIds = if (ready == null) {
-                    draft.selectedTagIds
-                } else {
-                    mergePredictedTags(draft.selectedTagIds, ready.predictedTagIds, availableTags)
-                },
-                suggestionCapture = ready?.let { outcome ->
-                    SuggestionCapture(croppedUri.toString(), outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
-                },
-                errorMessage = resolvedMessage,
-                backgroundFallback = backgroundResult.usedFallback,
-            ),
-        )
-    } catch (throwable: CancellationException) {
-        onDraftUpdated(
-            draft.copy(
-                status = BatchDraftStatus.Interrupted,
-                errorMessage = context.getString(R.string.batch_interrupted_message),
-            ),
-        )
-        throw throwable
-    } catch (throwable: Exception) {
-        onDraftUpdated(
+    when (val cutout = cutoutStage(draft, context, backgroundRemover, mainColors)) {
+        is CutoutStageResult.Failed -> onDraftUpdated(
             draft.copy(
                 status = BatchDraftStatus.Failed,
-                errorMessage = throwable.message?.takeIf { it.isNotBlank() },
+                errorMessage = cutout.message,
             ),
         )
+        is CutoutStageResult.Ready -> onDraftUpdated(
+            suggestStage(draft, cutout, suggestionService, availableTags, context),
+        )
     }
+}
+
+/** Output of the cutout stage (background removal, crop, aspect, palette), before any suggestion. */
+internal sealed interface CutoutStageResult {
+    data class Ready(
+        val croppedUri: String,
+        val displayAspectRatio: Float?,
+        val primaryColorId: String?,
+        val secondaryColorId: String?,
+        val usedFallback: Boolean,
+        val needsOriginalFallbackReview: Boolean,
+    ) : CutoutStageResult
+
+    data class Failed(val message: String?) : CutoutStageResult
+}
+
+internal suspend fun cutoutStage(
+    draft: BatchDraftItem,
+    context: android.content.Context,
+    backgroundRemover: PhotoBackgroundRemover,
+    mainColors: List<MainColor>,
+): CutoutStageResult = try {
+    val sourceUri = Uri.parse(draft.originalPhotoUri)
+    val sourceAspectRatio = withContext(Dispatchers.IO) {
+        ClothingImageStore.readImageAspectRatio(context, sourceUri)
+    }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
+    val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
+    val croppedUri = runCatching {
+        withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
+    }.getOrDefault(backgroundResult.outputUri)
+    val displayAspectRatio = withContext(Dispatchers.IO) {
+        ClothingImageStore.readImageAspectRatio(context, croppedUri)
+    }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
+    val matches = runCatching {
+        withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
+    }.getOrDefault(emptyList())
+    val primaryColorId = matches.getOrNull(0)?.color?.id
+    val secondaryColorId = matches.drop(1)
+        .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
+        ?.color
+        ?.id
+    CutoutStageResult.Ready(
+        croppedUri = croppedUri.toString(),
+        displayAspectRatio = displayAspectRatio,
+        primaryColorId = primaryColorId,
+        secondaryColorId = secondaryColorId,
+        usedFallback = backgroundResult.usedFallback,
+        needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
+    )
+} catch (throwable: CancellationException) {
+    throw throwable
+} catch (throwable: Exception) {
+    CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
+}
+
+internal suspend fun suggestStage(
+    draft: BatchDraftItem,
+    cutout: CutoutStageResult.Ready,
+    suggestionService: SuggestionService,
+    availableTags: List<GarmentTag>,
+    context: android.content.Context,
+): BatchDraftItem = try {
+    val suggestion = suggestionService.suggestForPhoto(
+        photoUri = Uri.parse(cutout.croppedUri),
+        tags = availableTags,
+        selectedCategoryId = availableTags.firstOrNull { tag -> tag.categoryId == "category" && tag.id in draft.selectedTagIds }?.id,
+    )
+    val resolvedStatus = if (cutout.needsOriginalFallbackReview) BatchDraftStatus.NeedsReview else BatchDraftStatus.Ready
+    val resolvedMessage = if (cutout.needsOriginalFallbackReview) {
+        context.getString(R.string.batch_original_fallback_message)
+    } else {
+        null
+    }
+    val ready = suggestion as? SuggestionOutcome.Ready
+    draft.copy(
+        photoUri = cutout.croppedUri,
+        photoAspectRatio = cutout.displayAspectRatio,
+        status = resolvedStatus,
+        selectedPrimaryColorId = cutout.primaryColorId,
+        selectedSecondaryColorId = cutout.secondaryColorId,
+        selectedTagIds = if (ready == null) {
+            draft.selectedTagIds
+        } else {
+            mergePredictedTags(draft.selectedTagIds, ready.predictedTagIds, availableTags)
+        },
+        suggestionCapture = ready?.let { outcome ->
+            SuggestionCapture(cutout.croppedUri, outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
+        },
+        errorMessage = resolvedMessage,
+        backgroundFallback = cutout.usedFallback,
+    )
+} catch (throwable: CancellationException) {
+    throw throwable
+} catch (throwable: Exception) {
+    draft.copy(
+        status = BatchDraftStatus.Failed,
+        errorMessage = throwable.message?.takeIf { it.isNotBlank() },
+    )
 }
 
 private val BatchDraftStatus.isSelectable: Boolean
