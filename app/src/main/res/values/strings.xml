@@ -748,4 +748,16 @@
     <string name="account_mismatch_body">Robia was backed up with another Google account. Nothing will be uploaded until you choose.</string>
     <string name="account_mismatch_use_this">Use this account</string>
     <string name="drive_disconnect">Disconnect</string>
+    <!-- SG2b -->
+    <string name="precise_cutout_title">Precise cutout</string>
+    <string name="precise_cutout_body">Better background removal for garments on hangers or similar-coloured backgrounds. Runs on your phone.</string>
+    <string name="precise_cutout_download">Download (≈ 91 MB)</string>
+    <string name="precise_cutout_ready">Ready · 91 MB</string>
+    <string name="precise_cutout_use_switch">Use precise cutout for new photos</string>
+    <string name="precise_cutout_mobile_body">No Wi-Fi. The download will use about 91 MB of your data plan.</string>
+    <string name="precise_cutout_mobile_confirm">Use data (≈ 91 MB)</string>
+    <string name="precise_cutout_delete">Delete cutout pack</string>
+    <string name="precise_cutout_delete_title">Delete cutout pack?</string>
+    <string name="precise_cutout_delete_body">The precise cutout pack is removed from this phone. Photos keep their current cutout.</string>
+    <string name="precise_cutout_value_downloading">Downloading %1$d %%</string>
 </resources>

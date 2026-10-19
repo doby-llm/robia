@@ -208,7 +208,7 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
         browseLayout = preferences[browseLayoutKey].toBrowseLayout(),
         browseColumns = preferences[browseColumnsKey].toBrowseColumns(),
-        preciseCutoutEnabled = preferences[preciseCutoutEnabledKey] ?: false,
+        preciseCutoutEnabled = preferences[preciseCutoutEnabledKey] ?: true,
         driveBoundAccountEmail = preferences[driveBoundAccountEmailKey]?.takeIf(String::isNotBlank),
         driveAuthorizedAccountEmail = preferences[driveAuthorizedAccountEmailKey]?.takeIf(String::isNotBlank),
     )

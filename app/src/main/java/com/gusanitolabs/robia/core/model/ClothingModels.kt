@@ -116,8 +116,8 @@ data class RobiaSettings(
     val browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
     /** Pinch-chosen Browse column count; clamped to [browseColumnRange] when shown. */
     val browseColumns: Int = 2,
-    /** Developer switch in SG2a (default off); SG2b makes it a user setting with default on. */
-    val preciseCutoutEnabled: Boolean = false,
+    /** Precise cutout is used once its pack is downloaded (Settings > Smart features); on by default. */
+    val preciseCutoutEnabled: Boolean = true,
     /** Google account the Drive backup belongs to; set at the first authorization, changed only by "Use this account". */
     val driveBoundAccountEmail: String? = null,
     /** Google account of the latest authorization; a value other than [driveBoundAccountEmail] blocks every Drive write. */
