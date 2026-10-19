@@ -84,7 +84,10 @@ internal class CutoutPack(
         return ModelState.Ready(rootDir.path)
     }
 
-    /** Removes all pack files. Callers switch the precise engine off first. */
+    /**
+     * Removes all pack files. No caller switches the method off first: the precise engine follows [ready] (usePrecise needs
+     * the pack), so it stops with the pack, and the saved method stays as the user set it.
+     */
     suspend fun delete() {
         stores.forEach { it.delete() }
     }

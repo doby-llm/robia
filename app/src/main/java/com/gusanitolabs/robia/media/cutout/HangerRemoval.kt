@@ -9,7 +9,6 @@ import kotlin.math.roundToInt
  * with the BAND=1 FILL=median variant that REQ-SG-05 specifies.
  */
 internal object HangerRemoval {
-    const val SCORE_THRESHOLD = 0.25f
     const val MAX_KILL_FRACTION = 0.15f
     private const val CONTAINED_FRACTION = 0.85f
     private const val BOX_MARGIN_PX = 4
@@ -25,6 +24,32 @@ internal object HangerRemoval {
         (box.x1 - box.x0) >= 0.35f * garment.width &&
             box.y0 < garment.y0 + 0.25f * garment.height &&
             box.y1 < garment.y0 + 0.5f * garment.height
+
+    /**
+     * S3 with its two passes. The first pass ([detect] with a null region) sees the whole photo; when no detection there is
+     * plausible, the second pass sees the top band of the garment ([hangerSearchRegion]) and its boxes are moved back to
+     * photo coordinates. [threshold] is handed to both passes. Returns the first plausible hanger, clipped to the photo.
+     */
+    fun findHanger(
+        garment: MaskBox,
+        w: Int,
+        h: Int,
+        threshold: Float,
+        detect: (region: IntArray?, threshold: Float) -> List<Pair<Float, MaskBox>>,
+    ): MaskBox? {
+        val first = detect(null, threshold).filter { isPlausible(it.second, garment) }
+        val found = if (first.isNotEmpty()) {
+            first
+        } else {
+            val region = hangerSearchRegion(garment, w, h)
+            detect(region, threshold)
+                .map { (score, box) ->
+                    score to MaskBox(box.x0 + region[0], box.y0 + region[1], box.x1 + region[0], box.y1 + region[1])
+                }
+                .filter { isPlausible(it.second, garment) }
+        }
+        return found.firstOrNull()?.second?.let { clip(it, w, h) }
+    }
 
     /**
      * Second S3 pass region (exclusive right and bottom, as a slice): the top band of the garment, widened by 10 % and

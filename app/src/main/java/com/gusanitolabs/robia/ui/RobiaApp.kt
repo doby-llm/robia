@@ -295,7 +295,7 @@ private sealed interface RobiaRoute {
     }
 
     data object PreciseCutoutSettings : RobiaRoute {
-        override val titleRes = R.string.precise_cutout_title
+        override val titleRes = R.string.cutout_settings_title
     }
 
     data object DriveSettings : RobiaRoute {

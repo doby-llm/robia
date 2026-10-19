@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.media.cutout
 
+import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
@@ -12,12 +13,15 @@ private val PRECISE_TIMEOUT: Duration = 30.seconds
 
 /**
  * How [com.gusanitolabs.robia.media.PhotoBackgroundRemover] finds the precise engine. [RobiaApplication] sets both:
- * [precise] builds an engine for one photo, and [isPreciseActive] answers whether new photos use it.
+ * [precise] builds an engine for one photo, and [options] gives the cutout options for a new photo, read per photo.
  */
 object CutoutEngineRegistry {
     @Volatile var precise: (() -> BackgroundRemovalEngine?)? = null
 
-    @Volatile var isPreciseActive: () -> Boolean = { false }
+    @Volatile var options: () -> CutoutOptions = { cutoutOptionsOf(RobiaSettings(), packReady = false) }
+
+    /** Whether new photos use the precise engine. */
+    fun isPreciseActive(): Boolean = options().usePrecise
 
     /** One precise pipeline at a time per process: the single-photo flow and a batch share the 1300 MB budget. */
     private val preciseGate = Semaphore(1)

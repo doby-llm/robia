@@ -753,11 +753,35 @@
     <string name="precise_cutout_body">Better background removal for garments on hangers or similar-coloured backgrounds. Runs on your phone.</string>
     <string name="precise_cutout_download">Download (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Ready · 91 MB</string>
-    <string name="precise_cutout_use_switch">Use precise cutout for new photos</string>
     <string name="precise_cutout_mobile_body">No Wi-Fi. The download will use about 91 MB of your data plan.</string>
     <string name="precise_cutout_mobile_confirm">Use data (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Delete cutout pack</string>
     <string name="precise_cutout_delete_title">Delete cutout pack?</string>
     <string name="precise_cutout_delete_body">The precise cutout pack is removed from this phone. Photos keep their current cutout.</string>
     <string name="precise_cutout_value_downloading">Downloading %1$d %%</string>
+    <!-- SG4 -->
+    <string name="cutout_settings_title">Cutout</string>
+    <string name="cutout_method">Cutout method</string>
+    <string name="cutout_method_automatic">Automatic</string>
+    <string name="cutout_method_standard">Standard</string>
+    <string name="cutout_method_automatic_hint">Uses precise cutout when downloaded, otherwise standard.</string>
+    <string name="cutout_method_standard_hint">Google ML Kit only. Faster, no hanger removal.</string>
+    <string name="cutout_remove_hangers">Remove hangers</string>
+    <string name="cutout_needs_precise">Needs precise cutout</string>
+    <string name="cutout_hanger_detection">Hanger detection</string>
+    <string name="cutout_hanger_normal">Normal</string>
+    <string name="cutout_hanger_high">High</string>
+    <string name="cutout_hanger_high_hint">Finds more clips and wooden hangers. Check the result.</string>
+    <string name="cutout_edges">Edges</string>
+    <string name="cutout_edges_soft">Soft</string>
+    <string name="cutout_edges_sharp">Sharp</string>
+    <string name="batch_speed">Batch speed</string>
+    <string name="batch_speed_balanced">Balanced</string>
+    <string name="batch_speed_memory_saver">Memory saver</string>
+    <string name="batch_speed_hint">Memory saver processes one photo at a time.</string>
+    <string name="redo_cutout">Redo cutout</string>
+    <string name="redo_cutout_standard">Standard</string>
+    <string name="redo_cutout_precise">Precise</string>
+    <string name="redo_cutout_precise_keep_hanger">Precise without hanger removal</string>
+    <string name="redo_cutout_failed">Could not redo the cutout</string>
 </resources>

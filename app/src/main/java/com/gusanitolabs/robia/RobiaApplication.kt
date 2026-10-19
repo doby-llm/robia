@@ -11,6 +11,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.gusanitolabs.robia.core.model.BatchCutoutMode
+import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.data.DataStoreSettingsRepository
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.LocalTagRepository
@@ -22,7 +24,8 @@ import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import com.gusanitolabs.robia.media.cutout.CutoutPack
 import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
 import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
-import com.gusanitolabs.robia.media.cutout.useEnginePrecise
+import com.gusanitolabs.robia.media.cutout.batchCutouts
+import com.gusanitolabs.robia.media.cutout.cutoutOptionsOf
 import com.gusanitolabs.robia.ui.BatchParallelism
 import com.gusanitolabs.robia.suggestions.EmbeddingBackfill
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
@@ -47,9 +50,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -95,8 +96,10 @@ class RobiaApplication : Application() {
         CutoutPack(rootDir = File(filesDir, CutoutPackManifest.DIRECTORY), isUnmetered = { isUnmeteredNetworkActive() })
     }
 
-    /** Mirrors [useEnginePrecise] for the synchronous [CutoutEngineRegistry] reads made per photo. */
-    @Volatile private var preciseCutoutActive = false
+    /** Mirrors the settings and the pack for the synchronous reads made per photo and per batch (SG4). */
+    @Volatile private var cutoutOptions = cutoutOptionsOf(RobiaSettings(), packReady = false)
+
+    @Volatile private var batchCutoutMode = BatchCutoutMode.Balanced
 
     val embeddingEngineHolder by lazy {
         EmbeddingEngineHolder(
@@ -191,16 +194,17 @@ class RobiaApplication : Application() {
             SegmentationModuleGates.get(this@RobiaApplication).ensureAvailable()
         }
         appScope.launch {
-            combine(
-                cutoutPack.ready,
-                settingsRepository.settings.map { it.preciseCutoutEnabled }.distinctUntilChanged(),
-            ) { packReady, enabled -> useEnginePrecise(packReady, enabled) }
-                .collect { active -> preciseCutoutActive = active }
+            combine(cutoutPack.ready, settingsRepository.settings) { packReady, settings ->
+                cutoutOptionsOf(settings, packReady) to settings.batchCutoutMode
+            }.collect { (options, mode) ->
+                cutoutOptions = options
+                batchCutoutMode = mode
+            }
         }
-        CutoutEngineRegistry.isPreciseActive = { preciseCutoutActive }
+        CutoutEngineRegistry.options = { cutoutOptions }
         CutoutEngineRegistry.precise = { PreciseCutoutEngine(packDir = File(filesDir, CutoutPackManifest.DIRECTORY)) }
-        // The precise engine holds one photo's models at a time, so batch cutouts run one after another (B01).
-        BatchParallelism.cutouts = { if (CutoutEngineRegistry.isPreciseActive()) 1 else 2 }
+        // The precise engine holds one photo's models at a time, so batch cutouts run one after another (B01, SG4 modes).
+        BatchParallelism.cutouts = { batchCutouts(batchCutoutMode, cutoutOptions.usePrecise) }
     }
 
     override fun onTrimMemory(level: Int) {

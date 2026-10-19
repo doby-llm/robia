@@ -105,6 +105,15 @@ enum class LanguagePreference(val storageValue: String?) {
 
 enum class BrowseLayout { PhotosOnly, PhotosWithDetails }
 
+/** Cutout method (SG4): Automatic uses the precise cutout when its pack is ready, Standard always uses ML Kit. */
+enum class CutoutEngineChoice { Automatic, Standard }
+
+enum class HangerSensitivity { Normal, High }
+
+enum class CutoutEdges { Soft, Sharp }
+
+enum class BatchCutoutMode { Balanced, MemorySaver }
+
 data class RobiaSettings(
     val languagePreference: LanguagePreference = LanguagePreference.System,
     val developerModeUnlocked: Boolean = false,
@@ -116,10 +125,19 @@ data class RobiaSettings(
     val browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
     /** Pinch-chosen Browse column count; clamped to [browseColumnRange] when shown. */
     val browseColumns: Int = 2,
-    /** Precise cutout is used once its pack is downloaded (Settings > Smart features); on by default. */
-    val preciseCutoutEnabled: Boolean = true,
+    /** Cutout method (Settings > Cutout); Automatic is the default. */
+    val cutoutEngine: CutoutEngineChoice = CutoutEngineChoice.Automatic,
+    /** Hanger removal in the precise cutout; ignored by Standard. */
+    val cutoutRemoveHanger: Boolean = true,
+    val cutoutHangerSensitivity: HangerSensitivity = HangerSensitivity.Normal,
+    val cutoutEdges: CutoutEdges = CutoutEdges.Soft,
+    val batchCutoutMode: BatchCutoutMode = BatchCutoutMode.Balanced,
     /** Google account the Drive backup belongs to; set at the first authorization, changed only by "Use this account". */
     val driveBoundAccountEmail: String? = null,
     /** Google account of the latest authorization; a value other than [driveBoundAccountEmail] blocks every Drive write. */
     val driveAuthorizedAccountEmail: String? = null,
-)
+) {
+    /** The Developer switch's view of [cutoutEngine]: on when the method is Automatic. */
+    val preciseCutoutEnabled: Boolean
+        get() = cutoutEngine == CutoutEngineChoice.Automatic
+}

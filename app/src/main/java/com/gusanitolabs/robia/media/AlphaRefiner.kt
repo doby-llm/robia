@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.media
 
+import com.gusanitolabs.robia.core.model.CutoutEdges
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -11,22 +12,34 @@ import kotlin.math.roundToInt
 internal object AlphaRefiner {
     private const val SMOOTH_LOW = 0.35f
     private const val SMOOTH_HIGH = 0.65f
+    private const val SHARP_LOW = 0.47f
+    private const val SHARP_HIGH = 0.53f
     private const val INTERIOR = 0.97f
     private const val GUIDED_EPS = 1e-3f
     private const val REFERENCE_EDGE_PX = 1024f
 
-    /** [argb] supplies the guide (luminance), [conf] is the foreground confidence in 0..1, both w×h. */
-    fun refine(argb: IntArray, conf: FloatArray, w: Int, h: Int): ByteArray {
+    /**
+     * [argb] supplies the guide (luminance), [conf] is the foreground confidence in 0..1, both w×h. [CutoutEdges.Soft] is the
+     * SG1 result; [CutoutEdges.Sharp] (SG4) uses a narrower step and skips the guided filter, so there is no feather.
+     */
+    fun refine(argb: IntArray, conf: FloatArray, w: Int, h: Int, profile: CutoutEdges = CutoutEdges.Soft): ByteArray {
         val count = w * h
         require(argb.size == count && conf.size == count) { "Buffers must be ${w}x$h" }
 
-        val input = FloatArray(count) { i -> smoothstep(SMOOTH_LOW, SMOOTH_HIGH, conf[i]) }
-        val guide = FloatArray(count) { i ->
-            val color = argb[i]
-            (0.299f * ((color shr 16) and 0xFF) + 0.587f * ((color shr 8) and 0xFF) + 0.114f * (color and 0xFF)) / 255f
+        val sharp = profile == CutoutEdges.Sharp
+        val input = FloatArray(count) { i ->
+            if (sharp) smoothstep(SHARP_LOW, SHARP_HIGH, conf[i]) else smoothstep(SMOOTH_LOW, SMOOTH_HIGH, conf[i])
         }
-        val radius = (3f * max(w, h) / REFERENCE_EDGE_PX).roundToInt()
-        val filtered = guidedFilter(guide, input, w, h, radius, GUIDED_EPS)
+        val filtered = if (sharp) {
+            input
+        } else {
+            val guide = FloatArray(count) { i ->
+                val color = argb[i]
+                (0.299f * ((color shr 16) and 0xFF) + 0.587f * ((color shr 8) and 0xFF) + 0.114f * (color and 0xFF)) / 255f
+            }
+            val radius = (3f * max(w, h) / REFERENCE_EDGE_PX).roundToInt()
+            guidedFilter(guide, input, w, h, radius, GUIDED_EPS)
+        }
 
         return ByteArray(count) { i ->
             val alpha = if (filtered[i] > INTERIOR) 1f else filtered[i].coerceIn(0f, 1f)

@@ -8,9 +8,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.gusanitolabs.robia.core.model.BatchCutoutMode
 import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.CutoutEdges
+import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.HangerSensitivity
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import kotlinx.coroutines.flow.Flow
@@ -26,7 +30,15 @@ interface SettingsRepository {
     suspend fun setDriveBackupDeletionState(state: DriveBackupDeletionState)
     suspend fun setBrowseLayout(layout: BrowseLayout)
     suspend fun setBrowseColumns(columns: Int)
-    suspend fun setPreciseCutoutEnabled(enabled: Boolean)
+    suspend fun setCutoutEngine(engine: CutoutEngineChoice)
+    suspend fun setCutoutRemoveHanger(enabled: Boolean)
+    suspend fun setCutoutHangerSensitivity(sensitivity: HangerSensitivity)
+    suspend fun setCutoutEdges(edges: CutoutEdges)
+    suspend fun setBatchCutoutMode(mode: BatchCutoutMode)
+    /** The Developer switch: true selects the Automatic method, false the Standard one. */
+    suspend fun setPreciseCutoutEnabled(enabled: Boolean) = setCutoutEngine(
+        if (enabled) CutoutEngineChoice.Automatic else CutoutEngineChoice.Standard,
+    )
     /** Atomically persists deletion intent and pauses sync before remote I/O. */
     suspend fun pauseSyncForDriveBackupDeletion()
     suspend fun markCloudSetupPromptInteracted()
@@ -99,8 +111,24 @@ class DataStoreSettingsRepository(
         dataStore.edit { preferences -> preferences[browseColumnsKey] = columns }
     }
 
-    override suspend fun setPreciseCutoutEnabled(enabled: Boolean) {
-        dataStore.edit { preferences -> preferences[preciseCutoutEnabledKey] = enabled }
+    override suspend fun setCutoutEngine(engine: CutoutEngineChoice) {
+        dataStore.edit { preferences -> preferences[cutoutEngineKey] = engine.name }
+    }
+
+    override suspend fun setCutoutRemoveHanger(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[cutoutRemoveHangerKey] = enabled }
+    }
+
+    override suspend fun setCutoutHangerSensitivity(sensitivity: HangerSensitivity) {
+        dataStore.edit { preferences -> preferences[cutoutHangerSensitivityKey] = sensitivity.name }
+    }
+
+    override suspend fun setCutoutEdges(edges: CutoutEdges) {
+        dataStore.edit { preferences -> preferences[cutoutEdgesKey] = edges.name }
+    }
+
+    override suspend fun setBatchCutoutMode(mode: BatchCutoutMode) {
+        dataStore.edit { preferences -> preferences[batchCutoutModeKey] = mode.name }
     }
 
     override suspend fun pauseSyncForDriveBackupDeletion() {
@@ -208,7 +236,11 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         driveBackupDeletionState = preferences[driveBackupDeletionStateKey].toDriveBackupDeletionState(),
         browseLayout = preferences[browseLayoutKey].toBrowseLayout(),
         browseColumns = preferences[browseColumnsKey].toBrowseColumns(),
-        preciseCutoutEnabled = preferences[preciseCutoutEnabledKey] ?: true,
+        cutoutEngine = cutoutEngineChoice(),
+        cutoutRemoveHanger = preferences[cutoutRemoveHangerKey] ?: true,
+        cutoutHangerSensitivity = preferences[cutoutHangerSensitivityKey].toEnumOr(HangerSensitivity.Normal),
+        cutoutEdges = preferences[cutoutEdgesKey].toEnumOr(CutoutEdges.Soft),
+        batchCutoutMode = preferences[batchCutoutModeKey].toEnumOr(BatchCutoutMode.Balanced),
         driveBoundAccountEmail = preferences[driveBoundAccountEmailKey]?.takeIf(String::isNotBlank),
         driveAuthorizedAccountEmail = preferences[driveAuthorizedAccountEmailKey]?.takeIf(String::isNotBlank),
     )
@@ -226,6 +258,21 @@ private fun String?.toDriveBackupDeletionState(): DriveBackupDeletionState =
 private fun String?.toBrowseLayout(): BrowseLayout =
     BrowseLayout.entries.firstOrNull { it.name == this } ?: BrowseLayout.PhotosOnly
 
+private inline fun <reified T : Enum<T>> String?.toEnumOr(default: T): T =
+    enumValues<T>().firstOrNull { it.name == this } ?: default
+
+/**
+ * The stored cutout_engine; while that key is absent, the SG2b boolean precise_cutout_enabled still applies
+ * (true → Automatic, false → Standard). An unknown stored value falls back to Automatic.
+ */
+private fun Preferences.cutoutEngineChoice(): CutoutEngineChoice {
+    val stored = this[cutoutEngineKey]
+    if (stored == null) {
+        return if (this[preciseCutoutEnabledKey] == false) CutoutEngineChoice.Standard else CutoutEngineChoice.Automatic
+    }
+    return CutoutEngineChoice.entries.firstOrNull { it.name == stored } ?: CutoutEngineChoice.Automatic
+}
+
 /** Missing or outside the widest Browse range (2..4) falls back to 2 columns. */
 private fun Int?.toBrowseColumns(): Int = this?.takeIf { it in 2..4 } ?: 2
 
@@ -238,7 +285,13 @@ private val driveFreshInstallRestoreAttemptedKey = booleanPreferencesKey("drive_
 private val driveBackupDeletionStateKey = stringPreferencesKey("drive_backup_deletion_state")
 private val browseLayoutKey = stringPreferencesKey("browse_layout")
 private val browseColumnsKey = intPreferencesKey("browse_columns")
+/** SG2b boolean; read only while [cutoutEngineKey] is absent (see [cutoutEngineChoice]). */
 private val preciseCutoutEnabledKey = booleanPreferencesKey("precise_cutout_enabled")
+private val cutoutEngineKey = stringPreferencesKey("cutout_engine")
+private val cutoutRemoveHangerKey = booleanPreferencesKey("cutout_remove_hanger")
+private val cutoutHangerSensitivityKey = stringPreferencesKey("cutout_hanger_sensitivity")
+private val cutoutEdgesKey = stringPreferencesKey("cutout_edges")
+private val batchCutoutModeKey = stringPreferencesKey("batch_cutout_mode")
 private val modelPromptShownKey = booleanPreferencesKey("model_prompt_shown")
 private val modelMobileDataApprovedKey = booleanPreferencesKey("model_mobile_data_approved")
 private val deviceIdKey = stringPreferencesKey("sync_device_id")
