@@ -4,7 +4,6 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -22,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Check
@@ -30,8 +28,6 @@ import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -483,7 +479,7 @@ internal fun TagReviewScreen(
             .padding(innerPadding),
     ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(reviewColumnCount()),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 128.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -646,114 +642,102 @@ private fun TagReviewCandidateCard(
     val currentLabels = candidate.proposal.before.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
     val proposedLabels = proposedIds.filter { id -> id in kindIds }.mapNotNull(labelsById::get)
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column {
+    ReviewCandidateCard(
+        photo = {
             TagReviewPhoto(
                 item = candidate.item,
                 swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
             )
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+        },
+    ) {
+        // Two full-width pills stacked, "From" above "To", joined by a down arrow. The values wrap: the user must read all of them.
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = currentLabels.joinToString().ifEmpty { stringResource(R.string.tag_review_none) },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+        Icon(
+            Icons.Rounded.ArrowDownward,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .size(16.dp),
+        )
+        Surface(
+            onClick = onPick,
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Two full-width pills stacked, "From" above "To", joined by a down arrow. Long names ellipsize on one line.
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                Text(
+                    text = if (proposedLabels.isEmpty()) {
+                        stringResource(if (isChooseManually) R.string.tag_review_choose else R.string.tag_review_none)
+                    } else {
+                        proposedLabels.joinToString() + " ▾"
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = currentLabels.joinToString().ifEmpty { stringResource(R.string.tag_review_none) },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    )
-                }
-                Icon(
-                    Icons.Rounded.ArrowDownward,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .size(16.dp),
                 )
-                Surface(
-                    onClick = onPick,
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = if (proposedLabels.isEmpty()) {
-                                stringResource(if (isChooseManually) R.string.tag_review_choose else R.string.tag_review_none)
-                            } else {
-                                proposedLabels.joinToString() + " ▾"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+            }
+        }
+        if (isChooseManually) {
+            Text(
+                text = stringResource(R.string.tag_review_choose_manually),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onAccept,
+                enabled = !resolved,
+                contentPadding = ReviewCardActionPadding,
+                interactionSource = acceptInteraction,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .pressScale(acceptInteraction),
+            ) {
+                if (accepted) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
-                if (isChooseManually) {
-                    Text(
-                        text = stringResource(R.string.tag_review_choose_manually),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = onAccept,
-                        enabled = !resolved,
-                        contentPadding = ReviewCardActionPadding,
-                        interactionSource = acceptInteraction,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .pressScale(acceptInteraction),
-                    ) {
-                        if (accepted) {
-                            Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
-                        Text(
-                            text = stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = if (accepted) 6.dp else 0.dp),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onDiscard,
-                        enabled = !resolved,
-                        contentPadding = ReviewCardActionPadding,
-                        interactionSource = discardInteraction,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .pressScale(discardInteraction),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.review_card_discard),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+                Text(
+                    text = stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = if (accepted) 6.dp else 0.dp),
+                )
+            }
+            OutlinedButton(
+                onClick = onDiscard,
+                enabled = !resolved,
+                contentPadding = ReviewCardActionPadding,
+                interactionSource = discardInteraction,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .pressScale(discardInteraction),
+            ) {
+                Text(
+                    text = stringResource(R.string.review_card_discard),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -763,8 +747,7 @@ private fun TagReviewCandidateCard(
 private fun TagReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(132.dp)
+            .fillMaxSize()
             .background(rememberGarmentSwatchBrush(swatch.swatchColor())),
         contentAlignment = Alignment.Center,
     ) {
