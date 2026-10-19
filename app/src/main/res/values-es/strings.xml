@@ -753,7 +753,6 @@
     <string name="precise_cutout_body">Mejor eliminación de fondo en prendas colgadas en perchas o sobre fondos de color parecido. Funciona en tu teléfono.</string>
     <string name="precise_cutout_download">Descargar (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Listo · 91 MB</string>
-    <string name="precise_cutout_use_switch">Usar recorte preciso en las fotos nuevas</string>
     <string name="precise_cutout_mobile_body">No hay Wi-Fi. La descarga usará unos 91 MB de tu tarifa de datos.</string>
     <string name="precise_cutout_mobile_confirm">Usar datos (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Borrar paquete de recorte</string>

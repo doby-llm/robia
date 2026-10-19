@@ -753,7 +753,6 @@
     <string name="precise_cutout_body">Bessere Hintergrundentfernung bei Kleidung auf Bügeln oder vor ähnlich farbigem Hintergrund. Läuft auf deinem Telefon.</string>
     <string name="precise_cutout_download">Herunterladen (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Bereit · 91 MB</string>
-    <string name="precise_cutout_use_switch">Präzisen Zuschnitt für neue Fotos verwenden</string>
     <string name="precise_cutout_mobile_body">Kein WLAN. Der Download verbraucht etwa 91 MB deines Datenvolumens.</string>
     <string name="precise_cutout_mobile_confirm">Daten nutzen (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Zuschnitt-Paket löschen</string>

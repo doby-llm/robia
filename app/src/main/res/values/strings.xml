@@ -753,7 +753,6 @@
     <string name="precise_cutout_body">Better background removal for garments on hangers or similar-coloured backgrounds. Runs on your phone.</string>
     <string name="precise_cutout_download">Download (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Ready · 91 MB</string>
-    <string name="precise_cutout_use_switch">Use precise cutout for new photos</string>
     <string name="precise_cutout_mobile_body">No Wi-Fi. The download will use about 91 MB of your data plan.</string>
     <string name="precise_cutout_mobile_confirm">Use data (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Delete cutout pack</string>

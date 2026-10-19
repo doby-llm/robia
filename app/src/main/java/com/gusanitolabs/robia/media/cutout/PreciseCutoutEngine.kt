@@ -156,16 +156,14 @@ private class CutoutRun(
         val garment = MaskOps.bbox(hard, w, h) ?: error("Garment selection is empty")
         val garmentArea = MaskOps.count(hard)
 
-        var result = selection
-        if (hangerStagesRun(cutout)) {
-            val hanger = stage("s3") { detectHanger(garment) }
-            if (hanger != null) {
-                val kill = stage("s4") { hangerKill(hanger, selection, garment, garmentArea) }
-                if (kill != null) {
-                    result = stage("s4b") { hangerFirst(selection, kill, hanger, garment.height) }
-                }
-            }
-        }
+        val result = applyHangerGate(
+            removeHanger = cutout.removeHanger,
+            threshold = cutout.hangerThreshold,
+            selection = selection,
+            detect = { threshold -> stage("s3") { detectHanger(garment, threshold) } },
+            kill = { hanger -> stage("s4") { hangerKill(hanger, selection, garment, garmentArea) } },
+            reselect = { hanger, kill -> stage("s4b") { hangerFirst(selection, kill, hanger, garment.height) } },
+        )
         return stage("s5") {
             MaskOps.refineAlpha(MaskOps.luminance(argb), MaskOps.dropIslands(result, w, h), w, h, cutout.edges)
         }
@@ -207,8 +205,8 @@ private class CutoutRun(
     }
 
     /** S3: D-FINE Hanger class; the first pass on the whole photo, then the top band of the garment if nothing is plausible. */
-    private fun detectHanger(garment: MaskBox): MaskBox? =
-        HangerRemoval.findHanger(garment, w, h, cutout.hangerThreshold) { region, threshold ->
+    private fun detectHanger(garment: MaskBox, hangerThreshold: Float): MaskBox? =
+        HangerRemoval.findHanger(garment, w, h, hangerThreshold) { region, threshold ->
             if (region == null) {
                 detectHangers(argb, w, h, threshold)
             } else {
@@ -345,6 +343,25 @@ private class CutoutRun(
             timings[key] = (System.nanoTime() - started) / NANOS_PER_MILLI
         }
     }
+}
+
+/**
+ * The hanger gate of the precise pipeline (S3 detect, S4 kill, S4b hanger-first re-selection). With [removeHanger] off,
+ * [selection] is returned as it is and no stage runs. Otherwise S3 gets [threshold]; a null from S3 or S4 ends the gate
+ * with [selection], and S4b's result replaces it. Pure: the stages are the caller's lambdas, so tests pass fakes.
+ */
+internal fun applyHangerGate(
+    removeHanger: Boolean,
+    threshold: Float,
+    selection: FloatArray,
+    detect: (threshold: Float) -> MaskBox?,
+    kill: (hanger: MaskBox) -> BooleanArray?,
+    reselect: (hanger: MaskBox, kill: BooleanArray) -> FloatArray,
+): FloatArray {
+    if (!removeHanger) return selection
+    val hanger = detect(threshold) ?: return selection
+    val killMask = kill(hanger) ?: return selection
+    return reselect(hanger, killMask)
 }
 
 /**

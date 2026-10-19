@@ -346,7 +346,7 @@ fun PhotoEditorScreen(
 
     /**
      * Redo cutout: [choice] runs once on the raw photo. The working photo is replaced only when the new cutout is decoded,
-     * and the stored photo is untouched until Done. A failure leaves the photo as it was.
+     * and the stored photo is untouched until Done. A failure leaves the photo and its undo step as they were.
      */
     fun redoCutout(choice: RedoCutoutChoice, rawUri: Uri) {
         if (redoing || photo == null) return
@@ -354,20 +354,13 @@ fun PhotoEditorScreen(
         scope.launch {
             val failure = try {
                 val options = redoCutoutOptions(choice, CutoutEngineRegistry.options())
-                val file = runRedoCutout(context, rawUri, options, File(app.filesDir, CutoutPackManifest.DIRECTORY))
-                sourceMutex.withLock {
-                    // The undo step is dropped before the new photo is decoded, so at most two working bitmaps are held.
-                    replaced?.source?.recycle()
-                    replaced = null
-                }
-                val bitmap = try {
-                    withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.path) }
-                } finally {
-                    file.delete()
-                }
-                checkNotNull(bitmap) { "Unable to decode the new cutout" }
+                // The new photo and its alpha are ready before the previous undo step is dropped, so a failure changes nothing.
+                // For a moment three bitmaps exist: the current photo, the one it replaces and the new one (at most 2048 px on
+                // the long edge from ML Kit, 1024 px from the precise engine).
+                val bitmap = runRedoCutout(context, rawUri, options, File(app.filesDir, CutoutPackManifest.DIRECTORY))
                 val alpha = withContext(Dispatchers.Default) { alphaOf(bitmap) }
                 sourceMutex.withLock {
+                    replaced?.source?.recycle()
                     replaced = photo
                     photo = CutoutPhoto(bitmap, RefineSession(bitmap.width, bitmap.height, alpha), fromRedo = true)
                 }
@@ -375,6 +368,8 @@ fun PhotoEditorScreen(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
+                // Any throwable, LinkageError included, ends this Redo only: a native or class loading failure of the precise
+                // engine must not crash the editor (the same rule as cutoutFallbackChain in CutoutEngineRegistry.kt).
                 throwable
             }
             redoing = false
@@ -632,7 +627,7 @@ fun PhotoEditorScreen(
                         text = stringResource(R.string.redo_cutout),
                         style = MaterialTheme.typography.titleLarge,
                     )
-                    redoCutoutChoices(packReady).forEach { choice ->
+                    redoCutoutChoices(packReady, preciseTripped = CutoutEngineRegistry.preciseLatch.isTripped).forEach { choice ->
                         TextButton(
                             onClick = {
                                 showRedoSheet = false
@@ -940,10 +935,11 @@ private fun writeCutout(context: Context, photo: CutoutPhoto, refine: Boolean = 
 }
 
 /**
- * One Redo run: [options] on the raw photo. The engine's output is copied to a temp PNG in the app cache and removed from
- * the pictures folder; the temp PNG is returned for the editor to decode. A failed run leaves no file behind.
+ * One Redo run: [options] on the raw photo, decoded to a bitmap. The engine's output is copied to a temp PNG in the app
+ * cache, decoded and deleted, and the engine's copy in the pictures folder is removed too. The temp file therefore never
+ * outlives this call (nothing is left behind by a failure or a cancellation). File and resolver work runs on IO.
  */
-private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: CutoutOptions, packDir: File): File {
+private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: CutoutOptions, packDir: File): Bitmap {
     val engine: BackgroundRemovalEngine = if (options.usePrecise) {
         PreciseCutoutEngine(packDir = packDir, options = { options })
     } else {
@@ -951,16 +947,19 @@ private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: Cutout
     }
     val result = engine.removeBackground(context, rawUri)
     check(result.status == BackgroundRemovalStatus.REMOVED) { "Cutout was not removed" }
-    val temp = File.createTempFile("redo-cutout-", ".png", File(context.cacheDir, REDO_CACHE_DIRECTORY).apply { mkdirs() })
-    try {
-        val input = context.contentResolver.openInputStream(result.outputUri) ?: error("Unable to read the new cutout")
-        input.use { source -> temp.outputStream().use { target -> source.copyTo(target) } }
-        return temp
-    } catch (failure: Throwable) {
-        temp.delete()
-        throw failure
-    } finally {
-        context.contentResolver.delete(result.outputUri, null, null)
+    return withContext(Dispatchers.IO) {
+        try {
+            val temp = File.createTempFile("redo-cutout-", ".png", File(context.cacheDir, REDO_CACHE_DIRECTORY).apply { mkdirs() })
+            try {
+                val input = context.contentResolver.openInputStream(result.outputUri) ?: error("Unable to read the new cutout")
+                input.use { source -> temp.outputStream().use { target -> source.copyTo(target) } }
+                BitmapFactory.decodeFile(temp.path) ?: error("Unable to decode the new cutout")
+            } finally {
+                temp.delete()
+            }
+        } finally {
+            context.contentResolver.delete(result.outputUri, null, null)
+        }
     }
 }
 

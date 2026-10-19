@@ -89,7 +89,10 @@ class AlphaRefinerTest {
         val argb = IntArray(w * h) { random.nextInt() }
         val conf = FloatArray(w * h) { random.nextFloat() }
 
-        assertArrayEquals(AlphaRefiner.refine(argb, conf, w, h, CutoutEdges.Soft), AlphaRefiner.refine(argb, conf, w, h))
+        val pre = PreSg4EdgeReference.alphaRefine(argb, conf, w, h)
+
+        assertArrayEquals(pre, AlphaRefiner.refine(argb, conf, w, h))
+        assertArrayEquals(pre, AlphaRefiner.refine(argb, conf, w, h, CutoutEdges.Soft))
     }
 
     // Coarse smoke bound to catch accidental O(n^2) regressions, not a benchmark (a wall-clock budget below ~1 s is flaky on CI).

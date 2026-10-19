@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.media.cutout
 
 import com.gusanitolabs.robia.core.model.CutoutEdges
+import com.gusanitolabs.robia.media.PreSg4EdgeReference
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -138,13 +139,15 @@ class MaskOpsTest {
     }
 
     @Test
-    fun refineAlpha_defaultProfileIsSoft() {
+    fun refineAlpha_defaultProfileIsSoft_byteForByteWithThePreSg4Formula() {
         val w = 40
         val h = 12
         val luminance = FloatArray(w * h) { i -> (i % 7) / 7f }
         val selection = FloatArray(w * h) { i -> ((i * 37) % 101) / 100f }
+        val pre = PreSg4EdgeReference.maskRefineAlpha(luminance, selection, w, h)
 
-        assertArrayEquals(MaskOps.refineAlpha(luminance, selection, w, h, CutoutEdges.Soft), MaskOps.refineAlpha(luminance, selection, w, h))
+        assertArrayEquals(pre, MaskOps.refineAlpha(luminance, selection, w, h))
+        assertArrayEquals(pre, MaskOps.refineAlpha(luminance, selection, w, h, CutoutEdges.Soft))
     }
 
     @Test
