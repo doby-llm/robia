@@ -85,4 +85,41 @@ class CutoutBenchmarkReportTest {
         assertTrue(report.none { it.contains("median") })
         assertFalse(report.any { it.startsWith("photos_skipped=") })
     }
+
+    @Test
+    fun failureReasonNamesTheRootCauseWithClassAndMessageOnly() {
+        val failure = ExceptionInInitializerError(IllegalStateException("no caller found on the stack for: x7.c"))
+
+        assertEquals(
+            "ExceptionInInitializerError: no message caused by IllegalStateException: no caller found on the stack for: x7.c",
+            failureReason(failure, secrets = emptyList()),
+        )
+    }
+
+    @Test
+    fun failureReasonFollowsAtMostFourCauses() {
+        val deepest = RuntimeException("level 6")
+        val chain = (5 downTo 0).fold(deepest) { cause, level -> RuntimeException("level $level", cause) }
+
+        assertEquals(
+            "RuntimeException: level 0 caused by RuntimeException: level 1 caused by RuntimeException: level 2 " +
+                "caused by RuntimeException: level 3 caused by RuntimeException: level 4",
+            failureReason(chain, secrets = emptyList()),
+        )
+    }
+
+    @Test
+    fun failureReasonReplacesInputUriAndAbsolutePathsAndDropsLineBreaks() {
+        val uri = "content://media/external/images/media/1234"
+        val linkage = UnsatisfiedLinkError(
+            "dlopen failed: library \"/data/app/x/lib/arm64/libonnxruntime4j_jni.so\" not found\nsecond line",
+        )
+        val opened = IllegalArgumentException("cannot open $uri")
+
+        assertEquals(
+            "UnsatisfiedLinkError: dlopen failed: library \"<path>\" not found second line",
+            failureReason(linkage, secrets = listOf(uri)),
+        )
+        assertEquals("IllegalArgumentException: cannot open <uri>", failureReason(opened, secrets = listOf(uri)))
+    }
 }

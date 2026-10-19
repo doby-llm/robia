@@ -344,6 +344,12 @@ internal fun SettingsScreen(
                                                         R.string.dev_benchmark_failed,
                                                         failure.message ?: failure.javaClass.simpleName,
                                                     )
+                                                } catch (failure: LinkageError) {
+                                                    // A class or native library that cannot load: shown as the failure text, the app stays up.
+                                                    context.getString(
+                                                        R.string.dev_benchmark_failed,
+                                                        failure.message ?: failure.javaClass.simpleName,
+                                                    )
                                                 } finally {
                                                     cutoutBenchmarkRunning = false
                                                 }

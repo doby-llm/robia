@@ -163,6 +163,9 @@ class CutoutBenchmark(
                     throw cancellation
                 } catch (failure: Exception) {
                     failures += input.failure(failure)
+                } catch (failure: LinkageError) {
+                    // A class or native library that cannot load is one failed input, not a crashed app.
+                    failures += input.failure(failure)
                 }
             }
             active = survivors
@@ -215,13 +218,10 @@ class CutoutBenchmark(
         }
     }
 
-    /** One line of the failure report: the exception class and message, with the input's full URI and path removed. */
-    private fun BenchmarkInput.failure(failure: Exception): InputFailure {
+    /** One line of the failure report: the exception class and message and its causes, with the input's URI and paths removed. */
+    private fun BenchmarkInput.failure(failure: Throwable): InputFailure {
         val secrets = listOfNotNull(uri.toString(), uri.path).filter { it.length > 1 }
-        val message = secrets.fold(failure.message.orEmpty()) { text, secret -> text.replace(secret, "<uri>") }
-            .replace('\n', ' ')
-            .ifEmpty { "no message" }
-        return InputFailure(kind = kind, name = name, reason = "${failure.javaClass.simpleName}: $message")
+        return InputFailure(kind = kind, name = name, reason = failureReason(failure, secrets))
     }
 
     private class BenchmarkInput(val kind: String, val uri: Uri, val name: String)
@@ -241,6 +241,25 @@ internal data class InputFailure(val kind: String, val name: String, val reason:
 /** The `failed_input=` line for one skipped input. */
 internal fun failedInputLine(failure: InputFailure): String =
     "failed_input=${failure.kind}:${failure.name} reason=${failure.reason}"
+
+/**
+ * `Class: message`, then ` caused by Class: message` for up to [CAUSE_LEVELS] causes. Class simple names and messages only, with
+ * each [secrets] entry replaced by `<uri>`, absolute paths replaced by `<path>` and no line breaks. No stack trace.
+ */
+internal fun failureReason(failure: Throwable, secrets: List<String>): String {
+    fun describe(error: Throwable): String {
+        val message = secrets.fold(error.message.orEmpty()) { text, secret -> text.replace(secret, "<uri>") }
+            .replace(ABSOLUTE_PATH, "<path>")
+            .replace('\n', ' ')
+            .ifEmpty { "no message" }
+        return "${error.javaClass.simpleName}: $message"
+    }
+    val causes = generateSequence(failure.cause) { it.cause }.take(CAUSE_LEVELS).map { " caused by ${describe(it)}" }
+    return describe(failure) + causes.joinToString("")
+}
+
+private const val CAUSE_LEVELS = 4
+private val ABSOLUTE_PATH = Regex("""/[^\s"']+""")
 
 /**
  * The developer report of a [CutoutBenchmark] run. Skipped inputs are listed one per line and are never samples. With no input

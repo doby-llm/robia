@@ -41,6 +41,7 @@ private val CHANNEL_SHIFTS = intArrayOf(16, 8, 0)
  * Precise cutout (REQ-SG-05): saliency → garment selection → hanger detection → hanger removal → hanger-first re-selection
  * → island filter and edges. Stage order, thresholds and the work size (long edge 1024) follow `pipeline_v11.py`
  * with BAND=1 FILL=median. Throws on any failure; [PhotoBackgroundRemover] turns that into the ML Kit fallback.
+ * A [LinkageError] from the sessions or the selector also trips [CutoutEngineRegistry.preciseLatch] before it is rethrown.
  * Sessions and the selector live for one photo only.
  */
 internal class PreciseCutoutEngine(
@@ -60,9 +61,11 @@ internal class PreciseCutoutEngine(
                 try {
                     val argb = IntArray(work.width * work.height).also { work.getPixels(it, 0, work.width, 0, 0, work.width, work.height) }
                     val callerContext = coroutineContext
-                    val alpha = OnnxSessions(packDir).use { models ->
-                        selectorFactory(context).use { selector ->
-                            CutoutRun(models, selector, work, argb, timings, checkpoint = { callerContext.ensureActive() }).alpha()
+                    val alpha = CutoutEngineRegistry.preciseLatch.guard {
+                        OnnxSessions(packDir).use { models ->
+                            selectorFactory(context).use { selector ->
+                                CutoutRun(models, selector, work, argb, timings, checkpoint = { callerContext.ensureActive() }).alpha()
+                            }
                         }
                     }
                     val composed = Bitmap.createBitmap(work.width, work.height, Bitmap.Config.ARGB_8888)

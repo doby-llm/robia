@@ -22,6 +22,9 @@ object CutoutEngineRegistry {
     /** One precise pipeline at a time per process: the single-photo flow and a batch share the 1300 MB budget. */
     private val preciseGate = Semaphore(1)
 
+    /** A [LinkageError] from the precise engine makes it unavailable for the rest of the process. */
+    internal val preciseLatch = PreciseEngineLatch()
+
     /** Runs [block] when no other precise pipeline runs; waiting callers suspend in order of arrival. */
     internal suspend fun <T> withPreciseGate(block: suspend () -> T): T = preciseGate.withPermit { block() }
 }
@@ -31,8 +34,8 @@ internal fun useEnginePrecise(packReady: Boolean, enabled: Boolean): Boolean = p
 
 /**
  * precise → ML Kit. The precise result counts only when [isRemoved] accepts it and it arrives within [timeout]; a null,
- * unaccepted, timed-out or failed precise result, and a non-cancellation exception, all go to [mlKit]. Cancellation of
- * the caller always propagates.
+ * unaccepted, timed-out or failed precise result, and any other throwable (a [LinkageError] from class or native loading
+ * included), all go to [mlKit]. Cancellation of the caller always propagates.
  */
 internal suspend fun <T> cutoutFallbackChain(
     precise: suspend () -> T?,
