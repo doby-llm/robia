@@ -294,6 +294,10 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.model_settings_section
     }
 
+    data object PreciseCutoutSettings : RobiaRoute {
+        override val titleRes = R.string.precise_cutout_title
+    }
+
     data object DriveSettings : RobiaRoute {
         override val titleRes = R.string.settings_google_drive
     }
@@ -2869,6 +2873,7 @@ private fun RobiaNavHost(
             onLanguageSelected = onLanguageSelected,
         )
         RobiaRoute.SmartSuggestionsSettings -> SmartSuggestionsSettingsScreen(innerPadding = innerPadding)
+        RobiaRoute.PreciseCutoutSettings -> PreciseCutoutSettingsScreen(innerPadding = innerPadding)
         RobiaRoute.DriveSettings -> DriveSettingsScreen(
             innerPadding = innerPadding,
             driveSyncConnectionStatus = driveSyncConnectionStatus,
@@ -2895,6 +2900,7 @@ private fun RobiaNavHost(
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
             onLanguageClick = { onRouteSelected(RobiaRoute.LanguageSettings) },
             onSmartSuggestionsClick = { onRouteSelected(RobiaRoute.SmartSuggestionsSettings) },
+            onPreciseCutoutClick = { onRouteSelected(RobiaRoute.PreciseCutoutSettings) },
             onDriveClick = { onRouteSelected(RobiaRoute.DriveSettings) },
             browseLayout = browseLayout,
             onBrowseLayoutChange = onBrowseLayoutChange,
@@ -2918,6 +2924,7 @@ private fun RobiaNavHost(
                 onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
                 onLanguageClick = { onRouteSelected(RobiaRoute.LanguageSettings) },
                 onSmartSuggestionsClick = { onRouteSelected(RobiaRoute.SmartSuggestionsSettings) },
+                onPreciseCutoutClick = { onRouteSelected(RobiaRoute.PreciseCutoutSettings) },
                 onDriveClick = { onRouteSelected(RobiaRoute.DriveSettings) },
                 browseLayout = browseLayout,
                 onBrowseLayoutChange = onBrowseLayoutChange,

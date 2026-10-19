@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
@@ -133,6 +134,7 @@ internal fun SettingsScreen(
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onLanguageClick: () -> Unit,
     onSmartSuggestionsClick: () -> Unit,
+    onPreciseCutoutClick: () -> Unit,
     onDriveClick: () -> Unit,
     browseLayout: BrowseLayout,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
@@ -162,6 +164,19 @@ internal fun SettingsScreen(
                     icon = Icons.Rounded.AutoAwesome,
                     title = stringResource(R.string.model_settings_section),
                     onClick = onSmartSuggestionsClick,
+                )
+                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                val cutoutPercent = cutoutDownloadPercent(cutoutPackState)
+                SettingsNavRow(
+                    icon = Icons.Rounded.ContentCut,
+                    title = stringResource(R.string.precise_cutout_title),
+                    value = when {
+                        cutoutPercent != null -> stringResource(R.string.precise_cutout_value_downloading, cutoutPercent)
+                        preciseCutoutOn(cutoutPackState, cutoutSettings.preciseCutoutEnabled) ->
+                            stringResource(R.string.settings_value_on)
+                        else -> stringResource(R.string.settings_value_off)
+                    },
+                    onClick = onPreciseCutoutClick,
                 )
             }
         }

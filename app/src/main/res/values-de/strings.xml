@@ -748,4 +748,16 @@
     <string name="account_mismatch_body">Robia wurde mit einem anderen Google-Konto gesichert. Es wird nichts hochgeladen, bis du dich entscheidest.</string>
     <string name="account_mismatch_use_this">Dieses Konto verwenden</string>
     <string name="drive_disconnect">Trennen</string>
+    <!-- SG2b -->
+    <string name="precise_cutout_title">Präziser Zuschnitt</string>
+    <string name="precise_cutout_body">Bessere Hintergrundentfernung bei Kleidung auf Bügeln oder vor ähnlich farbigem Hintergrund. Läuft auf deinem Telefon.</string>
+    <string name="precise_cutout_download">Herunterladen (≈ 91 MB)</string>
+    <string name="precise_cutout_ready">Bereit · 91 MB</string>
+    <string name="precise_cutout_use_switch">Präzisen Zuschnitt für neue Fotos verwenden</string>
+    <string name="precise_cutout_mobile_body">Kein WLAN. Der Download verbraucht etwa 91 MB deines Datenvolumens.</string>
+    <string name="precise_cutout_mobile_confirm">Daten nutzen (≈ 91 MB)</string>
+    <string name="precise_cutout_delete">Zuschnitt-Paket löschen</string>
+    <string name="precise_cutout_delete_title">Zuschnitt-Paket löschen?</string>
+    <string name="precise_cutout_delete_body">Das Paket für präzisen Zuschnitt wird von diesem Telefon entfernt. Fotos behalten ihren aktuellen Zuschnitt.</string>
+    <string name="precise_cutout_value_downloading">Wird heruntergeladen %1$d %%</string>
 </resources>
