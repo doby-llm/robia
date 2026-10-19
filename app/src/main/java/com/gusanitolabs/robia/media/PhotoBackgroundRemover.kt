@@ -20,9 +20,13 @@ class PhotoBackgroundRemover(
             isRemoved = { it.status == BackgroundRemovalStatus.REMOVED },
         )
 
-    /** Null when the precise engine is off or unavailable; the chain applies the timeout and the REMOVED check. */
+    /**
+     * Null when the precise engine is off or unavailable (a tripped [CutoutEngineRegistry.preciseLatch] counts as unavailable);
+     * the chain applies the timeout and the REMOVED check.
+     */
     private suspend fun preciseResult(context: Context, sourceUri: Uri): BackgroundRemovalResult? {
         if (!CutoutEngineRegistry.isPreciseActive()) return null
+        if (CutoutEngineRegistry.preciseLatch.isTripped) return null
         val preciseEngine = CutoutEngineRegistry.precise?.invoke() ?: return null
         return preciseEngine.removeBackground(context, sourceUri)
     }
