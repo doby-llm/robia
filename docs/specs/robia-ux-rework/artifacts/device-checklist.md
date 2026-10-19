@@ -10,7 +10,7 @@ Phone charging, battery saver off, other apps closed. Mark each row PASS or FAIL
 
 Labels below are the English strings from `app/src/main/res/values/strings.xml`. If the phone is in Spanish or German, read the same string in `values-es` / `values-de`.
 
-Unlock Developer first: tap the **Settings** tab 7 times, then switch **Developer Mode** on (needed for F-3 and the "Use precise cutout" check in F-4).
+Unlock Developer first: tap the **Settings** icon (top right, "Open settings") 10 times within 5 seconds, then switch **Developer Mode** on if it is not on yet (needed for F-3 and the "Use precise cutout" check in F-4).
 
 ---
 
