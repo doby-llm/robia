@@ -25,25 +25,25 @@ internal class MediaPipeInteractiveSelector(context: Context) : InteractiveSelec
             .build(),
     )
 
+    /**
+     * The caller keeps ownership of [bitmap]. BitmapImageBuilder wraps the caller's bitmap; MPImage.close() recycles it,
+     * so it must not be closed here. Only the confidence masks, which MediaPipe allocates, are closed.
+     */
     override fun select(bitmap: Bitmap, x: Int, y: Int): FloatArray {
         val keypoint = NormalizedKeypoint.create(x.toFloat() / bitmap.width, y.toFloat() / bitmap.height)
         val input = BitmapImageBuilder(bitmap).build()
+        val result = segmenter.segment(input, InteractiveSegmenterLegacy.RegionOfInterest.create(keypoint))
+        val masks = result.confidenceMasks().get()
         try {
-            val result = segmenter.segment(input, InteractiveSegmenterLegacy.RegionOfInterest.create(keypoint))
-            val masks = result.confidenceMasks().get()
-            try {
-                val mask = masks[0]
-                check(mask.width == bitmap.width && mask.height == bitmap.height) { "Selection mask size does not match the photo" }
-                val floats = ByteBufferExtractor.extract(mask).duplicate().apply { rewind() }
-                    .order(ByteOrder.nativeOrder())
-                    .asFloatBuffer()
-                return FloatArray(bitmap.width * bitmap.height).also { floats.get(it) }
-            } finally {
-                // Copied out above; the native mask memory is released here.
-                masks.forEach { it.close() }
-            }
+            val mask = masks[0]
+            check(mask.width == bitmap.width && mask.height == bitmap.height) { "Selection mask size does not match the photo" }
+            val floats = ByteBufferExtractor.extract(mask).duplicate().apply { rewind() }
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+            return FloatArray(bitmap.width * bitmap.height).also { floats.get(it) }
         } finally {
-            input.close()
+            // Copied out above; the native mask memory is released here.
+            masks.forEach { it.close() }
         }
     }
 
