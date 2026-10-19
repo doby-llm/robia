@@ -154,6 +154,45 @@ class RefineSessionTest {
         assertArrayEquals(edited, session.currentAlpha(), 0f)
     }
 
+    /** V-SG4-4: a replaced base is the new automatic result; undo brings back the previous base and its edits. */
+    @Test
+    fun replaceBase_thenUndo_restoresThePreviousBaseAndEdits() {
+        val oldBase = filled(0.5f)
+        val session = RefineSession(w, h, oldBase)
+        session.apply(RefineSession.Mode.Remove, pointMask(6, 6), hard = true)
+        val edited = session.currentAlpha()
+        val newBase = filled(0.8f)
+
+        session.replaceBase(newBase)
+        assertArrayEquals(newBase, session.currentAlpha(), 0f)
+        assertFalse(session.isChanged)
+
+        session.undo()
+        assertArrayEquals(edited, session.currentAlpha(), 0f)
+        session.reset()
+        assertArrayEquals(oldBase, session.currentAlpha(), 0f)
+    }
+
+    @Test
+    fun replaceBase_resetReturnsToTheNewBase() {
+        val session = RefineSession(w, h, filled(0.5f))
+        val newBase = filled(0.8f)
+        session.replaceBase(newBase)
+        session.apply(RefineSession.Mode.Remove, pointMask(6, 6), hard = true)
+
+        session.reset()
+
+        assertArrayEquals(newBase, session.currentAlpha(), 0f)
+    }
+
+    @Test
+    fun replaceBase_ofWrongSize_isRejected() {
+        val session = RefineSession(w, h, filled(0f))
+
+        assertThrows(IllegalArgumentException::class.java) { session.replaceBase(FloatArray(3)) }
+        assertFalse(session.canUndo)
+    }
+
     @Test
     fun reset_withoutChanges_isANoOp() {
         val session = RefineSession(w, h, filled(0.5f))

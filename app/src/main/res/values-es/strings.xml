@@ -760,4 +760,24 @@
     <string name="precise_cutout_delete_title">¿Borrar paquete de recorte?</string>
     <string name="precise_cutout_delete_body">El paquete de recorte preciso se borra de este teléfono. Las fotos conservan su recorte actual.</string>
     <string name="precise_cutout_value_downloading">Descargando %1$d %%</string>
+    <!-- SG4 -->
+    <string name="cutout_settings_title">Recorte</string>
+    <string name="cutout_method">Método de recorte</string>
+    <string name="cutout_method_automatic">Automático</string>
+    <string name="cutout_method_standard">Estándar</string>
+    <string name="cutout_method_automatic_hint">Usa el recorte preciso cuando está descargado; si no, el estándar.</string>
+    <string name="cutout_method_standard_hint">Solo Google ML Kit. Más rápido, sin quitar perchas.</string>
+    <string name="cutout_remove_hangers">Quitar perchas</string>
+    <string name="cutout_needs_precise">Necesita recorte preciso</string>
+    <string name="cutout_hanger_detection">Detección de perchas</string>
+    <string name="cutout_hanger_normal">Normal</string>
+    <string name="cutout_hanger_high">Alta</string>
+    <string name="cutout_hanger_high_hint">Encuentra más clips y perchas de madera. Revisa el resultado.</string>
+    <string name="cutout_edges">Bordes</string>
+    <string name="cutout_edges_soft">Suaves</string>
+    <string name="cutout_edges_sharp">Nítidos</string>
+    <string name="batch_speed">Velocidad del lote</string>
+    <string name="batch_speed_balanced">Equilibrada</string>
+    <string name="batch_speed_memory_saver">Ahorro de memoria</string>
+    <string name="batch_speed_hint">El ahorro de memoria procesa una foto a la vez.</string>
 </resources>

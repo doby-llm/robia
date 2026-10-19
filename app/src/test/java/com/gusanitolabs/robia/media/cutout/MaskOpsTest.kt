@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.media.cutout
 
+import com.gusanitolabs.robia.core.model.CutoutEdges
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -115,6 +117,34 @@ class MaskOpsTest {
 
         assertTrue(opaque.all { it.toInt() and 0xFF == 255 })
         assertTrue(empty.all { it.toInt() == 0 })
+    }
+
+    /** Pixels in row 3 whose alpha is neither clearly 0 nor clearly 255: the width of the edge. */
+    private fun transitionWidth(alpha: ByteArray, w: Int): Int =
+        (0 until w).count { x -> (alpha[3 * w + x].toInt() and 0xFF) in 6..249 }
+
+    @Test
+    fun refineAlpha_sharpProfileGivesANarrowerTransitionThanSoft_onARamp() {
+        val w = 64
+        val h = 8
+        val luminance = FloatArray(w * h) { 0.5f }
+        // Selection rises linearly from 0 to 1 across the row.
+        val ramp = FloatArray(w * h) { i -> (i % w) / (w - 1f) }
+
+        val soft = MaskOps.refineAlpha(luminance, ramp, w, h, CutoutEdges.Soft)
+        val sharp = MaskOps.refineAlpha(luminance, ramp, w, h, CutoutEdges.Sharp)
+
+        assertTrue("sharp ${transitionWidth(sharp, w)} px vs soft ${transitionWidth(soft, w)} px", transitionWidth(sharp, w) < transitionWidth(soft, w))
+    }
+
+    @Test
+    fun refineAlpha_defaultProfileIsSoft() {
+        val w = 40
+        val h = 12
+        val luminance = FloatArray(w * h) { i -> (i % 7) / 7f }
+        val selection = FloatArray(w * h) { i -> ((i * 37) % 101) / 100f }
+
+        assertArrayEquals(MaskOps.refineAlpha(luminance, selection, w, h, CutoutEdges.Soft), MaskOps.refineAlpha(luminance, selection, w, h))
     }
 
     @Test

@@ -13,6 +13,8 @@ import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentationResult
+import com.gusanitolabs.robia.core.model.CutoutEdges
+import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,8 +27,12 @@ import kotlin.time.Duration.Companion.seconds
 private const val SEGMENTATION_MAX_EDGE_PX = 2048
 
 /** ML Kit-backed best-effort foreground extraction. Failures always fall back to the original URI. */
-class MlKitSubjectSegmentationBackgroundRemovalEngine : BackgroundRemovalEngine {
+class MlKitSubjectSegmentationBackgroundRemovalEngine(
+    /** Edge profile of each photo (SG4); read per photo from the cutout options. */
+    private val edges: () -> CutoutEdges = { CutoutEngineRegistry.options().edges },
+) : BackgroundRemovalEngine {
     override suspend fun removeBackground(context: Context, sourceUri: Uri): BackgroundRemovalResult = withContext(Dispatchers.IO) {
+        val edgeProfile = edges()
         if (!context.hasGooglePlayServices()) {
             return@withContext sourceUri.originalFallback(
                 BackgroundRemovalFailure(BackgroundRemovalFailureReason.PLAY_SERVICES_UNAVAILABLE),
@@ -60,7 +66,7 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine : BackgroundRemovalEngine 
                 )
             }
 
-            val alpha = runCatching { result.refinedAlpha(source) }
+            val alpha = runCatching { result.refinedAlpha(source, edgeProfile) }
                 .getOrElse { throwable ->
                     return@withContext sourceUri.originalFallback(throwable.toSegmentationFailure())
                 }
@@ -226,7 +232,7 @@ private fun orientationMatrix(orientation: Int): Matrix? {
 }
 
 /** Refined per-pixel alpha for [source], from the confidence mask or, failing that, the foreground bitmap's alpha. */
-private fun SubjectSegmentationResult.refinedAlpha(source: Bitmap): ByteArray? {
+private fun SubjectSegmentationResult.refinedAlpha(source: Bitmap, edges: CutoutEdges): ByteArray? {
     val width = source.width
     val height = source.height
     val count = width * height
@@ -243,7 +249,7 @@ private fun SubjectSegmentationResult.refinedAlpha(source: Bitmap): ByteArray? {
 
     val argb = IntArray(count)
     source.getPixels(argb, 0, width, 0, 0, width, height)
-    return AlphaRefiner.refine(argb, confidence, width, height)
+    return AlphaRefiner.refine(argb, confidence, width, height, edges)
 }
 
 private fun FloatBuffer.toFloatArray(count: Int): FloatArray = FloatArray(count).also { array ->

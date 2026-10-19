@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.media.cutout
 
+import com.gusanitolabs.robia.core.model.CutoutEdges
+import com.gusanitolabs.robia.media.AlphaRefiner
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -27,6 +29,8 @@ internal object MaskOps {
     private const val EDGE_GUIDE_EPS = 1e-3f
     private const val INTERIOR = 0.97f
     private const val SUPPORT = 0.05f
+    private const val SHARP_LOW = 0.47f
+    private const val SHARP_HIGH = 0.53f
 
     fun thresholded(soft: FloatArray, threshold: Float = 0.5f): BooleanArray = BooleanArray(soft.size) { soft[it] > threshold }
 
@@ -307,12 +311,16 @@ internal object MaskOps {
     /**
      * S5 edges (`finish` in `pipeline_v10.py`): guided filter of the selection on luminance (r=3, eps=1e-3), interior
      * above 0.97 forced to 1, support = selection > 0.05 dilated 5×5, then 8-bit alpha (truncated, as the reference does).
+     * [CutoutEdges.Sharp] (SG4) replaces the guided filter with smoothstep(0.47, 0.53); the interior and support rules stay.
      */
-    fun refineAlpha(luminance: FloatArray, selection: FloatArray, w: Int, h: Int): ByteArray {
-        val guided = guidedFilter(luminance, selection, w, h, EDGE_GUIDE_RADIUS, EDGE_GUIDE_EPS)
+    fun refineAlpha(luminance: FloatArray, selection: FloatArray, w: Int, h: Int, profile: CutoutEdges = CutoutEdges.Soft): ByteArray {
+        val refined = when (profile) {
+            CutoutEdges.Soft -> guidedFilter(luminance, selection, w, h, EDGE_GUIDE_RADIUS, EDGE_GUIDE_EPS)
+            CutoutEdges.Sharp -> FloatArray(w * h) { i -> AlphaRefiner.smoothstep(SHARP_LOW, SHARP_HIGH, selection[i]) }
+        }
         val support = dilate(BooleanArray(w * h) { selection[it] > SUPPORT }, w, h, 5)
         return ByteArray(w * h) { i ->
-            val value = if (selection[i] > INTERIOR) 1f else guided[i].coerceIn(0f, 1f)
+            val value = if (selection[i] > INTERIOR) 1f else refined[i].coerceIn(0f, 1f)
             val alpha = if (support[i]) value else 0f
             (alpha * 255f).toInt().coerceIn(0, 255).toByte()
         }

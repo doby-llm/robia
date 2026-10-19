@@ -1,10 +1,14 @@
 package com.gusanitolabs.robia.sync.fakes
 
+import com.gusanitolabs.robia.core.model.BatchCutoutMode
 import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.CutoutEdges
+import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
+import com.gusanitolabs.robia.core.model.HangerSensitivity
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
@@ -245,7 +249,12 @@ internal class FakeSettingsRepository(
 
     override suspend fun setBrowseColumns(columns: Int) = update { it.copy(browseColumns = columns) }
 
-    override suspend fun setPreciseCutoutEnabled(enabled: Boolean) = update { it.copy(preciseCutoutEnabled = enabled) }
+    override suspend fun setCutoutEngine(engine: CutoutEngineChoice) = update { it.copy(cutoutEngine = engine) }
+    override suspend fun setCutoutRemoveHanger(enabled: Boolean) = update { it.copy(cutoutRemoveHanger = enabled) }
+    override suspend fun setCutoutHangerSensitivity(sensitivity: HangerSensitivity) =
+        update { it.copy(cutoutHangerSensitivity = sensitivity) }
+    override suspend fun setCutoutEdges(edges: CutoutEdges) = update { it.copy(cutoutEdges = edges) }
+    override suspend fun setBatchCutoutMode(mode: BatchCutoutMode) = update { it.copy(batchCutoutMode = mode) }
 
     override suspend fun pauseSyncForDriveBackupDeletion() =
         update { it.copy(driveSyncConnectionStatus = DriveSyncConnectionStatus.Disabled) }

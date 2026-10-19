@@ -760,4 +760,24 @@
     <string name="precise_cutout_delete_title">Zuschnitt-Paket löschen?</string>
     <string name="precise_cutout_delete_body">Das Paket für präzisen Zuschnitt wird von diesem Telefon entfernt. Fotos behalten ihren aktuellen Zuschnitt.</string>
     <string name="precise_cutout_value_downloading">Wird heruntergeladen %1$d %%</string>
+    <!-- SG4 -->
+    <string name="cutout_settings_title">Zuschnitt</string>
+    <string name="cutout_method">Zuschnittmethode</string>
+    <string name="cutout_method_automatic">Automatisch</string>
+    <string name="cutout_method_standard">Standard</string>
+    <string name="cutout_method_automatic_hint">Verwendet präzisen Zuschnitt, wenn er heruntergeladen ist, sonst Standard.</string>
+    <string name="cutout_method_standard_hint">Nur Google ML Kit. Schneller, ohne Entfernen von Bügeln.</string>
+    <string name="cutout_remove_hangers">Bügel entfernen</string>
+    <string name="cutout_needs_precise">Präziser Zuschnitt nötig</string>
+    <string name="cutout_hanger_detection">Bügelerkennung</string>
+    <string name="cutout_hanger_normal">Normal</string>
+    <string name="cutout_hanger_high">Hoch</string>
+    <string name="cutout_hanger_high_hint">Findet mehr Clips und Holzbügel. Ergebnis prüfen.</string>
+    <string name="cutout_edges">Kanten</string>
+    <string name="cutout_edges_soft">Weich</string>
+    <string name="cutout_edges_sharp">Scharf</string>
+    <string name="batch_speed">Stapelgeschwindigkeit</string>
+    <string name="batch_speed_balanced">Ausgewogen</string>
+    <string name="batch_speed_memory_saver">Speichersparmodus</string>
+    <string name="batch_speed_hint">Der Speichersparmodus verarbeitet ein Foto nach dem anderen.</string>
 </resources>

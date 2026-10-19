@@ -102,6 +102,7 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.media.AlphaRefiner
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.QuickEditAdjustments
+import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import com.gusanitolabs.robia.media.cutout.MediaPipeInteractiveSelector
 import com.gusanitolabs.robia.media.cutout.RefineSession
 import com.gusanitolabs.robia.media.cutout.brushMask
@@ -784,7 +785,7 @@ private fun lightColorFilter(adjustments: QuickEditAdjustments): ColorFilter {
 private fun writeCutout(context: Context, photo: CutoutPhoto): Uri {
     val source = photo.source
     val argb = argbOf(source)
-    val alpha = AlphaRefiner.refine(argb, photo.session.currentAlpha(), source.width, source.height)
+    val alpha = AlphaRefiner.refine(argb, photo.session.currentAlpha(), source.width, source.height, CutoutEngineRegistry.options().edges)
     val bitmap = composeWithAlpha(argb, alpha, source.width, source.height)
     val intermediate = try {
         ClothingImageStore.writeProcessedBitmap(context, bitmap, prefix = "cutout-edit")

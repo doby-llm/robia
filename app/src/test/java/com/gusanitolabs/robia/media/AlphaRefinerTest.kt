@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.media
 
+import com.gusanitolabs.robia.core.model.CutoutEdges
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,6 +62,34 @@ class AlphaRefinerTest {
         assertEquals(0.5f, AlphaRefiner.smoothstep(0.35f, 0.65f, 0.5f), 1e-6f)
         assertEquals(1f, AlphaRefiner.smoothstep(0.35f, 0.65f, 0.65f), 0f)
         assertEquals(1f, AlphaRefiner.smoothstep(0.35f, 0.65f, 0.9f), 0f)
+    }
+
+    /** Pixels in row 3 whose alpha is neither clearly 0 nor clearly 255: the width of the edge. */
+    private fun transitionWidth(alpha: ByteArray, w: Int): Int =
+        (0 until w).count { x -> (alpha[3 * w + x].toInt() and 0xFF) in 6..249 }
+
+    @Test
+    fun sharpProfile_givesANarrowerTransitionThanSoft_onARamp() {
+        val w = 64
+        val h = 8
+        // Confidence rises linearly from 0 to 1 across the row; the same ramp goes through both profiles.
+        val ramp = FloatArray(w * h) { i -> (i % w) / (w - 1f) }
+
+        val soft = AlphaRefiner.refine(gray(w * h), ramp, w, h, CutoutEdges.Soft)
+        val sharp = AlphaRefiner.refine(gray(w * h), ramp, w, h, CutoutEdges.Sharp)
+
+        assertTrue("sharp ${transitionWidth(sharp, w)} px vs soft ${transitionWidth(soft, w)} px", transitionWidth(sharp, w) < transitionWidth(soft, w))
+    }
+
+    @Test
+    fun defaultCall_isTheSoftProfile_byteForByte() {
+        val w = 40
+        val h = 12
+        val random = Random(3)
+        val argb = IntArray(w * h) { random.nextInt() }
+        val conf = FloatArray(w * h) { random.nextFloat() }
+
+        assertArrayEquals(AlphaRefiner.refine(argb, conf, w, h, CutoutEdges.Soft), AlphaRefiner.refine(argb, conf, w, h))
     }
 
     // Coarse smoke bound to catch accidental O(n^2) regressions, not a benchmark (a wall-clock budget below ~1 s is flaky on CI).

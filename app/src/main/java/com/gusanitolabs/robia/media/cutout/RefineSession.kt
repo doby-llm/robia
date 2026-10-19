@@ -27,9 +27,10 @@ internal class RefineSession(
 ) {
     enum class Mode { Keep, Remove }
 
-    private val base: FloatArray
+    /** Automatic result; replaced whole by [replaceBase], never changed in place, so undo entries can keep a reference. */
+    private var base: FloatArray
     private var current: FloatArray
-    private val undoStack = ArrayDeque<RunLengthAlpha>()
+    private val undoStack = ArrayDeque<Snapshot>()
 
     init {
         require(w > 0 && h > 0) { "Photo size must be positive" }
@@ -62,10 +63,11 @@ internal class RefineSession(
         }
     }
 
-    /** Returns the most recent change; a no-op when nothing is left to undo. */
+    /** Returns the most recent change, including a [replaceBase]; a no-op when nothing is left to undo. */
     fun undo() {
         val previous = undoStack.removeLastOrNull() ?: return
-        current = previous.decode(w * h)
+        base = previous.base
+        current = previous.current.decode(w * h)
     }
 
     /** Back to the automatic result. The reset is itself undoable. */
@@ -75,9 +77,20 @@ internal class RefineSession(
         current = base.copyOf()
     }
 
+    /**
+     * Makes [alpha] (w×h) the automatic result, as a new cutout of the same photo; the edits are cleared. Undo restores the
+     * previous base together with the edits that were on it.
+     */
+    fun replaceBase(alpha: FloatArray) {
+        require(alpha.size == w * h) { "Alpha must be ${w}x$h" }
+        pushUndo()
+        base = alpha.copyOf()
+        current = alpha.copyOf()
+    }
+
     private fun pushUndo() {
         if (undoStack.size == UNDO_DEPTH) undoStack.removeFirst()
-        undoStack.addLast(RunLengthAlpha(current))
+        undoStack.addLast(Snapshot(base, RunLengthAlpha(current)))
     }
 
     private fun threshold(mask: FloatArray): FloatArray =
@@ -105,6 +118,9 @@ internal class RefineSession(
         return out
     }
 }
+
+/** One undo entry: the automatic result and the edited alpha at that time. */
+private class Snapshot(val base: FloatArray, val current: RunLengthAlpha)
 
 /** An alpha snapshot as runs of equal values, so an undo entry stays small for flat masks. Equality is by bit pattern. */
 private class RunLengthAlpha(source: FloatArray) {

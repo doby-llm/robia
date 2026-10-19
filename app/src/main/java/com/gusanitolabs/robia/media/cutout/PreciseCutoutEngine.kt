@@ -47,6 +47,8 @@ private val CHANNEL_SHIFTS = intArrayOf(16, 8, 0)
 internal class PreciseCutoutEngine(
     private val packDir: File,
     private val selectorFactory: (Context) -> InteractiveSelector = ::MediaPipeInteractiveSelector,
+    /** Read once per photo; the editor's Redo passes a fixed set for its one-off run. */
+    private val options: () -> CutoutOptions = { CutoutEngineRegistry.options() },
 ) : BackgroundRemovalEngine {
     /**
      * One photo at a time per process ([CutoutEngineRegistry.withPreciseGate]); the caller's 30 s budget includes the wait
@@ -56,6 +58,7 @@ internal class PreciseCutoutEngine(
     override suspend fun removeBackground(context: Context, sourceUri: Uri): BackgroundRemovalResult =
         CutoutEngineRegistry.withPreciseGate {
             withContext(Dispatchers.Default) {
+                val cutout = options()
                 val timings = LinkedHashMap<String, Long>()
                 val work = timings.timed("decode") { decodeWorkBitmap(context, sourceUri) }
                 try {
@@ -64,7 +67,7 @@ internal class PreciseCutoutEngine(
                     val alpha = CutoutEngineRegistry.preciseLatch.guard {
                         OnnxSessions(packDir).use { models ->
                             selectorFactory(context).use { selector ->
-                                CutoutRun(models, selector, work, argb, timings, checkpoint = { callerContext.ensureActive() }).alpha()
+                                CutoutRun(models, selector, work, argb, timings, cutout, checkpoint = { callerContext.ensureActive() }).alpha()
                             }
                         }
                     }
@@ -138,13 +141,14 @@ private class CutoutRun(
     private val work: Bitmap,
     private val argb: IntArray,
     private val timings: MutableMap<String, Long>,
+    private val cutout: CutoutOptions,
     /** Throws when the caller was cancelled (the 30 s budget); stages are CPU-bound and cannot be interrupted otherwise. */
     private val checkpoint: () -> Unit,
 ) {
     private val w = work.width
     private val h = work.height
 
-    /** Per-pixel alpha 0..255 of the work photo. */
+    /** Per-pixel alpha 0..255 of the work photo. With hanger removal off, S3–S4b and their models are skipped. */
     fun alpha(): ByteArray {
         val coarse = stage("s1") { saliency(argb) }
         val selection = stage("s2") { garmentSelection(coarse, work) }
@@ -153,15 +157,17 @@ private class CutoutRun(
         val garmentArea = MaskOps.count(hard)
 
         var result = selection
-        val hanger = stage("s3") { detectHanger(garment) }
-        if (hanger != null) {
-            val kill = stage("s4") { hangerKill(hanger, selection, garment, garmentArea) }
-            if (kill != null) {
-                result = stage("s4b") { hangerFirst(selection, kill, hanger, garment.height) }
+        if (cutout.removeHanger) {
+            val hanger = stage("s3") { detectHanger(garment) }
+            if (hanger != null) {
+                val kill = stage("s4") { hangerKill(hanger, selection, garment, garmentArea) }
+                if (kill != null) {
+                    result = stage("s4b") { hangerFirst(selection, kill, hanger, garment.height) }
+                }
             }
         }
         return stage("s5") {
-            MaskOps.refineAlpha(MaskOps.luminance(argb), MaskOps.dropIslands(result, w, h), w, h)
+            MaskOps.refineAlpha(MaskOps.luminance(argb), MaskOps.dropIslands(result, w, h), w, h, cutout.edges)
         }
     }
 
@@ -201,25 +207,19 @@ private class CutoutRun(
     }
 
     /** S3: D-FINE Hanger class; the first pass on the whole photo, then the top band of the garment if nothing is plausible. */
-    private fun detectHanger(garment: MaskBox): MaskBox? {
-        val first = detectHangers(argb, w, h).filter { HangerRemoval.isPlausible(it.second, garment) }
-        val found = if (first.isNotEmpty()) {
-            first
-        } else {
-            val region = HangerRemoval.hangerSearchRegion(garment, w, h)
-            val regionW = region[2] - region[0]
-            val regionH = region[3] - region[1]
-            detectHangers(cropPixels(argb, w, region, regionW, regionH), regionW, regionH)
-                .map { (score, box) ->
-                    score to MaskBox(box.x0 + region[0], box.y0 + region[1], box.x1 + region[0], box.y1 + region[1])
-                }
-                .filter { HangerRemoval.isPlausible(it.second, garment) }
+    private fun detectHanger(garment: MaskBox): MaskBox? =
+        HangerRemoval.findHanger(garment, w, h, cutout.hangerThreshold) { region, threshold ->
+            if (region == null) {
+                detectHangers(argb, w, h, threshold)
+            } else {
+                val regionW = region[2] - region[0]
+                val regionH = region[3] - region[1]
+                detectHangers(cropPixels(argb, w, region, regionW, regionH), regionW, regionH, threshold)
+            }
         }
-        return found.firstOrNull()?.second?.let { HangerRemoval.clip(it, w, h) }
-    }
 
-    /** Detections above the threshold among the top candidates, best first, boxes in the coordinates of [pixels]. */
-    private fun detectHangers(pixels: IntArray, pw: Int, ph: Int): List<Pair<Float, MaskBox>> {
+    /** Detections at or above [threshold] among the top candidates, best first, boxes in the coordinates of [pixels]. */
+    private fun detectHangers(pixels: IntArray, pw: Int, ph: Int, threshold: Float): List<Pair<Float, MaskBox>> {
         val input = resampleTensor(pixels, pw, ph, DETECTOR_SIZE)
         val outputs = models.run(models.hangerDetector, mapOf("pixel_values" to input))
         val logits = outputs[0]
@@ -229,7 +229,7 @@ private class CutoutRun(
         val result = ArrayList<Pair<Float, MaskBox>>()
         for (q in (0 until queries).sortedByDescending { scores[it] }.take(TOP_HANGER_CANDIDATES)) {
             val score = scores[q]
-            if (score < HangerRemoval.SCORE_THRESHOLD) break
+            if (score < threshold) break
             val cx = boxes[q * 4]
             val cy = boxes[q * 4 + 1]
             val bw = boxes[q * 4 + 2]

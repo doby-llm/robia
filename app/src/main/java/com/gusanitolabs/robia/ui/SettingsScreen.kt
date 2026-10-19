@@ -169,7 +169,7 @@ internal fun SettingsScreen(
                 val cutoutPercent = cutoutDownloadPercent(cutoutPackState)
                 SettingsNavRow(
                     icon = Icons.Rounded.ContentCut,
-                    title = stringResource(R.string.precise_cutout_title),
+                    title = stringResource(R.string.cutout_settings_title),
                     value = when {
                         cutoutPercent != null -> stringResource(R.string.precise_cutout_value_downloading, cutoutPercent)
                         preciseCutoutOn(cutoutPackState, cutoutSettings.preciseCutoutEnabled) ->
