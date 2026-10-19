@@ -162,10 +162,10 @@ class CutoutBenchmark(
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (failure: Exception) {
-                    failures += input.failure(failure)
+                    failures += input.failure(failure, fromEngine = true)
                 } catch (failure: LinkageError) {
                     // A class or native library that cannot load is one failed input, not a crashed app.
-                    failures += input.failure(failure)
+                    failures += input.failure(failure, fromEngine = true)
                 }
             }
             active = survivors
@@ -218,10 +218,13 @@ class CutoutBenchmark(
         }
     }
 
-    /** One line of the failure report: the exception class and message and its causes, with the input's URI and paths removed. */
-    private fun BenchmarkInput.failure(failure: Throwable): InputFailure {
+    /**
+     * One line of the failure report: the exception class and message and its causes, with the input's URI and paths removed.
+     * [fromEngine] marks a failure thrown by the background removal engine; a RuntimeException from it gets the root-cause frames.
+     */
+    private fun BenchmarkInput.failure(failure: Throwable, fromEngine: Boolean = false): InputFailure {
         val secrets = listOfNotNull(uri.toString(), uri.path).filter { it.length > 1 }
-        return InputFailure(kind = kind, name = name, reason = failureReason(failure, secrets))
+        return InputFailure(kind = kind, name = name, reason = failureReason(failure, secrets, fromEngine))
     }
 
     private class BenchmarkInput(val kind: String, val uri: Uri, val name: String)
@@ -244,9 +247,10 @@ internal fun failedInputLine(failure: InputFailure): String =
 
 /**
  * `Class: message`, then ` caused by Class: message` for up to [CAUSE_LEVELS] causes. Class simple names and messages only, with
- * each [secrets] entry replaced by `<uri>`, absolute paths replaced by `<path>` and no line breaks. No stack trace.
+ * each [secrets] entry replaced by `<uri>`, absolute paths replaced by `<path>` and no line breaks. No stack trace, except that
+ * a RuntimeException from the engine ([fromEngine]) ends with ` frames=` and the first root-cause frames, see [rootFrames].
  */
-internal fun failureReason(failure: Throwable, secrets: List<String>): String {
+internal fun failureReason(failure: Throwable, secrets: List<String>, fromEngine: Boolean = false): String {
     fun describe(error: Throwable): String {
         val message = secrets.fold(error.message.orEmpty()) { text, secret -> text.replace(secret, "<uri>") }
             .replace(ABSOLUTE_PATH, "<path>")
@@ -255,10 +259,29 @@ internal fun failureReason(failure: Throwable, secrets: List<String>): String {
         return "${error.javaClass.simpleName}: $message"
     }
     val causes = generateSequence(failure.cause) { it.cause }.take(CAUSE_LEVELS).map { " caused by ${describe(it)}" }
-    return describe(failure) + causes.joinToString("")
+    val frames = if (fromEngine && failure is RuntimeException) rootFrames(failure) else null
+    return describe(failure) + causes.joinToString("") + (frames?.let { " frames=$it" } ?: "")
+}
+
+/**
+ * The first [FRAME_LEVELS] stack frames of the root cause that belong to Google's libraries, ONNX Runtime or this app, as
+ * `class.method` joined by `<`. Class names are kept as they are; `<init>` and `<clinit>` become `init` and `clinit`. Null when
+ * no frame matches. The walk is bounded so that a cyclic cause chain cannot loop.
+ */
+private fun rootFrames(failure: Throwable): String? {
+    val root = generateSequence(failure) { it.cause }.take(MAX_CAUSE_WALK).last()
+    val frames = root.stackTrace.asSequence()
+        .filter { frame -> FRAME_PACKAGES.any { frame.className.startsWith(it) } }
+        .take(FRAME_LEVELS)
+        .map { frame -> "${frame.className}.${frame.methodName.trim('<', '>')}" }
+        .toList()
+    return frames.takeIf { it.isNotEmpty() }?.joinToString("<")
 }
 
 private const val CAUSE_LEVELS = 4
+private const val FRAME_LEVELS = 3
+private const val MAX_CAUSE_WALK = 32
+private val FRAME_PACKAGES = listOf("com.google.", "ai.onnxruntime.", "com.gusanitolabs.robia.")
 private val ABSOLUTE_PATH = Regex("""/[^\s"']+""")
 
 /**

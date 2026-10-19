@@ -112,6 +112,14 @@ jobs:
           path: app/build/outputs/apk/staging/*.apk
           if-no-files-found: error
 
+      - name: Upload staging R8 mapping
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robia-staging-r8-mapping
+          path: app/build/outputs/mapping/staging/mapping.txt
+          if-no-files-found: warn
+
       - name: Upload Room schemas
         uses: actions/upload-artifact@v4
         with:

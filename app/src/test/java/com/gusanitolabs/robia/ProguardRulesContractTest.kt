@@ -34,4 +34,17 @@ class ProguardRulesContractTest {
         assertTrue(rules.contains("-dontwarn com.google.mediapipe.proto.GraphTemplateProto*"))
         assertFalse(rules.contains("-dontwarn com.google.mediapipe.proto.**"))
     }
+
+    @Test
+    fun protobufLiteRuntimeAndGeneratedMessageFieldsAreKept() {
+        assertTrue(rules.contains("-keep class com.google.protobuf.** { *; }"))
+        assertTrue(rules.contains("-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { <fields>; }"))
+        assertTrue(rules.contains("-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite\$Builder { *; }"))
+        assertTrue(rules.contains("-keepclassmembers enum * implements com.google.protobuf.Internal\$EnumLite { *; }"))
+    }
+
+    @Test
+    fun nativeMethodNamesAreKeptForEveryJniClass() {
+        assertTrue(rules.contains("-keepclasseswithmembernames class * { native <methods>; }"))
+    }
 }
