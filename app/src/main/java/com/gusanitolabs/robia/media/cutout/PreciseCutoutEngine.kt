@@ -157,7 +157,7 @@ private class CutoutRun(
         val garmentArea = MaskOps.count(hard)
 
         var result = selection
-        if (cutout.removeHanger) {
+        if (hangerStagesRun(cutout)) {
             val hanger = stage("s3") { detectHanger(garment) }
             if (hanger != null) {
                 val kill = stage("s4") { hangerKill(hanger, selection, garment, garmentArea) }

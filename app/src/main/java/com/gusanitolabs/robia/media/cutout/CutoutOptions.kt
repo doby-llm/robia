@@ -34,3 +34,20 @@ fun cutoutOptionsOf(settings: RobiaSettings, packReady: Boolean): CutoutOptions 
 /** Cutouts allowed in flight for a batch: one for Memory saver and for the precise engine, two otherwise (B01). */
 fun batchCutouts(mode: BatchCutoutMode, preciseActive: Boolean): Int =
     if (mode == BatchCutoutMode.MemorySaver) 1 else if (preciseActive) 1 else 2
+
+/** Whether the precise pipeline runs S3 (hanger detection), S4 and S4b (hanger removal) for these options. */
+internal fun hangerStagesRun(options: CutoutOptions): Boolean = options.removeHanger
+
+/** The engines offered by the editor's Redo cutout sheet for one photo (SG4). */
+enum class RedoCutoutChoice { Standard, Precise, PreciseKeepHanger }
+
+/** Options for one Redo run: the chosen engine and hanger setting, with the threshold and edges of [current] (the global options). */
+fun redoCutoutOptions(choice: RedoCutoutChoice, current: CutoutOptions): CutoutOptions = when (choice) {
+    RedoCutoutChoice.Standard -> current.copy(usePrecise = false)
+    RedoCutoutChoice.Precise -> current.copy(usePrecise = true, removeHanger = true)
+    RedoCutoutChoice.PreciseKeepHanger -> current.copy(usePrecise = true, removeHanger = false)
+}
+
+/** The Redo choices offered: the precise ones only when the pack is ready. */
+fun redoCutoutChoices(packReady: Boolean): List<RedoCutoutChoice> =
+    if (packReady) RedoCutoutChoice.entries else listOf(RedoCutoutChoice.Standard)

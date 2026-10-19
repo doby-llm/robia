@@ -672,6 +672,7 @@ fun AddEditClothingScreen(
     if (showQuickEdit && !canonicalPhotoUri.isNullOrBlank()) {
         PhotoEditorScreen(
             photoUri = canonicalPhotoUri.orEmpty(),
+            rawSourceUri = redoSourceUri(editorPhotoState.rawSourceUri, existingItem?.photoUri),
             onCancel = { showQuickEdit = false },
             onDiagnostic = { line -> developerDiagnostics = developerDiagnostics + line },
             onDone = { cutoutUri, adjustments ->

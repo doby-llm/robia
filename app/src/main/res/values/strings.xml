@@ -780,4 +780,9 @@
     <string name="batch_speed_balanced">Balanced</string>
     <string name="batch_speed_memory_saver">Memory saver</string>
     <string name="batch_speed_hint">Memory saver processes one photo at a time.</string>
+    <string name="redo_cutout">Redo cutout</string>
+    <string name="redo_cutout_standard">Standard</string>
+    <string name="redo_cutout_precise">Precise</string>
+    <string name="redo_cutout_precise_keep_hanger">Precise without hanger removal</string>
+    <string name="redo_cutout_failed">Could not redo the cutout</string>
 </resources>

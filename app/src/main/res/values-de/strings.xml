@@ -780,4 +780,9 @@
     <string name="batch_speed_balanced">Ausgewogen</string>
     <string name="batch_speed_memory_saver">Speichersparmodus</string>
     <string name="batch_speed_hint">Der Speichersparmodus verarbeitet ein Foto nach dem anderen.</string>
+    <string name="redo_cutout">Zuschnitt wiederholen</string>
+    <string name="redo_cutout_standard">Standard</string>
+    <string name="redo_cutout_precise">Präzise</string>
+    <string name="redo_cutout_precise_keep_hanger">Präzise ohne Bügelentfernung</string>
+    <string name="redo_cutout_failed">Zuschnitt konnte nicht wiederholt werden</string>
 </resources>
