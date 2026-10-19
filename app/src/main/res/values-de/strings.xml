@@ -771,7 +771,8 @@
     <string name="cutout_hanger_detection">Bügelerkennung</string>
     <string name="cutout_hanger_normal">Normal</string>
     <string name="cutout_hanger_high">Hoch</string>
-    <string name="cutout_hanger_high_hint">Findet mehr Clips und Holzbügel. Ergebnis prüfen.</string>
+    <string name="cutout_hanger_high_hint">Findet mehr Clips und Holzbügel, kann aber auch dünne Teile eines Kleidungsstücks abschneiden. Ergebnis prüfen.</string>
+    <string name="cutout_hanger_normal_hint">Ausgewogen. Entfernt Bügel und Clips, die sicher erkannt werden.</string>
     <string name="cutout_edges">Kanten</string>
     <string name="cutout_edges_soft">Weich</string>
     <string name="cutout_edges_sharp">Scharf</string>

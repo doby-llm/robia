@@ -771,7 +771,8 @@
     <string name="cutout_hanger_detection">Detección de perchas</string>
     <string name="cutout_hanger_normal">Normal</string>
     <string name="cutout_hanger_high">Alta</string>
-    <string name="cutout_hanger_high_hint">Encuentra más clips y perchas de madera. Revisa el resultado.</string>
+    <string name="cutout_hanger_high_hint">Encuentra más clips y perchas de madera, pero también puede recortar partes finas de una prenda. Revisa el resultado.</string>
+    <string name="cutout_hanger_normal_hint">Equilibrado. Quita perchas y clips que detecta con seguridad.</string>
     <string name="cutout_edges">Bordes</string>
     <string name="cutout_edges_soft">Suaves</string>
     <string name="cutout_edges_sharp">Nítidos</string>
