@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class CutoutBenchmarkReportTest {
     private val device = "device=test device (test) API 36"
@@ -121,5 +122,82 @@ class CutoutBenchmarkReportTest {
             failureReason(linkage, secrets = listOf(uri)),
         )
         assertEquals("IllegalArgumentException: cannot open <uri>", failureReason(opened, secrets = listOf(uri)))
+    }
+
+    @Test
+    fun engineRuntimeExceptionEndsWithTheFirstThreeRootCauseFramesOfGoogleOnnxOrOurPackage() {
+        val root = RuntimeException("Field typeUrl_ for com.google.protobuf.g not found.")
+        root.stackTrace = arrayOf(
+            StackTraceElement("java.util.ArrayList", "get", "ArrayList.java", 1),
+            StackTraceElement("com.google.protobuf.MessageSchema", "<init>", "MessageSchema.java", 2),
+            StackTraceElement("kotlin.collections.CollectionsKt", "first", "CollectionsKt.kt", 3),
+            StackTraceElement("com.google.protobuf.GeneratedMessageLite", "newMessageInfo", "GeneratedMessageLite.java", 4),
+            StackTraceElement("ai.onnxruntime.OrtSession", "run", "OrtSession.java", 5),
+            StackTraceElement(
+                "com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine",
+                "removeBackground",
+                "PreciseCutoutEngine.kt",
+                6,
+            ),
+        )
+
+        assertEquals(
+            "RuntimeException: Field typeUrl_ for com.google.protobuf.g not found. " +
+                "frames=com.google.protobuf.MessageSchema.init<com.google.protobuf.GeneratedMessageLite.newMessageInfo" +
+                "<ai.onnxruntime.OrtSession.run",
+            failureReason(root, secrets = emptyList(), fromEngine = true),
+        )
+    }
+
+    @Test
+    fun engineFramesComeFromTheRootCauseNotTheWrapper() {
+        val root = RuntimeException("deepest").apply {
+            stackTrace = arrayOf(StackTraceElement("com.google.mediapipe.framework.Graph", "nativeCreateGraph", "Graph.java", 1))
+        }
+        val wrapper = IllegalStateException("wrapped", root).apply {
+            stackTrace = arrayOf(StackTraceElement("com.gusanitolabs.robia.media.cutout.CutoutRun", "alpha", "CutoutRun.kt", 2))
+        }
+
+        assertEquals(
+            "IllegalStateException: wrapped caused by RuntimeException: deepest " +
+                "frames=com.google.mediapipe.framework.Graph.nativeCreateGraph",
+            failureReason(wrapper, secrets = emptyList(), fromEngine = true),
+        )
+    }
+
+    @Test
+    fun engineFramesAreOmittedForNonRuntimeExceptionsAndWhenNoFrameMatches() {
+        val linkage = UnsatisfiedLinkError("dlopen failed")
+        val io = IOException("read failed")
+        val unmatched = RuntimeException("no app frames").apply {
+            stackTrace = arrayOf(StackTraceElement("java.util.HashMap", "get", "HashMap.java", 1))
+        }
+
+        assertEquals("UnsatisfiedLinkError: dlopen failed", failureReason(linkage, secrets = emptyList(), fromEngine = true))
+        assertEquals("IOException: read failed", failureReason(io, secrets = emptyList(), fromEngine = true))
+        assertEquals("RuntimeException: no app frames", failureReason(unmatched, secrets = emptyList(), fromEngine = true))
+    }
+
+    @Test
+    fun runtimeExceptionOutsideTheEngineGetsNoFrames() {
+        val failure = RuntimeException("Unable to open source photo")
+
+        assertEquals(
+            "RuntimeException: Unable to open source photo",
+            failureReason(failure, secrets = emptyList()),
+        )
+    }
+
+    @Test
+    fun cyclicCauseChainStillFormatsWithoutLooping() {
+        val first = RuntimeException("first")
+        val second = RuntimeException("second")
+        first.initCause(second)
+        second.initCause(first)
+
+        val reason = failureReason(first, secrets = emptyList(), fromEngine = true)
+
+        assertTrue(reason.startsWith("RuntimeException: first caused by RuntimeException: second"))
+        assertTrue(reason.contains(" frames=com.gusanitolabs.robia.suggestions.CutoutBenchmarkReportTest."))
     }
 }
