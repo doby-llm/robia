@@ -1,6 +1,6 @@
 # Implementation plan — robia-round3
 
-Execution model as in robia-ux-rework: one coordinator (Claude Sonnet 5.5, `PROMPT_COORDINATOR.md`), workers Claude Haiku 5.5 (`PROMPT_WORKER.md`), one task per run, max 3 workers in parallel, GitHub Actions is the only build authority, every task is one PR. Hermes skill `haiku-worker-coordination` applies.
+Execution model: one coordinator **Claude Haiku 5.5 high** (`PROMPT_COORDINATOR.md`), workers **Claude Haiku 5.5 high** (`PROMPT_WORKER.md`), reviewers Haiku 5.5 high read-only (`PROMPT_REVIEW.md`); **Claude Sonnet 5.5 high** only as one-shot read-only escalation runs for E1 device-gate analysis, E2 final pre-merge check of OR1/OR2/OR3/CLN/DUP2, E3 blocked lanes (`PROMPT_ESCALATION.md`, R3-DEC-017). One task per run, max 3 workers in parallel, GitHub Actions is the only build authority, every task is one PR. Hermes skill `haiku-worker-coordination` applies.
 
 ## W0 (coordinator, before any task)
 Merge PRs #132, #133, #134 when green (rebase if needed); close the FIX10 lane on #100 as superseded by K01/K02; record in the tracking issue.
@@ -88,7 +88,7 @@ CHK   <- ALL
 | `ui/SettingsScreen.kt` | GPU → DUP1 → OUT |
 
 ## Independent review
-Required for: K02, K03, ED2, OR1, OR2, OR3, CLN, DUP2, BAT1. One review → one consolidated remediation → coordinator final check; stop after round 2 and ask Manu.
+Required for: K02, K03, ED2, OR1, OR2, OR3, CLN, DUP2, BAT1. One review → one consolidated remediation → coordinator final check; stop after round 2 and ask Manu. For OR1, OR2, OR3, CLN, DUP2 a Sonnet E2 check follows the Haiku review before merge; a lane blocked after 2 rounds gets one Sonnet E3 diagnosis before asking Manu.
 
 ## Device gates (Manu agreed to ADB, answer 9A)
 Phone: Poco F3 (M2012K11AG). The coordinator runs everything from the Pi; Manu only plugs the phone in, accepts the ADB prompt and keeps it unlocked. Message to Manu (Spanish) before each session: what will run, ~20–30 min, his data stays on the phone.
@@ -100,10 +100,10 @@ Phone: Poco F3 (M2012K11AG). The coordinator runs everything from the Pi; Manu o
 4. **Cutout dumps (debug build):** install debug (`adb install -r`), copy the diagnostic set into `/sdcard/Android/data/com.gusanitolabs.robia/files/cutout-debug/in/` (Manu's pink + red shorts from the planner workspace + 8 photos from the precision set: 2 dresses, 2 skirts, 2 shorts, 1 white top, 1 accessory), make sure the cutout pack is downloaded, launch `adb shell am start -n com.gusanitolabs.robia/.MainActivity --ez com.gusanitolabs.robia.CUTOUT_DEBUG true`, wait for `cutout_debug_all_done` in logcat, `adb pull` the `out/` dir.
 5. Run `tools/cutout-diag/reference_stages.py` on the same photos (Pi) and `compare.py <app> <ref>`; read the stage PNGs where IoU < 0.95.
 6. **Editor taps:** with developer mode on, open the pink shorts in the editor (Remove › smart), tap the hanger clips, a door strip and the garment; pull `cutout-debug/editor/`; compare each mask with `research` Python selector output for the same input/point.
-7. Reinstall the staging APK (leave the phone on staging). Record everything in a PLAN-CHANGE: per photo the first divergent stage and its IoU, the suspected defect (file:line), editor findings, perf baseline numbers, GPU numbers. This PLAN-CHANGE is the closed defect list for K02 (d) and ED2 step 4. Personal images stay in the planner workspace.
+7. Reinstall the staging APK (leave the phone on staging). Hand the collected outputs to one Sonnet E1 run (`PROMPT_ESCALATION.md`), which writes the PLAN-CHANGE: per photo the first divergent stage and its IoU, the suspected defect (file:line), editor findings, perf baseline numbers, GPU numbers. This PLAN-CHANGE is the closed defect list for K02 (d) and ED2 step 4. Personal images stay in the planner workspace.
 
 ### G-ADB2 (after K03, ED2, PRF are merged)
-Same procedure: perf on staging (3 runs, median vs G-ADB1), cutout dumps on debug + compare.py (must exit 0; `band_edge_ratio` ≤ 1.5 on the red shorts), editor taps. Results in a PLAN-CHANGE; failures go back to the owning task as one consolidated remediation.
+Same procedure: perf on staging (3 runs, median vs G-ADB1), cutout dumps on debug + compare.py (must exit 0; `band_edge_ratio` ≤ 1.5 on the red shorts), editor taps. Sonnet E1 writes the PLAN-CHANGE; failures go back to the owning task as one consolidated remediation.
 
 ### G-CUT, G-DUP, G-OUT
 Messages to Manu in Spanish with the latest staging link; see `verification-matrix.md` §Gates. G-OUT runs after the round closes and only informs the next planning round.

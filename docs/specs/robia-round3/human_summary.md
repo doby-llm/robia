@@ -42,3 +42,6 @@
 4. **ADB 2** (unos 30 min) tras los arreglos.
 5. **G-CUT:** rehacer al menos 10 prendas en Experimental y en Standard y decir OK o NOK de cada una. Con eso decides si el recorte preciso vuelve a estar por defecto.
 6. Al final, la checklist del APK y una semana de Outfit lab.
+
+## Modelos (tu decisión)
+Coordinador, workers y revisores: **Haiku 5.5 high**. **Sonnet 5.5 high** solo en 3 casos, como consulta puntual de solo lectura: analizar las sesiones ADB, revisión final antes de fusionar OR1/OR2/OR3/CLN/DUP2 (riesgo de perder datos) y tareas bloqueadas. Unas 9 consultas en total; si fueran más de 12, el coordinador te pregunta antes.

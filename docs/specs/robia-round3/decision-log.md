@@ -49,3 +49,6 @@ Offline, SAF file picker, streamed, snapshot JSON + photos + originals; no impor
 
 ## R3-DEC-016 — No technical-specification.md this round · D
 Technical detail lives in each brief (files, line anchors, constants, tests) because tasks are smaller and more independent than in robia-ux-rework; the briefs cite the investigator reports.
+
+## R3-DEC-017 — Model policy: Haiku coordinator, Sonnet only on escalation · M
+Manu (2026-10-22): reduce usage without losing quality. Coordinator, workers and reviewers are Claude Haiku 5.5 high. Claude Sonnet 5.5 high runs only as one-shot, read-only escalations: E1 analysis of device gates G-ADB1/G-ADB2 (writes the defect-list PLAN-CHANGE), E2 final pre-merge data-safety check of OR1, OR2, OR3, CLN, DUP2, E3 diagnosis of a blocked lane. ≈ 9 runs expected; the coordinator asks Manu before a 13th. Mitigation for a Haiku coordinator: anti-trust rules in `PROMPT_COORDINATOR.md` (diff and CI over receipts, REC rows re-run). R: Sonnet as standing coordinator (higher usage for mostly mechanical work).
