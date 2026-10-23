@@ -88,7 +88,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.gusanitolabs.robia.R
-import com.gusanitolabs.robia.core.designsystem.aiSurface
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.data.toDomain
@@ -353,8 +352,7 @@ internal fun FilterBar(
                 if (!searchVisible) {
                     IconButton(
                         onClick = { showSmartPrompt = true },
-                        modifier = Modifier.aiSurface(),
-                        colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.AutoAwesome,
