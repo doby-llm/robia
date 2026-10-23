@@ -12,7 +12,7 @@ Levels: **CI** = JVM test/build in GitHub Actions on the PR; **REC** = command o
 | V-K01-3 | K01 | REV | grep: the dump runner is reachable only behind `BuildConfig.DEBUG`; the default `StageSink` is a no-op object and the release path allocates no stage copies | confirmed |
 | V-K01-D | K01 | DEV | G-ADB1: the dump runs on the phone for every image in `cutout-debug/in/` and writes the files | coordinator via ADB |
 | V-K02-1 | K02 | CI | `HangerRemovalTest`: band reselection that keeps < 85 % of the first selection inside the band falls back to the first selection there (pure `guardedBand`) | pass |
-| V-K02-2 | K02 | CI | `GarmentLossGuardTest`: final opaque area < 70 % of the S2 area → `REJECTED_GARMENT_LOSS` (engine returns not-REMOVED, chain falls back, reason `garment_loss`) | pass |
+| V-K02-2 | K02 | CI | `GarmentLossGuardTest`: final opaque area < 70 % of the max(S1 hard, S2 hard) (R3-DEC-022) → `ORIGINAL_FALLBACK with failure message garment_loss` (engine returns not-REMOVED, chain falls back, reason `garment_loss`) | pass |
 | V-K02-3 | K02 | CI | `MaskOpsTest`: SAM point/box scaling for work sizes 576×1024, 1024×768, 800×600 equals the reference formula (long edge → 1024, coords × scale) | pass |
 | V-K02-4 | K02 | REC | `python -I tools/cutout-diag/compare.py <app dump> <ref dump>` on the G-ADB1 set after the fix (coordinator re-runs at G-ADB2) | exit 0 |
 | V-K02-5 | K02 | REV | independent review: every item of the G-ADB1 defect list is fixed or explicitly reported as not reproduced; no threshold changed outside the list | confirmed |
@@ -59,7 +59,7 @@ Levels: **CI** = JVM test/build in GitHub Actions on the PR; **REC** = command o
 | V-ZIP-D | ZIP | DEV | Settings › Google Drive › Download all my data: file saved where chosen, opens on a PC with photos and JSON | Manu |
 | V-DUP1-1 | DUP1 | CI | `DuplicateScanTest`: equal IMAGE `input_hash` → one group; archived and stale-vector garments excluded; groups = connected components, max 6 (split by strongest pairs) | pass |
 | V-DUP1-2 | DUP1 | CI | `DuplicateScanTest`: `calibrationPairs(top = 30)` returns same-category pairs sorted by cosine desc with their cosine; 500 synthetic garments scanned < 2 s on the JVM runner | pass |
-| V-DUP1-3 | DUP1 | REV | scan reads a one-shot snapshot (not `observeAll`), runs off the main thread, at most daily or after 5 new garments; banner hidden while another prompt is visible | confirmed |
+| V-DUP1-3 | DUP1 | REV | scan reads a one-shot snapshot (not `observeAll`), runs off the main thread, at most once per 24 hours per process, or after 5 new garments (R3-DEC-026); banner hidden while another prompt is visible | confirmed |
 | V-DUP1-D | DUP1 | DEV | G-DUP: Manu marks the 30 pairs Same/Different in Developer › Duplicate calibration and sends the export | Manu |
 | V-DUP2-1 | DUP2 | CI | `DuplicateScanTest`: cosine ≥ T_DUP and same category and same primary colour → pair; any condition false → no pair; dismissed pair never returned; pair key order-independent | pass |
 | V-DUP2-2 | DUP2 | CI | `Migration14To15Test`: exact SQL creates `dismissed_duplicate_pairs(garment_a TEXT, garment_b TEXT, dismissed_at INTEGER, PRIMARY KEY(garment_a, garment_b))` | pass |
