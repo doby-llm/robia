@@ -50,6 +50,17 @@ class MotionTest {
         assertEquals(8, sparklePositions(count = 8, seed = 0, progress = 0.5f).size)
     }
 
+    @Test
+    fun sparkleBurst_doesNotPlayWhenReducedMotionIsOn() {
+        assertTrue(sparkleBurstPlays(reducedMotion = false))
+        assertFalse(sparkleBurstPlays(reducedMotion = true))
+    }
+
+    @Test
+    fun sparkleBurst_lastsAtMostNineHundredMillis() {
+        assertTrue(SPARKLE_DURATION_MILLIS <= 900)
+    }
+
     private companion object {
         const val EPSILON = 1e-3
     }

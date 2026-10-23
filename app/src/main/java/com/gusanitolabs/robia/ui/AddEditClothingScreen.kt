@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
@@ -48,7 +49,6 @@ import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -90,7 +90,6 @@ import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.PopIn
-import com.gusanitolabs.robia.core.designsystem.aiSurface
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -1372,15 +1371,15 @@ private fun PhotoCaptureCard(
                         FilledTonalButton(
                             onClick = { onQuickEditClick?.invoke() },
                             enabled = onQuickEditClick != null && !isPhotoProcessing,
-                            modifier = Modifier.aiSurface(),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = Color.Transparent,
-                                contentColor = Color.White,
-                            ),
                         ) {
-                            Text("✦")
-                            Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.edit_photo_action))
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Outlined.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
                         }
                     }
                 }
