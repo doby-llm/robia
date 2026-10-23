@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.suggestions.model.ModelFailure
 import com.gusanitolabs.robia.suggestions.model.ModelState
 import org.junit.Assert.assertEquals
@@ -40,5 +41,20 @@ class PreciseCutoutSettingsTest {
         assertFalse(preciseCutoutOn(ModelState.Downloading(bytes = 1, total = 2), enabled = true))
         assertFalse(preciseCutoutOn(ModelState.NotDownloaded, enabled = true))
         assertFalse(preciseCutoutOn(ModelState.WaitingForWifi, enabled = true))
+    }
+
+    @Test
+    fun hangerDetection_isShownOnlyWhenRemoveHangersIsOnAndTheHangerOptionsAreAvailable() {
+        // Truth table over (pack ready, method, Remove hangers): only Automatic + ready pack + Remove hangers on shows the row.
+        val auto = CutoutEngineChoice.Automatic
+        val standard = CutoutEngineChoice.Standard
+        assertTrue(hangerDetectionVisible(packReady = true, engine = auto, removeHangers = true))
+        assertFalse(hangerDetectionVisible(packReady = true, engine = auto, removeHangers = false))
+        assertFalse(hangerDetectionVisible(packReady = true, engine = standard, removeHangers = true))
+        assertFalse(hangerDetectionVisible(packReady = true, engine = standard, removeHangers = false))
+        assertFalse(hangerDetectionVisible(packReady = false, engine = auto, removeHangers = true))
+        assertFalse(hangerDetectionVisible(packReady = false, engine = auto, removeHangers = false))
+        assertFalse(hangerDetectionVisible(packReady = false, engine = standard, removeHangers = true))
+        assertFalse(hangerDetectionVisible(packReady = false, engine = standard, removeHangers = false))
     }
 }

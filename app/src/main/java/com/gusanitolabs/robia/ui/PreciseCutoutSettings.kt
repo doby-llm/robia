@@ -64,6 +64,10 @@ internal fun preciseCutoutOn(state: ModelState, enabled: Boolean): Boolean = sta
 internal fun cutoutHangerOptionsAvailable(packReady: Boolean, engine: CutoutEngineChoice): Boolean =
     packReady && engine == CutoutEngineChoice.Automatic
 
+/** Hanger detection shows only with Remove hangers on and the hanger options available; otherwise its row and dialog are hidden. */
+internal fun hangerDetectionVisible(packReady: Boolean, engine: CutoutEngineChoice, removeHangers: Boolean): Boolean =
+    cutoutHangerOptionsAvailable(packReady, engine) && removeHangers
+
 /** The single-choice row whose dialog is open; null when none is. */
 private enum class OpenCutoutChoice { Method, HangerDetection, Edges, BatchSpeed }
 
@@ -84,7 +88,7 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
     val scope = rememberCoroutineScope()
     val packReady = packState is ModelState.Ready
     val hangerAvailable = cutoutHangerOptionsAvailable(packReady, settings.cutoutEngine)
-    val hangerDetectionEnabled = hangerAvailable && settings.cutoutRemoveHanger
+    val hangerDetectionShown = hangerDetectionVisible(packReady, settings.cutoutEngine, settings.cutoutRemoveHanger)
     // Without allowMetered the store holds the pack in WaitingForWifi on a metered network; the user then chooses mobile data.
     val startDownload: (Boolean) -> Unit = { allowMetered ->
         app.appScope.launch { app.cutoutPack.download(allowMetered = allowMetered) }
@@ -183,19 +187,17 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
                         scope.launch { app.settingsRepository.setCutoutRemoveHanger(!settings.cutoutRemoveHanger) }
                     },
                 )
-                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
-                CutoutChoiceItem(
-                    headline = stringResource(R.string.cutout_hanger_detection),
-                    value = stringResource(settings.cutoutHangerSensitivity.labelRes()),
-                    supporting = if (settings.cutoutHangerSensitivity == HangerSensitivity.High) {
-                        stringResource(R.string.cutout_hanger_high_hint)
-                    } else {
-                        null
-                    },
-                    enabled = hangerDetectionEnabled,
-                    onClick = { openChoice = OpenCutoutChoice.HangerDetection },
-                )
-                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                if (hangerDetectionShown) {
+                    Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                    CutoutChoiceItem(
+                        headline = stringResource(R.string.cutout_hanger_detection),
+                        value = stringResource(settings.cutoutHangerSensitivity.labelRes()),
+                        supporting = stringResource(settings.cutoutHangerSensitivity.hintRes()),
+                        enabled = true,
+                        onClick = { openChoice = OpenCutoutChoice.HangerDetection },
+                    )
+                    Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                }
                 CutoutChoiceItem(
                     headline = stringResource(R.string.cutout_edges),
                     value = stringResource(settings.cutoutEdges.labelRes()),
@@ -230,17 +232,20 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
             },
             onDismiss = { openChoice = null },
         )
-        OpenCutoutChoice.HangerDetection -> CutoutChoiceDialog(
-            title = stringResource(R.string.cutout_hanger_detection),
-            options = listOf(HangerSensitivity.Normal, HangerSensitivity.High),
-            labelOf = { it.labelRes() },
-            current = settings.cutoutHangerSensitivity,
-            onSelected = { value ->
-                openChoice = null
-                scope.launch { app.settingsRepository.setCutoutHangerSensitivity(value) }
-            },
-            onDismiss = { openChoice = null },
-        )
+        OpenCutoutChoice.HangerDetection -> if (hangerDetectionShown) {
+            CutoutChoiceDialog(
+                title = stringResource(R.string.cutout_hanger_detection),
+                options = listOf(HangerSensitivity.Normal, HangerSensitivity.High),
+                labelOf = { it.labelRes() },
+                supportingOf = { it.hintRes() },
+                current = settings.cutoutHangerSensitivity,
+                onSelected = { value ->
+                    openChoice = null
+                    scope.launch { app.settingsRepository.setCutoutHangerSensitivity(value) }
+                },
+                onDismiss = { openChoice = null },
+            )
+        }
         OpenCutoutChoice.Edges -> CutoutChoiceDialog(
             title = stringResource(R.string.cutout_edges),
             options = listOf(CutoutEdges.Soft, CutoutEdges.Sharp),
@@ -327,6 +332,12 @@ private fun HangerSensitivity.labelRes(): Int = when (this) {
 }
 
 @StringRes
+private fun HangerSensitivity.hintRes(): Int = when (this) {
+    HangerSensitivity.Normal -> R.string.cutout_hanger_normal_hint
+    HangerSensitivity.High -> R.string.cutout_hanger_high_hint
+}
+
+@StringRes
 private fun CutoutEdges.labelRes(): Int = when (this) {
     CutoutEdges.Soft -> R.string.cutout_edges_soft
     CutoutEdges.Sharp -> R.string.cutout_edges_sharp
@@ -360,12 +371,16 @@ private fun CutoutChoiceItem(
     )
 }
 
-/** Radio-button dialog for one setting. Cancel, outside tap and back close it without a change. */
+/**
+ * Radio-button dialog for one setting. [supportingOf] adds an optional line under each option.
+ * Cancel, outside tap and back close it without a change.
+ */
 @Composable
 private fun <T> CutoutChoiceDialog(
     title: String,
     options: List<T>,
     labelOf: (T) -> Int,
+    supportingOf: (T) -> Int? = { null },
     current: T,
     onSelected: (T) -> Unit,
     onDismiss: () -> Unit,
@@ -388,10 +403,16 @@ private fun <T> CutoutChoiceDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(selected = option == current, onClick = null)
-                        Text(
-                            text = stringResource(labelOf(option)),
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(text = stringResource(labelOf(option)))
+                            supportingOf(option)?.let { supportingRes ->
+                                Text(
+                                    text = stringResource(supportingRes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }

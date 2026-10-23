@@ -771,7 +771,8 @@
     <string name="cutout_hanger_detection">Hanger detection</string>
     <string name="cutout_hanger_normal">Normal</string>
     <string name="cutout_hanger_high">High</string>
-    <string name="cutout_hanger_high_hint">Finds more clips and wooden hangers. Check the result.</string>
+    <string name="cutout_hanger_high_hint">Finds more clips and wooden hangers, but may also cut thin parts of a garment. Check the result.</string>
+    <string name="cutout_hanger_normal_hint">Balanced. Removes hangers and clips it is confident about.</string>
     <string name="cutout_edges">Edges</string>
     <string name="cutout_edges_soft">Soft</string>
     <string name="cutout_edges_sharp">Sharp</string>

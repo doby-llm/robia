@@ -1304,6 +1304,9 @@ private fun PhotoCaptureCardWithLaunchers(
     )
 }
 
+/** Edit photo exists only once a usable photo does; while one is processing it stays shown, disabled by the caller. */
+internal fun quickEditButtonVisible(hasUsablePhoto: Boolean): Boolean = hasUsablePhoto
+
 @Composable
 private fun PhotoCaptureCard(
     photoUri: String?,
@@ -1365,18 +1368,20 @@ private fun PhotoCaptureCard(
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.gallery))
                     }
-                    FilledTonalButton(
-                        onClick = { onQuickEditClick?.invoke() },
-                        enabled = onQuickEditClick != null,
-                        modifier = Modifier.aiSurface(),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = Color.Transparent,
-                            contentColor = Color.White,
-                        ),
-                    ) {
-                        Text("✦")
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.edit_photo_action))
+                    if (quickEditButtonVisible(hasUsablePhoto = !photoUri.isNullOrBlank())) {
+                        FilledTonalButton(
+                            onClick = { onQuickEditClick?.invoke() },
+                            enabled = onQuickEditClick != null && !isPhotoProcessing,
+                            modifier = Modifier.aiSurface(),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color.Transparent,
+                                contentColor = Color.White,
+                            ),
+                        ) {
+                            Text("✦")
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.edit_photo_action))
+                        }
                     }
                 }
                 Button(
