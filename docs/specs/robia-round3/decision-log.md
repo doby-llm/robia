@@ -154,3 +154,9 @@ The brief says one-shot SparkleBurst on completion. Four of the five controls le
 ## R3-DEC-024 — Drive disconnected: one top banner, no per-photo Sign in or Waiting (Manu, 2026-10-23) · M
 When Drive was configured and is now disconnected, Browse shows one sign-in banner at the top. While it shows, cards do not repeat "Sign in" or "Waiting" (BrowseCardText.browseCardBadgeFor, rule hiddenByBanner). This is the behaviour already merged in VIS (#146). Manu confirmed it on 2026-10-23 after the A/B question: a single banner, as it is now. Photo-restore attention is kept. No code change in this PR.
 
+## R3-DEC-025 — K02 review round 2: test seam, D4 proof rule, guard margin (PLAN-CHANGE 2026-10-23) · D
+- InteractiveSelectionSeamTest.kt is added to K02 Files. The seam moves the post-segmenter logic into selectWholeObject; production behaviour is unchanged (reviewer confirmed file:line). D1 is recorded as "not reproduced on JVM" only: the test pins how the code handles the segmenter output, not what MediaPipe returns. D1 stays open until G-ADB2.
+- D4 proof rule: K02 must show that the OLD resizeBilinear does not produce the PIL values on the 12 to 4 checker input (characterisation test). If it does produce them, D4 is not reproduced: the saliency resize reverts to the old function and the D4 claim is removed.
+- Guard margin under R3-DEC-022 (reviewer arithmetic): with the 15 % kill cap, a good result is rejected once S1 > 1.21 x S2; without the kill, once S1 > 1.43 x S2. Accepted trade-off: the ML Kit fallback is the safe outcome. This records the number; it is not a threshold change.
+- V-K02-2 wording now matches R3-DEC-022 and the code: denominator max(S1 hard, S2 hard); ORIGINAL_FALLBACK with failure message garment_loss.
+
