@@ -12,7 +12,7 @@ Levels: **CI** = JVM test/build in GitHub Actions on the PR; **REC** = command o
 | V-K01-3 | K01 | REV | grep: the dump runner is reachable only behind `BuildConfig.DEBUG`; the default `StageSink` is a no-op object and the release path allocates no stage copies | confirmed |
 | V-K01-D | K01 | DEV | G-ADB1: the dump runs on the phone for every image in `cutout-debug/in/` and writes the files | coordinator via ADB |
 | V-K02-1 | K02 | CI | `HangerRemovalTest`: band reselection that keeps < 85 % of the first selection inside the band falls back to the first selection there (pure `guardedBand`) | pass |
-| V-K02-2 | K02 | CI | `GarmentLossGuardTest`: final opaque area < 70 % of the S2 area → `REJECTED_GARMENT_LOSS` (engine returns not-REMOVED, chain falls back, reason `garment_loss`) | pass |
+| V-K02-2 | K02 | CI | `GarmentLossGuardTest`: final opaque area < 70 % of the max(S1 hard, S2 hard) (R3-DEC-022) → `ORIGINAL_FALLBACK with failure message garment_loss` (engine returns not-REMOVED, chain falls back, reason `garment_loss`) | pass |
 | V-K02-3 | K02 | CI | `MaskOpsTest`: SAM point/box scaling for work sizes 576×1024, 1024×768, 800×600 equals the reference formula (long edge → 1024, coords × scale) | pass |
 | V-K02-4 | K02 | REC | `python -I tools/cutout-diag/compare.py <app dump> <ref dump>` on the G-ADB1 set after the fix (coordinator re-runs at G-ADB2) | exit 0 |
 | V-K02-5 | K02 | REV | independent review: every item of the G-ADB1 defect list is fixed or explicitly reported as not reproduced; no threshold changed outside the list | confirmed |
