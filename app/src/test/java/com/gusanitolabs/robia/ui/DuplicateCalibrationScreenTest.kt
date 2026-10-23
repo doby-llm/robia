@@ -36,6 +36,14 @@ class DuplicateCalibrationScreenTest {
     }
 
     @Test
+    fun archivingAGarmentResetsTheMarks_whileAReorderAloneKeepsThem() {
+        val before = calibrationSignatures(listOf(garment("a"), garment("b")))
+
+        assertNotEquals(before, calibrationSignatures(listOf(garment("a"), garment("b", archived = true))))
+        assertEquals(before, calibrationSignatures(listOf(garment("b"), garment("a"))))
+    }
+
+    @Test
     fun reorderingThreeGarmentsKeepsTheSignature_soWardrobeWritesKeepTheMarks() {
         val before = calibrationSignatures(listOf(garment("a"), garment("b"), garment("c", category = "category-skirts")))
 

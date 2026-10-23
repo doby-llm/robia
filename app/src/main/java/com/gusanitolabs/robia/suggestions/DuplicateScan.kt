@@ -87,9 +87,9 @@ object DuplicateSession {
         _groups.update { it - group }
     }
 
-    /** Deleted garments leave their groups; a group left with one garment disappears. */
-    fun removeGarments(removedIds: Set<String>) {
-        _groups.update { it.afterRemoving(removedIds) }
+    /** Garments that left the active wardrobe (archived or deleted, on any route) leave their groups. */
+    fun keepActive(activeIds: Set<String>) {
+        _groups.update { it.keepingActive(activeIds) }
     }
 
     /** Tests only: the holder is process-wide. */
@@ -156,9 +156,9 @@ fun calibrationMarksJson(pairs: List<CalibrationPair>, marks: Map<Int, Boolean>)
         }
     }.toString()
 
-/** Groups after [removedIds] are deleted; a group left with fewer than two garments is no longer a duplicate. */
-fun List<DuplicateGroup>.afterRemoving(removedIds: Set<String>): List<DuplicateGroup> = mapNotNull { group ->
-    group.copy(garmentIds = group.garmentIds.filterNot(removedIds::contains)).takeIf { it.garmentIds.size >= 2 }
+/** Groups without the garments not in [activeIds]; a group left with fewer than two garments is no longer a duplicate. */
+fun List<DuplicateGroup>.keepingActive(activeIds: Set<String>): List<DuplicateGroup> = mapNotNull { group ->
+    group.copy(garmentIds = group.garmentIds.filter(activeIds::contains)).takeIf { it.garmentIds.size >= 2 }
 }
 
 /**

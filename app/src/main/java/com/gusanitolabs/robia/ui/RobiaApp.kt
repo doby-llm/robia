@@ -1089,11 +1089,13 @@ private fun RobiaShell(
         DuplicateSession.replaceGroups(scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value })
         DuplicateScanHistory.last = DuplicateScanRecord(atEpochMillis = now, garmentCount = count)
     }
-    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group -> DuplicateSession.dismiss(group) }
-    val deleteDuplicateItems: (List<String>) -> Unit = { ids ->
-        onDeleteItems(ids)
-        DuplicateSession.removeGarments(ids.toSet())
+    // Every route that archives or deletes a garment (Browse, review, item detail) changes clothingItems, so groups drop it here.
+    // Not while the wardrobe is loading: an empty list would drop every group.
+    LaunchedEffect(clothingItems, wardrobeItemsLoading) {
+        if (wardrobeItemsLoading) return@LaunchedEffect
+        DuplicateSession.keepActive(clothingItems.mapTo(HashSet(), ClothingItem::id))
     }
+    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group -> DuplicateSession.dismiss(group) }
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,
         cloudAuthorizationInFlight = cloudAuthorizationInFlight,
@@ -2046,7 +2048,7 @@ private fun RobiaShell(
             duplicateBannerCount = duplicateBannerCount,
             onDuplicateReviewClick = { pushRoute(RobiaRoute.DuplicateReview) },
             onDismissDuplicateGroup = dismissDuplicateGroup,
-            onDeleteDuplicateItems = deleteDuplicateItems,
+            onDeleteDuplicateItems = onDeleteItems,
             onDuplicateCalibrationClick = { pushRoute(RobiaRoute.DuplicateCalibration) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,

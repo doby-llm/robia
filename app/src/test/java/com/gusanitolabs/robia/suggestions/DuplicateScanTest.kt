@@ -154,15 +154,18 @@ class DuplicateScanTest {
     }
 
     @Test
-    fun afterRemovingDropsDeletedGarmentsAndGroupsBelowTwo() {
+    fun keepingActiveDropsArchivedGarmentsAndGroupsLeftBelowTwo() {
         val groups = listOf(
-            DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto),
-            DuplicateGroup(listOf("d", "e"), DuplicateTier.SamePhoto),
+            DuplicateGroup(listOf("a", "b"), DuplicateTier.SamePhoto),
+            DuplicateGroup(listOf("c", "d", "e"), DuplicateTier.SamePhoto),
+            DuplicateGroup(listOf("f", "g", "h"), DuplicateTier.SamePhoto),
         )
 
-        val remaining = groups.afterRemoving(setOf("b", "d"))
+        // a archived: {a, b} is left with one garment and disappears. e archived: {c, d} stays.
+        // g and h archived: {f, g, h} is left with one garment and disappears.
+        val remaining = groups.keepingActive(setOf("b", "c", "d", "f"))
 
-        assertEquals(listOf(listOf("a", "c")), remaining.map { it.garmentIds })
+        assertEquals(listOf(listOf("c", "d")), remaining.map { it.garmentIds })
     }
 
     @Test
@@ -208,11 +211,11 @@ class DuplicateScanTest {
     }
 
     @Test
-    fun deletedGarmentsLeaveTheirGroupsAndASingletonGroupDisappears() {
+    fun garmentsLeavingTheWardrobeLeaveTheirGroupsAndGroupsBelowTwoDisappear() {
         DuplicateSession.clear()
         DuplicateSession.replaceGroups(listOf(DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto), DuplicateGroup(listOf("d", "e"), DuplicateTier.SamePhoto)))
 
-        DuplicateSession.removeGarments(setOf("b", "d"))
+        DuplicateSession.keepActive(setOf("a", "c", "x"))
 
         assertEquals(listOf(DuplicateGroup(listOf("a", "c"), DuplicateTier.SamePhoto)), DuplicateSession.groups.value)
     }
