@@ -1078,6 +1078,28 @@ class RegressionSourceContractTest {
         assertTrue(driveRepository.contains("DriveApiResult.StorageFull"))
     }
 
+    @Test
+    fun browseDragSelect_startsOnlyFromACardLongPressAndKeepsCardSemantics() {
+        val browseGrid = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
+        val dragSelect = source("app/src/main/java/com/gusanitolabs/robia/ui/DragSelect.kt")
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val browseScreen = browseGrid
+            .substringAfter("fun BrowseWardrobeScreen(")
+            .substringBefore("@Composable\nprivate fun BrowseImagePrefetch(")
+
+        // The card's long-press still toggles the item, and it is the only thing that arms the drag.
+        assertTrue(browseScreen.contains("dragArm.arm(item.id, selectedItemIds)"))
+        assertTrue(browseScreen.contains("onSelectionToggle(item.id)"))
+        assertTrue(browseScreen.contains(".dragSelect(gridState, dragArm, items, onSelectionSet)"))
+        // Pinch stays on its own Initial-pass gesture ahead of the drag.
+        assertTrue(browseScreen.indexOf(".pointerInput(browseLayout)") < browseScreen.indexOf(".dragSelect("))
+        assertTrue(dragSelect.contains("awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)"))
+        assertTrue(dragSelect.contains("if (event.changes.count { it.pressed } >= 2)"))
+        assertTrue(dragSelect.contains("arm.disarm()"))
+        assertTrue(app.contains("onBrowseSelectionSet = ::setBrowseSelection"))
+        assertTrue(app.contains("onSelectionSet = onBrowseSelectionSet"))
+    }
+
     private fun uiSource(): String = Path.of("app/src/main/java/com/gusanitolabs/robia/ui").let { dir ->
         val d = if (Files.isDirectory(dir)) dir else Path.of("..").resolve(dir)
         d.toFile().listFiles { file -> file.name.endsWith(".kt") }.orEmpty().sortedBy { it.name }.joinToString("\n") { it.readText() }
