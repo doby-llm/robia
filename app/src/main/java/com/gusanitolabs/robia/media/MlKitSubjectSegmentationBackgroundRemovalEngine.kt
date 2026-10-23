@@ -14,7 +14,10 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentationResult
 import com.gusanitolabs.robia.core.model.CutoutEdges
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
+import com.gusanitolabs.robia.media.cutout.ENGINE_MLKIT
+import com.gusanitolabs.robia.media.cutout.exifRotationDegrees
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,14 +44,17 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine(
             )
         }
 
-        val source = runCatching { decodeForSegmentation(context, sourceUri) }
+        val frame = runCatching { decodeForSegmentation(context, sourceUri) }
             .getOrElse { throwable ->
                 return@withContext sourceUri.originalFallback(
                     failure = throwable.toBackgroundRemovalFailure(BackgroundRemovalFailureReason.SOURCE_DECODE_FAILED),
                 )
             }
+        val source = frame.bitmap
         val gate = SegmentationModuleGates.get(context)
         val segmenter = SubjectSegmentation.getClient(subjectSegmenterOptions)
+        // The decoded frame is kept as the original on success; any other exit recycles it.
+        var keepSource = false
 
         try {
             val attempt = try {
@@ -86,14 +92,23 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine(
             // A cancel that lands after the write means no caller takes this file, so it is removed before the cancellation.
             deleteOutputIfCancelled(outputUri) { uri -> ClothingImageStore.deleteBatchDraftFiles(context, listOf(uri.toString())) }
 
+            keepSource = true
             BackgroundRemovalResult(
                 originalUri = sourceUri,
                 outputUri = outputUri,
                 status = BackgroundRemovalStatus.REMOVED,
+                inputFrame = source,
+                recipe = mlKitRecipe(
+                    edges = edgeProfile,
+                    width = source.width,
+                    height = source.height,
+                    rotationDegrees = frame.rotationDegrees,
+                    sampleSize = frame.sampleSize,
+                ),
             )
         } finally {
             segmenter.close()
-            source.recycle()
+            if (!keepSource) source.recycle()
         }
     }
 
@@ -191,16 +206,20 @@ private suspend fun <T> processOnce(
     SegmentationAttempt.Failed(segmentationFailureReason(throwable, isModuleUnavailable), throwable)
 }
 
+/** The frame ML Kit segments: oriented, decoded at [sampleSize]; [rotationDegrees] is its EXIF rotation (see [CutoutRecipe]). */
+private class SegmentationFrame(val bitmap: Bitmap, val sampleSize: Int, val rotationDegrees: Int)
+
 /** Decodes the photo with EXIF orientation applied and its long edge at most [SEGMENTATION_MAX_EDGE_PX]. */
-private fun decodeForSegmentation(context: Context, sourceUri: Uri): Bitmap {
+private fun decodeForSegmentation(context: Context, sourceUri: Uri): SegmentationFrame {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     val boundsStream = context.contentResolver.openInputStream(sourceUri) ?: error("Unable to open source photo")
     boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
     check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Source photo has no readable size" }
 
+    val sampleSize = segmentationSampleSize(bounds.outWidth, bounds.outHeight)
     val options = BitmapFactory.Options().apply {
         inPreferredConfig = Bitmap.Config.ARGB_8888
-        inSampleSize = segmentationSampleSize(bounds.outWidth, bounds.outHeight)
+        inSampleSize = sampleSize
     }
     val decoded = context.contentResolver.openInputStream(sourceUri)?.use { input ->
         BitmapFactory.decodeStream(input, null, options)
@@ -208,14 +227,18 @@ private fun decodeForSegmentation(context: Context, sourceUri: Uri): Bitmap {
     val orientation = context.contentResolver.openInputStream(sourceUri)?.use { input ->
         ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
     } ?: ExifInterface.ORIENTATION_NORMAL
-    val matrix = orientationMatrix(orientation) ?: return decoded
+    val rotationDegrees = exifRotationDegrees(orientation)
+    val matrix = orientationMatrix(orientation)
+        ?: return SegmentationFrame(decoded, sampleSize, rotationDegrees)
 
-    return Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
+    val oriented = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
         decoded.recycle()
     }
+    return SegmentationFrame(oriented, sampleSize, rotationDegrees)
 }
 
-private fun segmentationSampleSize(width: Int, height: Int): Int {
+/** Power-of-two decode sample that brings the long edge to at most [SEGMENTATION_MAX_EDGE_PX]. */
+internal fun segmentationSampleSize(width: Int, height: Int): Int {
     val maxDimension = maxOf(width, height).coerceAtLeast(1)
     var sampleSize = 1
     while (maxDimension / sampleSize > SEGMENTATION_MAX_EDGE_PX) {
@@ -223,6 +246,25 @@ private fun segmentationSampleSize(width: Int, height: Int): Int {
     }
     return sampleSize
 }
+
+/**
+ * The recipe of an ML Kit cutout (REQ-OR-02, V-OR1-3): the whole frame is the crop, and the hanger options do not apply.
+ * The stored original is the frame itself, so reprocessing it with this recipe segments the same pixels.
+ */
+internal fun mlKitRecipe(edges: CutoutEdges, width: Int, height: Int, rotationDegrees: Int, sampleSize: Int): CutoutRecipe = CutoutRecipe(
+    engine = ENGINE_MLKIT,
+    removeHanger = false,
+    hangerThreshold = 0f,
+    edges = edges,
+    workW = width,
+    workH = height,
+    rotationDegrees = rotationDegrees,
+    sampleSize = sampleSize,
+    cropLeft = 0,
+    cropTop = 0,
+    cropRight = width,
+    cropBottom = height,
+)
 
 private fun orientationMatrix(orientation: Int): Matrix? {
     val matrix = Matrix()

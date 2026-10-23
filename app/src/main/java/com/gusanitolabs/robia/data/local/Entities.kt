@@ -33,6 +33,9 @@ data class ClothingItemEntity(
     @ColumnInfo(name = "sync_started_at_epoch_millis") val syncStartedAtEpochMillis: Long? = null,
     @ColumnInfo(name = "photo_restore_guarded") val photoRestoreGuarded: Boolean = false,
     @ColumnInfo(name = "photo_restore_retry_deadline_epoch_millis") val photoRestoreRetryDeadlineEpochMillis: Long? = null,
+    @ColumnInfo(name = "original_uri") val originalUri: String? = null,
+    /** [com.gusanitolabs.robia.core.model.CutoutRecipe] as JSON. */
+    @ColumnInfo(name = "original_recipe") val originalRecipe: String? = null,
 )
 
 data class ColorMetricsEntity(

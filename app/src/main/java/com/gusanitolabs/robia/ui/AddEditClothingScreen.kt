@@ -102,6 +102,7 @@ import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.EditorBackgroundRemovalStatus
 import com.gusanitolabs.robia.media.EditorPhotoState
+import com.gusanitolabs.robia.media.OriginalPhotoStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
 import com.gusanitolabs.robia.media.SegmentationModuleGates
@@ -271,7 +272,17 @@ fun AddEditClothingScreen(
         }
     }
 
+    /** The original this session kept for a new photo and has not saved. The saved garment's own original never counts. */
+    fun sessionOriginalUri(): String? = editorPhotoState.originalUri?.takeIf { it != existingItem?.originalUri }
+
+    /** Deletes the session's unsaved original, when a new photo replaces it or the editor is left without saving. */
+    fun deleteSessionOriginal() {
+        val stale = sessionOriginalUri() ?: return
+        coroutineScope.launch(Dispatchers.IO) { ClothingImageStore.deleteBatchDraftFiles(context, listOf(stale)) }
+    }
+
     fun queuePhotoForProcessing(uriString: String, sourceStatus: String) {
+        deleteSessionOriginal()
         val inputId = ++nextPhotoInputId
         photoProcessingToken += 1 // Immediately invalidate any older in-flight pipeline.
         val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
@@ -360,6 +371,12 @@ fun AddEditClothingScreen(
                 val backgroundStart = SystemClock.elapsedRealtime()
                 val result = backgroundRemover.removeBackground(context, Uri.parse(uriString))
                 addLine("Background removal: status=${result.status}, usedFallback=${result.usedFallback}, output=${result.outputUri}")
+                val keptOriginal = withContext(Dispatchers.IO) { OriginalPhotoStore.saveAndRecycle(context, result.inputFrame) }
+                if (token != photoProcessingToken) {
+                    // A newer photo superseded this one before its original was kept, so nothing references the new file.
+                    keptOriginal?.let { original -> withContext(Dispatchers.IO) { ClothingImageStore.deleteBatchDraftFiles(context, listOf(original.toString())) } }
+                    return
+                }
                 editorPhotoState = editorPhotoState.copy(
                     foregroundUri = result.outputUri.toString(),
                     currentEditedUri = result.outputUri.toString(),
@@ -370,6 +387,8 @@ fun AddEditClothingScreen(
                     },
                     processingEventId = inputId,
                     processingToken = token,
+                    originalUri = keptOriginal?.toString(),
+                    originalRecipe = result.recipe.takeIf { keptOriginal != null },
                 )
                 result.failure?.let { failure ->
                     addLine("Background failure: reason=${failure.reason}, cause=${failure.causeClass ?: "n/a"}, message=${failure.message ?: "n/a"}")
@@ -461,6 +480,7 @@ fun AddEditClothingScreen(
             throw throwable
         } catch (throwable: Exception) {
                 if (token != photoProcessingToken) return
+                deleteSessionOriginal()
                 photoUri = uriString
                 captureStatus = PhotoStatus.BackgroundFallback
                 backgroundFallbackModuleMissing = false
@@ -597,6 +617,8 @@ fun AddEditClothingScreen(
             croppedForegroundUri = existingItem?.photoUri,
             currentEditedUri = existingItem?.photoUri,
             suggestionSourceUri = existingItem?.photoUri,
+            originalUri = existingItem?.originalUri,
+            originalRecipe = existingItem?.originalRecipe,
             backgroundRemovalStatus = if (existingItem?.photoUri.isNullOrBlank()) {
                 EditorBackgroundRemovalStatus.None
             } else {
@@ -660,6 +682,18 @@ fun AddEditClothingScreen(
         }
     }
 
+    /**
+     * Files the save makes unreferenced: a new photo's raw copy and subject, and the original a new photo replaces. Released
+     * by the repository once the save has committed.
+     */
+    fun supersededPhotoFiles(): List<String> = buildList {
+        if (editorPhotoState.foregroundUri != null) {
+            editorPhotoState.rawSourceUri?.let(::add)
+            editorPhotoState.foregroundUri?.let(::add)
+        }
+        existingItem?.originalUri?.takeIf { it != editorPhotoState.originalUri }?.let(::add)
+    }
+
     fun requestClose() {
         if (hasUnsavedChanges) {
             showDiscardDialog = true
@@ -714,6 +748,7 @@ fun AddEditClothingScreen(
                 TextButton(
                     onClick = {
                         showDiscardDialog = false
+                        deleteSessionOriginal()
                         onCancel()
                     },
                 ) { Text(stringResource(R.string.discard_changes)) }
@@ -894,12 +929,15 @@ fun AddEditClothingScreen(
                     onClick = {
                         val now = System.currentTimeMillis()
                         val selectedTags = availableTags.filter { it.id in selectedTagIds }
+                        ClothingImageStore.registerPhotoFilesForRelease(context, canonicalPhotoUri.orEmpty(), supersededPhotoFiles())
                         onSave(
                             ClothingItem(
                                 id = existingItem?.id ?: UUID.randomUUID().toString(),
                                 name = existingItem?.name.orEmpty(),
                                 notes = notes,
                                 photoUri = canonicalPhotoUri,
+                                originalUri = editorPhotoState.originalUri,
+                                originalRecipe = editorPhotoState.originalRecipe,
                                 tags = selectedTags,
                                 fitValue = fitValue,
                                 colorMetrics = ClothingColorMetrics(

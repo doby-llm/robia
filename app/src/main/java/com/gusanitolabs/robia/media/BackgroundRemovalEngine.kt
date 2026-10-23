@@ -1,7 +1,9 @@
 package com.gusanitolabs.robia.media
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 
 /**
  * Port for best-effort photo background removal.
@@ -21,6 +23,13 @@ data class BackgroundRemovalResult(
     val failure: BackgroundRemovalFailure? = null,
     /** Per-stage milliseconds for engines that report them (the precise cutout pipeline); empty otherwise. */
     val timings: Map<String, Long> = emptyMap(),
+    /**
+     * The exact frame the engine processed, before any mask (EXIF applied, within the engine's work size). Set only with
+     * [BackgroundRemovalStatus.REMOVED]. The caller owns it: it saves the original and recycles the frame. Null on fallback.
+     */
+    val inputFrame: Bitmap? = null,
+    /** How to reproduce [outputUri] from [inputFrame] (REQ-OR-02). Null whenever [inputFrame] is null. */
+    val recipe: CutoutRecipe? = null,
 ) {
     val usedFallback: Boolean = outputUri == originalUri || status == BackgroundRemovalStatus.ORIGINAL_FALLBACK
 }

@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ClothingItemTagCrossRef::class,
         GarmentEmbeddingEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -51,6 +51,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12,
                         MIGRATION_12_13,
+                        MIGRATION_13_14,
                     )
                     .build()
                     .also { instance = it }
@@ -239,6 +240,12 @@ abstract class RobiaDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                MIGRATION_13_14_SQL.forEach { sql -> database.execSQL(sql) }
+            }
+        }
+
         private fun addMetadataSyncColumns(database: SupportSQLiteDatabase, tableName: String) {
             database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced'")
             database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0")
@@ -281,4 +288,13 @@ internal val MIGRATION_12_13_SQL: List<String> = listOf(
     "UPDATE garment_tags SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
     "UPDATE main_colors SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
     "UPDATE sync_tombstones SET sync_status = 'Queued', retry_attempt_count = 0, retry_after_epoch_millis = NULL WHERE sync_status IN ('FailedRetryable', 'NeedsUserAction')",
+)
+
+/**
+ * DB v14: the original photo and its cutout recipe (REQ-OR-01/02). Both columns are nullable: garments saved before v14 have
+ * no original. Kept as plain SQL so the migration test runs the exact statements the app executes.
+ */
+internal val MIGRATION_13_14_SQL: List<String> = listOf(
+    "ALTER TABLE clothing_items ADD COLUMN original_uri TEXT",
+    "ALTER TABLE clothing_items ADD COLUMN original_recipe TEXT",
 )
