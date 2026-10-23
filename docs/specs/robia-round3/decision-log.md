@@ -213,3 +213,9 @@ When Drive was configured and is now disconnected, Browse shows one sign-in bann
 - B2 rule: for batch add, `subject-*.png` is deleted only after the garment save succeeds (registered for release on save like the raw copy; deleted on discard or cancel).
 - Deferred, not OR1: recipe stale after editor/Quick Edit saves (OR3); orphan originals from cancelled stages, the `cutoutFallbackChain` timeout race, partial JPEG writes and garment deletion (CLN/OR2); ML Kit recipe test strength.
 - Rationale: OR1 must not lose data on a path it introduces, and the raw-copy rule (delete only after a successful save) applies equally to the batch subject file.
+
+## R3-DEC-034 — ANA: BrowseGrid.kt entry-point wiring (PLAN-CHANGE 2026-10-23) · D
+- Context: the ANA worker (PR #163, head f31bbb7, CI green) built everything except the entry point. The Analytics icon lives in `FilterBar` (`ui/BrowseFilterBar.kt`), and its only caller is `BrowseWardrobeScreen` in `ui/BrowseGrid.kt`, which is not in the ANA Files list. Without a change there the icon cannot open the screen.
+- Coordinator decision (Manu may overturn). `ui/BrowseGrid.kt` is added to the ANA Files list for entry-point wiring only: one optional-callback parameter on `BrowseWardrobeScreen`, passed to `FilterBar` (about four lines), plus one line in `ui/RobiaApp.kt` to open the route. No other change in that file; SEL drag select, PRF changes, the duplicates banner and pinch must not be reverted. Acceptance IDs unchanged.
+- Worker choices accepted as they are, to be checked at V-ANA-D: the colour "Not set" bar is not tappable (Browse has no filter for no colour); zero-count bars are omitted; colours are counted by stored palette id; tapping a bar keeps an active text search.
+- Rationale: the entry point is required by REQ-AN-01 (icon next to Filters opens the screen), and the smallest change that provides it is a callback parameter, not a rewrite of Browse.
