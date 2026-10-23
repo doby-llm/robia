@@ -785,4 +785,7 @@
     <string name="redo_cutout_precise">Präzise</string>
     <string name="redo_cutout_precise_keep_hanger">Präzise ohne Bügelentfernung</string>
     <string name="redo_cutout_failed">Zuschnitt konnte nicht wiederholt werden</string>
+    <!-- K00 -->
+    <string name="cutout_method_experimental">Experimentell</string>
+    <string name="cutout_method_experimental_hint">Kann Teile des Kleidungsstücks entfernen. Jedes Ergebnis prüfen.</string>
 </resources>

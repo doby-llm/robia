@@ -18,7 +18,11 @@ import com.gusanitolabs.robia.core.model.HangerSensitivity
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 import java.util.UUID
 
 interface SettingsRepository {
@@ -69,7 +73,27 @@ interface SettingsRepository {
 class DataStoreSettingsRepository(
     private val dataStore: DataStore<Preferences>,
 ) : SettingsRepository {
-    override val settings: Flow<RobiaSettings> = dataStore.data.map { preferences -> preferences.toRobiaSettings() }
+    override val settings: Flow<RobiaSettings> = flow {
+        migrateCutoutDefault()
+        emitAll(dataStore.data.map { preferences -> preferences.toRobiaSettings() })
+    }
+
+    /** K00: once per install, the cutout method moves to Standard; the stored choice is used as is afterwards. */
+    private suspend fun migrateCutoutDefault() {
+        if (dataStore.data.first()[cutoutDefaultV3AppliedKey] == true) return
+        try {
+            dataStore.edit { preferences ->
+                val stored = preferences[cutoutEngineKey]?.let { name -> CutoutEngineChoice.entries.firstOrNull { it.name == name } }
+                val (engine, write) = migratedCutoutEngine(stored, preferences[cutoutDefaultV3AppliedKey] == true)
+                if (write) {
+                    preferences[cutoutEngineKey] = engine.name
+                    preferences[cutoutDefaultV3AppliedKey] = true
+                }
+            }
+        } catch (error: IOException) {
+            // The flag stays unwritten, so the next read retries the migration.
+        }
+    }
 
     override suspend fun setLanguagePreference(languagePreference: LanguagePreference) {
         dataStore.edit { preferences ->
@@ -263,15 +287,23 @@ private inline fun <reified T : Enum<T>> String?.toEnumOr(default: T): T =
 
 /**
  * The stored cutout_engine; while that key is absent, the SG2b boolean precise_cutout_enabled still applies
- * (true → Automatic, false → Standard). An unknown stored value falls back to Automatic.
+ * (true → Automatic, false or absent → Standard). An unknown stored value falls back to Automatic.
  */
 private fun Preferences.cutoutEngineChoice(): CutoutEngineChoice {
     val stored = this[cutoutEngineKey]
     if (stored == null) {
-        return if (this[preciseCutoutEnabledKey] == false) CutoutEngineChoice.Standard else CutoutEngineChoice.Automatic
+        return if (this[preciseCutoutEnabledKey] == true) CutoutEngineChoice.Automatic else CutoutEngineChoice.Standard
     }
     return CutoutEngineChoice.entries.firstOrNull { it.name == stored } ?: CutoutEngineChoice.Automatic
 }
+
+/**
+ * K00 one-time migration to the Standard default. Before the flag is written every install is set to Standard
+ * (whatever was stored); afterwards the stored choice is kept, so a user may opt in to Automatic again.
+ * Returns the engine to store and whether to write it together with the flag.
+ */
+internal fun migratedCutoutEngine(stored: CutoutEngineChoice?, flagApplied: Boolean): Pair<CutoutEngineChoice, Boolean> =
+    if (flagApplied) (stored ?: CutoutEngineChoice.Standard) to false else CutoutEngineChoice.Standard to true
 
 /** Missing or outside the widest Browse range (2..4) falls back to 2 columns. */
 private fun Int?.toBrowseColumns(): Int = this?.takeIf { it in 2..4 } ?: 2
@@ -288,6 +320,8 @@ private val browseColumnsKey = intPreferencesKey("browse_columns")
 /** SG2b boolean; read only while [cutoutEngineKey] is absent (see [cutoutEngineChoice]). */
 private val preciseCutoutEnabledKey = booleanPreferencesKey("precise_cutout_enabled")
 private val cutoutEngineKey = stringPreferencesKey("cutout_engine")
+/** K00: set once the Standard default has been written to an install (see [migratedCutoutEngine]). */
+private val cutoutDefaultV3AppliedKey = booleanPreferencesKey("cutout_default_v3_applied")
 private val cutoutRemoveHangerKey = booleanPreferencesKey("cutout_remove_hanger")
 private val cutoutHangerSensitivityKey = stringPreferencesKey("cutout_hanger_sensitivity")
 private val cutoutEdgesKey = stringPreferencesKey("cutout_edges")

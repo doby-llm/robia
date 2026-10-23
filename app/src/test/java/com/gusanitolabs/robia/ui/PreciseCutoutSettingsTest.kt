@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.suggestions.model.ModelFailure
 import com.gusanitolabs.robia.suggestions.model.ModelState
@@ -56,5 +57,12 @@ class PreciseCutoutSettingsTest {
         assertFalse(hangerDetectionVisible(packReady = false, engine = auto, removeHangers = false))
         assertFalse(hangerDetectionVisible(packReady = false, engine = standard, removeHangers = true))
         assertFalse(hangerDetectionVisible(packReady = false, engine = standard, removeHangers = false))
+    }
+
+    /** V-K00-2: the precise (Automatic) option carries the Experimental label; Standard carries none. */
+    @Test
+    fun automaticCarriesTheExperimentalLabel_standardDoesNot() {
+        assertEquals(R.string.cutout_method_experimental, cutoutMethodExperimentalRes(CutoutEngineChoice.Automatic))
+        assertNull(cutoutMethodExperimentalRes(CutoutEngineChoice.Standard))
     }
 }

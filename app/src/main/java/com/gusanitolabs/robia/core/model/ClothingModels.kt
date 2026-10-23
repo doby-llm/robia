@@ -125,8 +125,8 @@ data class RobiaSettings(
     val browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
     /** Pinch-chosen Browse column count; clamped to [browseColumnRange] when shown. */
     val browseColumns: Int = 2,
-    /** Cutout method (Settings > Cutout); Automatic is the default. */
-    val cutoutEngine: CutoutEngineChoice = CutoutEngineChoice.Automatic,
+    /** Cutout method (Settings > Cutout); Standard is the default, Automatic (precise, Experimental) is opt-in. */
+    val cutoutEngine: CutoutEngineChoice = CutoutEngineChoice.Standard,
     /** Hanger removal in the precise cutout; ignored by Standard. */
     val cutoutRemoveHanger: Boolean = true,
     val cutoutHangerSensitivity: HangerSensitivity = HangerSensitivity.Normal,

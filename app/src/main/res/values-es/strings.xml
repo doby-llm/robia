@@ -785,4 +785,7 @@
     <string name="redo_cutout_precise">Preciso</string>
     <string name="redo_cutout_precise_keep_hanger">Preciso sin quitar perchas</string>
     <string name="redo_cutout_failed">No se pudo repetir el recorte</string>
+    <!-- K00 -->
+    <string name="cutout_method_experimental">Experimental</string>
+    <string name="cutout_method_experimental_hint">Puede quitar partes de la prenda. Revisa cada resultado.</string>
 </resources>
