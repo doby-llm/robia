@@ -183,3 +183,25 @@ When Drive was configured and is now disconnected, Browse shows one sign-in bann
 - Files: `app/src/test/java/com/gusanitolabs/robia/ui/DuplicateCalibrationScreenTest.kt` (new) is added to the DUP1 Files list. Review round 6 found it in PR #152 (76 lines) without a Files entry.
 - Pruning on any route: duplicate groups drop any garment that leaves the active wardrobe, whether by archive, delete from Browse (RobiaApp.kt, deleteItemsAndReturnToBrowse archives garments but never calls DuplicateSession.removeGarments) or delete in review. Otherwise a gone garment stays in a group until the next scan, which waits 24 h when the count only drops, and the banner count depends on it. The rule must be pure and testable in JVM; the implementation is free. The 24-hour cadence and the 5-garment trigger (R3-DEC-026) are unchanged.
 - Calibration signature amends R3-DEC-029 bullet 3 (which is not edited): the signature also includes archive state (isArchived, DuplicateCalibrationScreen.kt CalibrationSignature), so archiving or un-archiving a garment resets the marks. Accepted on a developer-only screen. R3-DEC-026 does not mention archive state, so it gives no rule to keep or reset marks on archive.
+
+## R3-DEC-028 — K03 V-K03-1 becomes a regression row (PLAN-CHANGE 2026-10-23) · D
+- Numbering: 028 is a gap left by an unmerged earlier draft; this entry uses the number for the K03 decision.
+- Manu chose option A on 2026-10-23. V-K03-1 asked that the band transition width of `refineAlpha` on a synthetic hanger-band photo be ≤ 1.5× the side width. The K03 worker (round 2, head 00e114e) found no synthetic case that fails on the pre-K03 behaviour. Results of a Python float32 replica, not the JVM: band-to-body ratio 1.0 with both the old and the new guide; across 475 random scenes no case where the old guide exceeded 1.5× and the new one stayed within it.
+- V-K03-1 is rewritten as a CI regression row: the `MaskOpsTest` synthetic scene passes, and the side-edge width helper matches the compare.py definition (thresholds 0.05 and 0.95, per-row halving, max > 0.95 gate). It does not show that the band is fixed.
+- V-K03-3 (compare.py on the red-shorts dump, `band_edge_ratio` ≤ 1.5, all stage IoUs pass, coordinator at G-ADB2) is the only evidence that the band is fixed. Threshold unchanged. V-K03-D unchanged.
+- Rationale: a row that passes on the old code must not read as proof of the fix.
+
+## R3-DEC-031 — ED2: undo on saved garments is editor-session only (PLAN-CHANGE 2026-10-23) · D
+- Manu chose option A on 2026-10-23. For a saved garment, undo works only inside the open editor session (the editor's own edits, RefineSession ops). "Cut out again" photos are not kept in history for saved garments, and nothing survives closing the editor. For a new garment (add flow) the full history of R3-DEC-027 stays; R3-DEC-027 is not edited.
+- Implementation fact: PR #149 (head ce8baeb) passes `keepsHistory = !isEditing` at `ui/AddEditClothingScreen.kt:704`, a one-line call site. The file is added to the ED2 Files list; Acceptance IDs unchanged.
+- V-ED2 rows stay as they are; V-ED2-D gains one sentence stating the saved-garment limit.
+- Rationale: it keeps the temporary photo files out of the saved-garment flow, in line with R3-DEC-027.
+
+## R3-DEC-032 — DUP1 review closure rule (PLAN-CHANGE 2026-10-23) · D
+- Context: DUP1 (PR #152) has had six independent-review rounds (all NOT SAFE) and a seventh worker round. The task is not tagged "Independent review: yes" in tasks.md; the coordinator added the reviews. The rounds kept finding new edge cases in a feature whose real acceptance is device-side (V-DUP1-D, G-DUP) and whose threshold work is DUP2's.
+- BLOCKING class: a review of DUP1 returns SAFE when it has no finding in this class: data loss or wrong deletion; crash or unbounded main-thread work; a violated V-DUP1-1..3 row or REQ-DU-01/03/04; a file outside Files; a weakened existing test.
+- Everything else is a DEFERRED follow-up: listed in the PR receipt and in the follow-up list below, never a reason for another worker round.
+- Follow-up list (already deferred): a failed scan still records history and blocks the retry for 24 h; exact-tier edge strength is 1.0, so the strongest-pairs split falls back to id order; calibration marks are lost on rotation (developer-only screen); optional hardening items from rounds 1-6.
+- Next review: the round-7 review of the code is the last one before merge unless it finds a BLOCKING item. A BLOCKING item gets one closed-list worker round; the review after that checks only that list.
+- Merge also needs CI green on the head and a merge of origin/main. V-DUP1-D stays Manu's.
+- Rationale: review rounds must end on a stated class, not on the reviewer running out of edge cases.
