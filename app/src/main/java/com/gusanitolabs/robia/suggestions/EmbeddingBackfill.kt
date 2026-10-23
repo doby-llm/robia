@@ -18,8 +18,11 @@ import kotlinx.coroutines.yield
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-/** [remaining] garments still waiting for a vector; [running] while the loop is active (TS§3.8). */
-data class BackfillProgress(val remaining: Int = 0, val running: Boolean = false)
+/**
+ * [remaining] garments still waiting for a vector; [running] while the loop is active (TS§3.8). [settled] once a pass
+ * found nothing left to do, so [remaining] = 0 is known rather than not yet computed (DUP1 scan gate).
+ */
+data class BackfillProgress(val remaining: Int = 0, val running: Boolean = false, val settled: Boolean = false)
 
 /** One vector that is missing or stale for a garment. A [ClearText] removes a TEXT vector whose garment has no name or notes. */
 private sealed interface BackfillTask {
@@ -79,7 +82,12 @@ class EmbeddingBackfill(
             while (isModelReady()) {
                 currentCoroutineContext().ensureActive()
                 val tasks = pendingTasks()
-                _progress.value = BackfillProgress(remaining = tasks.map { it.garmentId }.distinct().size, running = true)
+                // An empty list ends the pass: from then on [remaining] is known, so the duplicate scan may read the vectors.
+                _progress.value = BackfillProgress(
+                    remaining = tasks.map { it.garmentId }.distinct().size,
+                    running = true,
+                    settled = _progress.value.settled || tasks.isEmpty(),
+                )
                 val next = tasks.firstOrNull() ?: break
                 runTask(next)
                 yield()

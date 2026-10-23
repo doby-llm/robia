@@ -13,6 +13,8 @@ data class GarmentVectors(
     val garmentId: String,
     val image: FloatArray?,
     val text: FloatArray?,
+    /** `input_hash` stored with the IMAGE vector; a duplicate scan compares it with the current photo. */
+    val imageInputHash: String? = null,
 )
 
 /**
@@ -31,18 +33,11 @@ class EmbeddingRepository(
 ) {
     /** Decoded vectors for one model+recipe only; rows from other recipes are ignored. */
     fun observeVectors(modelId: String, recipeId: String): Flow<Map<String, GarmentVectors>> =
-        embeddingDao.observeAll().map { rows ->
-            rows
-                .filter { row -> row.modelId == modelId && row.recipeId == recipeId }
-                .groupBy(GarmentEmbeddingEntity::garmentId)
-                .mapValues { (garmentId, garmentRows) ->
-                    GarmentVectors(
-                        garmentId = garmentId,
-                        image = garmentRows.vectorOf(EmbeddingKind.IMAGE),
-                        text = garmentRows.vectorOf(EmbeddingKind.TEXT),
-                    )
-                }
-        }
+        embeddingDao.observeAll().map { rows -> rows.toGarmentVectors(modelId, recipeId) }
+
+    /** One-shot read for a scan; unlike [observeVectors] it does not re-emit on every vector write. */
+    suspend fun snapshotVectors(modelId: String, recipeId: String): Map<String, GarmentVectors> =
+        embeddingDao.getForRecipe(modelId, recipeId).toGarmentVectors(modelId, recipeId)
 
     /** Stores a vector for the current model+recipe and marks it pending upload. */
     suspend fun upsert(garmentId: String, kind: String, vector: FloatArray, inputHash: String, durationMs: Long) {
@@ -80,6 +75,18 @@ class EmbeddingRepository(
         keys.forEach { key -> embeddingDao.markUploaded(key.garmentId, key.kind, key.computedAtEpochMillis) }
     }
 }
+
+private fun List<GarmentEmbeddingEntity>.toGarmentVectors(modelId: String, recipeId: String): Map<String, GarmentVectors> =
+    filter { row -> row.modelId == modelId && row.recipeId == recipeId }
+        .groupBy(GarmentEmbeddingEntity::garmentId)
+        .mapValues { (garmentId, garmentRows) ->
+            GarmentVectors(
+                garmentId = garmentId,
+                image = garmentRows.vectorOf(EmbeddingKind.IMAGE),
+                text = garmentRows.vectorOf(EmbeddingKind.TEXT),
+                imageInputHash = garmentRows.firstOrNull { row -> row.kind == EmbeddingKind.IMAGE }?.inputHash,
+            )
+        }
 
 private fun List<GarmentEmbeddingEntity>.vectorOf(kind: String): FloatArray? =
     firstOrNull { row -> row.kind == kind }?.vector?.let { bytes -> bytes.toFloatArrayLe() }

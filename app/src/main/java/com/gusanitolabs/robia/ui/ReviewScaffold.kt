@@ -30,6 +30,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -329,6 +331,7 @@ internal fun BoxScope.ReviewBottomBar(
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
+    colors: ButtonColors = ButtonDefaults.buttonColors(),
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Surface(
@@ -342,6 +345,7 @@ internal fun BoxScope.ReviewBottomBar(
         Button(
             onClick = onClick,
             enabled = enabled,
+            colors = colors,
             interactionSource = interactionSource,
             modifier = Modifier
                 .padding(24.dp)

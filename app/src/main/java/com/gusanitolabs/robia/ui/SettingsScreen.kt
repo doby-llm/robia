@@ -139,6 +139,7 @@ internal fun SettingsScreen(
     browseLayout: BrowseLayout,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
     onRestoreSyncLogClick: () -> Unit,
+    onDuplicateCalibrationClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
@@ -241,6 +242,13 @@ internal fun SettingsScreen(
                             supportingContent = { Text(stringResource(R.string.restore_sync_log_summary)) },
                             leadingContent = { Icon(Icons.Rounded.Share, contentDescription = null) },
                             modifier = Modifier.clickable(onClick = onRestoreSyncLogClick),
+                        )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.duplicate_calibration_title)) },
+                            supportingContent = { Text(stringResource(R.string.duplicate_calibration_summary)) },
+                            leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                            modifier = Modifier.clickable(onClick = onDuplicateCalibrationClick),
                         )
                         Divider()
                         ListItem(
