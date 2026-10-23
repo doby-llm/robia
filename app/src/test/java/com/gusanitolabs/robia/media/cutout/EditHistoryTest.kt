@@ -352,6 +352,42 @@ class EditHistoryTest {
         assertEquals(0L, budget.used)
     }
 
+    /**
+     * Review round 3, item 1: with budget for one session and two photos alive, A is cut out to B and undone back to A. The
+     * Redo on A's own undone op runs a budget trim. B is the only photo on the after side, so it is the next Redo target and
+     * is kept, even over budget: Redo still reaches B. Before the fix, the trim dropped B.
+     */
+    @Test
+    fun nearestPhotoAfterIsNeverDropped_evenWhenOverBudget() {
+        val probe = EditBudget()
+        RefineSession(w, h, baseAlpha(), probe)
+        val sessionBytes = probe.used
+
+        val budget = EditBudget(limit = sessionBytes)
+        val history = newHistory(budget)
+        val a = RefineSession(w, h, baseAlpha(), budget)
+        val b = RefineSession(w, h, baseAlpha(), budget)
+        a.applyBrush(RefineSession.Mode.Remove, floatArrayOf(4f, 4f), 2f, 1f)
+        a.undo()
+        assertTrue(a.canRedo)
+
+        history.cutOut("A", a, fromRedo = false)
+        val back = checkNotNull(history.back("B", b, fromRedo = false))
+        assertEquals("A", back.photo)
+        assertTrue(back.session === a)
+        assertFalse(history.canGoBack)
+
+        a.redo()
+        assertTrue("B is the next Redo target and must stay", history.canGoForward)
+        val forward = checkNotNull(history.forward("A", a, fromRedo = false))
+        assertEquals("B", forward.photo)
+        assertTrue(forward.session === b)
+
+        forward.session.close()
+        history.close()
+        assertEquals(0L, budget.used)
+    }
+
     /** Item 2 (review): a new edit after an undo across a Cut out again discards the photo redo tail too. */
     @Test
     fun aNewEditAfterUndoingACut_discardsThePhotoRedoTail() {

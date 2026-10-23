@@ -358,10 +358,11 @@ internal class PhotoHistory<P>(
 
     /**
      * Drops the oldest photo kept off screen: the first of [before], else the first of [after], which is the one farthest from
-     * the photo on screen. The nearest of [after] is the next Redo target, so it is never the one dropped.
+     * the photo on screen. The nearest of [after] is the next Redo target, so it is never the one dropped: when it is the only
+     * photo on the after side, nothing is dropped, and the budget stays soft. False when nothing can be dropped.
      */
     override fun dropOldest(): Boolean {
-        val step = before.removeFirstOrNull() ?: after.removeFirstOrNull() ?: return false
+        val step = before.removeFirstOrNull() ?: after.takeIf { it.size > 1 }?.removeFirst() ?: return false
         step.file.delete()
         step.session.close()
         return true
