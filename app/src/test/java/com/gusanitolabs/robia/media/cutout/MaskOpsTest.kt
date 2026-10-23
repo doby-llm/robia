@@ -158,6 +158,96 @@ class MaskOpsTest {
         assertTrue(out.all { kotlin.math.abs(it - 0.25f) < 1e-6f })
     }
 
+    /** A checkerboard of [cell]-pixel squares with values 20 (top-left) and 220. */
+    private fun checker(n: Int, cell: Int): FloatArray =
+        FloatArray(n * n) { i -> if (((i % n) / cell + (i / n) / cell) % 2 == 0) 20f else 220f }
+
+    /**
+     * Expected values generated with PIL 11.1.0 (numpy 2.2.4) by these commands, run from any directory:
+     * 12×12 with 3 px cells: `python3 -I -c "import numpy as np; from PIL import Image; y, x = np.indices((12, 12)); a = np.where(((x // 3) + (y // 3)) % 2 == 0, 20, 220).astype(np.uint8); print(np.asarray(Image.fromarray(a).resize((4, 4), Image.BILINEAR)).ravel().tolist())"`
+     * 10×10 with 2 px cells: the same with `np.indices((10, 10))` and `// 2` in both places.
+     * The old resizeBilinear is run against the same 12×12 input in resizeBilinear_doesNotMatchPilBilinearOnTheCheckerDownscale,
+     * which shows it misses these values.
+     */
+    @Test
+    fun resizeBilinearAntialias_matchesPilBilinearOnAnIntegerDownscale() {
+        // PIL: Image.fromarray(checker 12×12, 3 px cells).resize((4, 4), Image.BILINEAR)
+        val expected = intArrayOf(64, 162, 78, 176, 162, 89, 151, 78, 78, 151, 89, 162, 176, 78, 162, 64)
+
+        val out = MaskOps.resizeBilinearAntialias(checker(12, 3), 12, 12, 4, 4)
+
+        for (i in expected.indices) assertEquals("pixel $i", expected[i].toFloat(), out[i], 1f)
+    }
+
+    /**
+     * D4 proof (R3-DEC-025): the OLD resizeBilinear, on the same 12×12 checker as the PIL test above, must NOT produce the PIL
+     * values. It samples each 3×3 cell's centre, so it returns 20/220 where PIL returns 64..176; the largest gap is 69
+     * (pixels 5, 6, 9, 10). Checked outside the JVM with a float32 replica of the old loop against PIL 11.1.0 (numpy 2.2.4).
+     */
+    @Test
+    fun resizeBilinear_doesNotMatchPilBilinearOnTheCheckerDownscale() {
+        // PIL: Image.fromarray(checker 12×12, 3 px cells).resize((4, 4), Image.BILINEAR), as in the PIL test above.
+        val pil = intArrayOf(64, 162, 78, 176, 162, 89, 151, 78, 78, 151, 89, 162, 176, 78, 162, 64)
+
+        val old = MaskOps.resizeBilinear(checker(12, 3), 12, 12, 4, 4)
+
+        val matches = pil.indices.all { kotlin.math.abs(old[it] - pil[it]) <= 1f }
+        assertFalse("old resizeBilinear = ${old.toList()}, PIL = ${pil.toList()}", matches)
+    }
+
+    @Test
+    fun resizeBilinearAntialias_matchesPilBilinearOnANonIntegerDownscale() {
+        // PIL: Image.fromarray(checker 10×10, 2 px cells).resize((4, 4), Image.BILINEAR)
+        val expected = intArrayOf(100, 125, 125, 100, 125, 119, 119, 125, 125, 119, 119, 125, 100, 125, 125, 100)
+
+        val out = MaskOps.resizeBilinearAntialias(checker(10, 2), 10, 10, 4, 4)
+
+        for (i in expected.indices) assertEquals("pixel $i", expected[i].toFloat(), out[i], 1f)
+    }
+
+    @Test
+    fun resizeBilinearAntialias_keepsConstantPlanesConstant() {
+        val out = MaskOps.resizeBilinearAntialias(FloatArray(800 * 600) { 0.25f }, 800, 600, 320, 320)
+
+        assertTrue(out.all { kotlin.math.abs(it - 0.25f) < 1e-5f })
+    }
+
+    @Test
+    fun samInputSize_scalesTheLongEdgeToExactly1024AndRoundsTheOtherSide() {
+        // Work sizes: already 1024 long edge (no change), 1024 × 768 (no change), 800 × 600 (scaled by 1.28), portrait 600 × 800.
+        assertEquals(576 to 1024, MaskOps.samInputSize(576, 1024))
+        assertEquals(1024 to 768, MaskOps.samInputSize(1024, 768))
+        assertEquals(1024 to 768, MaskOps.samInputSize(800, 600))
+        assertEquals(768 to 1024, MaskOps.samInputSize(600, 800))
+    }
+
+    @Test
+    fun samScale_isOneForA1024LongEdgeAndOneDotTwoEightForA800x600() {
+        assertEquals(1.28, MaskOps.samScale(800, 600), 1e-9)
+        assertEquals(1.0, MaskOps.samScale(576, 1024), 1e-12)
+        assertEquals(1.0, MaskOps.samScale(1024, 768), 1e-12)
+    }
+
+    @Test
+    fun samPrompt_scalesPointsAndBoxCornersForWorkSizes576x1024_1024x768_and_800x600() {
+        // bench_v6.MobileSam: points and box corners are multiplied by samScale; positive labels 1, negative 0, box 2 and 3.
+        val positive = listOf(MaskPoint(100, 50))
+        val negative = listOf(MaskPoint(7, 9))
+        val box = MaskBox(10, 20, 30, 40)
+
+        val portrait = MaskOps.samPrompt(576, 1024, positive, negative, box)
+        assertArrayEquals(floatArrayOf(100f, 50f, 7f, 9f, 10f, 20f, 30f, 40f), portrait.coords, 1e-4f)
+        assertArrayEquals(floatArrayOf(1f, 0f, 2f, 3f), portrait.labels, 0f)
+
+        val landscape = MaskOps.samPrompt(1024, 768, positive, negative, box)
+        assertArrayEquals(floatArrayOf(100f, 50f, 7f, 9f, 10f, 20f, 30f, 40f), landscape.coords, 1e-4f)
+
+        // 800 × 600: scale 1.28, so 100 → 128, 50 → 64, and the box corners 10 → 12.8 … 40 → 51.2.
+        val scaled = MaskOps.samPrompt(800, 600, positive, negative, box)
+        assertArrayEquals(floatArrayOf(128f, 64f, 8.96f, 11.52f, 12.8f, 25.6f, 38.4f, 51.2f), scaled.coords, 1e-3f)
+        assertArrayEquals(floatArrayOf(1f, 0f, 2f, 3f), scaled.labels, 0f)
+    }
+
     @Test
     fun hangerPlausibility_needsWidthAtTheTopOfTheGarment() {
         val garment = MaskBox(0, 100, 99, 400)

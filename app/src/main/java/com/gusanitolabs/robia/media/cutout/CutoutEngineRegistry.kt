@@ -25,6 +25,8 @@ internal const val FALLBACK_TRIPPED = "tripped"
 internal const val FALLBACK_TIMEOUT = "timeout"
 internal const val FALLBACK_ERROR = "error"
 internal const val FALLBACK_NOT_REMOVED = "not_removed"
+/** The precise result kept too little of the garment (K02 (b)); the engine marks it so the chain can name it. */
+internal const val FALLBACK_GARMENT_LOSS = "garment_loss"
 
 /** Which engine produced a cutout, the fallback reason and the time of the whole cutout (both engines included). */
 data class CutoutOutcome(val engine: String, val fallback: String, val ms: Long)
@@ -58,7 +60,8 @@ internal fun useEnginePrecise(packReady: Boolean, enabled: Boolean): Boolean = p
  * precise → ML Kit. The precise result counts only when [isRemoved] accepts it and it arrives within [timeout]; a null,
  * unaccepted, timed-out or failed precise result, and any other throwable (a [LinkageError] from class or native loading
  * included), all go to [mlKit]. Cancellation of the caller always propagates. [skipReason] names why a null precise result
- * was skipped; [onOutcome] gets the engine, the fallback reason and the time once the result is known.
+ * was skipped; [notRemovedReason] names why a precise result that is not removed was not used; [onOutcome] gets the engine,
+ * the fallback reason and the time once the result is known.
  */
 internal suspend fun <T> cutoutFallbackChain(
     precise: suspend () -> T?,
@@ -66,6 +69,7 @@ internal suspend fun <T> cutoutFallbackChain(
     isRemoved: (T) -> Boolean,
     timeout: Duration = PRECISE_TIMEOUT,
     skipReason: () -> String = { FALLBACK_NOT_ACTIVE },
+    notRemovedReason: (T) -> String = { FALLBACK_NOT_REMOVED },
     onOutcome: (CutoutOutcome) -> Unit = {},
 ): T {
     val started = System.nanoTime()
@@ -76,7 +80,7 @@ internal suspend fun <T> cutoutFallbackChain(
             returned == null -> null to FALLBACK_TIMEOUT
             value == null -> null to skipReason()
             isRemoved(value) -> value to FALLBACK_NONE
-            else -> null to FALLBACK_NOT_REMOVED
+            else -> null to notRemovedReason(value)
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
