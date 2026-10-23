@@ -61,6 +61,15 @@ class MotionTest {
         assertTrue(SPARKLE_DURATION_MILLIS <= 900)
     }
 
+    @Test
+    fun sparkleBurstAfterProcessing_playsOnlyWhenProcessingEndsWithTheButtonShown() {
+        assertTrue(sparkleBurstAfterProcessing(wasProcessing = true, isProcessing = false, buttonVisible = true))
+        assertFalse(sparkleBurstAfterProcessing(wasProcessing = true, isProcessing = false, buttonVisible = false))
+        assertFalse(sparkleBurstAfterProcessing(wasProcessing = false, isProcessing = true, buttonVisible = true))
+        assertFalse(sparkleBurstAfterProcessing(wasProcessing = true, isProcessing = true, buttonVisible = true))
+        assertFalse(sparkleBurstAfterProcessing(wasProcessing = false, isProcessing = false, buttonVisible = true))
+    }
+
     private companion object {
         const val EPSILON = 1e-3
     }

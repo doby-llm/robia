@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -90,6 +91,8 @@ import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.PopIn
+import com.gusanitolabs.robia.core.designsystem.SparkleBurst
+import com.gusanitolabs.robia.core.designsystem.sparkleBurstAfterProcessing
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -1324,6 +1327,13 @@ private fun PhotoCaptureCard(
     onGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
 ) {
+    val quickEditVisible = quickEditButtonVisible(hasUsablePhoto = !photoUri.isNullOrBlank())
+    var sparkleBurstPending by remember { mutableStateOf(false) }
+    var wasProcessing by remember { mutableStateOf(isPhotoProcessing) }
+    LaunchedEffect(isPhotoProcessing) {
+        if (sparkleBurstAfterProcessing(wasProcessing, isPhotoProcessing, quickEditVisible)) sparkleBurstPending = true
+        wasProcessing = isPhotoProcessing
+    }
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -1367,19 +1377,27 @@ private fun PhotoCaptureCard(
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.gallery))
                     }
-                    if (quickEditButtonVisible(hasUsablePhoto = !photoUri.isNullOrBlank())) {
-                        FilledTonalButton(
-                            onClick = { onQuickEditClick?.invoke() },
-                            enabled = onQuickEditClick != null && !isPhotoProcessing,
-                        ) {
-                            Text(stringResource(R.string.edit_photo_action))
-                            Spacer(Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Outlined.AutoAwesome,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
+                    if (quickEditVisible) {
+                        Box {
+                            FilledTonalButton(
+                                onClick = { onQuickEditClick?.invoke() },
+                                enabled = onQuickEditClick != null && !isPhotoProcessing,
+                            ) {
+                                Text(stringResource(R.string.edit_photo_action))
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.Outlined.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
+                            if (sparkleBurstPending) {
+                                SparkleBurst(
+                                    modifier = Modifier.matchParentSize(),
+                                    onFinished = { sparkleBurstPending = false },
+                                )
+                            }
                         }
                     }
                 }

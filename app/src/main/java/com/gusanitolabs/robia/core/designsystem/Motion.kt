@@ -86,9 +86,16 @@ fun PopIn(visible: Boolean, delayMillis: Int = 0, content: @Composable () -> Uni
 /** Whether [SparkleBurst] animates. Reduced motion draws nothing. */
 internal fun sparkleBurstPlays(reducedMotion: Boolean): Boolean = !reducedMotion
 
-/** One-shot burst of small sparkle glyphs that move outward and fade over 900 ms; draws nothing when reduced motion is on. */
+/** The Edit photo burst plays once, when processing ends and its button is shown again. */
+internal fun sparkleBurstAfterProcessing(wasProcessing: Boolean, isProcessing: Boolean, buttonVisible: Boolean): Boolean =
+    wasProcessing && !isProcessing && buttonVisible
+
+/**
+ * One-shot burst of small sparkle glyphs that move outward and fade over 900 ms; draws nothing when reduced motion is on.
+ * [onFinished] runs when the burst ends, or at once when reduced motion is on.
+ */
 @Composable
-fun SparkleBurst(modifier: Modifier, count: Int = 7, seed: Int = 0) {
+fun SparkleBurst(modifier: Modifier, count: Int = 7, seed: Int = 0, onFinished: () -> Unit = {}) {
     val reducedMotion = LocalReducedMotion.current
     val progress = remember { Animatable(0f) }
     val glyphColor = MaterialTheme.colorScheme.tertiary
@@ -97,6 +104,7 @@ fun SparkleBurst(modifier: Modifier, count: Int = 7, seed: Int = 0) {
         if (sparkleBurstPlays(reducedMotion)) {
             progress.animateTo(1f, tween(durationMillis = SPARKLE_DURATION_MILLIS, easing = LinearEasing))
         }
+        onFinished()
     }
     if (!sparkleBurstPlays(reducedMotion)) return
     Canvas(modifier) {
