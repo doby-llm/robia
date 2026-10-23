@@ -1234,14 +1234,6 @@ private fun RobiaShell(
         batchProcessingScope.launch(Dispatchers.IO) { ClothingImageStore.deleteBatchDraftFiles(context, files) }
     }
 
-    fun requestBatchCancel() {
-        if (batchDrafts.isNotEmpty()) {
-            showBatchDiscardDialog = true
-        } else {
-            cancelBatchAdd()
-        }
-    }
-
     fun cancelBatchAdd() {
         // Snapshot the unsaved drafts first: cancel() marks them interrupted and the list is cleared below.
         val unsavedFiles = batchDrafts.flatMap(BatchDraftItem::tempFileUris)
@@ -1258,6 +1250,14 @@ private fun RobiaShell(
         batchProcessingScope.launch(Dispatchers.IO) {
             cancelledJob?.join()
             ClothingImageStore.deleteBatchDraftFiles(context, unsavedFiles)
+        }
+    }
+
+    fun requestBatchCancel() {
+        if (batchDrafts.isNotEmpty()) {
+            showBatchDiscardDialog = true
+        } else {
+            cancelBatchAdd()
         }
     }
 
