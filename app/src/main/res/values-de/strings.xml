@@ -796,4 +796,6 @@
     <string name="cutout_pack_cancel">Abbrechen</string>
     <!-- ED2 -->
     <string name="refine_redo">Wiederholen</string>
+    <!-- FIT -->
+    <string name="filter_fit">Passform</string>
 </resources>

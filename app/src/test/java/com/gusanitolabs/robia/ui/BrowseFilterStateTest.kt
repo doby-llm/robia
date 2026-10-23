@@ -191,6 +191,77 @@ class BrowseFilterStateTest {
         assertEquals(listOf("Árbol", "Mesa", "Nz", "Ñu"), labels.sortedAlphabetically(label = { label -> label }))
     }
 
+    @Test
+    fun fitsMatchesEveryGarmentExceptDoesNotFitIncludingUnsetFit() {
+        val filters = BrowseFilterState().toggleFit(FitFilter.Fits)
+
+        assertTrue(filters.matches(item(fitValue = null), colors))
+        assertTrue(filters.matches(item(fitValue = 1), colors))
+        assertTrue(filters.matches(item(fitValue = 2), colors))
+        assertTrue(filters.matches(item(fitValue = 4), colors))
+        assertFalse(filters.matches(item(fitValue = 0), colors))
+    }
+
+    @Test
+    fun doesNotFitMatchesOnlyTheDoesNotFitValue() {
+        val filters = BrowseFilterState().toggleFit(FitFilter.DoesNotFit)
+
+        assertTrue(filters.matches(item(fitValue = 0), colors))
+        assertFalse(filters.matches(item(fitValue = null), colors))
+        assertFalse(filters.matches(item(fitValue = 2), colors))
+    }
+
+    @Test
+    fun bothFitOptionsMatchEveryGarment() {
+        val filters = BrowseFilterState().toggleFit(FitFilter.Fits).toggleFit(FitFilter.DoesNotFit)
+
+        assertTrue(filters.matches(item(fitValue = null), colors))
+        assertTrue(filters.matches(item(fitValue = 0), colors))
+        assertTrue(filters.matches(item(fitValue = 3), colors))
+    }
+
+    @Test
+    fun fitIsAndedWithOtherSections() {
+        val filters = BrowseFilterState().selectTags(dresses).toggleFit(FitFilter.DoesNotFit)
+
+        assertTrue(filters.matches(item(listOf(dresses), fitValue = 0), colors))
+        assertFalse(filters.matches(item(listOf(dresses), fitValue = 2), colors))
+        assertFalse(filters.matches(item(listOf(summer), fitValue = 0), colors))
+    }
+
+    @Test
+    fun fitCountsEachOptionAndMakesTheFilterActive() {
+        val oneOption = BrowseFilterState().toggleFit(FitFilter.Fits)
+        val bothOptions = oneOption.toggleFit(FitFilter.DoesNotFit)
+
+        assertTrue(oneOption.hasActiveFilters)
+        assertEquals(1, oneOption.activeFilterCount)
+        assertEquals(2, bothOptions.activeFilterCount)
+    }
+
+    @Test
+    fun togglingFitTwiceLeavesNoFitBehind() {
+        assertEquals(BrowseFilterState(), BrowseFilterState().toggleFit(FitFilter.Fits).toggleFit(FitFilter.Fits))
+    }
+
+    @Test
+    fun fitChipRemovalDropsOnlyItsOwnOption() {
+        val filters = BrowseFilterState()
+            .toggleFit(FitFilter.Fits)
+            .toggleFit(FitFilter.DoesNotFit)
+            .toggleFavoritesOnly()
+            .toggleFit(FitFilter.Fits)
+
+        assertEquals(setOf(FitFilter.DoesNotFit), filters.fit)
+        assertTrue(filters.favoritesOnly)
+    }
+
+    @Test
+    fun resetStateHasNoFitSelectionAndNoActiveFilters() {
+        assertTrue(BrowseFilterState().fit.isEmpty())
+        assertFalse(BrowseFilterState().hasActiveFilters)
+    }
+
     private fun BrowseFilterState.selectTags(vararg tags: GarmentTag): BrowseFilterState =
         tags.fold(this) { filters, tag -> filters.toggleTag(tag) }
 
@@ -198,6 +269,7 @@ class BrowseFilterStateTest {
         tags: List<GarmentTag> = emptyList(),
         favorite: Boolean = false,
         primaryPaletteColorId: String? = null,
+        fitValue: Int? = null,
     ) = UiWardrobeItem(
         id = "garment",
         name = "Garment",
@@ -205,7 +277,7 @@ class BrowseFilterStateTest {
         notes = "",
         photoUri = null,
         tags = tags.map { tag -> UiTag(id = tag.id, categoryId = tag.categoryId, label = tag.name) },
-        fitValue = null,
+        fitValue = fitValue,
         primaryColor = DisplayColorLabel.Unknown,
         primaryRawValue = null,
         primaryPaletteColorId = primaryPaletteColorId,

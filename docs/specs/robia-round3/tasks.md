@@ -50,6 +50,7 @@
 - **In scope:** Band-local guide + same edge profile + 2 px decontamination; the same change in the reference script so parity holds.
 - **Out of scope:** Global edge filter changes outside the band; ML Kit `AlphaRefiner`.
 - **Acceptance:** V-K03-1, V-K03-2, V-K03-3, V-K03-D.
+- **PLAN-CHANGE 2026-10-23 (R3-DEC-028):** V-K03-1 becomes a CI regression row. No synthetic scene fails on the pre-K03 behaviour (K03 worker, round 2), so V-K03-3 (compare.py on the red-shorts dump, G-ADB2) is the only evidence that the band is fixed.
 
 ## ED1 — Editor smart tool: visible, clipped, safe
 - **Reqs:** REQ-ED-01, REQ-ED-02 · **Predecessors:** W0 · **Successors:** ED2, K02, PRF
@@ -60,11 +61,13 @@
 
 ## ED2 — Editor: full undo/redo history
 - **Reqs:** REQ-ED-03 · **Predecessors:** ED1, G-ADB1 · **Successors:** OR1 · **Independent review: yes**
-- **Files:** `ui/PhotoEditorScreen.kt`; `media/cutout/RefineSession.kt`; new `media/cutout/EditHistory.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/RefineSessionTest.kt`; new `app/src/test/java/com/gusanitolabs/robia/media/cutout/EditHistoryTest.kt`.
-- **In scope:** Operation log with checkpoints for smart/brush/reset, "Cut out again" photos as cache temp files, Undo + Redo buttons, 64 MB budget; editor-wiring defects from the G-ADB1 PLAN-CHANGE.
-- **Out of scope:** Keeping history after the editor closes; Keep-mode restore (OR3).
+- **Files:** `ui/PhotoEditorScreen.kt`; `ui/AddEditClothingScreen.kt` (one-line call site `keepsHistory`); `media/cutout/RefineSession.kt`; new `media/cutout/EditHistory.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/RefineSessionTest.kt`; new `app/src/test/java/com/gusanitolabs/robia/media/cutout/EditHistoryTest.kt`.
+- **In scope:** Operation log with checkpoints for smart/brush/reset, "Cut out again" photos as cache temp files, Undo + Redo buttons, 64 MB budget; editor-wiring defects from the G-ADB1 PLAN-CHANGE. History is session-local and temporary (R3-DEC-027): it exists only while a photo is being added, before the garment is saved; it is discarded on save and never kept across app restarts; editing the photo of an already saved garment starts with no history.
+- **Out of scope:** Keeping history after the garment is saved or the editor closes; persisting history across restarts; Keep-mode restore (OR3).
 - **Acceptance:** V-ED2-1, V-ED2-2, V-ED2-3, V-ED2-4, V-ED2-D.
 - **G-ADB1 editor findings (R3-DEC-021):** none supported; step 4 has no defect to fix. Scope is the history only.
+- **PLAN-CHANGE 2026-10-23 (R3-DEC-031):** `ui/AddEditClothingScreen.kt` added to Files (one-line call site, `keepsHistory = !isEditing`, PR #149). On a saved garment, undo works only inside the open editor session (the editor's own edits); "Cut out again" photos are not kept in history there and nothing survives closing the editor. A new garment keeps the full history of R3-DEC-027.
+- **PLAN-CHANGE 2026-10-23 (PR #149 review, R3-DEC-027):** (1) Brief step 1 named `EditOp.NewPhoto`; the implementation replaced it with `PhotoHistory`, which holds the "Cut out again" photos (cut-out lives there). Accepted. (2) The 64 MB budget stays at its value. Option B (keep it) was chosen by Manu on 2026-10-23. Undo does not reach across a cut-out when the budget cannot hold the photo kept before it (about a 2048x2048 photo at the next edit); within the budget, every step can be undone. (3) History is cleared on save.
 
 ## GPU — Developer benchmark: EmbeddingGemma 2 on GPU
 - **Reqs:** REQ-OF-02 · **Predecessors:** W0 · **Successors:** DUP1, ED2, K02, PRF
@@ -117,11 +120,14 @@
 
 ## DUP1 — Duplicate finder: same-photo tier, banner, review, calibration screen
 - **Reqs:** REQ-DU-01 (tier 1), REQ-DU-03, REQ-DU-04, G-DUP · **Predecessors:** VIS, GPU · **Successors:** DUP2, OUT, SEL
-- **Files:** new `suggestions/DuplicateScan.kt`; new `ui/DuplicateReviewScreen.kt`; new `ui/DuplicateCalibrationScreen.kt`; `ui/BrowseGrid.kt`; `ui/RobiaApp.kt`; `ui/SettingsScreen.kt`; `data/EmbeddingRepository.kt`; `ui/ReviewScaffold.kt` (destructive colour parameter only); new `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`.
+- **Files:** new `suggestions/DuplicateScan.kt`; new `ui/DuplicateReviewScreen.kt`; new `ui/DuplicateCalibrationScreen.kt`; `ui/BrowseGrid.kt`; `ui/RobiaApp.kt`; `ui/SettingsScreen.kt`; `data/EmbeddingRepository.kt`; `app/src/main/java/com/gusanitolabs/robia/suggestions/EmbeddingBackfill.kt` (edited); `ui/ReviewScaffold.kt` (destructive colour parameter only); `app/src/main/res/values/strings.xml`, `values-es/strings.xml`, `values-de/strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`; `app/src/test/java/com/gusanitolabs/robia/suggestions/EmbeddingBackfillTest.kt` (edited); new `app/src/test/java/com/gusanitolabs/robia/ui/DuplicateCalibrationScreenTest.kt`.
 - **In scope:** Pure scan (exact input_hash tier + scored candidate pairs), banner, review with Keep/Delete, session-only "Not duplicates", developer calibration list.
 - **Out of scope:** Persisted dismissals and the cosine tier (DUP2).
 - **Acceptance:** V-DUP1-1, V-DUP1-2, V-DUP1-3, V-DUP1-D.
 - **PLAN-CHANGE 2026-10-23 (review round 1, NOT SAFE on PR #152):** ReviewScaffold.kt added to Files (R3-DEC-026). Required: dismissed pairs never merge across groups; banner hidden while merge proposal, review-complete overlay or any sync attention card shows; Delete in error colour; KDoc; scan entry points do not throw.
+- **PLAN-CHANGE 2026-10-23 (review round 5, R3-DEC-029):** EmbeddingBackfill.kt and EmbeddingBackfillTest.kt added to Files (edited, not new): the scan waits for the embedding backfill to settle (REQ-DU-04). Duplicate groups and session dismissals survive activity recreation within one process (process-scoped holder beside DuplicateScanHistory; nothing written to disk). The calibration signature is order-insensitive, so wardrobe writes no longer reset the marks.
+- **PLAN-CHANGE 2026-10-23 (review round 6, R3-DEC-030):** test file added to Files; groups drop garments that leave the wardrobe from any route; calibration signature includes archive state.
+- **PLAN-CHANGE 2026-10-23 (R3-DEC-032):** a review returns SAFE when it has no BLOCKING finding (data loss or wrong deletion, crash or unbounded main-thread work, a violated V-DUP1-1..3 row or REQ-DU-01/03/04, a file outside Files, a weakened existing test); everything else is a DEFERRED follow-up, listed in the PR receipt and in R3-DEC-032, never a reason for another worker round. The round-7 review is the last before merge unless it finds a BLOCKING item, which gets one closed-list worker round checked only against that list; merge also needs CI green on the head and a merge of origin/main.
 
 ## DUP2 — Duplicates: "very similar" tier and remembered dismissals
 - **Reqs:** REQ-DU-01 (tier 2), REQ-DU-02 · **Predecessors:** DUP1, G-DUP, OR2, ZIP · **Successors:** — · **Independent review: yes**

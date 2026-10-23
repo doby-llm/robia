@@ -796,4 +796,6 @@
     <string name="cutout_pack_cancel">Cancelar</string>
     <!-- ED2 -->
     <string name="refine_redo">Rehacer</string>
+    <!-- FIT -->
+    <string name="filter_fit">Ajuste</string>
 </resources>
