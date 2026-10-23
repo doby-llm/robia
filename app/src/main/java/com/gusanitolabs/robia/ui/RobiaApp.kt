@@ -192,14 +192,12 @@ import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.SegmentationModuleGates
-import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
-import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.DuplicateScanHistory
 import com.gusanitolabs.robia.suggestions.DuplicateScanRecord
+import com.gusanitolabs.robia.suggestions.DuplicateSession
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
-import com.gusanitolabs.robia.suggestions.afterRemoving
 import com.gusanitolabs.robia.suggestions.duplicateScanDue
 import com.gusanitolabs.robia.suggestions.scanDuplicates
 import com.gusanitolabs.robia.suggestions.QueryEmbedding
@@ -244,7 +242,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -931,10 +928,9 @@ private fun RobiaShell(
     val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
-    var duplicateGroups by remember { mutableStateOf<List<DuplicateGroup>>(emptyList()) }
-    // Session only: "Not duplicates" is not persisted until DUP2 adds the table (REQ-DU-02).
-    var duplicateDismissals by remember { mutableStateOf(emptySet<DuplicatePairKey>()) }
-    val duplicateBackfill by (app.embeddingBackfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
+    // Process-scoped: survives activity recreation. Session only: "Not duplicates" is not persisted until DUP2 adds the table (REQ-DU-02).
+    val duplicateGroups by DuplicateSession.groups.collectAsState()
+    val duplicateBackfill by app.embeddingBackfill.progress.collectAsState()
     val duplicateRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     var reviewComplete by remember { mutableStateOf<ReviewCompleteText?>(null) }
     // One first-run prompt at a time; the order lives in nextFirstRunPrompt. Answered cloud/model prompts stay answered in memory until settings catch up.
@@ -1090,16 +1086,13 @@ private fun RobiaShell(
         val count = clothingItems.size
         val now = System.currentTimeMillis()
         if (!duplicateScanDue(DuplicateScanHistory.last, count, now)) return@LaunchedEffect
-        duplicateGroups = scanDuplicates(context, clothingItems, duplicateRepository) { duplicateDismissals }
+        DuplicateSession.replaceGroups(scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value })
         DuplicateScanHistory.last = DuplicateScanRecord(atEpochMillis = now, garmentCount = count)
     }
-    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group ->
-        duplicateDismissals = duplicateDismissals + group.pairKeys()
-        duplicateGroups = duplicateGroups - group
-    }
+    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group -> DuplicateSession.dismiss(group) }
     val deleteDuplicateItems: (List<String>) -> Unit = { ids ->
         onDeleteItems(ids)
-        duplicateGroups = duplicateGroups.afterRemoving(ids.toSet())
+        DuplicateSession.removeGarments(ids.toSet())
     }
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,

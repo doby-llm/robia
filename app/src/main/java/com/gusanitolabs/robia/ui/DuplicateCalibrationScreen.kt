@@ -152,7 +152,11 @@ internal data class CalibrationSignature(
     val isArchived: Boolean,
 )
 
-internal fun calibrationSignatures(items: List<ClothingItem>): List<CalibrationSignature> = items.map { item ->
+/**
+ * Sorted by garment id: the wardrobe list is ordered by favourite and last update, so every write reorders it, and a
+ * reorder alone must not reset the marks.
+ */
+internal fun calibrationSignatures(items: List<ClothingItem>): List<CalibrationSignature> = items.sortedBy(ClothingItem::id).map { item ->
     CalibrationSignature(
         id = item.id,
         photoUri = item.photoUri,

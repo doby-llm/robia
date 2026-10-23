@@ -193,4 +193,27 @@ class DuplicateScanTest {
         assertTrue(first.getBoolean("same"))
         assertTrue(json.getJSONObject(1).isNull("same"))
     }
+
+    @Test
+    fun sessionDismissalRemovesTheGroupAndKeepsItsPairsOutForTheProcess() {
+        DuplicateSession.clear()
+        val dismissed = DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto)
+        val kept = DuplicateGroup(listOf("d", "e"), DuplicateTier.SamePhoto)
+        DuplicateSession.replaceGroups(listOf(dismissed, kept))
+
+        DuplicateSession.dismiss(dismissed)
+
+        assertEquals(listOf(kept), DuplicateSession.groups.value)
+        assertEquals(dismissed.pairKeys(), DuplicateSession.dismissals.value)
+    }
+
+    @Test
+    fun deletedGarmentsLeaveTheirGroupsAndASingletonGroupDisappears() {
+        DuplicateSession.clear()
+        DuplicateSession.replaceGroups(listOf(DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto), DuplicateGroup(listOf("d", "e"), DuplicateTier.SamePhoto)))
+
+        DuplicateSession.removeGarments(setOf("b", "d"))
+
+        assertEquals(listOf(DuplicateGroup(listOf("a", "c"), DuplicateTier.SamePhoto)), DuplicateSession.groups.value)
+    }
 }

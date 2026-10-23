@@ -36,6 +36,23 @@ class DuplicateCalibrationScreenTest {
     }
 
     @Test
+    fun reorderingThreeGarmentsKeepsTheSignature_soWardrobeWritesKeepTheMarks() {
+        val before = calibrationSignatures(listOf(garment("a"), garment("b"), garment("c", category = "category-skirts")))
+
+        assertEquals(before, calibrationSignatures(listOf(garment("c", category = "category-skirts"), garment("a"), garment("b"))))
+        assertEquals(before, calibrationSignatures(listOf(garment("b"), garment("c", category = "category-skirts"), garment("a"))))
+    }
+
+    @Test
+    fun changedPhotoOrCategoryOfOneOfThreeGarmentsResetsTheSignature_evenWhenReordered() {
+        val before = calibrationSignatures(listOf(garment("a"), garment("b"), garment("c")))
+
+        assertNotEquals(before, calibrationSignatures(listOf(garment("c"), garment("a"), garment("b", photoUri = "photo-new"))))
+        assertNotEquals(before, calibrationSignatures(listOf(garment("a"), garment("b", category = "category-skirts"), garment("c"))))
+        assertNotEquals(before, calibrationSignatures(listOf(garment("c", category = "category-skirts"), garment("b"), garment("a"))))
+    }
+
+    @Test
     fun marksFollowTheGarmentPairNotTheRow() {
         val pairs = listOf(CalibrationPair("a", "b", 0.9f), CalibrationPair("c", "d", 0.8f))
         val marks = mapOf(DuplicatePairKey.of("d", "c") to true)

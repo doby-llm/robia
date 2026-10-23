@@ -10,6 +10,10 @@ import com.gusanitolabs.robia.data.GarmentVectors
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -61,6 +65,38 @@ data class DuplicateScanRecord(val atEpochMillis: Long, val garmentCount: Int)
 object DuplicateScanHistory {
     @Volatile
     var last: DuplicateScanRecord? = null
+}
+
+/**
+ * The duplicate groups and "Not duplicates" dismissals of this process. Activity recreation (rotation, theme change)
+ * keeps them; nothing is written to disk. Persisted dismissals arrive with DUP2 (REQ-DU-02).
+ */
+object DuplicateSession {
+    private val _groups = MutableStateFlow<List<DuplicateGroup>>(emptyList())
+    val groups: StateFlow<List<DuplicateGroup>> = _groups.asStateFlow()
+    private val _dismissals = MutableStateFlow(emptySet<DuplicatePairKey>())
+    val dismissals: StateFlow<Set<DuplicatePairKey>> = _dismissals.asStateFlow()
+
+    fun replaceGroups(scanned: List<DuplicateGroup>) {
+        _groups.value = scanned
+    }
+
+    /** "Not duplicates": the group leaves the list and none of its pairs merge again in this process. */
+    fun dismiss(group: DuplicateGroup) {
+        _dismissals.update { it + group.pairKeys() }
+        _groups.update { it - group }
+    }
+
+    /** Deleted garments leave their groups; a group left with one garment disappears. */
+    fun removeGarments(removedIds: Set<String>) {
+        _groups.update { it.afterRemoving(removedIds) }
+    }
+
+    /** Tests only: the holder is process-wide. */
+    internal fun clear() {
+        _groups.value = emptyList()
+        _dismissals.value = emptySet()
+    }
 }
 
 /**
