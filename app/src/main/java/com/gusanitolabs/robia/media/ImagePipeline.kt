@@ -78,6 +78,15 @@ class ImagePipeline private constructor(
     private val cacheIdentityOrder = ConcurrentLinkedQueue<String>()
     private val evictionCount = AtomicLong(0L)
     private val diskCacheDirectory = appContext.cacheDir.resolve(DISK_CACHE_DIRECTORY)
+    private val telemetryScope = CoroutineScope(
+        Dispatchers.IO + CoroutineName("robia-image-telemetry"),
+    )
+    // Events are built and sent on the IO dispatcher; with the release sink nothing is read at all.
+    private val telemetryRecorder = ImageTelemetryRecorder(
+        sink = telemetry,
+        readStats = ::cacheStats,
+        dispatch = { work -> telemetryScope.launch { work() } },
+    )
 
     val imageLoader: ImageLoader = ImageLoader.Builder(appContext)
         .memoryCache {
@@ -86,6 +95,7 @@ class ImagePipeline private constructor(
                     .maxSizeBytes(MAX_MEMORY_CACHE_BYTES)
                     .weakReferencesEnabled(false)
                     .build(),
+                trackEvictions = telemetry.isEnabled,
                 onEvictions = ::recordEvictions,
             )
         }
@@ -101,8 +111,7 @@ class ImagePipeline private constructor(
         .eventListenerFactory { request ->
             RobiaCoilEventListener(
                 request = request,
-                telemetry = telemetry,
-                cacheStats = ::cacheStats,
+                recorder = telemetryRecorder,
                 activeDecodeCount = activeDecodeCount,
             )
         }
@@ -215,40 +224,43 @@ class ImagePipeline private constructor(
     }
 
     private fun recordInFlightWait(request: ImageRequest) {
-        val key = request.cacheKey()
-        val stats = cacheStats()
-        telemetry.record(
-            ImageTelemetryEvent(
-                stage = "in_flight_wait",
-                requestId = key.stableId,
-                purpose = key.purpose,
-                priority = request.priority,
-                target = key.target,
-                cache = "in_flight",
-                memoryCacheBytes = stats.memoryCacheBytes,
-                memoryCacheEntries = stats.memoryCacheEntries,
-                diskCacheBytes = stats.diskCacheBytes,
-                diskCacheEntries = stats.diskCacheEntries,
-            ),
-        )
+        telemetryRecorder.record { stats ->
+            val key = request.cacheKey()
+            listOf(
+                ImageTelemetryEvent(
+                    stage = "in_flight_wait",
+                    requestId = key.stableId,
+                    purpose = key.purpose,
+                    priority = request.priority,
+                    target = key.target,
+                    cache = "in_flight",
+                    memoryCacheBytes = stats.memoryCacheBytes,
+                    memoryCacheEntries = stats.memoryCacheEntries,
+                    diskCacheBytes = stats.diskCacheBytes,
+                    diskCacheEntries = stats.diskCacheEntries,
+                ),
+            )
+        }
     }
 
     fun recordPlaceholderVisible(request: ImageRequest): Long {
         val now = android.os.SystemClock.elapsedRealtime()
-        val key = request.cacheKey()
-        telemetry.record(
-            event = ImageTelemetryEvent(
-                stage = "placeholder_visible",
-                requestId = key.stableId,
-                purpose = key.purpose,
-                priority = request.priority,
-                target = key.target,
-                memoryCacheBytes = imageLoader.memoryCache?.size,
-                memoryCacheEntries = imageLoader.memoryCache?.keys?.size,
-                diskCacheBytes = imageLoader.diskCache?.size,
-                diskCacheEntries = diskCacheEntryCount(),
-            ),
-        )
+        telemetryRecorder.record { stats ->
+            val key = request.cacheKey()
+            listOf(
+                ImageTelemetryEvent(
+                    stage = "placeholder_visible",
+                    requestId = key.stableId,
+                    purpose = key.purpose,
+                    priority = request.priority,
+                    target = key.target,
+                    memoryCacheBytes = stats.memoryCacheBytes,
+                    memoryCacheEntries = stats.memoryCacheEntries,
+                    diskCacheBytes = stats.diskCacheBytes,
+                    diskCacheEntries = stats.diskCacheEntries,
+                ),
+            )
+        }
         return now
     }
 
@@ -278,22 +290,25 @@ class ImagePipeline private constructor(
         placeholderAt: Long,
         now: Long,
     ) {
-        val key = request.cacheKey()
-        telemetry.record(
-            event = ImageTelemetryEvent(
-                stage = stage,
-                requestId = key.stableId,
-                purpose = key.purpose,
-                priority = request.priority,
-                target = key.target,
-                elapsedMs = (now - placeholderAt).coerceAtLeast(0L),
-                blankDurationMs = (now - placeholderAt).coerceAtLeast(0L),
-                memoryCacheBytes = imageLoader.memoryCache?.size,
-                memoryCacheEntries = imageLoader.memoryCache?.keys?.size,
-                diskCacheBytes = imageLoader.diskCache?.size,
-                diskCacheEntries = diskCacheEntryCount(),
-            ),
-        )
+        val elapsedMs = (now - placeholderAt).coerceAtLeast(0L)
+        telemetryRecorder.record { stats ->
+            val key = request.cacheKey()
+            listOf(
+                ImageTelemetryEvent(
+                    stage = stage,
+                    requestId = key.stableId,
+                    purpose = key.purpose,
+                    priority = request.priority,
+                    target = key.target,
+                    elapsedMs = elapsedMs,
+                    blankDurationMs = elapsedMs,
+                    memoryCacheBytes = stats.memoryCacheBytes,
+                    memoryCacheEntries = stats.memoryCacheEntries,
+                    diskCacheBytes = stats.diskCacheBytes,
+                    diskCacheEntries = stats.diskCacheEntries,
+                ),
+            )
+        }
     }
 
     private fun cacheStats(): ImageCacheStats = ImageCacheStats(
@@ -320,14 +335,14 @@ class ImagePipeline private constructor(
         }
     }
 
+    // Only called when telemetry is enabled: counting evictions needs the key diff in TrackingMemoryCache.
     private fun recordEvictions(evictedKeys: Set<MemoryCache.Key>) {
         if (evictedKeys.isEmpty()) return
         evictionCount.addAndGet(evictedKeys.size.toLong())
-        val stats = cacheStats()
-        evictedKeys.forEach { key ->
-            val identity = cacheIdentities[key.key]
-                ?: CacheIdentity(ImagePurpose.Browse, ImagePriority.Visible, ImageTargetBounds(0, 0))
-            telemetry.record(
+        telemetryRecorder.record { stats ->
+            evictedKeys.map { key ->
+                val identity = cacheIdentities[key.key]
+                    ?: CacheIdentity(ImagePurpose.Browse, ImagePriority.Visible, ImageTargetBounds(0, 0))
                 ImageTelemetryEvent(
                     stage = "eviction",
                     requestId = key.key,
@@ -340,8 +355,8 @@ class ImagePipeline private constructor(
                     diskCacheBytes = stats.diskCacheBytes,
                     diskCacheEntries = stats.diskCacheEntries,
                     evictionReason = "memory_capacity",
-                ),
-            )
+                )
+            }
         }
     }
 
@@ -490,7 +505,7 @@ class ImagePipeline private constructor(
 
         fun shared(
             context: Context,
-            telemetry: ImageTelemetrySink = SampledImageTelemetrySink(),
+            telemetry: ImageTelemetrySink = defaultImageTelemetrySink(),
         ): ImagePipeline {
             val appContext = context.applicationContext
             return synchronized(instances) {
@@ -515,33 +530,28 @@ private data class CacheIdentity(
  */
 private class TrackingMemoryCache(
     private val delegate: MemoryCache,
+    private val trackEvictions: Boolean,
     private val onEvictions: (Set<MemoryCache.Key>) -> Unit,
 ) : MemoryCache by delegate {
+    // The key-set copies run only when an enabled telemetry sink wants eviction events.
     override fun set(key: MemoryCache.Key, value: MemoryCache.Value) {
+        if (!trackEvictions) return delegate.set(key, value)
         val keysBefore = delegate.keys
         delegate[key] = value
         onEvictions(keysBefore - delegate.keys)
     }
 
     override fun trimToSize(size: Long) {
+        if (!trackEvictions) return delegate.trimToSize(size)
         val keysBefore = delegate.keys
         delegate.trimToSize(size)
         onEvictions(keysBefore - delegate.keys)
     }
 }
 
-private data class ImageCacheStats(
-    val memoryCacheBytes: Long?,
-    val memoryCacheEntries: Int?,
-    val memoryCacheKeys: Set<String>,
-    val diskCacheBytes: Long?,
-    val diskCacheEntries: Int?,
-)
-
 private class RobiaCoilEventListener(
     private val request: CoilImageRequest,
-    private val telemetry: ImageTelemetrySink,
-    private val cacheStats: () -> ImageCacheStats,
+    private val recorder: ImageTelemetryRecorder,
     private val activeDecodeCount: AtomicInteger,
 ) : EventListener() {
     private val requestId = request.memoryCacheKey ?: request.diskCacheKey ?: "unknown"
@@ -559,10 +569,16 @@ private class RobiaCoilEventListener(
     }
 
     override fun keyEnd(request: CoilImageRequest, output: String?) {
-        val hit = request.memoryCacheKey?.let { key ->
-            cacheStats().memoryCacheKeys.contains(key)
-        } == true
-        record(stage = if (hit) "memory_hit" else "memory_miss", cache = if (hit) "memory" else "miss")
+        recorder.record { stats ->
+            val hit = request.memoryCacheKey?.let { key -> stats.memoryCacheKeys.contains(key) } == true
+            listOf(
+                event(
+                    stage = if (hit) "memory_hit" else "memory_miss",
+                    cache = if (hit) "memory" else "miss",
+                    stats = stats,
+                ),
+            )
+        }
     }
 
     override fun fetchStart(request: CoilImageRequest, fetcher: coil3.fetch.Fetcher, options: coil3.request.Options) {
@@ -615,24 +631,39 @@ private class RobiaCoilEventListener(
         activeDecodeCount: Int? = null,
         error: String? = null,
     ) {
-        val stats = cacheStats()
-        telemetry.record(
-            ImageTelemetryEvent(
-                stage = stage,
-                requestId = requestId,
-                purpose = purpose,
-                priority = priority,
-                target = target,
-                cache = cache,
-                activeDecodeCount = activeDecodeCount,
-                memoryCacheBytes = stats.memoryCacheBytes,
-                memoryCacheEntries = stats.memoryCacheEntries,
-                diskCacheBytes = stats.diskCacheBytes,
-                diskCacheEntries = stats.diskCacheEntries,
-                error = error,
-            ),
-        )
+        recorder.record { stats ->
+            listOf(
+                event(
+                    stage = stage,
+                    cache = cache,
+                    activeDecodeCount = activeDecodeCount,
+                    error = error,
+                    stats = stats,
+                ),
+            )
+        }
     }
+
+    private fun event(
+        stage: String,
+        stats: ImageCacheStats,
+        cache: String? = null,
+        activeDecodeCount: Int? = null,
+        error: String? = null,
+    ) = ImageTelemetryEvent(
+        stage = stage,
+        requestId = requestId,
+        purpose = purpose,
+        priority = priority,
+        target = target,
+        cache = cache,
+        activeDecodeCount = activeDecodeCount,
+        memoryCacheBytes = stats.memoryCacheBytes,
+        memoryCacheEntries = stats.memoryCacheEntries,
+        diskCacheBytes = stats.diskCacheBytes,
+        diskCacheEntries = stats.diskCacheEntries,
+        error = error,
+    )
 }
 
 private enum class InFlightOwner {

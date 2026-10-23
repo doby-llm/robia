@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.media
 
 import android.net.Uri
+import com.gusanitolabs.robia.BuildConfig
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 
@@ -125,8 +126,45 @@ data class ImageTelemetryEvent(
 )
 
 fun interface ImageTelemetrySink {
+    /** False when nothing consumes events, so the adapter skips building them and reading cache counters. */
+    val isEnabled: Boolean
+        get() = true
+
     fun record(event: ImageTelemetryEvent)
 }
+
+/** Cache counters for one telemetry event. Reading them lists the disk cache, so only enabled sinks read them. */
+internal data class ImageCacheStats(
+    val memoryCacheBytes: Long?,
+    val memoryCacheEntries: Int?,
+    val memoryCacheKeys: Set<String>,
+    val diskCacheBytes: Long?,
+    val diskCacheEntries: Int?,
+)
+
+/**
+ * Builds events only for an enabled sink and runs that work through [dispatch]. Callers on the main
+ * thread therefore never list the disk cache or copy cache key sets.
+ */
+internal class ImageTelemetryRecorder(
+    private val sink: ImageTelemetrySink,
+    private val readStats: () -> ImageCacheStats,
+    private val dispatch: (() -> Unit) -> Unit,
+) {
+    val isEnabled: Boolean
+        get() = sink.isEnabled
+
+    fun record(build: (ImageCacheStats) -> List<ImageTelemetryEvent>) {
+        if (!isEnabled) return
+        dispatch {
+            build(readStats()).forEach(sink::record)
+        }
+    }
+}
+
+/** Developer builds keep the sampled performance log; release builds do no telemetry work. */
+internal fun defaultImageTelemetrySink(): ImageTelemetrySink =
+    if (BuildConfig.DEBUG) SampledImageTelemetrySink() else NoOpImageTelemetrySink
 
 /** Debuggable in-app evidence sink; the source identity is always the hashed request id. */
 class SampledImageTelemetrySink(
@@ -186,6 +224,9 @@ class SampledImageTelemetrySink(
 }
 
 internal object NoOpImageTelemetrySink : ImageTelemetrySink {
+    override val isEnabled: Boolean
+        get() = false
+
     override fun record(event: ImageTelemetryEvent) = Unit
 }
 
