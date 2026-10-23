@@ -316,7 +316,11 @@ class MaskOpsTest {
         // The original photo shows the dark hanger inside the garment; the filled photo has the garment colour there.
         val original = FloatArray(w * h) { i -> if (i % w in garmentColumns && !hanger[i]) 0.6f else 0.1f }
         val filled = FloatArray(w * h) { i -> if (i % w in garmentColumns) 0.6f else 0.1f }
-        val selection = FloatArray(w * h) { i -> if (i % w in garmentColumns) 1f else 0f }
+        // Soft 6 px ramps at the sides, as a real S2 selection has, centred on columns 8 and 55.
+        val selection = FloatArray(w * h) { i ->
+            val x = i % w
+            minOf(((x - 5) / 6f).coerceIn(0f, 1f), ((58 - x) / 6f).coerceIn(0f, 1f))
+        }
         val support = BooleanArray(w * h) { hanger[it] }
         val band = HangerRemoval.applyBand(selection, selection, support, bandBottom, w)
 
