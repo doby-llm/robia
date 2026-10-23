@@ -794,6 +794,35 @@
     <string name="dev_model_benchmark_gpu">Prueba del modelo (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Cancelar</string>
+    <!-- DUP1 -->
+    <plurals name="duplicate_banner_groups">
+        <item quantity="one">Posibles duplicados encontrados · %1$d grupo por revisar</item>
+        <item quantity="other">Posibles duplicados encontrados · %1$d grupos por revisar</item>
+    </plurals>
+    <string name="duplicate_banner_review">Revisar</string>
+    <string name="duplicate_review_title">Posibles duplicados</string>
+    <string name="duplicate_group_title">Grupo %1$d · %2$d prendas</string>
+    <string name="duplicate_tier_same_photo">Misma foto</string>
+    <string name="duplicate_keep">Conservar</string>
+    <string name="duplicate_delete">Borrar</string>
+    <string name="duplicate_not_duplicates">No son duplicados</string>
+    <plurals name="duplicate_delete_selected">
+        <item quantity="one">Borrar %1$d prenda</item>
+        <item quantity="other">Borrar %1$d prendas</item>
+    </plurals>
+    <string name="duplicate_delete_title">¿Borrar las prendas seleccionadas?</string>
+    <string name="duplicate_delete_body">Se archivan, igual que al borrarlas desde Browse.</string>
+    <string name="duplicate_empty">No quedan posibles duplicados.</string>
+    <string name="duplicate_calibration_title">Calibración de duplicados</string>
+    <string name="duplicate_calibration_summary">Marca como Igual o Distinto los pares más parecidos de la misma categoría.</string>
+    <string name="duplicate_calibration_empty">Todavía no hay pares de la misma categoría con vector de imagen.</string>
+    <string name="duplicate_mark_same">Igual</string>
+    <string name="duplicate_mark_different">Distinto</string>
+    <string name="duplicate_calibration_progress">%1$d de %2$d marcados</string>
+    <string name="duplicate_export_marks">Exportar marcas</string>
+    <string name="duplicate_export_chooser">Compartir marcas</string>
+    <string name="duplicate_cosine">Coseno %1$.4f</string>
+    <string name="duplicate_pair_title">Par %1$d</string>
     <!-- FIT -->
     <string name="filter_fit">Ajuste</string>
 </resources>

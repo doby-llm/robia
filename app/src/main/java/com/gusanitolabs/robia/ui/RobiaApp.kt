@@ -192,9 +192,14 @@ import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.SegmentationModuleGates
-import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
+import com.gusanitolabs.robia.suggestions.DuplicateGroup
+import com.gusanitolabs.robia.suggestions.DuplicateScanHistory
+import com.gusanitolabs.robia.suggestions.DuplicateScanRecord
+import com.gusanitolabs.robia.suggestions.DuplicateSession
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import com.gusanitolabs.robia.suggestions.duplicateScanDue
+import com.gusanitolabs.robia.suggestions.scanDuplicates
 import com.gusanitolabs.robia.suggestions.QueryEmbedding
 import com.gusanitolabs.robia.suggestions.SavedExample
 import com.gusanitolabs.robia.suggestions.SearchController
@@ -237,7 +242,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -306,6 +310,14 @@ private sealed interface RobiaRoute {
 
     data object DeveloperSyncLog : RobiaRoute {
         override val titleRes = R.string.restore_sync_log_title
+    }
+
+    data object DuplicateReview : RobiaRoute {
+        override val titleRes = R.string.duplicate_review_title
+    }
+
+    data object DuplicateCalibration : RobiaRoute {
+        override val titleRes = R.string.duplicate_calibration_title
     }
 
     data object AdvancedFilters : RobiaRoute {
@@ -916,6 +928,10 @@ private fun RobiaShell(
     val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
+    // Process-scoped: survives activity recreation. Session only: "Not duplicates" is not persisted until DUP2 adds the table (REQ-DU-02).
+    val duplicateGroups by DuplicateSession.groups.collectAsState()
+    val duplicateBackfill by app.embeddingBackfill.progress.collectAsState()
+    val duplicateRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
     var reviewComplete by remember { mutableStateOf<ReviewCompleteText?>(null) }
     // One first-run prompt at a time; the order lives in nextFirstRunPrompt. Answered cloud/model prompts stay answered in memory until settings catch up.
     var activeFirstRunPrompt by remember { mutableStateOf<FirstRunPrompt?>(null) }
@@ -1062,6 +1078,24 @@ private fun RobiaShell(
             quietEnough = !firstRunBusy && quietEnoughSince(lastBusyTransitionMs, calmCheckMs),
         ),
     )
+    // REQ-DU-04: a one-shot scan off the main thread, at rest in Browse and after the embedding backfill has finished a pass
+    // with nothing left (settled); before that, remaining = 0 only means "not computed yet".
+    LaunchedEffect(clothingItems.size, currentRoute, duplicateBackfill.remaining, duplicateBackfill.settled, wardrobeItemsLoading) {
+        if (wardrobeItemsLoading || currentRoute != RobiaRoute.Browse) return@LaunchedEffect
+        if (!duplicateBackfill.settled || duplicateBackfill.remaining > 0) return@LaunchedEffect
+        val count = clothingItems.size
+        val now = System.currentTimeMillis()
+        if (!duplicateScanDue(DuplicateScanHistory.last, count, now)) return@LaunchedEffect
+        DuplicateSession.replaceGroups(scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value })
+        DuplicateScanHistory.last = DuplicateScanRecord(atEpochMillis = now, garmentCount = count)
+    }
+    // Every route that archives or deletes a garment (Browse, review, item detail) changes clothingItems, so groups drop it here.
+    // Not while the wardrobe is loading: an empty list would drop every group.
+    LaunchedEffect(clothingItems, wardrobeItemsLoading) {
+        if (wardrobeItemsLoading) return@LaunchedEffect
+        DuplicateSession.keepActive(clothingItems.mapTo(HashSet(), ClothingItem::id))
+    }
+    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group -> DuplicateSession.dismiss(group) }
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,
         cloudAuthorizationInFlight = cloudAuthorizationInFlight,
@@ -1739,6 +1773,13 @@ private fun RobiaShell(
     } else {
         null
     }
+    // The banner waits while another prompt, dialog, merge proposal, review-complete overlay or sync attention card is
+    // visible (REQ-DU-03, R3-DEC-026).
+    val duplicatePromptVisible = syncState.restoreProgress != null || mergeConfirmationPending || backupConflictPending ||
+        showUseBackupConfirmation || showKeepPhoneConfirmation || activeFirstRunPrompt != null || showBrowseDeleteDialog ||
+        showBackupDeletionConfirmation || pendingColorReviewChangeSet != null || pendingTagReview != null || tagReviewOfferInFlight ||
+        mergeProposalCardShown || reviewComplete != null || browseAttentions.isNotEmpty()
+    val duplicateBannerCount = if (duplicatePromptVisible) 0 else duplicateGroups.size
 
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
@@ -1847,7 +1888,9 @@ private fun RobiaShell(
                 currentRoute != RobiaRoute.BatchAddClothing &&
                 currentRoute != RobiaRoute.BatchEditClothing &&
                 currentRoute != RobiaRoute.ColorReview &&
-                currentRoute != RobiaRoute.TagReview
+                currentRoute != RobiaRoute.TagReview &&
+                currentRoute != RobiaRoute.DuplicateReview &&
+                currentRoute != RobiaRoute.DuplicateCalibration
             ) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
@@ -2001,6 +2044,12 @@ private fun RobiaShell(
             onCheckPhotosClick = onCheckPhotosClick,
             onBackUpNowClick = onBackUpNowClick,
             onRestoreSyncLogClick = { pushRoute(RobiaRoute.DeveloperSyncLog) },
+            duplicateGroups = duplicateGroups,
+            duplicateBannerCount = duplicateBannerCount,
+            onDuplicateReviewClick = { pushRoute(RobiaRoute.DuplicateReview) },
+            onDismissDuplicateGroup = dismissDuplicateGroup,
+            onDeleteDuplicateItems = onDeleteItems,
+            onDuplicateCalibrationClick = { pushRoute(RobiaRoute.DuplicateCalibration) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
             mergeProposalCard = mergeProposalCard,
@@ -2748,6 +2797,12 @@ private fun RobiaNavHost(
     onCheckPhotosClick: (suspend () -> DriveSyncResult<PhotoIntegrityReport>)? = null,
     onBackUpNowClick: () -> Unit = {},
     onRestoreSyncLogClick: () -> Unit,
+    duplicateGroups: List<DuplicateGroup>,
+    duplicateBannerCount: Int,
+    onDuplicateReviewClick: () -> Unit,
+    onDismissDuplicateGroup: (DuplicateGroup) -> Unit,
+    onDeleteDuplicateItems: (List<String>) -> Unit,
+    onDuplicateCalibrationClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
     mergeProposalCard: (@Composable () -> Unit)? = null,
@@ -2769,6 +2824,8 @@ private fun RobiaNavHost(
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
             innerPadding = innerPadding,
+            duplicateGroupCount = duplicateBannerCount,
+            onDuplicateReviewClick = onDuplicateReviewClick,
             items = items,
             isInitialLoading = wardrobeItemsLoading,
             hasItemsInWardrobe = totalItemCount > 0,
@@ -2838,6 +2895,16 @@ private fun RobiaNavHost(
                 onRequestDiscard = onRequestTagReviewDiscard,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
+        RobiaRoute.DuplicateReview -> DuplicateReviewScreen(
+            innerPadding = innerPadding,
+            groups = duplicateGroups,
+            items = domainItems,
+            onNotDuplicates = onDismissDuplicateGroup,
+            onDeleteItems = onDeleteDuplicateItems,
+        )
+        RobiaRoute.DuplicateCalibration -> if (developerModeUnlocked && developerModeEnabled) {
+            DuplicateCalibrationScreen(innerPadding = innerPadding, items = domainItems)
+        }
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(
             innerPadding = innerPadding,
             availableTags = availableTags,
@@ -2959,6 +3026,7 @@ private fun RobiaNavHost(
             browseLayout = browseLayout,
             onBrowseLayoutChange = onBrowseLayoutChange,
             onRestoreSyncLogClick = onRestoreSyncLogClick,
+            onDuplicateCalibrationClick = onDuplicateCalibrationClick,
         )
         RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
             DeveloperRestoreSyncLogScreen(
@@ -2983,6 +3051,7 @@ private fun RobiaNavHost(
                 browseLayout = browseLayout,
                 onBrowseLayoutChange = onBrowseLayoutChange,
                 onRestoreSyncLogClick = onRestoreSyncLogClick,
+                onDuplicateCalibrationClick = onDuplicateCalibrationClick,
             )
         }
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(

@@ -21,10 +21,12 @@ class EmbeddingBackfillTest {
     private val deleted = mutableListOf<String>()
     private var syncRequests = 0
 
-    private val backfill = EmbeddingBackfill(
+    private val backfill = newBackfill()
+
+    private fun newBackfill(isModelReady: () -> Boolean = { true }) = EmbeddingBackfill(
         scope = CoroutineScope(Dispatchers.Unconfined),
         embedder = embedder,
-        isModelReady = { true },
+        isModelReady = isModelReady,
         encodeImage = { photoUri -> EncodedImage(photoUri.toByteArray(), 1, 1) },
         loadGarments = { garments.toList() },
         loadStoredRows = { rows.toList() },
@@ -87,7 +89,27 @@ class EmbeddingBackfillTest {
 
         assertEquals(2, embedder.imageInputs.count { it == "bad-photo" })
         assertEquals(listOf("fine:image"), saved)
-        assertEquals(BackfillProgress(remaining = 0, running = false), backfill.progress.value)
+        // A garment that keeps failing is left out of the pass, so the pass still ends and settles.
+        assertEquals(BackfillProgress(remaining = 0, running = false, settled = true), backfill.progress.value)
+    }
+
+    @Test
+    fun settlesOnlyWhenAPassFinishes() = runBlocking {
+        val notReady = newBackfill(isModelReady = { false })
+        garments += garment("pending", createdAt = 1L, photoUri = "photo-pending", name = "")
+
+        notReady.runUntilIdle()
+        assertEquals(BackfillProgress(remaining = 0, running = false, settled = false), notReady.progress.value)
+
+        backfill.runUntilIdle()
+        assertEquals(BackfillProgress(remaining = 0, running = false, settled = true), backfill.progress.value)
+    }
+
+    @Test
+    fun emptyWardrobeSettlesOnTheFirstPass() = runBlocking {
+        backfill.runUntilIdle()
+
+        assertEquals(BackfillProgress(remaining = 0, running = false, settled = true), backfill.progress.value)
     }
 
     @Test
