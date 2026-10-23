@@ -84,13 +84,22 @@ internal class RunLengthAlpha(source: FloatArray) {
     }
 }
 
+/** Photos kept off screen that an [EditBudget] may drop. */
+internal interface DroppablePhotos {
+    /** Drops the oldest photo kept off screen; false when there is none. */
+    fun dropOldest(): Boolean
+}
+
 /**
- * Edit-history bytes of one editing session, shared by its photos. Over [limit], the oldest undoable ops of the oldest
- * photo are folded first. Histories register in creation order.
+ * Edit-history bytes of one editing session, shared by its photos: the two live arrays of each photo, and its ops and
+ * checkpoints. Over [limit], the oldest photo kept off screen is dropped first, then the oldest undoable ops are folded.
+ * The photo on screen is never dropped, so the limit is soft when that photo alone is over it. Histories register in
+ * creation order.
  */
 internal class EditBudget(private val limit: Long = EDIT_HISTORY_BUDGET_BYTES) {
     internal var used: Long = 0L
     private val histories = ArrayList<EditHistory>()
+    private val kept = ArrayList<DroppablePhotos>()
 
     internal fun register(history: EditHistory) {
         histories += history
@@ -100,10 +109,20 @@ internal class EditBudget(private val limit: Long = EDIT_HISTORY_BUDGET_BYTES) {
         histories.remove(history)
     }
 
-    /** Folds ops until the history fits the [limit], or nothing is left to fold. */
+    internal fun registerKept(photos: DroppablePhotos) {
+        kept += photos
+    }
+
+    internal fun unregisterKept(photos: DroppablePhotos) {
+        kept.remove(photos)
+    }
+
+    /** Drops kept photos, then folds ops, until the history fits the [limit], or nothing is left to drop or fold. */
     internal fun trim() {
-        while (used > limit && histories.any { it.foldOldest() }) {
-            // Each fold removes at least one op, so the loop ends.
+        while (used > limit) {
+            // Each drop or fold removes something, so the loop ends.
+            if (kept.any { it.dropOldest() }) continue
+            if (!histories.any { it.foldOldest() }) break
         }
     }
 }
@@ -111,7 +130,8 @@ internal class EditBudget(private val limit: Long = EDIT_HISTORY_BUDGET_BYTES) {
 /**
  * The alpha history of one photo. [base] is its automatic alpha. [undo] and [redo] move the cursor through the ops; a push
  * after an undo drops the redo tail. A checkpoint every [CHECKPOINT_INTERVAL] ops keeps undo cheap. Over the [budget], the
- * oldest undoable ops are folded into a checkpoint, so undo stops there. Pure Kotlin on primitive arrays.
+ * oldest undoable ops are folded into a checkpoint, so undo stops there. The two live arrays count against the [budget] too.
+ * Pure Kotlin on primitive arrays.
  */
 internal class EditHistory(
     base: FloatArray,
@@ -134,15 +154,18 @@ internal class EditHistory(
     private var cursor = 0
     private var alpha: FloatArray
     private var automatic: FloatArray
-    private var held = 0L
+    /** Bytes this history holds in the budget: its two live arrays, its checkpoints and its ops. */
+    private var held = 2L * size * Float.SIZE_BYTES
 
     init {
         require(w > 0 && h > 0) { "Photo size must be positive" }
         require(base.size == size) { "Alpha must be ${w}x$h" }
         alpha = base.copyOf()
         automatic = base.copyOf()
+        budget.used += held
         budget.register(this)
         addCheckpoint(0)
+        budget.trim()
     }
 
     val canUndo: Boolean get() = cursor > first
@@ -263,13 +286,17 @@ internal class EditHistory(
 /**
  * The photos of one editing session that are not on screen, in order: the photos before it, and the photos after it that
  * were undone. Each photo is written to a cache file in [directory] and keeps its own [RefineSession], so undo across a
- * "Cut out again" restores the photo and its alpha history where they were. [close] deletes the files.
+ * "Cut out again" restores the photo and its alpha history where they were. Over the [budget], the oldest of these photos
+ * is dropped, and undo stops at the oldest one kept. [release] frees a photo that was read back but could not be moved on
+ * screen. [close] deletes the files.
  */
 internal class PhotoHistory<P>(
+    private val budget: EditBudget,
     private val directory: File,
     private val write: (P, File) -> Unit,
     private val read: (File) -> P,
-) {
+    private val release: (P) -> Unit,
+) : DroppablePhotos {
     private class Step(val file: File, val session: RefineSession, val fromRedo: Boolean)
 
     /** A photo brought back on screen by [back] or [forward]. */
@@ -280,6 +307,12 @@ internal class PhotoHistory<P>(
 
     /** Photos after the one on screen, undone by [back]; the nearest is last. */
     private val after = ArrayDeque<Step>()
+
+    init {
+        // Files left by an editor that did not close (its process died): no photo refers to them any more.
+        directory.listFiles()?.forEach { it.delete() }
+        budget.registerKept(this)
+    }
 
     val canGoBack: Boolean get() = before.isNotEmpty()
 
@@ -295,7 +328,7 @@ internal class PhotoHistory<P>(
     fun back(current: P, session: RefineSession, fromRedo: Boolean): Restored<P>? {
         val step = before.lastOrNull() ?: return null
         val arriving = read(step.file)
-        after.addLast(spill(current, session, fromRedo))
+        after.addLast(spillFor(arriving, current, session, fromRedo))
         before.removeLast()
         step.file.delete()
         return Restored(arriving, step.session, step.fromRedo)
@@ -305,14 +338,23 @@ internal class PhotoHistory<P>(
     fun forward(current: P, session: RefineSession, fromRedo: Boolean): Restored<P>? {
         val step = after.lastOrNull() ?: return null
         val arriving = read(step.file)
-        before.addLast(spill(current, session, fromRedo))
+        before.addLast(spillFor(arriving, current, session, fromRedo))
         after.removeLast()
         step.file.delete()
         return Restored(arriving, step.session, step.fromRedo)
     }
 
+    /** Drops the oldest photo kept off screen: the first of [before], else the nearest of [after] (the oldest there). */
+    override fun dropOldest(): Boolean {
+        val step = before.removeFirstOrNull() ?: after.removeLastOrNull() ?: return false
+        step.file.delete()
+        step.session.close()
+        return true
+    }
+
     /** Deletes every photo file and releases the sessions that are not on screen. */
     fun close() {
+        budget.unregisterKept(this)
         (before + after).forEach { step ->
             step.file.delete()
             step.session.close()
@@ -320,6 +362,15 @@ internal class PhotoHistory<P>(
         before.clear()
         after.clear()
     }
+
+    /** Spills [current] for a move. When that fails, [arriving] is released: nothing on screen will show it. */
+    private fun spillFor(arriving: P, current: P, session: RefineSession, fromRedo: Boolean): Step =
+        try {
+            spill(current, session, fromRedo)
+        } catch (throwable: Throwable) {
+            release(arriving)
+            throw throwable
+        }
 
     private fun spill(photo: P, session: RefineSession, fromRedo: Boolean): Step {
         directory.mkdirs()

@@ -224,16 +224,21 @@ fun PhotoEditorScreen(
     var showBefore by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var photo by remember(photoUri) { mutableStateOf<CutoutPhoto?>(null) }
+    // The edit history of every photo of this editor, on screen or kept, counts against this budget (REQ-ED-03).
+    val editBudget = remember(photoUri) { EditBudget() }
     // The photos before and after the one on screen, as cache files (Cut out again, REQ-ED-03); their edits stay in their sessions.
     val photoHistory = remember(photoUri) {
         PhotoHistory<Bitmap>(
+            budget = editBudget,
             directory = File(context.cacheDir, EDITOR_HISTORY_DIRECTORY),
             write = { bitmap, file -> file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } },
             read = { file -> checkNotNull(BitmapFactory.decodeFile(file.path)) { "Photo ${file.name} is unreadable" } },
+            release = { bitmap -> bitmap.recycle() },
         )
     }
-    val editBudget = remember(photoUri) { EditBudget() }
     var redoing by remember { mutableStateOf(false) }
+    // True while an Undo, a Redo or a move across a Cut out again runs on the photo: they wait for it, and so do the gestures.
+    var replaying by remember { mutableStateOf(false) }
     var showRedoSheet by remember { mutableStateOf(false) }
     var revision by remember(photoUri) { mutableIntStateOf(0) }
     var preview by remember(photoUri) { mutableStateOf<ImageBitmap?>(null) }
@@ -249,7 +254,7 @@ fun PhotoEditorScreen(
     val canRedo = remember(revision, session) { session?.canRedo == true || photoHistory.canGoForward }
     val changed = remember(revision, session) { session?.isChanged == true }
     val adjustments = QuickEditAdjustments(brightness, temperature)
-    val doneEnabled = !saving && !redoing && photo != null && (changed || photo?.fromRedo == true || adjustments.hasColorAdjustment)
+    val doneEnabled = !saving && !redoing && !replaying && photo != null && (changed || photo?.fromRedo == true || adjustments.hasColorAdjustment)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -284,12 +289,15 @@ fun PhotoEditorScreen(
 
     LaunchedEffect(photo, revision) {
         val current = photo ?: return@LaunchedEffect
-        preview = withContext(Dispatchers.Default) {
+        val rendered = withContext(Dispatchers.Default) {
             sourceMutex.withLock {
+                // Queued before an Undo or Redo replaced this photo; its bitmap is already recycled.
+                if (current.source.isRecycled) return@withLock null
                 val alphaBytes = toAlphaBytes(current.session.currentAlpha())
                 composeWithAlpha(argbOf(current.source), alphaBytes, current.source.width, current.source.height).asImageBitmap()
             }
         }
+        rendered?.let { preview = it }
     }
 
     LaunchedEffect(pulse) {
@@ -410,54 +418,61 @@ fun PhotoEditorScreen(
 
     /**
      * Moves between the photos of Cut out again: the photo on screen is written to a cache file and the other one is read
-     * back with its own alpha history. A failure leaves the photo on screen as it was.
+     * back with its own alpha history. A failure leaves the photo on screen as it was. Runs under sourceMutex.
      */
-    fun movePhoto(current: CutoutPhoto, forward: Boolean) {
-        scope.launch {
-            sourceMutex.withLock {
-                val restored = try {
-                    withContext(Dispatchers.IO) {
-                        if (forward) {
-                            photoHistory.forward(current.source, current.session, current.fromRedo)
-                        } else {
-                            photoHistory.back(current.source, current.session, current.fromRedo)
-                        }
-                    }
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (throwable: Throwable) {
-                    onDiagnostic("photo_history_failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-                    return@withLock
+    suspend fun movePhoto(current: CutoutPhoto, forward: Boolean) {
+        val restored = try {
+            withContext(Dispatchers.IO) {
+                if (forward) {
+                    photoHistory.forward(current.source, current.session, current.fromRedo)
+                } else {
+                    photoHistory.back(current.source, current.session, current.fromRedo)
                 }
-                if (restored == null) return@withLock
-                photo = CutoutPhoto(restored.photo, restored.session, restored.fromRedo)
-                current.source.recycle()
-                revision++
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            onDiagnostic("photo_history_failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
+            return
+        }
+        if (restored == null) return
+        photo = CutoutPhoto(restored.photo, restored.session, restored.fromRedo)
+        current.source.recycle()
+        revision++
+    }
+
+    /**
+     * One Undo or Redo: the session's own edits first, replayed on Dispatchers.Default; once none are left, the photo before
+     * or after it across a Cut out again (see [movePhoto]). Undo, Redo and the gestures wait until the step is done.
+     */
+    fun historyStep(forward: Boolean) {
+        val current = photo ?: return
+        if (replaying) return
+        replaying = true
+        scope.launch {
+            try {
+                sourceMutex.withLock {
+                    val ownEdit = if (forward) current.session.canRedo else current.session.canUndo
+                    if (ownEdit) {
+                        withContext(Dispatchers.Default) {
+                            if (forward) current.session.redo() else current.session.undo()
+                        }
+                        revision++
+                    } else {
+                        movePhoto(current, forward)
+                    }
+                }
+            } finally {
+                replaying = false
             }
         }
     }
 
     /** Undo: the session's own edits first; once none are left, the photo before the last Cut out again, with its edits. */
-    fun undoEdit() {
-        val current = photo ?: return
-        if (current.session.canUndo) {
-            current.session.undo()
-            revision++
-            return
-        }
-        movePhoto(current, forward = false)
-    }
+    fun undoEdit() = historyStep(forward = false)
 
     /** Redo: the session's own undone edits first; once none are left, the photo after it, with its edits. */
-    fun redoEdit() {
-        val current = photo ?: return
-        if (current.session.canRedo) {
-            current.session.redo()
-            revision++
-            return
-        }
-        movePhoto(current, forward = true)
-    }
+    fun redoEdit() = historyStep(forward = true)
 
     /**
      * Redo cutout: [choice] runs once on the raw photo. The working photo is replaced only when the new cutout is decoded,
@@ -606,7 +621,9 @@ fun PhotoEditorScreen(
                                 if (tab == EditorTab.Light) showBefore = false
                                 strokeScreen = emptyList()
                                 val current = photo ?: return@awaitEachGesture
-                                if (tab != EditorTab.Cutout || multiTouch || redoing || containerSize == IntSize.Zero) return@awaitEachGesture
+                                if (tab != EditorTab.Cutout || multiTouch || redoing || replaying || containerSize == IntSize.Zero) {
+                                    return@awaitEachGesture
+                                }
                                 val fit = fitRect(containerSize, current.source.width, current.source.height)
                                 finishGesture(path.toList(), moved, fit, current, down.position)
                             }
@@ -717,9 +734,9 @@ fun PhotoEditorScreen(
                             onModeChange = { mode = it },
                             brush = brush,
                             onBrushChange = { brush = it },
-                            canUndo = canUndo && !redoing,
-                            canRedo = canRedo && !redoing,
-                            canReset = changed && !redoing,
+                            canUndo = canUndo && !redoing && !replaying,
+                            canRedo = canRedo && !redoing && !replaying,
+                            canReset = changed && !redoing && !replaying,
                             onUndo = ::undoEdit,
                             onRedoEdit = ::redoEdit,
                             onReset = {
