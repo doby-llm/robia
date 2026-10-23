@@ -131,10 +131,11 @@ class HangerRemovalTest {
 
     @Test
     fun ringColour_isThePerChannelMedianOfThe25PxRingOnly() {
-        val w = 40
-        val h = 40
+        val w = 60
+        val h = 60
         val support = BooleanArray(w * h) { i -> i % w in 18..21 && i / w in 18..21 }
-        // Ring pixels (within 12 px of the support, outside it) are 200/100/50; the support and the far corners are not.
+        // Ring pixels (within 12 px of the support, outside it, 768 px) are 200/100/50. The support and the far corners
+        // (2,832 px) are white, so a whole-image median would be white (255) and the test would fail if the ring were widened.
         val argb = IntArray(w * h) { i ->
             val x = i % w
             val y = i / w

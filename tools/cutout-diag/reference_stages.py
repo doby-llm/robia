@@ -9,6 +9,11 @@ comparing like with like. The S5 guide is the filled photo above band_bottom (`f
 there). The band selection blends into the previous one over 3 rows instead of a 0/1 switch. Pixels with alpha > 0 within
 2 px of the kill support take the ring-median fill colour in final.png. Other stages are unchanged.
 
+Known gap (K03 review): this reference has no K02 band guard. When the guard trips (the re-selection keeps less than 85 % of
+the opaque band pixels outside the support), the app keeps the previous selection in the band (HangerRemoval.kt guardedBand,
+lines 209-210), but the blend below always uses the re-selection. Parity therefore does NOT hold on guard-tripped photos.
+Bringing this reference in line with K02 is a follow-up for the coordinator; K02's guard is deliberately not copied here.
+
 Usage (models in tools/segmentation-bench/models, see its README):
   python -I reference_stages.py IN_DIR OUT_DIR
 Personal photos must never be committed; IN_DIR/OUT_DIR live outside the repository.
