@@ -57,7 +57,7 @@ class CutoutDebugDumpTest {
 
         assertEquals(
             setOf("work", "s2_points", "hanger_box", "kill", "band_bottom", "seconds", "opaque_fraction_of_s2", "engine", "fallback"),
-            report.keySet(),
+            report.keys().asSequence().toSet(),
         )
         assertEquals(1024, report.getJSONArray("work").getInt(0))
         assertEquals(768, report.getJSONArray("work").getInt(1))
