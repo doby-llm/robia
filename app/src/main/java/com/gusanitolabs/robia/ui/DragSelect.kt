@@ -2,9 +2,11 @@ package com.gusanitolabs.robia.ui
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -12,7 +14,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -88,6 +89,7 @@ internal fun Modifier.dragSelect(
 ): Modifier {
     val currentItems by rememberUpdatedState(items)
     val currentOnSelectionChange by rememberUpdatedState(onSelectionChange)
+    val scope = rememberCoroutineScope()
     return pointerInput(gridState, arm) {
         val edgePx = DRAG_EDGE_ZONE.toPx()
         val maxStepPx = DRAG_MAX_STEP.toPx()
@@ -96,56 +98,54 @@ internal fun Modifier.dragSelect(
             var drag: DragSelect? = null
             var pinched = false
             var pointer = Offset.Zero
+            var autoscroll: Job? = null
             fun track(active: DragSelect) {
                 val ids = currentItems.map(UiWardrobeItem::id)
                 gridState.itemIdAt(pointer, ids.toHashSet())?.let(active::moveTo)
                 currentOnSelectionChange(active.selectedIds(ids))
             }
             try {
-                coroutineScope {
-                    var autoscroll: Job? = null
-                    do {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        if (event.changes.count { it.pressed } >= 2) {
-                            // Pinch takes over; the selection made so far stays.
-                            pinched = true
-                            drag = null
-                            autoscroll?.cancel()
-                        } else if (!pinched) {
-                            val change = event.changes.firstOrNull { it.pressed }
-                            val anchorId = arm.anchorId
-                            if (change != null && drag == null && anchorId != null) {
-                                val started = DragSelect(anchorId, arm.baseline)
-                                drag = started
-                                autoscroll = launch {
-                                    while (true) {
-                                        delay(DRAG_FRAME_MS)
-                                        val layout = gridState.layoutInfo
-                                        val step = dragAutoscrollStep(
-                                            pointerY = pointer.y,
-                                            viewportStart = layout.viewportStartOffset.toFloat(),
-                                            viewportEnd = layout.viewportEndOffset.toFloat(),
-                                            edgePx = edgePx,
-                                            maxStepPx = maxStepPx,
-                                        )
-                                        if (step != 0f) {
-                                            gridState.scrollBy(step)
-                                            track(started)
-                                        }
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.changes.count { it.pressed } >= 2) {
+                        // Pinch takes over; the selection made so far stays.
+                        pinched = true
+                        drag = null
+                        autoscroll?.cancel()
+                    } else if (!pinched) {
+                        val change = event.changes.firstOrNull { it.pressed }
+                        val anchorId = arm.anchorId
+                        if (change != null && drag == null && anchorId != null) {
+                            val started = DragSelect(anchorId, arm.baseline)
+                            drag = started
+                            autoscroll = scope.launch {
+                                while (true) {
+                                    delay(DRAG_FRAME_MS)
+                                    val layout = gridState.layoutInfo
+                                    val step = dragAutoscrollStep(
+                                        pointerY = pointer.y,
+                                        viewportStart = layout.viewportStartOffset.toFloat(),
+                                        viewportEnd = layout.viewportEndOffset.toFloat(),
+                                        edgePx = edgePx,
+                                        maxStepPx = maxStepPx,
+                                    )
+                                    if (step != 0f) {
+                                        gridState.scrollBy(step)
+                                        track(started)
                                     }
                                 }
                             }
-                            val active = drag
-                            if (change != null && active != null) {
-                                pointer = change.position
-                                change.consume()
-                                track(active)
-                            }
                         }
-                    } while (event.changes.any { it.pressed })
-                    autoscroll?.cancel()
-                }
+                        val active = drag
+                        if (change != null && active != null) {
+                            pointer = change.position
+                            change.consume()
+                            track(active)
+                        }
+                    }
+                } while (event.changes.any { it.pressed })
             } finally {
+                autoscroll?.cancel()
                 arm.disarm()
             }
         }
