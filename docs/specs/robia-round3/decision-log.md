@@ -52,3 +52,12 @@ Technical detail lives in each brief (files, line anchors, constants, tests) bec
 
 ## R3-DEC-017 — Model policy: Haiku coordinator, Sonnet only on escalation · M
 Manu (2026-10-22): reduce usage without losing quality. Coordinator, workers and reviewers are Claude Haiku 5.5 high. Claude Sonnet 5.5 high runs only as one-shot, read-only escalations: E1 analysis of device gates G-ADB1/G-ADB2 (writes the defect-list PLAN-CHANGE), E2 final pre-merge data-safety check of OR1, OR2, OR3, CLN, DUP2, E3 diagnosis of a blocked lane. ≈ 9 runs expected; the coordinator asks Manu before a 13th. Mitigation for a Haiku coordinator: anti-trust rules in `PROMPT_COORDINATOR.md` (diff and CI over receipts, REC rows re-run). R: Sonnet as standing coordinator (higher usage for mostly mechanical work).
+
+## R3-DEC-018 — No Waiting badge while Drive is not added (feedback 2026-10-23, item 1) · M
+Manu: with no Drive account every unsynced card shows Waiting; this pressures users who do not use Drive. Keep the badge when Drive is connected. Evidence: artifacts/inv-r3-drive-badge.md. Rule: VIS step 5. Signed-out (Disconnected) "Sign in" badges are NOT changed this round; open question for Manu.
+
+## R3-DEC-019 — Stats bars grow on open (feedback 2026-10-23, item 2) · M
+Analytics bars animate from the axis on screen entry, one short transition (<= 400 ms). Added to ANA steps 4-5. None when reduced motion is on.
+
+## R3-DEC-020 — Smart draft stays visible · M
+Manu (2026-10-23): do not hide the smart tool; there are no users yet. G-ADB1 finding: 15 of 20 taps give the same selection (3.4 % of the photo, top-left corner). Fix belongs to K02 (suspect InteractiveSelector.kt:38 masks[0], hypothesis to verify first). Stays visible until K02 lands.

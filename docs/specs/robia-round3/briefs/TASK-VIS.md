@@ -23,3 +23,10 @@ V-VIS-1, V-VIS-2, V-VIS-3, V-VIS-D pass; CI green.
 
 ## Do not
 Touch theme tokens or the header indicator.
+
+## PLAN-CHANGE 2026-10-23 (feedback item 1): Drive not added, no Waiting badge
+Source: feedback/2026-10-23-manu-telegram.md item 1. Evidence: artifacts/inv-r3-drive-badge.md (premise matches; this case is not covered by steps 1-4).
+
+5. Badge rule: a pure function next to `cardBadgeFor` in ui/BrowseCardText.kt. When the Drive setting is NotConfigured or Disabled, Dirty, Queued and FailedRetryable give no badge. Add one boolean `driveEnabled` to `UiWardrobeItem`, set it in `toUiWardrobeItems` next to `waitingForConnection`, and read it where ui/BrowseGrid.kt calls `cardBadgeFor`. Keep `resolveForConnection` unchanged (GarmentConnectionStateTest pins it).
+6. Tests: BrowseCardTextTest table. NotConfigured and Disabled x {Dirty, Queued, FailedRetryable} -> no badge. Connected x Dirty -> Waiting. Disconnected x Queued -> sign-in (unchanged). Running -> Uploading. Photo attention unchanged. Leave `badgeForMatchesTheStatusTable` as it is.
+7. Do NOT change the signed-out (Disconnected) "Sign in" badges in this task. Open question for Manu.
