@@ -365,7 +365,7 @@
     <string name="batch_helper_empty">Elige varias fotos de galería para iniciar un lote.</string>
     <string name="batch_helper_ready">Listo para guardar %1$d prendas.</string>
     <string name="batch_discard_title">¿Descartar este lote?</string>
-    <string name="batch_discard_body">Las fotos procesadas y los detalles no se guardarán.</string>
+    <string name="batch_discard_body">El procesado se detiene y las prendas no guardadas se pierden.</string>
     <string name="batch_tile_content_description">Foto %1$d de %2$d, %3$s.</string>
     <string name="advanced_filters_title">Filtros avanzados</string>
     <string name="reset_filters">Restablecer todo</string>

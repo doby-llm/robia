@@ -365,7 +365,7 @@
     <string name="batch_helper_empty">Choose multiple gallery photos to start a batch.</string>
     <string name="batch_helper_ready">Ready to save %1$d items.</string>
     <string name="batch_discard_title">Discard this batch?</string>
-    <string name="batch_discard_body">Processed photos and item details won’t be saved.</string>
+    <string name="batch_discard_body">Processing stops and unsaved garments are lost.</string>
     <string name="batch_tile_content_description">Photo %1$d of %2$d, %3$s.</string>
     <string name="advanced_filters_title">Advanced Filters</string>
     <string name="reset_filters">Reset all</string>

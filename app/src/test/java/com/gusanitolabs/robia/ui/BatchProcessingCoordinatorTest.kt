@@ -630,6 +630,64 @@ class BatchProcessingCoordinatorTest {
     }
 
     @Test
+    fun cancel_returnsTheJobSoCallersCleanUpOnlyAfterTheCutoutStopped() = runBlocking {
+        val drafts = batchOf(1)
+        val processingStarted = CompletableDeferred<Unit>()
+        var cutoutStopped = false
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = {
+                processingStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    cutoutStopped = true
+                }
+            },
+            suggest = { draft, _ -> draft },
+            publish = { draft -> drafts.replaceById(draft) },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+        )
+
+        processingStarted.await()
+        coordinator.cancel()?.join()
+
+        assertTrue(cutoutStopped)
+        assertEquals(BatchDraftStatus.Interrupted, drafts.single().status)
+    }
+
+    @Test
+    fun cancellation_cutoutFinishingAfterCancelDiscardsItsOutputInsteadOfPublishing() = runBlocking {
+        val drafts = batchOf(1)
+        val published = mutableListOf<BatchDraftItem>()
+        val discarded = mutableListOf<CutoutStageResult>()
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = { draft ->
+                coordinator.cancel()
+                readyCutout(draft)
+            },
+            suggest = { draft, _ -> draft.copy(status = BatchDraftStatus.Ready) },
+            publish = { draft ->
+                published.add(draft)
+                drafts.replaceById(draft)
+            },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+            discardOutput = { result -> discarded.add(result) },
+        )
+
+        repeat(10) { yield() }
+
+        assertTrue(published.isEmpty())
+        val output = discarded.single() as CutoutStageResult.Ready
+        assertEquals("content://cropped/${drafts.single().id}", output.croppedUri)
+    }
+
+    @Test
     fun fallbackUnlessCancelled_rethrowsCancellationAndFallsBackOnOtherFailures() {
         assertEquals("fallback", fallbackUnlessCancelled("fallback") { throw IllegalStateException("crop broke") })
         try {

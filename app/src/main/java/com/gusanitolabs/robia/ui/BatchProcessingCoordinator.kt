@@ -41,12 +41,17 @@ internal class BatchProcessingCoordinator(
     internal val isRunning: Boolean
         get() = processingJob?.isActive == true
 
+    /**
+     * [discardOutput] receives a cutout result that will not be published (the job was cancelled): the caller deletes
+     * the files it points to.
+     */
     fun processQueued(
         drafts: () -> List<BatchDraftItem>,
         cutout: suspend (BatchDraftItem) -> CutoutStageResult,
         suggest: suspend (BatchDraftItem, CutoutStageResult.Ready) -> BatchDraftItem,
         publish: (BatchDraftItem) -> Unit,
         onInterrupted: (BatchDraftItem) -> Unit,
+        discardOutput: (CutoutStageResult) -> Unit = {},
     ) {
         if (isRunning) {
             // A Retry or a new Queued draft arrived while the job runs. The job picks it up before it ends.
@@ -70,10 +75,11 @@ internal class BatchProcessingCoordinator(
         interruptActiveDrafts = ::terminalizeActiveDrafts
         restartRequested = false
         processingJob = scope.launch {
+            // Outside try, so the cancellation path can see cutouts that finished but were never published.
+            val window = ArrayDeque<Pair<BatchDraftItem, Deferred<TimedCutout>>>()
             try {
                 val parallelism = BatchParallelism.cutouts().coerceIn(1, 2)
                 val permits = Semaphore(parallelism)
-                val window = ArrayDeque<Pair<BatchDraftItem, Deferred<TimedCutout>>>()
                 val batchStartedAt = System.nanoTime()
                 var dispatched = 0
 
@@ -91,7 +97,7 @@ internal class BatchProcessingCoordinator(
                             .minByOrNull(BatchDraftItem::orderIndex)
                             ?: break
                         publish(next.copy(status = BatchDraftStatus.Processing, explicitlyAccepted = false, errorMessage = null))
-                        window.addLast(next to async { permits.withPermit { timedCutout(next, cutout) } })
+                        window.addLast(next to async { permits.withPermit { timedCutout(next, cutout, discardOutput) } })
                         dispatched++
                     }
 
@@ -110,13 +116,18 @@ internal class BatchProcessingCoordinator(
                     val timed = pending.await()
                     val waitMs = elapsedMsSince(waitStartedAt)
                     val suggestStartedAt = System.nanoTime()
-                    val finished = when (val result = timed.result) {
-                        is CutoutStageResult.Failed -> draft.copy(status = BatchDraftStatus.Failed, errorMessage = result.message)
-                        is CutoutStageResult.Ready -> suggestOrFail(draft, result, suggest)
+                    val finished = try {
+                        when (val result = timed.result) {
+                            is CutoutStageResult.Failed -> draft.copy(status = BatchDraftStatus.Failed, errorMessage = result.message)
+                            is CutoutStageResult.Ready -> suggestOrFail(draft, result, suggest)
+                        }
+                    } catch (cancellation: CancellationException) {
+                        discardOutput(timed.result)
+                        throw cancellation
                     }
                     val suggestMs = elapsedMsSince(suggestStartedAt)
                     // A cancelled job must not publish a result it finished after cancellation.
-                    coroutineContext.ensureActive()
+                    ensureActiveOrDiscard(timed.result, discardOutput)
                     publish(finished)
                     BatchTelemetry.log("batch_item idx=${draft.orderIndex} cutout_ms=${timed.elapsedMs} suggest_ms=$suggestMs wait_ms=$waitMs")
                 }
@@ -125,6 +136,10 @@ internal class BatchProcessingCoordinator(
                 // Cancellation can happen from background/process loss without going through
                 // cancel(), so terminalize every queued and processing item here as well.
                 terminalizeActiveDrafts()
+                // A cutout that finished before the cancel was never published, so its output goes too.
+                window.forEach { (_, pending) ->
+                    if (pending.isCompleted && !pending.isCancelled) discardOutput(pending.getCompleted().result)
+                }
                 throw cancellation
             } finally {
                 if (processingJob === coroutineContext[Job]) {
@@ -135,11 +150,16 @@ internal class BatchProcessingCoordinator(
         }
     }
 
-    fun cancel() {
+    /**
+     * Cancels the running job and returns it. The caller joins it before deleting any file the job may still write.
+     */
+    fun cancel(): Job? {
         interruptActiveDrafts?.invoke()
         interruptActiveDrafts = null
-        processingJob?.cancel()
+        val job = processingJob
+        job?.cancel()
         processingJob = null
+        return job
     }
 
     private suspend fun suggestOrFail(
@@ -160,6 +180,7 @@ private class TimedCutout(val result: CutoutStageResult, val elapsedMs: Long)
 private suspend fun timedCutout(
     draft: BatchDraftItem,
     cutout: suspend (BatchDraftItem) -> CutoutStageResult,
+    discardOutput: (CutoutStageResult) -> Unit,
 ): TimedCutout {
     val startedAt = System.nanoTime()
     val result = try {
@@ -170,8 +191,18 @@ private suspend fun timedCutout(
         CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
     }
     // A cutout that returns after cancellation must not hand its Ready result to the publish step.
-    coroutineContext.ensureActive()
+    ensureActiveOrDiscard(result, discardOutput)
     return TimedCutout(result, elapsedMsSince(startedAt))
+}
+
+/** Throws if the job was cancelled, after giving the result that will not be published to [discardOutput]. */
+private suspend fun ensureActiveOrDiscard(result: CutoutStageResult, discardOutput: (CutoutStageResult) -> Unit) {
+    try {
+        coroutineContext.ensureActive()
+    } catch (cancellation: CancellationException) {
+        discardOutput(result)
+        throw cancellation
+    }
 }
 
 private fun elapsedMsSince(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000

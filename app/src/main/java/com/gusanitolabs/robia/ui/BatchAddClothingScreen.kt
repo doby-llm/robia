@@ -37,13 +37,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +77,7 @@ import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
@@ -114,12 +112,20 @@ internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
     Interrupted(R.string.batch_status_interrupted),
 }
 
+/**
+ * The batch list. The cancel request and its discard dialog belong to the app shell, which also draws the top-bar
+ * close button: [onRequestCancel] opens the dialog, [onCancelBatch] confirms the discard.
+ */
 @Composable
 internal fun BatchAddClothingScreen(
     innerPadding: PaddingValues,
     drafts: List<BatchDraftItem>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
+    eta: BatchEta?,
+    showDiscardDialog: Boolean,
+    onRequestCancel: () -> Unit,
+    onDismissDiscardDialog: () -> Unit,
     onDraftSelected: (BatchDraftItem) -> Unit,
     onRetryDraft: (BatchDraftItem) -> Unit,
     onDiscardDraft: (BatchDraftItem) -> Unit,
@@ -127,34 +133,18 @@ internal fun BatchAddClothingScreen(
     onCancelBatch: () -> Unit,
     saveStatusMessage: String? = null,
 ) {
-    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
-
-    fun requestCancel() {
-        if (drafts.isNotEmpty()) {
-            showDiscardDialog = true
-        } else {
-            onCancelBatch()
-        }
-    }
-
-    BackHandler { requestCancel() }
-
+    BackHandler { onRequestCancel() }
 
     if (showDiscardDialog) {
         AlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
+            onDismissRequest = onDismissDiscardDialog,
             title = { Text(stringResource(R.string.batch_discard_title)) },
             text = { Text(stringResource(R.string.batch_discard_body)) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDiscardDialog = false
-                        onCancelBatch()
-                    },
-                ) { Text(stringResource(R.string.discard_changes)) }
+                TextButton(onClick = onCancelBatch) { Text(stringResource(R.string.discard_changes)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
+                TextButton(onClick = onDismissDiscardDialog) { Text(stringResource(R.string.keep_editing)) }
             },
         )
     }
@@ -173,18 +163,9 @@ internal fun BatchAddClothingScreen(
         if (canSave) R.string.batch_save_enabled_state else R.string.batch_save_disabled_state,
     )
     val attentionLine = batchAttentionLine(needsReviewCount, failedCount, interruptedCount)
-    val remainingCount = drafts.size - processedCount
     val context = LocalContext.current
     val localize: (GarmentTag) -> String = { tag -> tag.localizedTagLabel(context) }
     val collator = remember { browseCollator() }
-    val etaEstimator = remember { BatchEtaEstimator { System.currentTimeMillis() } }
-    var countedProcessed by remember { mutableIntStateOf(processedCount) }
-    var eta by remember { mutableStateOf<BatchEta?>(null) }
-    LaunchedEffect(processedCount, drafts.size) {
-        repeat(processedCount - countedProcessed) { etaEstimator.onTerminal() }
-        countedProcessed = processedCount
-        eta = if (remainingCount > 0) etaEstimator.estimate(remainingCount) else null
-    }
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
 
@@ -193,47 +174,49 @@ internal fun BatchAddClothingScreen(
             .fillMaxSize()
             .padding(innerPadding),
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 24.dp,
-                end = 16.dp,
-                bottom = with(density) { bottomBarHeightPx.toDp() } + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item {
-                BatchProgressHeader(
-                    totalCount = drafts.size,
-                    processedCount = processedCount,
-                    progress = progress,
-                    eta = eta,
-                )
-            }
-            if (drafts.isEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.batch_helper_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Pinned: the progress and ETA stay visible while the rows scroll.
+            BatchProgressHeader(
+                totalCount = drafts.size,
+                processedCount = processedCount,
+                progress = progress,
+                eta = eta,
+                modifier = Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp),
+            )
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 10.dp,
+                    end = 16.dp,
+                    bottom = with(density) { bottomBarHeightPx.toDp() } + 16.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (drafts.isEmpty()) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.batch_helper_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                items(drafts, key = BatchDraftItem::id) { draft ->
+                    BatchDraftRow(
+                        draft = draft,
+                        position = draft.orderIndex + 1,
+                        totalCount = drafts.size,
+                        summary = batchRowSummary(draft, availableTags, localize, collator),
+                        onRetry = { onRetryDraft(draft) },
+                        onDiscard = { onDiscardDraft(draft) },
+                        onClick = {
+                            if (draft.status.isSelectable) {
+                                onDraftSelected(draft)
+                            }
+                        },
                     )
                 }
-            }
-            items(drafts, key = BatchDraftItem::id) { draft ->
-                BatchDraftRow(
-                    draft = draft,
-                    position = draft.orderIndex + 1,
-                    totalCount = drafts.size,
-                    summary = batchRowSummary(draft, availableTags, localize, collator),
-                    onRetry = { onRetryDraft(draft) },
-                    onDiscard = { onDiscardDraft(draft) },
-                    onClick = {
-                        if (draft.status.isSelectable) {
-                            onDraftSelected(draft)
-                        }
-                    },
-                )
             }
         }
         Surface(
@@ -290,10 +273,11 @@ private fun BatchProgressHeader(
     processedCount: Int,
     progress: Float,
     eta: BatchEta?,
+    modifier: Modifier = Modifier,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -566,28 +550,48 @@ internal suspend fun cutoutStage(
         ClothingImageStore.readImageAspectRatio(context, sourceUri)
     }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
     val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
-    val croppedUri = fallbackUnlessCancelled(backgroundResult.outputUri) {
-        withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
+    // The engine's subject file is only the crop's input. It is deleted once the crop has replaced it, or when this
+    // stage is cancelled first, so a cancelled or discarded garment leaves no subject file behind.
+    val subjectUri = backgroundResult.outputUri.takeUnless { backgroundResult.usedFallback }
+    var cropResult: Uri? = null
+    val croppedUri = try {
+        fallbackUnlessCancelled(backgroundResult.outputUri) {
+            withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
+        }.also { cropResult = it }
+    } finally {
+        if (subjectUri != null && cropResult != subjectUri) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                ClothingImageStore.deleteBatchDraftFiles(context, listOf(subjectUri.toString()))
+            }
+        }
     }
-    val displayAspectRatio = withContext(Dispatchers.IO) {
-        ClothingImageStore.readImageAspectRatio(context, croppedUri)
-    }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
-    val matches = fallbackUnlessCancelled(emptyList<PaletteColorMatch>()) {
-        withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
+    try {
+        val displayAspectRatio = withContext(Dispatchers.IO) {
+            ClothingImageStore.readImageAspectRatio(context, croppedUri)
+        }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
+        val matches = fallbackUnlessCancelled(emptyList<PaletteColorMatch>()) {
+            withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
+        }
+        val primaryColorId = matches.getOrNull(0)?.color?.id
+        val secondaryColorId = matches.drop(1)
+            .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
+            ?.color
+            ?.id
+        CutoutStageResult.Ready(
+            croppedUri = croppedUri.toString(),
+            displayAspectRatio = displayAspectRatio,
+            primaryColorId = primaryColorId,
+            secondaryColorId = secondaryColorId,
+            usedFallback = backgroundResult.usedFallback,
+            needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
+        )
+    } catch (cancellation: CancellationException) {
+        // A cancelled stage hands no result to the batch, so the cropped output it made is deleted here.
+        withContext(NonCancellable + Dispatchers.IO) {
+            ClothingImageStore.deleteBatchDraftFiles(context, listOf(croppedUri.toString()))
+        }
+        throw cancellation
     }
-    val primaryColorId = matches.getOrNull(0)?.color?.id
-    val secondaryColorId = matches.drop(1)
-        .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
-        ?.color
-        ?.id
-    CutoutStageResult.Ready(
-        croppedUri = croppedUri.toString(),
-        displayAspectRatio = displayAspectRatio,
-        primaryColorId = primaryColorId,
-        secondaryColorId = secondaryColorId,
-        usedFallback = backgroundResult.usedFallback,
-        needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
-    )
 } catch (throwable: CancellationException) {
     throw throwable
 } catch (throwable: Exception) {
@@ -663,6 +667,9 @@ private val BatchDraftStatus.isTerminal: Boolean
 internal fun BatchDraftItem.isAcceptedForSave(): Boolean =
     status == BatchDraftStatus.Ready ||
         (status == BatchDraftStatus.NeedsReview && explicitlyAccepted)
+
+/** The image files this draft owns: its raw copy and the photo it shows now (the same file until a cutout replaces it). */
+internal fun BatchDraftItem.tempFileUris(): List<String> = listOf(originalPhotoUri, photoUri).distinct()
 
 internal fun BatchDraftItem.isProcessingActive(): Boolean =
     status == BatchDraftStatus.Queued || status == BatchDraftStatus.Processing

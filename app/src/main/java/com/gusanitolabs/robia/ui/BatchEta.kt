@@ -10,6 +10,7 @@ private const val BATCH_ETA_GAP_WINDOW = 4
 private const val BATCH_ETA_MAX_RISE = 1.2
 private const val BATCH_ETA_ALMOST_DONE_MS = 10_000.0
 private const val BATCH_ETA_SECONDS_LIMIT_MS = 90_000.0
+internal const val BATCH_ETA_TEXT_INTERVAL_MS = 5_000L
 
 internal sealed interface BatchEta {
     data class Seconds(val s: Int) : BatchEta
@@ -18,13 +19,16 @@ internal sealed interface BatchEta {
 }
 
 /**
- * Approximate time left for a batch. The raw estimate is the mean of the last gaps between completed garments
- * times the number of garments left. The shown value may drop freely but rises at most 20 % per update, so the
- * countdown never jumps up.
+ * Approximate time left for a batch. The gaps run from the batch start, so the first value appears with the first
+ * completion. Call [estimate] once per completion. The raw value is the mean of the last gaps times the garments
+ * left. The shown value may drop freely but rises at most 20 % per update, and the shown text changes at most once
+ * per [BATCH_ETA_TEXT_INTERVAL_MS].
  */
 internal class BatchEtaEstimator(private val clock: () -> Long) {
-    private val completionTimes = mutableListOf<Long>()
+    private val completionTimes = mutableListOf(clock())
     private var shownMs: Double? = null
+    private var shownEta: BatchEta? = null
+    private var shownEtaAtMs = 0L
 
     fun onTerminal() {
         completionTimes += clock()
@@ -42,7 +46,15 @@ internal class BatchEtaEstimator(private val clock: () -> Long) {
             minOf(rawMs, previousMs * BATCH_ETA_MAX_RISE)
         }
         shownMs = smoothedMs
-        return batchEtaFor(smoothedMs)
+
+        val candidate = batchEtaFor(smoothedMs)
+        val now = clock()
+        val previous = shownEta
+        if (previous == null || (candidate != previous && now - shownEtaAtMs >= BATCH_ETA_TEXT_INTERVAL_MS)) {
+            shownEta = candidate
+            shownEtaAtMs = now
+        }
+        return shownEta
     }
 }
 
