@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,8 +31,6 @@ import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -260,7 +257,7 @@ internal fun ColorReviewScreen(
             .padding(innerPadding),
     ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(reviewColumnCount()),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 128.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -370,64 +367,56 @@ private fun ColorReviewCandidateCard(
     val acceptInteraction = remember { MutableInteractionSource() }
     val discardInteraction = remember { MutableInteractionSource() }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column {
-            // The editable primary, as Accept will save it. A colour deleted from the palette has no match: Unknown.
+    ReviewCandidateCard(
+        // The editable primary, as Accept will save it. A colour deleted from the palette has no match: Unknown.
+        photo = {
             ColorReviewPhoto(
                 item = candidate.item,
                 swatch = garmentSwatchLabel(primaryColor?.hex),
             )
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+        },
+    ) {
+        ColorMappingStrip(
+            currentMetrics = candidate.item.colorMetrics,
+            primaryColor = primaryColor,
+            secondaryColor = secondaryColor,
+            onPrimaryClick = onPrimaryClick,
+            onSecondaryClick = onSecondaryClick,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onAccept,
+                enabled = !resolved,
+                contentPadding = ReviewCardActionPadding,
+                interactionSource = acceptInteraction,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .pressScale(acceptInteraction),
             ) {
-                ColorMappingStrip(
-                    currentMetrics = candidate.item.colorMetrics,
-                    primaryColor = primaryColor,
-                    secondaryColor = secondaryColor,
-                    onPrimaryClick = onPrimaryClick,
-                    onSecondaryClick = onSecondaryClick,
+                Text(
+                    stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = onAccept,
-                        enabled = !resolved,
-                        contentPadding = ReviewCardActionPadding,
-                        interactionSource = acceptInteraction,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .pressScale(acceptInteraction),
-                    ) {
-                        Text(
-                            stringResource(if (accepted) R.string.tag_review_accepted else R.string.accept),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onDiscard,
-                        enabled = !resolved,
-                        contentPadding = ReviewCardActionPadding,
-                        interactionSource = discardInteraction,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .pressScale(discardInteraction),
-                    ) {
-                        Text(
-                            stringResource(R.string.review_card_discard),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+            }
+            OutlinedButton(
+                onClick = onDiscard,
+                enabled = !resolved,
+                contentPadding = ReviewCardActionPadding,
+                interactionSource = discardInteraction,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .pressScale(discardInteraction),
+            ) {
+                Text(
+                    stringResource(R.string.review_card_discard),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -437,8 +426,7 @@ private fun ColorReviewCandidateCard(
 private fun ColorReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(132.dp)
+            .fillMaxSize()
             .background(rememberGarmentSwatchBrush(swatch.swatchColor())),
         contentAlignment = Alignment.Center,
     ) {

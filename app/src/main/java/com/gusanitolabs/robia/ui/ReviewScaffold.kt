@@ -13,13 +13,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -107,8 +110,53 @@ internal fun hasReviewableGarments(items: List<ClothingItem>, kind: ReviewKind):
     ReviewKind.Colour -> items.any(ClothingItem::isEligibleForColorReview)
 }
 
-/** Accept and Discard share a half-width slot in a two-column card: the default 24 dp side padding would squeeze the label. */
+/** Accept and Discard share a half-width slot under the review text: the default 24 dp side padding would squeeze the label. */
 internal val ReviewCardActionPadding = PaddingValues(horizontal = 8.dp)
+
+/** Review candidates are one full-width card per garment, so the values get the width a two-column card split in half. */
+internal fun reviewColumnCount(): Int = 1
+
+/** Garment photo beside the review text: narrow, as tall as the text, and never shorter than [REVIEW_PHOTO_MIN_HEIGHT]. */
+internal val REVIEW_PHOTO_WIDTH = 112.dp
+internal val REVIEW_PHOTO_MIN_HEIGHT = 132.dp
+
+/**
+ * One review candidate as a full-width card: the garment photo on the left, the values and controls laid out to its right in
+ * the freed width. The text column sets the card height and the photo fills it.
+ */
+@Composable
+internal fun ReviewCandidateCard(
+    photo: @Composable () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(REVIEW_PHOTO_WIDTH)
+                    .heightIn(min = REVIEW_PHOTO_MIN_HEIGHT)
+                    .fillMaxHeight(),
+            ) {
+                photo()
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                content = content,
+            )
+        }
+    }
+}
 
 /**
  * Wraps a review card that is resolved, by Accept or Discard. Resolving it shows the state for a moment, then fades and
