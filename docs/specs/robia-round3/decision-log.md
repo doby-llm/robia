@@ -150,3 +150,7 @@ K02 step 2 (V-K02-2) divides by the S2 area. E1 (R3-DEC-021, D3) showed that S2 
 
 ## R3-DEC-023 — SparkleBurst placement (SPK step 3) · D
 The brief says one-shot SparkleBurst on completion. Four of the five controls leave the screen or cover themselves when tapped (See similar, Review colours, Review garments, Filters sparkle when it opens the model prompt), and Edit photo's Done covers its button. Decision: the burst plays only on Edit photo when processing ends and the button is visible again. The other four show no burst; their ✦ stays static. Rejected: a burst on tap at all five, which does not mark completion.
+
+## R3-DEC-024 — Drive disconnected: one top banner, no per-photo Sign in or Waiting (Manu, 2026-10-23) · M
+When Drive was configured and is now disconnected, Browse shows one sign-in banner at the top. While it shows, cards do not repeat "Sign in" or "Waiting" (BrowseCardText.browseCardBadgeFor, rule hiddenByBanner). This is the behaviour already merged in VIS (#146). Manu confirmed it on 2026-10-23 after the A/B question: a single banner, as it is now. Photo-restore attention is kept. No code change in this PR.
+
