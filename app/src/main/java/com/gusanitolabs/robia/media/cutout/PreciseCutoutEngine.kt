@@ -49,7 +49,12 @@ internal class PreciseCutoutEngine(
     private val selectorFactory: (Context) -> InteractiveSelector = ::MediaPipeInteractiveSelector,
     /** Read once per photo; the editor's Redo passes a fixed set for its one-off run. */
     private val options: () -> CutoutOptions = { CutoutEngineRegistry.options() },
+    /** Debug dump of every stage (K01); the default copies nothing. */
+    private val sink: StageSink = NoStageSink,
 ) : BackgroundRemovalEngine {
+    /** Facts of the run for the debug dump; one engine serves one photo, so this is never reused. */
+    internal val runInfo = PreciseRunInfo()
+
     /**
      * One photo at a time per process ([CutoutEngineRegistry.withPreciseGate]); the caller's 30 s budget includes the wait
      * for that gate. The budget cannot pre-empt a native ONNX or MediaPipe call: a call that is already running finishes
@@ -61,13 +66,20 @@ internal class PreciseCutoutEngine(
                 val cutout = options()
                 val timings = LinkedHashMap<String, Long>()
                 val work = timings.timed("decode") { decodeWorkBitmap(context, sourceUri) }
+                runInfo.width = work.width
+                runInfo.height = work.height
                 try {
                     val argb = IntArray(work.width * work.height).also { work.getPixels(it, 0, work.width, 0, 0, work.width, work.height) }
                     val callerContext = coroutineContext
                     val alpha = CutoutEngineRegistry.preciseLatch.guard {
                         OnnxSessions(packDir).use { models ->
                             selectorFactory(context).use { selector ->
-                                CutoutRun(models, selector, work, argb, timings, cutout, checkpoint = { callerContext.ensureActive() }).alpha()
+                                CutoutRun(
+                                    models, selector, work, argb, timings, cutout,
+                                    checkpoint = { callerContext.ensureActive() },
+                                    sink = sink,
+                                    info = runInfo,
+                                ).alpha()
                             }
                         }
                     }
@@ -78,6 +90,10 @@ internal class PreciseCutoutEngine(
                     } catch (failure: Throwable) {
                         composed.recycle()
                         throw failure
+                    }
+                    if (wantsStages(sink)) {
+                        val pixels = IntArray(cropped.width * cropped.height).also { cropped.getPixels(it, 0, cropped.width, 0, 0, cropped.width, cropped.height) }
+                        sink.image("final", pixels, cropped.width, cropped.height)
                     }
                     val outputUri = try {
                         ClothingImageStore.writeProcessedBitmap(context, cropped)
@@ -144,6 +160,8 @@ private class CutoutRun(
     private val cutout: CutoutOptions,
     /** Throws when the caller was cancelled (the 30 s budget); stages are CPU-bound and cannot be interrupted otherwise. */
     private val checkpoint: () -> Unit,
+    private val sink: StageSink,
+    private val info: PreciseRunInfo,
 ) {
     private val w = work.width
     private val h = work.height
@@ -151,7 +169,9 @@ private class CutoutRun(
     /** Per-pixel alpha 0..255 of the work photo. With hanger removal off, S3–S4b and their models are skipped. */
     fun alpha(): ByteArray {
         val coarse = stage("s1") { saliency(argb) }
-        val selection = stage("s2") { garmentSelection(coarse, work) }
+        if (wantsStages(sink)) sink.mask("s1_saliency", coarse, w, h)
+        val selection = stage("s2") { garmentSelection(coarse, work, info.s2Points) }
+        if (wantsStages(sink)) sink.mask("s2_selection", selection, w, h)
         val hard = MaskOps.thresholded(selection)
         val garment = MaskOps.bbox(hard, w, h) ?: error("Garment selection is empty")
         val garmentArea = MaskOps.count(hard)
@@ -160,13 +180,32 @@ private class CutoutRun(
             removeHanger = cutout.removeHanger,
             threshold = cutout.hangerThreshold,
             selection = selection,
-            detect = { threshold -> stage("s3") { detectHanger(garment, threshold) } },
-            kill = { hanger -> stage("s4") { hangerKill(hanger, selection, garment, garmentArea) } },
-            reselect = { hanger, kill -> stage("s4b") { hangerFirst(selection, kill, hanger, garment.height) } },
+            detect = { threshold ->
+                val hanger = stage("s3") { detectHanger(garment, threshold) }
+                info.hangerBox = hanger?.let { intArrayOf(it.x0, it.y0, it.x1, it.y1) }
+                if (wantsStages(sink)) sink.json("s3_hanger", hangerJson(info.hangerBox))
+                hanger
+            },
+            kill = { hanger ->
+                stage("s4") { hangerKill(hanger, selection, garment, garmentArea) }?.also { kill ->
+                    info.kill = true
+                    if (wantsStages(sink)) sink.mask("s4_kill", FloatArray(kill.size) { if (kill[it]) 1f else 0f }, w, h)
+                }
+            },
+            reselect = { hanger, kill ->
+                stage("s4b") { hangerFirst(selection, kill, hanger, garment.height) }.also { reselected ->
+                    if (wantsStages(sink)) sink.mask("s4b_reselect", reselected, w, h)
+                }
+            },
         )
-        return stage("s5") {
+        val alpha = stage("s5") {
             MaskOps.refineAlpha(MaskOps.luminance(argb), MaskOps.dropIslands(result, w, h), w, h, cutout.edges)
         }
+        if (wantsStages(sink)) {
+            sink.mask("s5_alpha", FloatArray(alpha.size) { (alpha[it].toInt() and 0xFF) / 255f }, w, h)
+            info.opaqueFractionOfS2 = alpha.count { (it.toInt() and 0xFF) > 127 }.toDouble() / max(garmentArea, 1)
+        }
+        return alpha
     }
 
     /** S1: u2netp saliency, min-max normalised and resampled to the work size. */
@@ -190,14 +229,19 @@ private class CutoutRun(
         return MaskOps.resizeBilinear(normalised, SALIENCY_SIZE, SALIENCY_SIZE, w, h)
     }
 
-    /** S2: magic_touch at three automatic points; a selection counts when ≥ 60 % of it lies in the coarse mask. */
-    private fun garmentSelection(coarse: FloatArray, bitmap: Bitmap): FloatArray {
+    /**
+     * S2: magic_touch at three automatic points; a selection counts when ≥ 60 % of it lies in the coarse mask. [points]
+     * receives each prompt point and its verdict (the first S2 only; the S4b re-selection passes none).
+     */
+    private fun garmentSelection(coarse: FloatArray, bitmap: Bitmap, points: MutableList<S2Point>? = null): FloatArray {
         val hard = MaskOps.thresholded(coarse)
         val selection = FloatArray(w * h)
         for (point in MaskOps.thirdPoints(hard, w, h)) {
             val mask = selector.select(bitmap, point.x, point.y)
             val maskHard = MaskOps.thresholded(mask)
-            if (MaskOps.count(maskHard) > 0 && MaskOps.overlap(maskHard, hard) >= GARMENT_OVERLAP_MIN) {
+            val accepted = MaskOps.count(maskHard) > 0 && MaskOps.overlap(maskHard, hard) >= GARMENT_OVERLAP_MIN
+            points?.add(S2Point(point.x, point.y, accepted))
+            if (accepted) {
                 for (i in selection.indices) selection[i] = max(selection[i], mask[i])
             }
         }
@@ -256,14 +300,17 @@ private class CutoutRun(
     private fun hangerFirst(selection: FloatArray, kill: BooleanArray, hanger: MaskBox, garmentHeight: Int): FloatArray {
         val support = HangerRemoval.killSupport(kill, w, h)
         val filled = HangerRemoval.fill(argb, w, h, support)
+        if (wantsStages(sink)) sink.image("s4b_filled", filled, w, h)
         val filledBitmap = Bitmap.createBitmap(filled, w, h, Bitmap.Config.ARGB_8888)
         try {
             val reselected = garmentSelection(saliency(filled), filledBitmap)
+            val bandBottom = HangerRemoval.bandBottom(hanger, garmentHeight, h)
+            info.bandBottom = bandBottom
             return HangerRemoval.applyBand(
                 reselected = reselected,
                 previous = selection,
                 support = support,
-                bandBottom = HangerRemoval.bandBottom(hanger, garmentHeight, h),
+                bandBottom = bandBottom,
                 w = w,
             )
         } finally {

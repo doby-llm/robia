@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.data.SettingsRepository
+import com.gusanitolabs.robia.media.cutout.runCutoutDebugDump
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
 import com.gusanitolabs.robia.sync.authorizedEmailAfterLookup
@@ -25,9 +26,12 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val EXTRA_PERFORMANCE_FIXTURE_URIS = "com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS"
 private const val EXTRA_PERFORMANCE_BATCH = "com.gusanitolabs.robia.PERFORMANCE_BATCH"
+private const val EXTRA_CUTOUT_DEBUG = "com.gusanitolabs.robia.CUTOUT_DEBUG"
+private const val CUTOUT_DEBUG_PACK_WAIT_MS = 10_000L
 private const val DRIVE_AUTH_LOG_TAG = "RobiaDriveAuth"
 
 class MainActivity : ComponentActivity() {
@@ -60,6 +64,13 @@ class MainActivity : ComponentActivity() {
                 performanceFixtureUris = performanceFixtureUris(),
                 performanceBatch = intent.getBooleanExtra(EXTRA_PERFORMANCE_BATCH, false),
             )
+        }
+        // Debug-only cutout stage dump (K01); release and staging builds never start it.
+        if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_CUTOUT_DEBUG, false)) {
+            app.appScope.launch {
+                val packReady = withTimeoutOrNull(CUTOUT_DEBUG_PACK_WAIT_MS) { app.cutoutPack.ready.first { it } } == true
+                runCutoutDebugDump(app, packReady)
+            }
         }
     }
 
