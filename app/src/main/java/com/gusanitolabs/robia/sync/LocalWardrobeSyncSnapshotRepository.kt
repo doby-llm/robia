@@ -99,7 +99,7 @@ class LocalWardrobeSyncSnapshotRepository(
      */
     private suspend fun localItemsFor(snapshot: WardrobeSyncSnapshot): Map<String, ClothingItemEntity> {
         if (snapshot.garments.isEmpty()) return emptyMap()
-        return wardrobeDao.clothingItemsByIds(snapshot.garments.map(GarmentSyncRecord::id)).associateBy(ClothingItemEntity::id)
+        return tagDao.clothingItemsByIds(snapshot.garments.map(GarmentSyncRecord::id)).associateBy(ClothingItemEntity::id)
     }
 
     private suspend fun importRecords(
