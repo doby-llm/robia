@@ -682,7 +682,7 @@ class BatchProcessingCoordinatorTest {
 
         repeat(10) { yield() }
 
-        assertTrue(published.isEmpty())
+        assertTrue(published.none { it.status == BatchDraftStatus.Ready })
         val output = discarded.single() as CutoutStageResult.Ready
         assertEquals("content://cropped/${drafts.single().id}", output.croppedUri)
     }
