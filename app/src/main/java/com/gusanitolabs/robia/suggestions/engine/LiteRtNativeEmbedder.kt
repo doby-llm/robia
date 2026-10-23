@@ -14,12 +14,17 @@ interface NativeEmbedder {
     fun close()
 }
 
-class LiteRtNativeEmbedder(cacheDir: String, modelPath: String) : NativeEmbedder {
+class LiteRtNativeEmbedder(
+    cacheDir: String,
+    modelPath: String,
+    backend: Backend = Backend.CPU(),
+    visionBackend: Backend = Backend.CPU(),
+) : NativeEmbedder {
     private val engine = EmbeddingEngine(
         EmbeddingEngineConfig(
             modelPath = modelPath,
-            backend = Backend.CPU(),
-            visionBackend = Backend.CPU(),
+            backend = backend,
+            visionBackend = visionBackend,
             cacheDir = cacheDir,
             visionTokensPerImage = EmbeddingRecipe.VISION_TOKENS,
         ),
