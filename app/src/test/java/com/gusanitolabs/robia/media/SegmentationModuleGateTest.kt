@@ -1,11 +1,15 @@
 package com.gusanitolabs.robia.media
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -217,6 +221,23 @@ class SegmentationModuleGateTest {
         assertEquals(GateResult.Available, gate.ensureAvailable(60.seconds))
         assertEquals(1, port.installRequests)
         assertEquals(60_000L, clock.elapsedMs)
+    }
+
+    @Test
+    fun batch_concurrentCallsShareOneBudget_laterCallWaitsOnlyForTheRemainder() = runTest {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val gate = SegmentationModuleGate(port, { delay(it) }, { currentTime })
+
+        gate.startBatch()
+        val first = async { gate.ensureAvailable(60.seconds) }
+        delay(20.seconds)
+        // Started while the first call is still waiting: it must end at the batch deadline (60 s), not 20 s + 60 s.
+        val second = async { gate.ensureAvailable(60.seconds) }
+        val results = awaitAll(first, second)
+
+        assertTrue(results.all { it is GateResult.Unavailable })
+        assertEquals(60_000L, currentTime)
+        assertEquals(2, port.installRequests)
     }
 
     @Test

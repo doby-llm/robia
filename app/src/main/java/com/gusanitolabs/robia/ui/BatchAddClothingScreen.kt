@@ -556,7 +556,8 @@ internal suspend fun cutoutStage(
     var cropResult: Uri? = null
     val croppedUri = try {
         fallbackUnlessCancelled(backgroundResult.outputUri) {
-            withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
+            // Not cancellable: once the crop has written its file, cropResult records it, and the cancel path below deletes it.
+            withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
         }.also { cropResult = it }
     } finally {
         if (subjectUri != null && cropResult != subjectUri) {
@@ -586,9 +587,12 @@ internal suspend fun cutoutStage(
             needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
         )
     } catch (cancellation: CancellationException) {
-        // A cancelled stage hands no result to the batch, so the cropped output it made is deleted here.
-        withContext(NonCancellable + Dispatchers.IO) {
-            ClothingImageStore.deleteBatchDraftFiles(context, listOf(croppedUri.toString()))
+        // A cancelled stage hands no result to the batch, so the cropped output it made is deleted here. A crop fallback
+        // is the raw copy the draft still references, so it stays.
+        if (croppedUri != sourceUri) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                ClothingImageStore.deleteBatchDraftFiles(context, listOf(croppedUri.toString()))
+            }
         }
         throw cancellation
     }

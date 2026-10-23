@@ -179,6 +179,7 @@ import com.gusanitolabs.robia.data.WardrobeRepository
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.data.toDomain
+import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
@@ -190,7 +191,6 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
-import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
@@ -1198,9 +1198,13 @@ private fun RobiaShell(
                     ?.interruptedForBatch(context.getString(R.string.batch_interrupted_message))
                     ?.let(::updateBatchDraft)
             },
-            discardOutput = { result ->
-                (result as? CutoutStageResult.Ready)?.let { ready ->
-                    ClothingImageStore.deleteBatchDraftFiles(context, listOf(ready.croppedUri))
+            discardOutput = { draft, result ->
+                // Deleted off the main thread. A crop fallback is the raw copy the draft still references, so it stays.
+                val ready = result as? CutoutStageResult.Ready
+                if (ready != null && ready.croppedUri != draft.originalPhotoUri) {
+                    batchProcessingScope.launch(Dispatchers.IO) {
+                        ClothingImageStore.deleteBatchDraftFiles(context, listOf(ready.croppedUri))
+                    }
                 }
             },
         )
@@ -1244,11 +1248,12 @@ private fun RobiaShell(
         showBatchDiscardDialog = false
         batchEtaEstimator = null
         batchEta = null
-        SegmentationModuleGates.get(context).endBatch()
         replaceRoute(RobiaRoute.Browse)
-        // The job can still write a cutout until it has stopped, so the files are deleted only after the join.
+        // The job can still write a cutout, or wait for the module, until it has stopped. So the batch wait budget ends and
+        // the files are deleted only after the join.
         batchProcessingScope.launch(Dispatchers.IO) {
             cancelledJob?.join()
+            SegmentationModuleGates.get(context).endBatch()
             ClothingImageStore.deleteBatchDraftFiles(context, unsavedFiles)
         }
     }

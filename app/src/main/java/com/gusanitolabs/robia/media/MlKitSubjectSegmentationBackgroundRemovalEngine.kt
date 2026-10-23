@@ -16,7 +16,9 @@ import com.google.mlkit.vision.segmentation.subject.SubjectSegmentationResult
 import com.gusanitolabs.robia.core.model.CutoutEdges
 import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.nio.FloatBuffer
@@ -81,6 +83,8 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine(
                     throwable.toBackgroundRemovalFailure(BackgroundRemovalFailureReason.OUTPUT_WRITE_FAILED),
                 )
             }
+            // A cancel that lands after the write means no caller takes this file, so it is removed before the cancellation.
+            deleteOutputIfCancelled(outputUri) { uri -> ClothingImageStore.deleteBatchDraftFiles(context, listOf(uri.toString())) }
 
             BackgroundRemovalResult(
                 originalUri = sourceUri,
@@ -115,6 +119,19 @@ class MlKitSubjectSegmentationBackgroundRemovalEngine(
 }
 
 private val MODULE_WAIT_TIMEOUT = 60.seconds
+
+/**
+ * Returns normally while the coroutine is active. If it was cancelled, [delete] removes [output] and the cancellation is
+ * rethrown: a cancelled caller never receives the output.
+ */
+internal fun <T> CoroutineScope.deleteOutputIfCancelled(output: T, delete: (T) -> Unit) {
+    try {
+        ensureActive()
+    } catch (cancellation: CancellationException) {
+        delete(output)
+        throw cancellation
+    }
+}
 
 /** Pure code check, so the rule is testable on the JVM (constructing [MlKitException] is not). */
 internal fun isModuleUnavailableCode(errorCode: Int): Boolean = errorCode == MlKitException.UNAVAILABLE

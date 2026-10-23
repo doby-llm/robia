@@ -14,6 +14,8 @@ import kotlin.coroutines.coroutineContext
 
 private const val BATCH_LOG_TAG = "RobiaBatch"
 
+internal typealias DiscardOutput = (BatchDraftItem, CutoutStageResult) -> Unit
+
 /** Cutouts allowed in flight at once. The suggestion step is always single. SG2a lowers this for the precise engine. */
 internal object BatchParallelism {
     @Volatile var cutouts: () -> Int = { 2 }
@@ -42,8 +44,8 @@ internal class BatchProcessingCoordinator(
         get() = processingJob?.isActive == true
 
     /**
-     * [discardOutput] receives a cutout result that will not be published (the job was cancelled): the caller deletes
-     * the files it points to.
+     * [discardOutput] receives the draft and a cutout result that will not be published (the job was cancelled): the
+     * caller deletes the files it points to.
      */
     fun processQueued(
         drafts: () -> List<BatchDraftItem>,
@@ -51,7 +53,7 @@ internal class BatchProcessingCoordinator(
         suggest: suspend (BatchDraftItem, CutoutStageResult.Ready) -> BatchDraftItem,
         publish: (BatchDraftItem) -> Unit,
         onInterrupted: (BatchDraftItem) -> Unit,
-        discardOutput: (CutoutStageResult) -> Unit = {},
+        discardOutput: DiscardOutput = { _, _ -> },
     ) {
         if (isRunning) {
             // A Retry or a new Queued draft arrived while the job runs. The job picks it up before it ends.
@@ -113,7 +115,13 @@ internal class BatchProcessingCoordinator(
                     // (c) Suggest the oldest garment, one at a time, and publish its final state.
                     val (draft, pending) = window.removeFirst()
                     val waitStartedAt = System.nanoTime()
-                    val timed = pending.await()
+                    val timed = try {
+                        pending.await()
+                    } catch (cancellation: CancellationException) {
+                        // The cutout may have finished before the cancel. Its output would be lost with this coroutine.
+                        pending.discardIfCompleted(draft, discardOutput)
+                        throw cancellation
+                    }
                     val waitMs = elapsedMsSince(waitStartedAt)
                     val suggestStartedAt = System.nanoTime()
                     val finished = try {
@@ -122,12 +130,12 @@ internal class BatchProcessingCoordinator(
                             is CutoutStageResult.Ready -> suggestOrFail(draft, result, suggest)
                         }
                     } catch (cancellation: CancellationException) {
-                        discardOutput(timed.result)
+                        discardOutput(draft, timed.result)
                         throw cancellation
                     }
                     val suggestMs = elapsedMsSince(suggestStartedAt)
                     // A cancelled job must not publish a result it finished after cancellation.
-                    ensureActiveOrDiscard(timed.result, discardOutput)
+                    ensureActiveOrDiscard(draft, timed.result, discardOutput)
                     publish(finished)
                     BatchTelemetry.log("batch_item idx=${draft.orderIndex} cutout_ms=${timed.elapsedMs} suggest_ms=$suggestMs wait_ms=$waitMs")
                 }
@@ -137,9 +145,7 @@ internal class BatchProcessingCoordinator(
                 // cancel(), so terminalize every queued and processing item here as well.
                 terminalizeActiveDrafts()
                 // A cutout that finished before the cancel was never published, so its output goes too.
-                window.forEach { (_, pending) ->
-                    if (pending.isCompleted && !pending.isCancelled) discardOutput(pending.getCompleted().result)
-                }
+                window.forEach { (draft, pending) -> pending.discardIfCompleted(draft, discardOutput) }
                 throw cancellation
             } finally {
                 if (processingJob === coroutineContext[Job]) {
@@ -180,7 +186,7 @@ private class TimedCutout(val result: CutoutStageResult, val elapsedMs: Long)
 private suspend fun timedCutout(
     draft: BatchDraftItem,
     cutout: suspend (BatchDraftItem) -> CutoutStageResult,
-    discardOutput: (CutoutStageResult) -> Unit,
+    discardOutput: DiscardOutput,
 ): TimedCutout {
     val startedAt = System.nanoTime()
     val result = try {
@@ -191,18 +197,24 @@ private suspend fun timedCutout(
         CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
     }
     // A cutout that returns after cancellation must not hand its Ready result to the publish step.
-    ensureActiveOrDiscard(result, discardOutput)
+    ensureActiveOrDiscard(draft, result, discardOutput)
     return TimedCutout(result, elapsedMsSince(startedAt))
 }
 
 /** Throws if the job was cancelled, after giving the result that will not be published to [discardOutput]. */
-private suspend fun ensureActiveOrDiscard(result: CutoutStageResult, discardOutput: (CutoutStageResult) -> Unit) {
+private suspend fun ensureActiveOrDiscard(draft: BatchDraftItem, result: CutoutStageResult, discardOutput: DiscardOutput) {
     try {
         coroutineContext.ensureActive()
     } catch (cancellation: CancellationException) {
-        discardOutput(result)
+        discardOutput(draft, result)
         throw cancellation
     }
+}
+
+/** Hands the output of a cutout that finished but will not be published to [discardOutput]. */
+private fun Deferred<TimedCutout>.discardIfCompleted(draft: BatchDraftItem, discardOutput: DiscardOutput) {
+    if (!isCompleted || isCancelled) return
+    runCatching { getCompleted() }.onSuccess { timed -> discardOutput(draft, timed.result) }
 }
 
 private fun elapsedMsSince(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000
