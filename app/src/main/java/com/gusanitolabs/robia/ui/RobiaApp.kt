@@ -1183,6 +1183,10 @@ private fun RobiaShell(
         }
     }
 
+    fun setBrowseSelection(itemIds: Set<String>) {
+        selectedBrowseItemIds = itemIds
+    }
+
     fun deleteItemsAndReturnToBrowse(itemIds: Set<String>) {
         if (itemIds.isEmpty()) return
         onDeleteItems(itemIds.toList())
@@ -1949,6 +1953,7 @@ private fun RobiaShell(
             },
             onToggleFavorite = ::toggleFavorite,
             onBrowseSelectionToggle = ::toggleBrowseSelection,
+            onBrowseSelectionSet = ::setBrowseSelection,
             onCancelAddEdit = ::closeAddEdit,
             onSaveItem = { item, capture ->
                 val isNewGarment = clothingItems.none { existing -> existing.id == item.id }
@@ -2757,6 +2762,7 @@ private fun RobiaNavHost(
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onBrowseSelectionToggle: (String) -> Unit,
+    onBrowseSelectionSet: (Set<String>) -> Unit,
     onCancelAddEdit: () -> Unit,
     onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
     onDeleteItem: (ClothingItem) -> Unit,
@@ -2836,6 +2842,7 @@ private fun RobiaNavHost(
             onItemSelected = onItemSelected,
             onToggleFavorite = onToggleFavorite,
             onSelectionToggle = onBrowseSelectionToggle,
+            onSelectionSet = onBrowseSelectionSet,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
             filters = filters,

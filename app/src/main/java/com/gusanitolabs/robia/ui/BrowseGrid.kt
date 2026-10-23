@@ -199,6 +199,7 @@ internal fun BrowseWardrobeScreen(
     onItemSelected: (UiWardrobeItem) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onSelectionToggle: (String) -> Unit,
+    onSelectionSet: (Set<String>) -> Unit,
     onAddClick: () -> Unit,
     onFiltersClick: () -> Unit,
     onResetFilters: () -> Unit,
@@ -227,6 +228,7 @@ internal fun BrowseWardrobeScreen(
     val signInBannerShown = attentions.any { it.kind == SyncAttentionKind.SignInRequired }
     val searchActive = searchQuery.isNotBlank() || similarToName != null
     val gridState = rememberLazyGridState()
+    val dragArm = remember { DragSelectArm() }
     val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
     val backfillProgress by (backfill?.progress ?: remember { MutableStateFlow(BackfillProgress()) }).collectAsState()
     val effectiveColumns = columns.coerceIn(browseColumnRange(browseLayout))
@@ -299,7 +301,8 @@ internal fun BrowseWardrobeScreen(
                         pinchZoom = 1f
                     }
                 }
-            },
+            }
+            .dragSelect(gridState, dragArm, items, onSelectionSet),
         // innerPadding already carries the bottom bar inset, so the list ends at bar height + 16 dp.
         contentPadding = PaddingValues(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -376,13 +379,18 @@ internal fun BrowseWardrobeScreen(
                     onItemSelected(item)
                 }
             }
+            val onLongClick = {
+                // The card's long-press still toggles the item; a drag that follows extends from it.
+                dragArm.arm(item.id, selectedItemIds)
+                onSelectionToggle(item.id)
+            }
             val animation = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null)
             when (browseCellFor(browseLayout)) {
                 BrowseCell.Tile -> GarmentPhotoTile(
                     item = item,
                     isSelected = item.id in selectedItemIds,
                     onClick = onClick,
-                    onLongClick = { onSelectionToggle(item.id) },
+                    onLongClick = onLongClick,
                     onFavoriteClick = { onToggleFavorite(item.id) },
                     modifier = animation,
                     columns = effectiveColumns,
@@ -393,7 +401,7 @@ internal fun BrowseWardrobeScreen(
                     isSelected = item.id in selectedItemIds,
                     isSelectionMode = isSelectionMode,
                     onClick = onClick,
-                    onLongClick = { onSelectionToggle(item.id) },
+                    onLongClick = onLongClick,
                     onFavoriteClick = { onToggleFavorite(item.id) },
                     modifier = animation,
                     columns = effectiveColumns,
