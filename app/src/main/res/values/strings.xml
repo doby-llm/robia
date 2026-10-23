@@ -827,4 +827,19 @@
     <string name="duplicate_pair_title">Pair %1$d</string>
     <!-- FIT -->
     <string name="filter_fit">Fit</string>
+    <!-- ANA -->
+    <string name="analytics_open">Wardrobe stats</string>
+    <string name="analytics_title">Analytics</string>
+    <plurals name="analytics_garment_count">
+        <item quantity="one">%1$d garment · archived not counted</item>
+        <item quantity="other">%1$d garments · archived not counted</item>
+    </plurals>
+    <string name="analytics_section_categories">Categories</string>
+    <string name="analytics_section_colours">Colours</string>
+    <string name="analytics_section_occasions">Occasions</string>
+    <string name="analytics_section_seasons">Seasons</string>
+    <string name="analytics_section_fit">Fit</string>
+    <string name="analytics_section_locations">Locations</string>
+    <string name="analytics_empty_title">No garments yet</string>
+    <string name="analytics_empty_body">Add garments to see how your wardrobe is spread across categories, colours and more.</string>
 </resources>

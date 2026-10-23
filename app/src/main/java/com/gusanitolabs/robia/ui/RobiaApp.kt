@@ -323,6 +323,10 @@ private sealed interface RobiaRoute {
     data object AdvancedFilters : RobiaRoute {
         override val titleRes = R.string.advanced_filters_title
     }
+
+    data object Analytics : RobiaRoute {
+        override val titleRes = R.string.analytics_title
+    }
 }
 
 private data class BottomNavDestination(
@@ -1895,7 +1899,8 @@ private fun RobiaShell(
                 currentRoute != RobiaRoute.ColorReview &&
                 currentRoute != RobiaRoute.TagReview &&
                 currentRoute != RobiaRoute.DuplicateReview &&
-                currentRoute != RobiaRoute.DuplicateCalibration
+                currentRoute != RobiaRoute.DuplicateCalibration &&
+                currentRoute != RobiaRoute.Analytics
             ) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
@@ -2078,6 +2083,11 @@ private fun RobiaShell(
             onSeeSimilarClick = {
                 similarToGarmentId = selectedItemId
                 browseQuery = ""
+                replaceRoute(RobiaRoute.Browse)
+            },
+            onAnalyticsBarClick = { analyticsFilters ->
+                // Replaces the current filters with the tapped bar's filter only.
+                browseFilters = analyticsFilters
                 replaceRoute(RobiaRoute.Browse)
             },
         )
@@ -2827,6 +2837,7 @@ private fun RobiaNavHost(
     onOpenSettings: () -> Unit,
     canSeeSimilar: Boolean,
     onSeeSimilarClick: () -> Unit,
+    onAnalyticsBarClick: (BrowseFilterState) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -3072,6 +3083,13 @@ private fun RobiaNavHost(
             onFiltersChange = onFiltersChange,
             onResetFilters = onResetFilters,
             onShowResults = onBack,
+        )
+        RobiaRoute.Analytics -> AnalyticsScreen(
+            innerPadding = innerPadding,
+            garments = domainItems,
+            paletteColors = mainColors,
+            tagCategories = tagCategories,
+            onBarClick = onAnalyticsBarClick,
         )
     }
 }

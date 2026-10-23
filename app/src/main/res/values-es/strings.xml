@@ -827,4 +827,19 @@
     <string name="duplicate_pair_title">Par %1$d</string>
     <!-- FIT -->
     <string name="filter_fit">Ajuste</string>
+    <!-- ANA -->
+    <string name="analytics_open">Estadísticas del armario</string>
+    <string name="analytics_title">Estadísticas</string>
+    <plurals name="analytics_garment_count">
+        <item quantity="one">%1$d prenda · las archivadas no cuentan</item>
+        <item quantity="other">%1$d prendas · las archivadas no cuentan</item>
+    </plurals>
+    <string name="analytics_section_categories">Categorías</string>
+    <string name="analytics_section_colours">Colores</string>
+    <string name="analytics_section_occasions">Ocasiones</string>
+    <string name="analytics_section_seasons">Temporadas</string>
+    <string name="analytics_section_fit">Ajuste</string>
+    <string name="analytics_section_locations">Ubicaciones</string>
+    <string name="analytics_empty_title">Todavía no hay prendas</string>
+    <string name="analytics_empty_body">Añade prendas para ver cómo se reparte tu armario entre categorías, colores y más.</string>
 </resources>
