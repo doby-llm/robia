@@ -104,6 +104,24 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Options of the Advanced filters "Fit" section. Both can be selected; together they match every garment. */
+internal enum class FitFilter {
+    Fits, DoesNotFit;
+
+    /** "Fits" includes garments without a fit value, as the editor's fit switch does. */
+    fun matches(fitValue: Int?): Boolean = when (this) {
+        Fits -> fitValue != FIT_VALUE_DOES_NOT_FIT
+        DoesNotFit -> fitValue == FIT_VALUE_DOES_NOT_FIT
+    }
+}
+
+internal fun FitFilter.labelRes(): Int = when (this) {
+    FitFilter.Fits -> R.string.fit_good
+    FitFilter.DoesNotFit -> R.string.fit_does_not_fit
+}
+
+private const val FIT_VALUE_DOES_NOT_FIT = 0
+
 internal data class BrowseFilterState(
     val selectedTagIds: Set<String> = emptySet(),
     /** tagId → categoryId for each entry of [selectedTagIds], kept by the toggle helpers. */
@@ -111,17 +129,20 @@ internal data class BrowseFilterState(
     val selectedUnsetTagCategoryIds: Set<String> = emptySet(),
     val selectedPaletteColorIds: Set<String> = emptySet(),
     val favoritesOnly: Boolean = false,
+    val fit: Set<FitFilter> = emptySet(),
 ) {
     val hasActiveFilters: Boolean
         get() = selectedTagIds.isNotEmpty() ||
             selectedUnsetTagCategoryIds.isNotEmpty() ||
             selectedPaletteColorIds.isNotEmpty() ||
-            favoritesOnly
+            favoritesOnly ||
+            fit.isNotEmpty()
 
     val activeFilterCount: Int
         get() = selectedTagIds.size +
             selectedUnsetTagCategoryIds.size +
             selectedPaletteColorIds.size +
+            fit.size +
             if (favoritesOnly) 1 else 0
 
     /** Entries in one category section: its selected tags plus its "Not set" option. */
@@ -132,7 +153,8 @@ internal data class BrowseFilterState(
     /**
      * Within a category the selections are OR (an item passes if it carries any of them, or has no tag of the
      * category when "Not set" is selected); across categories they are AND; colours are OR; favourites are AND.
-     * A selected tag with no known category stands alone, so it still has to match.
+     * A selected tag with no known category stands alone, so it still has to match. Fit options are OR within the
+     * section, and the section is AND with the rest.
      */
     fun matches(item: UiWardrobeItem, paletteColors: List<MainColor>): Boolean {
         val assignedTags = item.tags.filter { tag -> tag.id.isNotBlank() && tag.label.isNotBlank() }
@@ -144,7 +166,8 @@ internal data class BrowseFilterState(
                 selectedIdsByCategory[categoryId].orEmpty().any(itemTagIds::contains) ||
                     (categoryId in selectedUnsetTagCategoryIds && categoryId !in itemTagCategoryIds)
             } &&
-            (selectedPaletteColorIds.isEmpty() || item.matchesAnyPaletteColor(selectedPaletteColors(paletteColors)))
+            (selectedPaletteColorIds.isEmpty() || item.matchesAnyPaletteColor(selectedPaletteColors(paletteColors))) &&
+            (fit.isEmpty() || fit.any { option -> option.matches(item.fitValue) })
     }
 
     private fun selectedPaletteColors(paletteColors: List<MainColor>): List<MainColor> =
@@ -465,7 +488,10 @@ private fun SimilarGarmentsChip(name: String, onClear: () -> Unit) {
     )
 }
 
-/** One chip per active filter, in the order: tags, "Not set" options, colours, favourites. Each ✕ removes only its entry. */
+/**
+ * One chip per active filter, in the order: tags, "Not set" options, colours, fit, favourites. Each ✕ removes only
+ * its entry.
+ */
 @Composable
 internal fun ActiveFilterChipsRow(
     filters: BrowseFilterState,
@@ -503,6 +529,12 @@ internal fun ActiveFilterChipsRow(
                 label = colorsById[colorId]?.name ?: colorId,
                 swatch = colorsById[colorId]?.swatchColor(),
                 onRemove = { onFiltersChange(filters.togglePaletteColor(colorId)) },
+            )
+        }
+        items(FitFilter.entries.filter { fit -> fit in filters.fit }) { fit ->
+            ActiveFilterChip(
+                label = stringResource(fit.labelRes()),
+                onRemove = { onFiltersChange(filters.toggleFit(fit)) },
             )
         }
         if (filters.favoritesOnly) {
@@ -597,6 +629,10 @@ internal fun BrowseFilterState.togglePaletteColor(colorId: String): BrowseFilter
 
 internal fun BrowseFilterState.toggleFavoritesOnly(): BrowseFilterState = copy(
     favoritesOnly = !favoritesOnly,
+)
+
+internal fun BrowseFilterState.toggleFit(fit: FitFilter): BrowseFilterState = copy(
+    fit = this.fit.toggle(fit),
 )
 
 private fun <T> Set<T>.toggle(value: T): Set<T> = if (value in this) this - value else this + value
