@@ -61,3 +61,86 @@ Analytics bars animate from the axis on screen entry, one short transition (<= 4
 
 ## R3-DEC-020 — Smart draft stays visible · M
 Manu (2026-10-23): do not hide the smart tool; there are no users yet. G-ADB1 finding: 15 of 20 taps give the same selection (3.4 % of the photo, top-left corner). Fix belongs to K02 (suspect InteractiveSelector.kt:38 masks[0], hypothesis to verify first). Stays visible until K02 lands.
+
+_Photo labels P1–P7 and F1–F3 refer to local files kept outside the repository._
+
+## R3-DEC-021 — G-ADB1 results: closed defect list for K02 (d) / ED2 step 4 · D (2026-10-23)
+
+**Scope.** I read the app and reference dumps, `compare.txt`, the editor dumps, the perf summaries and the GPU lines. The Python selector outputs for the editor taps were **not produced**, so no editor mask has been compared with `research`. The set has 7 precision photos plus 3 the attachment files files, and no white top. `compare.py` exits 1. Every `report.json` says `engine=precise`, `fallback=none`, so these are real precise outputs.
+
+### 1. Per photo (first divergent stage, IoU)
+
+| Photo | First divergent stage | What differs |
+|---|---|---|
+| P1 (dress) | s2 0.825 | All 3 prompts rejected, so s2 is a copy of s1. Hanger arms and straps stay in. s4 0.983 and s5 0.987 are fine. |
+| P2 | none (min 0.978–0.99) | All 3 prompts rejected, so s2 equals s1. The result is only fine because s1 is already good. |
+| P3 (skirt) | s2 0.925 | Same fallback, with the hanger-bar rows kept. s5 is 0.995, but `band_edge_ratio` is 3.89 (halo and clips). |
+| P4 | s2 0.939 | Same fallback. The app drops the waistband strip that the reference keeps. s5 is 0.949 (< 0.97) with a speckled edge. |
+| P5 (accessory) | s1 0.736 | The app fills the saliency interior (26.7 % of frame vs 19.8 %). s2 is then 0.070: prompts accepted, but the mask is weak and covers 2 %. |
+| P6 | none (min 0.994) | Same rejection pattern as above. `band_edge_ratio` 1.27. |
+| P7 | none (min 0.978) | Same rejection pattern as above. `band_edge_ratio` 0.99. |
+| F1 (pink source) | s2 0.115 | s1 is fine (0.988). s2 is a weak map, bright only on the white piping. The hanger box is found but `kill=false`, so s4 is missing. |
+| F2 | s1 0.868 | **Not a photo.** The image is a screenshot of the app's broken pink result in a UI card. Exclude it. |
+| F3 (red) | s2 0.038 | Weak map, bright only on the white stripes. **Not an original:** it is an already-cut result on white with no hanger (`box=null`). |
+
+### 2. Closed defect list
+
+**D1. The interactive selector ignores the tap (K02 (d) 1; ED2 does not touch the selector).**
+- **Evidence:**
+  - In the editor dumps, `mask.png` is byte-identical for every tap on the same input. 15 taps share one hash, 3 share another and 2 share a third, one hash per input. The taps are single, drags and door/clip positions.
+  - 3.4 % of the mask is above 127.
+  - The same weak map, bright on light details, appears in the app's s2 for the pink shorts, red shorts and accessory.
+- **Reference behaviour:** one tap selects the whole garment (the Python MediaPipe 1.1.1 reference, IoU ≈ 1).
+- **Suspected cause:** `InteractiveSelector.kt:33-38`, either the keypoint or `RegionOfInterest` not reaching the model, or `masks[0]` being the wrong mask on Android.
+- **Status:** hypothesis — verify with a JVM test first. A fake segmenter should assert the normalised keypoint passes through and that the code chooses the right mask when `masks.size` is 1 or 2. Then log `masks.size` and per-point masks once on the device.
+
+**D2. S2 silently falls back to saliency (K02 (d) 2).**
+- **Evidence:** 7 of 10 photos have all prompts rejected where the reference accepts them. In 3 other photos the prompts are accepted but the mask is weak.
+- **Location:** `PreciseCutoutEngine.kt:242` (acceptance) and `:249` (`coarse.copyOf()` with no marker).
+- **Fix:** a consequence of D1 (hypothesis). Add `s2_fallback` and `s2_accepted` to `report.json`, and fix D1 first.
+
+**D3. The garment-loss guard (b) would not catch D1.**
+- **Evidence:** the guard divides by `count(S2 hard)`, and S2 is already the weak map. On the pink shorts `opaque_fraction_of_s2` is 0.83 while S2 covers only about 12 % of the reference garment (IoU 0.115).
+- **Fix:** also measure against S1 hard (`s1_saliency` is 0.988 on the pink shorts). This is a change to the K02 (b) design.
+
+**D4. S1 interior on the accessory (K02 (d) 3).**
+- **Suspected cause:** `PreciseCutoutEngine.kt:212-224` with `MaskOps.kt:248` (resize without antialias, D3 in inv-r3-f).
+- **Status:** hypothesis — verify with a JVM test first (compare against PIL bilinear). The other 9 photos have s1 ≥ 0.986.
+
+**D5. `kill=false` on the pink shorts despite a found box.**
+- **Suspected cause:** `hangerKill` (`:290-297`) returns null through the 15 % cap, probably because `garmentArea` is tiny after D1.
+- **Status:** hypothesis. No separate fix; re-check after D1.
+
+**D6. Band edge and fringe (K03, not K02).**
+- Edge ratio 3.89 on 161436. Speckled fringe and a missing top strip on 170643 (the strip is a D1/D2 consequence).
+
+**D7. SAM scaling (K02 step 3).** The dumps neither show nor refute it. Only photos with a hanger run SAM, and all of those have a work long edge of 1024. Keep step 3 as written.
+
+**ED2 step 4.** No editor-wiring defect is supported. `points.json` carries sane coordinates; one drag point has y=985.5 against height 960, and its pixel was clamped to 959. The empty `clipped.png` in 17 of 20 dumps follows from D1. Nothing to fix in `PhotoEditorScreen.kt` yet.
+
+**Set fixes before G-ADB2.** Replace `F2` with the original pink photo. Add the original red-shorts photo, because V-K03-3 cannot be measured on `F3`. Add the white top. Measure the ratio on the pink source as well; its hanger band is real.
+
+### 3. Perf (staging 7ad6884, 4 columns, 3 runs)
+
+| Metric | Run 1 | Run 2 | Run 3 | Median |
+|---|---|---|---|---|
+| Janky % | 2.12 | 1.97 | 2.15 | **2.12** |
+| p90 frame (ms) | 19 | 16 | 20 | **19** |
+
+p50 is 11 ms in all runs. Legacy janky % is 9.93, 6.68 and 11.18 (median 9.93). Frames per run are 1163–1178. The run-to-run spread is about 0.2 pp and 4 ms, so a V-PRF-4 delta inside that is noise. G-ADB2 has not run, so there is no delta and V-PRF-4 is not evaluated.
+
+### 4. GPU (G-ADB1, Poco F3, API 33)
+
+| | CPU | GPU |
+|---|---|---|
+| Load | 511 ms | n/a |
+| Median | 1501 ms | n/a |
+| p90 | 1594 ms (n=5) | n/a |
+| PSS | 760 MB | n/a |
+| Parity vs CPU | 1.0000 (CPU against itself, not informative) | n/a |
+
+The GPU run failed with `ComputeEmbedding failed: TensorBuffer must have all static dimensions`. **Verdict:** the GPU path is unusable with this model (dynamic dimensions); stay on CPU. Any retry needs a static-shape export, which is a decision for Manu.
+
+### 5. G-ADB2
+
+Not run, so V-K02-4 and V-K03-3 have no numbers. Current baseline for V-K02-4: `compare.py` exits 1, with s2 < 0.95 on 6 of 10 photos and s5 < 0.97 on 5. After the fixes above, expect K02 to own D1–D4. For V-K03-3 the only photo currently measurable is the pink source, which has the real hanger band (ratio 1.36, from the reference's band row, so unreliable); the only app ratio over 1.5 is 161436 at 3.89.
