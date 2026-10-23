@@ -158,16 +158,26 @@ suspend fun scanDuplicates(
     }
 }
 
-/** The calibration list (G-DUP): every active garment is checked, because same-category pairs are not limited to a shared hash. */
+/**
+ * The calibration list (G-DUP): every active garment is checked, because same-category pairs are not limited to a shared
+ * hash. A failed scan returns no pairs.
+ */
 suspend fun scanCalibrationPairs(
     context: Context,
     items: List<ClothingItem>,
     embeddingRepository: EmbeddingRepository,
 ): List<CalibrationPair> = withContext(Dispatchers.IO) {
-    val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
-    val active = items.filterNot(ClothingItem::isArchived).map(ClothingItem::id).toSet()
-    val currentHashes = currentPhotoHashes(context, active, items)
-    calibrationPairs(items, vectors, currentHashes)
+    try {
+        val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
+        val active = items.filterNot(ClothingItem::isArchived).map(ClothingItem::id).toSet()
+        val currentHashes = currentPhotoHashes(context, active, items)
+        calibrationPairs(items, vectors, currentHashes)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        if (BuildConfig.DEBUG) Log.w(DUPLICATE_LOG_TAG, "Calibration scan failed: ${failure::class.java.simpleName}", failure)
+        emptyList()
+    }
 }
 
 /** Active garments whose stored IMAGE hash is shared with another garment that has an IMAGE vector. */

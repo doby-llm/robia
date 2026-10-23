@@ -45,9 +45,11 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
     val itemsById = remember(items) { items.associateBy(ClothingItem::id) }
+    val ids = remember(items) { items.map(ClothingItem::id) }
     var pairs by remember { mutableStateOf<List<CalibrationPair>?>(null) }
     var marks by remember { mutableStateOf(emptyMap<Int, Boolean>()) }
-    LaunchedEffect(items) {
+    // Keyed on the id list: a wardrobe emission that keeps the same garments keeps the marks.
+    LaunchedEffect(ids) {
         pairs = scanCalibrationPairs(context, items, EmbeddingRepository(app.database.embeddingDao()))
         marks = emptyMap()
     }
