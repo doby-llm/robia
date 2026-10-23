@@ -71,6 +71,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -98,6 +99,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -205,6 +207,8 @@ internal fun BrowseWardrobeScreen(
     onAttentionAction: (SyncAttention, SyncAttentionAction) -> Unit,
     showSyncDetails: Boolean,
     onSyncDetailsClick: () -> Unit,
+    duplicateGroupCount: Int = 0,
+    onDuplicateReviewClick: () -> Unit = {},
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     searchMode: SearchMode,
@@ -326,6 +330,11 @@ internal fun BrowseWardrobeScreen(
         if (backfillProgress.remaining > 0) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SuggestionsProgressBanner(remaining = backfillProgress.remaining)
+            }
+        }
+        if (duplicateGroupCount > 0) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                DuplicatesBanner(groupCount = duplicateGroupCount, onReview = onDuplicateReviewClick)
             }
         }
         mergeProposalCard?.let { card ->
@@ -597,6 +606,27 @@ private fun GarmentCardShell(
 }
 
 /** Photos-only tile (default Browse layout): the photo box alone, with title and metadata kept for TalkBack. */
+/** REQ-DU-03: "Possible duplicates found · N groups to review · Review", in the slot of the suggestions banner. */
+@Composable
+private fun DuplicatesBanner(groupCount: Int, onReview: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, top = 4.dp, end = 6.dp, bottom = 4.dp),
+        ) {
+            Text(
+                text = pluralStringResource(R.plurals.duplicate_banner_groups, groupCount, groupCount),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onReview) { Text(stringResource(R.string.duplicate_banner_review)) }
+        }
+    }
+}
+
 @Composable
 private fun GarmentPhotoTile(
     item: UiWardrobeItem,

@@ -794,4 +794,33 @@
     <string name="dev_model_benchmark_gpu">Model benchmark (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Cancel</string>
+    <!-- DUP1 -->
+    <plurals name="duplicate_banner_groups">
+        <item quantity="one">Possible duplicates found · %1$d group to review</item>
+        <item quantity="other">Possible duplicates found · %1$d groups to review</item>
+    </plurals>
+    <string name="duplicate_banner_review">Review</string>
+    <string name="duplicate_review_title">Possible duplicates</string>
+    <string name="duplicate_group_title">Group %1$d · %2$d garments</string>
+    <string name="duplicate_tier_same_photo">Same photo</string>
+    <string name="duplicate_keep">Keep</string>
+    <string name="duplicate_delete">Delete</string>
+    <string name="duplicate_not_duplicates">Not duplicates</string>
+    <plurals name="duplicate_delete_selected">
+        <item quantity="one">Delete %1$d garment</item>
+        <item quantity="other">Delete %1$d garments</item>
+    </plurals>
+    <string name="duplicate_delete_title">Delete the selected garments?</string>
+    <string name="duplicate_delete_body">They are archived, the same as deleting them from Browse.</string>
+    <string name="duplicate_empty">No possible duplicates left.</string>
+    <string name="duplicate_calibration_title">Duplicate calibration</string>
+    <string name="duplicate_calibration_summary">Mark the most similar same-category pairs as Same or Different.</string>
+    <string name="duplicate_calibration_empty">No same-category pairs with a stored photo vector yet.</string>
+    <string name="duplicate_mark_same">Same</string>
+    <string name="duplicate_mark_different">Different</string>
+    <string name="duplicate_calibration_progress">%1$d of %2$d marked</string>
+    <string name="duplicate_export_marks">Export marks</string>
+    <string name="duplicate_export_chooser">Share marks</string>
+    <string name="duplicate_cosine">Cosine %1$.4f</string>
+    <string name="duplicate_pair_title">Pair %1$d</string>
 </resources>

@@ -794,4 +794,33 @@
     <string name="dev_model_benchmark_gpu">Modell-Benchmark (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Abbrechen</string>
+    <!-- DUP1 -->
+    <plurals name="duplicate_banner_groups">
+        <item quantity="one">Mögliche Duplikate gefunden · %1$d Gruppe zu prüfen</item>
+        <item quantity="other">Mögliche Duplikate gefunden · %1$d Gruppen zu prüfen</item>
+    </plurals>
+    <string name="duplicate_banner_review">Prüfen</string>
+    <string name="duplicate_review_title">Mögliche Duplikate</string>
+    <string name="duplicate_group_title">Gruppe %1$d · %2$d Kleidungsstücke</string>
+    <string name="duplicate_tier_same_photo">Gleiches Foto</string>
+    <string name="duplicate_keep">Behalten</string>
+    <string name="duplicate_delete">Löschen</string>
+    <string name="duplicate_not_duplicates">Keine Duplikate</string>
+    <plurals name="duplicate_delete_selected">
+        <item quantity="one">%1$d Kleidungsstück löschen</item>
+        <item quantity="other">%1$d Kleidungsstücke löschen</item>
+    </plurals>
+    <string name="duplicate_delete_title">Ausgewählte Kleidungsstücke löschen?</string>
+    <string name="duplicate_delete_body">Sie werden archiviert, wie beim Löschen in Browse.</string>
+    <string name="duplicate_empty">Keine möglichen Duplikate mehr.</string>
+    <string name="duplicate_calibration_title">Duplikat-Kalibrierung</string>
+    <string name="duplicate_calibration_summary">Markiere die ähnlichsten Paare derselben Kategorie als Gleich oder Verschieden.</string>
+    <string name="duplicate_calibration_empty">Noch keine Paare derselben Kategorie mit Bildvektor.</string>
+    <string name="duplicate_mark_same">Gleich</string>
+    <string name="duplicate_mark_different">Verschieden</string>
+    <string name="duplicate_calibration_progress">%1$d von %2$d markiert</string>
+    <string name="duplicate_export_marks">Markierungen exportieren</string>
+    <string name="duplicate_export_chooser">Markierungen teilen</string>
+    <string name="duplicate_cosine">Kosinus %1$.4f</string>
+    <string name="duplicate_pair_title">Paar %1$d</string>
 </resources>
