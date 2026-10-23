@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.media.cutout
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -136,6 +137,56 @@ class CutoutDebugDumpTest {
         assertTrue(report.getBoolean("s2_fallback"))
         assertEquals(0, report.getInt("s2_accepted"))
         assertEquals("garment_loss", report.getString("fallback"))
+    }
+
+    @Test
+    fun s2FallbackOf_isNullUntilS2FinishesThenTrueOnlyWhenNoPromptWasAccepted() {
+        // The run threw before S2 (e.g. in saliency): nothing was tested, so no fallback is claimed.
+        assertNull(s2FallbackOf(PreciseRunInfo()))
+
+        // The run threw inside S2 after one prompt: the partial verdict is kept, but S2 did not finish.
+        val threwInsideS2 = PreciseRunInfo().apply { s2Points.add(S2Point(1, 2, accepted = false)) }
+        assertNull(s2FallbackOf(threwInsideS2))
+
+        val finishedNoAccepted = PreciseRunInfo().apply {
+            s2Points.add(S2Point(1, 2, accepted = false))
+            s2Completed = true
+        }
+        assertTrue(s2FallbackOf(finishedNoAccepted) == true)
+
+        val finishedAccepted = PreciseRunInfo().apply {
+            s2Points.add(S2Point(1, 2, accepted = true))
+            s2Completed = true
+        }
+        assertFalse(s2FallbackOf(finishedAccepted) == true)
+    }
+
+    @Test
+    fun reportJson_writesS2FallbackAsJsonNullWhenTheRunThrewBeforeS2() {
+        val report = JSONObject(
+            reportJson(
+                width = 1024,
+                height = 768,
+                s2Points = emptyList(),
+                hangerBox = null,
+                kill = false,
+                bandBottom = null,
+                seconds = 0.5,
+                opaqueFractionOfS2 = 0.0,
+                bandGuard = false,
+                garmentLoss = false,
+                s2Fallback = s2FallbackOf(PreciseRunInfo()),
+                s2Accepted = 0,
+                engine = "mlkit",
+                fallback = "error",
+                error = "IllegalStateException: boom",
+            ),
+        )
+
+        assertTrue(report.has("s2_fallback"))
+        assertTrue(report.isNull("s2_fallback"))
+        assertEquals(0, report.getInt("s2_accepted"))
+        assertEquals("IllegalStateException: boom", report.getString("error"))
     }
 
     @Test

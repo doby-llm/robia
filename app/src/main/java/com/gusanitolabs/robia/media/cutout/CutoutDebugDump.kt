@@ -104,7 +104,16 @@ internal class PreciseRunInfo {
     var bandGuard = false
     /** The garment-loss guard rejected the precise result (K02 (b)). */
     var garmentLoss = false
+    /** S2 finished and produced its selection; false when the run threw before or during S2. */
+    var s2Completed = false
 }
+
+/**
+ * `s2_fallback`: true when S2 finished and no prompt was accepted (the selection is the S1 copy). Null when S2 did not
+ * finish, so a run that threw earlier is not reported as a fallback.
+ */
+internal fun s2FallbackOf(info: PreciseRunInfo): Boolean? =
+    if (info.s2Completed) info.s2Points.none { it.accepted } else null
 
 /** The `s3_hanger.json` content: `{"box":[x0,y0,x1,y1]}`, or `{"box":null}` when no plausible hanger was found. */
 internal fun hangerJson(box: IntArray?): String =
@@ -122,7 +131,7 @@ internal fun reportJson(
     opaqueFractionOfS2: Double,
     bandGuard: Boolean,
     garmentLoss: Boolean,
-    s2Fallback: Boolean,
+    s2Fallback: Boolean?,
     s2Accepted: Int,
     engine: String,
     fallback: String,
@@ -137,7 +146,8 @@ internal fun reportJson(
     .put("opaque_fraction_of_s2", opaqueFractionOfS2)
     .put("band_guard", bandGuard)
     .put("garment_loss", garmentLoss)
-    .put("s2_fallback", s2Fallback)
+    // put(name, null) would drop the key, so a null (S2 did not finish) is written as JSON null.
+    .put("s2_fallback", s2Fallback ?: JSONObject.NULL)
     .put("s2_accepted", s2Accepted)
     .put("engine", engine)
     .put("fallback", fallback)
@@ -221,8 +231,7 @@ private suspend fun dumpPhoto(context: Context, photo: File, dir: File, packRead
             opaqueFractionOfS2 = info.opaqueFractionOfS2,
             bandGuard = info.bandGuard,
             garmentLoss = info.garmentLoss,
-            // S2 fell back to saliency when no prompt was accepted (the selection is then the S1 copy).
-            s2Fallback = info.s2Points.none { it.accepted },
+            s2Fallback = s2FallbackOf(info),
             s2Accepted = info.s2Points.count { it.accepted },
             engine = if (accepted) ENGINE_PRECISE else ENGINE_MLKIT,
             fallback = when {

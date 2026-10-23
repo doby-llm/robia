@@ -193,6 +193,7 @@ private class CutoutRun(
         val coarse = stage("s1") { saliency(argb) }
         if (wantsStages(sink)) sink.mask("s1_saliency", coarse, w, h)
         val selection = stage("s2") { garmentSelection(coarse, work, info.s2Points) }
+        info.s2Completed = true
         if (wantsStages(sink)) sink.mask("s2_selection", selection, w, h)
         val hard = MaskOps.thresholded(selection)
         val garment = MaskOps.bbox(hard, w, h) ?: error("Garment selection is empty")
