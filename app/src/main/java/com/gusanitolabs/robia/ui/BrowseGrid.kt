@@ -361,7 +361,7 @@ internal fun BrowseWardrobeScreen(
                 }
             }
         }
-        items(items, key = { it.id }) { item ->
+        items(items, key = { it.id }, contentType = { browseCellFor(browseLayout) }) { item ->
             val onClick = {
                 if (isSelectionMode) {
                     onSelectionToggle(item.id)
