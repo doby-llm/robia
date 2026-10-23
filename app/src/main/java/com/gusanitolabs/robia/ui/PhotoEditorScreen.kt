@@ -129,6 +129,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -283,15 +284,23 @@ fun PhotoEditorScreen(
                 val result = runCatching {
                     withContext(Dispatchers.Default) {
                         val instance = selector.value
-                        for (point in points) {
-                            val started = SystemClock.elapsedRealtime()
-                            val mask = instance.select(
-                                current.source,
-                                point.x.roundToInt().coerceIn(0, w - 1),
-                                point.y.roundToInt().coerceIn(0, h - 1),
-                            )
-                            timings += SystemClock.elapsedRealtime() - started
-                            for (i in union.indices) if (mask[i] > union[i]) union[i] = mask[i]
+                        // Segmenter input only: photo.source keeps its transparent pixels, and this copy is recycled below.
+                        val selectionBitmap = Bitmap.createBitmap(
+                            compositeOverGrey(argbOf(current.source), current.session.currentAlpha()),
+                            w,
+                            h,
+                            Bitmap.Config.ARGB_8888,
+                        )
+                        try {
+                            for (point in points) {
+                                val started = SystemClock.elapsedRealtime()
+                                val (x, y) = selectPixelOf(point, w, h)
+                                val mask = instance.select(selectionBitmap, x, y)
+                                timings += SystemClock.elapsedRealtime() - started
+                                for (i in union.indices) if (mask[i] > union[i]) union[i] = mask[i]
+                            }
+                        } finally {
+                            selectionBitmap.recycle()
                         }
                     }
                 }
@@ -352,6 +361,7 @@ fun PhotoEditorScreen(
         if (redoing || photo == null) return
         redoing = true
         scope.launch {
+            val startedAt = SystemClock.elapsedRealtime()
             val failure = try {
                 val options = redoCutoutOptions(choice, CutoutEngineRegistry.options())
                 // The new photo and its alpha are ready before the previous undo step is dropped, so a failure changes nothing.
@@ -364,6 +374,7 @@ fun PhotoEditorScreen(
                     replaced = photo
                     photo = CutoutPhoto(bitmap, RefineSession(bitmap.width, bitmap.height, alpha), fromRedo = true)
                 }
+                onDiagnostic(redoDoneDiagnostic(choice, options, SystemClock.elapsedRealtime() - startedAt))
                 null
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -831,9 +842,9 @@ private fun DrawScope.drawCheckerboard() {
 }
 
 /** Where the photo sits inside the preview at zoom 1 (ContentScale.Fit), in container pixels. */
-private class FitRect(val left: Float, val top: Float, val width: Float, val height: Float)
+internal class FitRect(val left: Float, val top: Float, val width: Float, val height: Float)
 
-private fun fitRect(container: IntSize, photoWidth: Int, photoHeight: Int): FitRect {
+internal fun fitRect(container: IntSize, photoWidth: Int, photoHeight: Int): FitRect {
     val containerWidth = container.width.toFloat()
     val containerHeight = container.height.toFloat()
     val scale = min(containerWidth / photoWidth, containerHeight / photoHeight)
@@ -843,7 +854,7 @@ private fun fitRect(container: IntSize, photoWidth: Int, photoHeight: Int): FitR
 }
 
 /** Inverse of the preview transform (scale about the centre, then pan) and of the fit: a screen point in photo pixels. */
-private fun screenToPhoto(screen: Offset, container: IntSize, zoom: Float, pan: Offset, photoWidth: Int, photoHeight: Int): Offset {
+internal fun screenToPhoto(screen: Offset, container: IntSize, zoom: Float, pan: Offset, photoWidth: Int, photoHeight: Int): Offset {
     val center = Offset(container.width / 2f, container.height / 2f)
     val local = center + (screen - center - pan) / zoom
     val fit = fitRect(container, photoWidth, photoHeight)
@@ -851,11 +862,18 @@ private fun screenToPhoto(screen: Offset, container: IntSize, zoom: Float, pan: 
     return Offset((local.x - fit.left) * photoPerFit, (local.y - fit.top) * photoPerFit)
 }
 
-private fun clampPan(pan: Offset, container: IntSize, zoom: Float): Offset {
+internal fun clampPan(pan: Offset, container: IntSize, zoom: Float): Offset {
     val limitX = (zoom - 1f) * container.width / 2f
     val limitY = (zoom - 1f) * container.height / 2f
     return Offset(pan.x.coerceIn(-limitX, limitX), pan.y.coerceIn(-limitY, limitY))
 }
+
+/**
+ * The pixel a smart tap at photo point [point] selects, as the (x, y) that select() receives. A photo point is continuous and
+ * pixel i covers [i, i + 1), so the pixel is the floor of the point, clamped to the photo. Mask values are row-major: index y * width + x.
+ */
+internal fun selectPixelOf(point: Offset, width: Int, height: Int): Pair<Int, Int> =
+    floor(point.x).toInt().coerceIn(0, width - 1) to floor(point.y).toInt().coerceIn(0, height - 1)
 
 /** Keeps a point every [spacing] photo pixels along the drag, so a long drag selects a few points rather than every frame. */
 private fun sampleEvery(points: List<Offset>, spacing: Float): List<Offset> {
@@ -885,6 +903,43 @@ private fun composeWithAlpha(argb: IntArray, alpha: ByteArray, width: Int, heigh
     val out = IntArray(argb.size) { i -> ((alpha[i].toInt() and 0xFF) shl 24) or (argb[i] and 0xFFFFFF) }
     return Bitmap.createBitmap(out, width, height, Bitmap.Config.ARGB_8888)
 }
+
+/**
+ * Grey under the cutout for smart selection. The stored PNG has RGB 0 wherever alpha is 0 (the original photo is not kept), so
+ * the segmenter would see a transparent area as black and a black garment would blend into it. Mid-grey is neutral for dark and
+ * light garments alike.
+ */
+internal const val SELECTION_BACKGROUND_GREY = 0x80
+
+/**
+ * [argb] (the stored RGB; its own alpha is ignored) blended over [SELECTION_BACKGROUND_GREY] by [alpha] (0..1, the session's current
+ * alpha), as opaque ARGB. Removed areas therefore come out grey, and kept areas keep their colour.
+ */
+internal fun compositeOverGrey(argb: IntArray, alpha: FloatArray): IntArray {
+    require(alpha.size == argb.size) { "Alpha must match the pixels" }
+    return IntArray(argb.size) { i ->
+        val a = (alpha[i].coerceIn(0f, 1f) * 255f).roundToInt()
+        val pixel = argb[i]
+        (0xFF shl 24) or
+            (blendChannel(pixel shr 16, a) shl 16) or
+            (blendChannel(pixel shr 8, a) shl 8) or
+            blendChannel(pixel, a)
+    }
+}
+
+/** One colour channel ([value] has it in the low 8 bits) over the grey, weighted by [alpha] (0..255), rounded. */
+private fun blendChannel(value: Int, alpha: Int): Int {
+    val channel = value and 0xFF
+    return (channel * alpha + SELECTION_BACKGROUND_GREY * (255 - alpha) + 127) / 255
+}
+
+/**
+ * The line Developer diagnostics get after a Redo that ran. The flags say what really ran: hanger removal applies only to the
+ * precise engine, so a Standard run reports removeHanger=false whatever the saved setting is.
+ */
+internal fun redoDoneDiagnostic(choice: RedoCutoutChoice, options: CutoutOptions, elapsedMs: Long): String =
+    "redo_cutout_done: choice=${choice.name} precise=${options.usePrecise} " +
+        "removeHanger=${options.usePrecise && options.removeHanger} ms=$elapsedMs"
 
 /**
  * The Light transform as a colour matrix: brightness adds the same offset to every channel, temperature moves red up and
