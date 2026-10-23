@@ -442,4 +442,35 @@ class EditHistoryTest {
         assertTrue(failure.exceptionOrNull() is CancellationException)
         assertEquals(1, released)
     }
+
+    /**
+     * V-ED2-2 (R3-DEC-027): the history lives only while a new garment's photo is added, so saving the garment clears it. The
+     * editor closes on Save and releases its session and its photo history (PhotoEditorScreen's onDispose); this test makes
+     * the same two calls. After them nothing can be undone or redone, and the cache files are gone.
+     */
+    @Test
+    fun savingTheGarmentClearsTheHistory_canUndoAndCanRedoFalse_tempFilesDeleted() {
+        val budget = EditBudget()
+        val history = newHistory(budget)
+        val session = RefineSession(w, h, baseAlpha(), budget)
+        session.applyBrush(RefineSession.Mode.Remove, floatArrayOf(4f, 4f), 2f, 1f)
+        session.applyBrush(RefineSession.Mode.Remove, floatArrayOf(10f, 10f), 2f, 1f)
+        session.undo()
+        history.cutOut("photo-1", session, fromRedo = false)
+        val restored = checkNotNull(history.back("photo-2", RefineSession(w, h, baseAlpha(), budget), fromRedo = true))
+        assertTrue(history.canGoForward)
+        assertTrue(restored.session.canUndo)
+        assertTrue(restored.session.canRedo)
+        assertEquals(1, folder.root.walkTopDown().count { it.isFile })
+
+        restored.session.close()
+        history.close()
+
+        assertFalse(restored.session.canUndo)
+        assertFalse(restored.session.canRedo)
+        assertFalse(history.canGoBack)
+        assertFalse(history.canGoForward)
+        assertTrue(folder.root.walkTopDown().none { it.isFile })
+        assertEquals(0L, budget.used)
+    }
 }

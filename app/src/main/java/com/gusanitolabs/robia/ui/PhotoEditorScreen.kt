@@ -191,6 +191,8 @@ internal fun redoSourceUri(editorRawUri: String?, savedPhotoUri: String?): Strin
  * temperature). Works on the stored processed PNG, so it needs no downloadable pack. Cancel writes nothing; Done writes
  * one new PNG for the cutout and hands it to the caller, which applies the Light adjustments and re-analyses the garment.
  * With [rawSourceUri], Redo cutout re-runs one engine on the original photo (SG4); the stored photo changes only on Done.
+ * [keepsHistory] is true only while a new garment's photo is added (REQ-ED-03, R3-DEC-027): a Cut out again of a saved garment
+ * then keeps no photo before it, so nothing can be undone across it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,6 +202,7 @@ fun PhotoEditorScreen(
     onCancel: () -> Unit,
     onDiagnostic: (String) -> Unit,
     onDone: (cutoutUri: Uri?, adjustments: QuickEditAdjustments) -> Unit,
+    keepsHistory: Boolean = true,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -520,7 +523,13 @@ fun PhotoEditorScreen(
                         // The session is built before the photo is written away, so a failed Cut out closes it.
                         val next = RefineSession(bitmap.width, bitmap.height, alpha, editBudget)
                         try {
-                            withContext(Dispatchers.IO) { photoHistory.cutOut(previous.source, previous.session, previous.fromRedo) }
+                            withContext(Dispatchers.IO) {
+                                if (keepsHistory) {
+                                    photoHistory.cutOut(previous.source, previous.session, previous.fromRedo)
+                                } else {
+                                    previous.session.close()
+                                }
+                            }
                         } catch (throwable: Throwable) {
                             next.close()
                             throw throwable

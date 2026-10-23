@@ -231,13 +231,15 @@ internal class EditHistory(
         return true
     }
 
-    /** Releases the history: its bytes leave the budget, and it can no longer be used. */
+    /** Releases the history: its bytes leave the budget, and nothing is left to undo or redo. */
     fun close() {
         budget.unregister(this)
         budget.used -= held
         held = 0L
         ops.clear()
         checkpoints.clear()
+        first = 0
+        cursor = 0
     }
 
     private fun applyOp(op: EditOp, state: Alphas): Alphas = when (op) {
