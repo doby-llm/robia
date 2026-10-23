@@ -7,7 +7,10 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
+import com.gusanitolabs.robia.BuildConfig
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
+import com.gusanitolabs.robia.media.BackgroundRemovalFailure
+import com.gusanitolabs.robia.media.BackgroundRemovalFailureReason
 import com.gusanitolabs.robia.media.BackgroundRemovalResult
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
 import com.gusanitolabs.robia.media.ClothingImageStore
@@ -86,11 +89,16 @@ internal class PreciseCutoutEngine(
                     }
                     if (alpha == null) {
                         // K02 (b): the precise result lost most of the garment, so it is not used and the chain falls back.
-                        Log.i(CUTOUT_LOG_TAG, "garment_loss=1")
+                        // The failure message names the reason, which PhotoBackgroundRemover maps to the fallback reason.
+                        if (BuildConfig.DEBUG) Log.i(CUTOUT_LOG_TAG, "garment_loss=1")
                         return@withContext BackgroundRemovalResult(
                             originalUri = sourceUri,
                             outputUri = sourceUri,
                             status = BackgroundRemovalStatus.ORIGINAL_FALLBACK,
+                            failure = BackgroundRemovalFailure(
+                                reason = BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
+                                message = FALLBACK_GARMENT_LOSS,
+                            ),
                             timings = timings.toMap(),
                         )
                     }
@@ -189,7 +197,7 @@ private class CutoutRun(
         val hard = MaskOps.thresholded(selection)
         val garment = MaskOps.bbox(hard, w, h) ?: error("Garment selection is empty")
         val garmentArea = MaskOps.count(hard)
-        val s1Area = MaskOps.count(MaskOps.thresholded(coarse))
+        val s1Area = MaskOps.countAbove(coarse)
 
         val result = applyHangerGate(
             removeHanger = cutout.removeHanger,
@@ -221,7 +229,11 @@ private class CutoutRun(
             sink.mask("s5_alpha", FloatArray(alpha.size) { (alpha[it].toInt() and 0xFF) / 255f }, w, h)
             info.opaqueFractionOfS2 = opaque.toDouble() / max(garmentArea, 1)
         }
-        return if (garmentLost(opaque, s1Area, garmentArea)) null else alpha
+        if (garmentLost(opaque, s1Area, garmentArea)) {
+            info.garmentLoss = true
+            return null
+        }
+        return alpha
     }
 
     /** S1: u2netp saliency, min-max normalised and resampled to the work size. The 320 input is antialiased as PIL does (D4). */
@@ -329,7 +341,8 @@ private class CutoutRun(
                 bandBottom = bandBottom,
                 w = w,
             )
-            if (banded.guardTripped) Log.i(CUTOUT_LOG_TAG, "band_guard=1")
+            info.bandGuard = banded.guardTripped
+            if (banded.guardTripped && BuildConfig.DEBUG) Log.i(CUTOUT_LOG_TAG, "band_guard=1")
             return banded.selection
         } finally {
             filledBitmap.recycle()
@@ -359,28 +372,14 @@ private class CutoutRun(
      * by IoU, as probabilities. `orig_im_size` stays the work size, so the mask comes back at the work size (`bench_v6.predict`).
      */
     private fun samDecode(embedding: FloatArray, box: MaskBox, positive: List<MaskPoint>, negative: List<MaskPoint>): FloatArray {
-        val scale = MaskOps.samScale(w, h).toFloat()
-        val coords = ArrayList<Float>()
-        val labels = ArrayList<Float>()
-        for (p in positive) {
-            coords += p.x * scale
-            coords += p.y * scale
-            labels += 1f
-        }
-        for (p in negative) {
-            coords += p.x * scale
-            coords += p.y * scale
-            labels += 0f
-        }
-        coords += listOf(box.x0 * scale, box.y0 * scale, box.x1 * scale, box.y1 * scale)
-        labels += listOf(2f, 3f)
-        val points = labels.size
+        val prompt = MaskOps.samPrompt(w, h, positive, negative, box)
+        val points = prompt.labels.size
         val outputs = models.run(
             models.samDecoder,
             mapOf(
                 "image_embeddings" to FloatTensor(embedding, longArrayOf(1, SAM_EMBEDDING_CHANNELS.toLong(), SAM_EMBEDDING_SIDE.toLong(), SAM_EMBEDDING_SIDE.toLong())),
-                "point_coords" to FloatTensor(coords.toFloatArray(), longArrayOf(1, points.toLong(), 2)),
-                "point_labels" to FloatTensor(labels.toFloatArray(), longArrayOf(1, points.toLong())),
+                "point_coords" to FloatTensor(prompt.coords, longArrayOf(1, points.toLong(), 2)),
+                "point_labels" to FloatTensor(prompt.labels, longArrayOf(1, points.toLong())),
                 "mask_input" to FloatTensor(FloatArray(SAM_MASK_SIDE * SAM_MASK_SIDE), longArrayOf(1, 1, SAM_MASK_SIDE.toLong(), SAM_MASK_SIDE.toLong())),
                 "has_mask_input" to FloatTensor(floatArrayOf(0f), longArrayOf(1)),
                 "orig_im_size" to FloatTensor(floatArrayOf(h.toFloat(), w.toFloat()), longArrayOf(2)),

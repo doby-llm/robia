@@ -24,8 +24,20 @@ class GarmentLossGuardTest {
         val s2Area = 120
 
         assertTrue(garmentLost(opaque, s1Area, s2Area))
-        // The S2-only rule of the first design would have kept this result (opaque is 100 % of S2).
-        assertFalse(opaque < 0.70 * s2Area)
+        // The S2-only denominator of the first design would have kept it: with S1 taken as S2, the same result passes.
+        assertFalse(garmentLost(opaque, s1Area = s2Area, s2Area = s2Area))
+    }
+
+    @Test
+    fun anOversizedS1RejectsAGoodResult_theKnownTradeOffOfTheLargerDenominator() {
+        // R3-DEC-022: the denominator is max(S1, S2), so an S1 that covers twice the garment rejects a good result (kept 1000 of 1000).
+        // The rejection falls back to ML Kit, which is safe; it does not lose data.
+        val goodOpaque = 1000
+        val oversizedS1 = 2000
+        val s2Area = 1000
+
+        assertTrue(garmentLost(goodOpaque, s1Area = oversizedS1, s2Area = s2Area))
+        assertFalse(garmentLost(goodOpaque, s1Area = s2Area, s2Area = s2Area))
     }
 
     @Test

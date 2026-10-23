@@ -162,6 +162,12 @@ class MaskOpsTest {
     private fun checker(n: Int, cell: Int): FloatArray =
         FloatArray(n * n) { i -> if (((i % n) / cell + (i / n) / cell) % 2 == 0) 20f else 220f }
 
+    /**
+     * Expected values generated with PIL 11.1.0 (numpy 2.2.4) by these commands, run from any directory:
+     * 12×12 with 3 px cells: `python3 -I -c "import numpy as np; from PIL import Image; y, x = np.indices((12, 12)); a = np.where(((x // 3) + (y // 3)) % 2 == 0, 20, 220).astype(np.uint8); print(np.asarray(Image.fromarray(a).resize((4, 4), Image.BILINEAR)).ravel().tolist())"`
+     * 10×10 with 2 px cells: the same with `np.indices((10, 10))` and `// 2` in both places.
+     * The old resizeBilinear was NOT run against these values, so this test does not show that it fails them.
+     */
     @Test
     fun resizeBilinearAntialias_matchesPilBilinearOnAnIntegerDownscale() {
         // PIL: Image.fromarray(checker 12×12, 3 px cells).resize((4, 4), Image.BILINEAR)
@@ -199,14 +205,30 @@ class MaskOpsTest {
     }
 
     @Test
-    fun samScale_multipliesPointAndBoxCoordinatesLikeTheReference() {
-        // bench_v6.MobileSam: scale = 1024 / max(h, w); points and box corners are multiplied by it.
-        val scale = MaskOps.samScale(800, 600)
-
-        assertEquals(1.28, scale, 1e-9)
-        assertEquals(128.0, 100 * scale, 1e-6)
-        assertEquals(64.0, 50 * scale, 1e-6)
+    fun samScale_isOneForA1024LongEdgeAndOneDotTwoEightForA800x600() {
+        assertEquals(1.28, MaskOps.samScale(800, 600), 1e-9)
         assertEquals(1.0, MaskOps.samScale(576, 1024), 1e-12)
+        assertEquals(1.0, MaskOps.samScale(1024, 768), 1e-12)
+    }
+
+    @Test
+    fun samPrompt_scalesPointsAndBoxCornersForWorkSizes576x1024_1024x768_and_800x600() {
+        // bench_v6.MobileSam: points and box corners are multiplied by samScale; positive labels 1, negative 0, box 2 and 3.
+        val positive = listOf(MaskPoint(100, 50))
+        val negative = listOf(MaskPoint(7, 9))
+        val box = MaskBox(10, 20, 30, 40)
+
+        val portrait = MaskOps.samPrompt(576, 1024, positive, negative, box)
+        assertArrayEquals(floatArrayOf(100f, 50f, 7f, 9f, 10f, 20f, 30f, 40f), portrait.coords, 1e-4f)
+        assertArrayEquals(floatArrayOf(1f, 0f, 2f, 3f), portrait.labels, 0f)
+
+        val landscape = MaskOps.samPrompt(1024, 768, positive, negative, box)
+        assertArrayEquals(floatArrayOf(100f, 50f, 7f, 9f, 10f, 20f, 30f, 40f), landscape.coords, 1e-4f)
+
+        // 800 × 600: scale 1.28, so 100 → 128, 50 → 64, and the box corners 10 → 12.8 … 40 → 51.2.
+        val scaled = MaskOps.samPrompt(800, 600, positive, negative, box)
+        assertArrayEquals(floatArrayOf(128f, 64f, 8.96f, 11.52f, 12.8f, 25.6f, 38.4f, 51.2f), scaled.coords, 1e-3f)
+        assertArrayEquals(floatArrayOf(1f, 0f, 2f, 3f), scaled.labels, 0f)
     }
 
     @Test

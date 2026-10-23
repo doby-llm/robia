@@ -50,13 +50,20 @@ class CutoutDebugDumpTest {
                 bandBottom = null,
                 seconds = 4.5,
                 opaqueFractionOfS2 = 0.98,
+                bandGuard = false,
+                garmentLoss = false,
+                s2Fallback = true,
+                s2Accepted = 1,
                 engine = "precise",
                 fallback = "none",
             ),
         )
 
         assertEquals(
-            setOf("work", "s2_points", "hanger_box", "kill", "band_bottom", "seconds", "opaque_fraction_of_s2", "engine", "fallback"),
+            setOf(
+                "work", "s2_points", "hanger_box", "kill", "band_bottom", "seconds", "opaque_fraction_of_s2",
+                "band_guard", "garment_loss", "s2_fallback", "s2_accepted", "engine", "fallback",
+            ),
             report.keys().asSequence().toSet(),
         )
         assertEquals(1024, report.getJSONArray("work").getInt(0))
@@ -66,6 +73,10 @@ class CutoutDebugDumpTest {
         assertTrue(report.isNull("hanger_box"))
         assertFalse(report.getBoolean("kill"))
         assertTrue(report.isNull("band_bottom"))
+        assertFalse(report.getBoolean("band_guard"))
+        assertFalse(report.getBoolean("garment_loss"))
+        assertTrue(report.getBoolean("s2_fallback"))
+        assertEquals(1, report.getInt("s2_accepted"))
         assertEquals("precise", report.getString("engine"))
         assertEquals("none", report.getString("fallback"))
         assertFalse(report.has("error"))
@@ -83,6 +94,10 @@ class CutoutDebugDumpTest {
                 bandBottom = 7,
                 seconds = 0.0,
                 opaqueFractionOfS2 = 0.0,
+                bandGuard = true,
+                garmentLoss = true,
+                s2Fallback = false,
+                s2Accepted = 3,
                 engine = "mlkit",
                 fallback = "error",
                 error = "IllegalStateException: boom",
@@ -93,6 +108,34 @@ class CutoutDebugDumpTest {
         assertTrue(report.getBoolean("kill"))
         assertEquals(7, report.getInt("band_bottom"))
         assertEquals("IllegalStateException: boom", report.getString("error"))
+    }
+
+    @Test
+    fun reportJson_recordsTheGuardDecisionsAndTheS2FallbackNotOnlyInTheLog() {
+        val report = JSONObject(
+            reportJson(
+                width = 10,
+                height = 10,
+                s2Points = listOf(S2Point(1, 2, accepted = false)),
+                hangerBox = null,
+                kill = false,
+                bandBottom = null,
+                seconds = 0.0,
+                opaqueFractionOfS2 = 0.0,
+                bandGuard = true,
+                garmentLoss = true,
+                s2Fallback = true,
+                s2Accepted = 0,
+                engine = "mlkit",
+                fallback = "garment_loss",
+            ),
+        )
+
+        assertTrue(report.getBoolean("band_guard"))
+        assertTrue(report.getBoolean("garment_loss"))
+        assertTrue(report.getBoolean("s2_fallback"))
+        assertEquals(0, report.getInt("s2_accepted"))
+        assertEquals("garment_loss", report.getString("fallback"))
     }
 
     @Test

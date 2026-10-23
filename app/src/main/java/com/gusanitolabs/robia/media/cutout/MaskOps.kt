@@ -39,6 +39,9 @@ internal object MaskOps {
 
     fun count(mask: BooleanArray): Int = mask.count { it }
 
+    /** Number of soft values above [threshold], as [thresholded] counts them, without allocating a hard mask. */
+    fun countAbove(soft: FloatArray, threshold: Float = 0.5f): Int = soft.count { it > threshold }
+
     /** Share of [selection] pixels that also lie in [reference]; 0 for an empty selection. */
     fun overlap(selection: BooleanArray, reference: BooleanArray): Float {
         var selected = 0
@@ -303,6 +306,32 @@ internal object MaskOps {
     fun samInputSize(width: Int, height: Int): Pair<Int, Int> {
         val scale = samScale(width, height)
         return round(width * scale).toInt() to round(height * scale).toInt()
+    }
+
+    /**
+     * One MobileSAM prompt of a work photo of [width]×[height]: [coords] holds x, y pairs (positive points, negative points,
+     * then the two box corners) and [labels] one value per pair (1 positive, 0 negative, 2 and 3 for the box corners).
+     */
+    internal class SamPrompt(val coords: FloatArray, val labels: FloatArray)
+
+    /** The points and box corners scaled by [samScale] (`bench_v6.MobileSam.predict`); pure, so the scaling is tested per size. */
+    fun samPrompt(width: Int, height: Int, positive: List<MaskPoint>, negative: List<MaskPoint>, box: MaskBox): SamPrompt {
+        val scale = samScale(width, height).toFloat()
+        val coords = ArrayList<Float>()
+        val labels = ArrayList<Float>()
+        for (p in positive) {
+            coords += p.x * scale
+            coords += p.y * scale
+            labels += 1f
+        }
+        for (p in negative) {
+            coords += p.x * scale
+            coords += p.y * scale
+            labels += 0f
+        }
+        coords += listOf(box.x0 * scale, box.y0 * scale, box.x1 * scale, box.y1 * scale)
+        labels += listOf(2f, 3f)
+        return SamPrompt(coords.toFloatArray(), labels.toFloatArray())
     }
 
     /** Per output index of one axis: the first source index and the normalised weights (PIL's `BILINEAR` table). */

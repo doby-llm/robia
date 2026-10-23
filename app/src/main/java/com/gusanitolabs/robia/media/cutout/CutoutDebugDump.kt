@@ -7,6 +7,7 @@ import android.util.Log
 import com.gusanitolabs.robia.media.BackgroundRemovalResult
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
 import com.gusanitolabs.robia.media.MlKitSubjectSegmentationBackgroundRemovalEngine
+import com.gusanitolabs.robia.media.notRemovedFallback
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -99,6 +100,10 @@ internal class PreciseRunInfo {
     var kill = false
     var bandBottom: Int? = null
     var opaqueFractionOfS2 = 0.0
+    /** The band guard kept the first selection in the band (K02 (a)). */
+    var bandGuard = false
+    /** The garment-loss guard rejected the precise result (K02 (b)). */
+    var garmentLoss = false
 }
 
 /** The `s3_hanger.json` content: `{"box":[x0,y0,x1,y1]}`, or `{"box":null}` when no plausible hanger was found. */
@@ -115,6 +120,10 @@ internal fun reportJson(
     bandBottom: Int?,
     seconds: Double,
     opaqueFractionOfS2: Double,
+    bandGuard: Boolean,
+    garmentLoss: Boolean,
+    s2Fallback: Boolean,
+    s2Accepted: Int,
     engine: String,
     fallback: String,
     error: String? = null,
@@ -126,6 +135,10 @@ internal fun reportJson(
     .put("band_bottom", bandBottom ?: JSONObject.NULL)
     .put("seconds", seconds)
     .put("opaque_fraction_of_s2", opaqueFractionOfS2)
+    .put("band_guard", bandGuard)
+    .put("garment_loss", garmentLoss)
+    .put("s2_fallback", s2Fallback)
+    .put("s2_accepted", s2Accepted)
     .put("engine", engine)
     .put("fallback", fallback)
     .apply { if (error != null) put("error", error) }
@@ -206,11 +219,16 @@ private suspend fun dumpPhoto(context: Context, photo: File, dir: File, packRead
             bandBottom = info.bandBottom,
             seconds = preciseMs / 1000.0,
             opaqueFractionOfS2 = info.opaqueFractionOfS2,
+            bandGuard = info.bandGuard,
+            garmentLoss = info.garmentLoss,
+            // S2 fell back to saliency when no prompt was accepted (the selection is then the S1 copy).
+            s2Fallback = info.s2Points.none { it.accepted },
+            s2Accepted = info.s2Points.count { it.accepted },
             engine = if (accepted) ENGINE_PRECISE else ENGINE_MLKIT,
             fallback = when {
                 accepted -> FALLBACK_NONE
                 preciseResult == null -> FALLBACK_ERROR
-                else -> FALLBACK_NOT_REMOVED
+                else -> notRemovedFallback(preciseResult.failure)
             },
             error = error,
         ),
