@@ -126,4 +126,59 @@ class HangerRemovalTest {
         assertFalse(outcome.guardTripped)
         assertArrayEquals(mask(0..4, 60..69), outcome.selection, 0f)
     }
+
+    private fun argbOf(red: Int, green: Int, blue: Int): Int = (0xFF shl 24) or (red shl 16) or (green shl 8) or blue
+
+    @Test
+    fun ringColour_isThePerChannelMedianOfThe25PxRingOnly() {
+        val w = 40
+        val h = 40
+        val support = BooleanArray(w * h) { i -> i % w in 18..21 && i / w in 18..21 }
+        // Ring pixels (within 12 px of the support, outside it) are 200/100/50; the support and the far corners are not.
+        val argb = IntArray(w * h) { i ->
+            val x = i % w
+            val y = i / w
+            val inRing = !support[i] && x in 6..33 && y in 6..33
+            if (inRing) argbOf(200, 100, 50) else argbOf(255, 255, 255)
+        }
+
+        assertEquals(argbOf(200, 100, 50), HangerRemoval.ringColour(argb, w, h, support))
+    }
+
+    /** V-K03-2: within 2 px of the kill support, with alpha above 0, the RGB is the fill colour; farther pixels are untouched. */
+    @Test
+    fun decontaminate_givesTheFillColourWithinTwoPixelsOfTheSupportAndLeavesTheRestAlone() {
+        val w = 20
+        val h = 20
+        val support = BooleanArray(w * h) { i -> i % w in 8..11 && i / w in 8..11 }
+        val background = argbOf(240, 240, 240)
+        val argb = IntArray(w * h) { background }
+        val alpha = ByteArray(w * h) { 255.toByte() }
+        alpha[9 * w + 7] = 0 // transparent: keeps its RGB even within 2 px
+        val fillColour = argbOf(10, 200, 30)
+
+        val out = HangerRemoval.decontaminate(argb, alpha, support, fillColour, w, h)
+
+        fun at(x: Int, y: Int): Int = out[y * w + x] and 0xFFFFFF
+        assertEquals(fillColour and 0xFFFFFF, at(9, 9)) // inside the support
+        assertEquals(fillColour and 0xFFFFFF, at(6, 9)) // 2 px left
+        assertEquals(background and 0xFFFFFF, at(7, 9)) // alpha 0: untouched
+        assertEquals(fillColour and 0xFFFFFF, at(13, 9)) // 2 px right
+        assertEquals(background and 0xFFFFFF, at(14, 9)) // 3 px right
+        assertEquals(background and 0xFFFFFF, at(9, 5)) // 3 px above
+        assertEquals(fillColour and 0xFFFFFF, at(6, 6)) // diagonal, 2 px in both directions
+        assertEquals(background and 0xFFFFFF, at(5, 5)) // diagonal, 3 px
+    }
+
+    /** K03 step 1: the S5 guide is the filled photo's luminance above the band bottom and the original's below it. */
+    @Test
+    fun bandGuide_takesTheFilledLuminanceAboveTheBandBottomAndTheOriginalBelowIt() {
+        val original = FloatArray(100) { 0.2f }
+        val filled = FloatArray(100) { 0.8f }
+
+        val guide = HangerRemoval.bandGuide(original, filled, bandBottom = bandBottom, w = bandW)
+
+        assertEquals(0.8f, guide[4 * bandW + 9], 0f) // last row of the band
+        assertEquals(0.2f, guide[bandBottom * bandW], 0f) // first row below it
+    }
 }

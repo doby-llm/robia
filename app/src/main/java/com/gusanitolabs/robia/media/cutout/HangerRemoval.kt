@@ -22,6 +22,8 @@ internal object HangerRemoval {
     private const val FILL_BLUR_RADIUS = 4
     private const val BAND_HEIGHT_FRACTION = 0.6
     private const val BAND_MIN_GARMENT_FRACTION = 0.08
+    private const val BAND_BLEND_PX = 3
+    private const val NEAR_KILL_PX = 2
     private const val FALLBACK_FILL = 235
 
     /** A hanger spans a good part of the garment width and sits at its top (the S3 plausibility rule). */
@@ -109,11 +111,8 @@ internal object HangerRemoval {
     /** Dilation applied to the kill before the hanger-first fill (km = kill dilated 9×9). */
     fun killSupport(kill: BooleanArray, w: Int, h: Int): BooleanArray = MaskOps.dilate(kill, w, h, KILL_DILATION)
 
-    /**
-     * S4b fill: pixels under [support] take the median colour of a 25 px ring around it, then a 9×9 box blur is
-     * taken inside [support] only. Returns a new ARGB array.
-     */
-    fun fill(argb: IntArray, w: Int, h: Int, support: BooleanArray): IntArray {
+    /** The S4b fill colour: the per-channel median of the 25 px ring around [support], opaque (FALLBACK_FILL when the ring is empty). */
+    fun ringColour(argb: IntArray, w: Int, h: Int, support: BooleanArray): Int {
         val ring = MaskOps.dilate(support, w, h, RING_PX).let { grown -> BooleanArray(w * h) { grown[it] && !support[it] } }
         val median = IntArray(3) { channelIndex ->
             val shift = SHIFTS[channelIndex]
@@ -125,9 +124,17 @@ internal object HangerRemoval {
                 if (values.size % 2 == 1) values[mid] else (values[mid - 1] + values[mid]) / 2
             }
         }
+        return pack(median[0], median[1], median[2])
+    }
+
+    /**
+     * S4b fill: pixels under [support] take [colour] (the [ringColour] by default), then a 9×9 box blur is taken inside
+     * [support] only. Returns a new ARGB array.
+     */
+    fun fill(argb: IntArray, w: Int, h: Int, support: BooleanArray, colour: Int = ringColour(argb, w, h, support)): IntArray {
         val filled = argb.copyOf()
         for (i in filled.indices) {
-            if (support[i]) filled[i] = pack(median[0], median[1], median[2])
+            if (support[i]) filled[i] = colour
         }
         val blurred = SHIFTS.map { shift -> MaskOps.boxMean(MaskOps.channel(filled, shift), w, h, FILL_BLUR_RADIUS) }
         for (i in filled.indices) {
@@ -148,16 +155,42 @@ internal object HangerRemoval {
 
     /**
      * The band rule: above [bandBottom] the re-selection is used, below it the previous selection, and [support] is
-     * cleared in both (the hanger is always removed).
+     * cleared in both (the hanger is always removed). Across the band bottom the two are blended linearly over
+     * [BAND_BLEND_PX] rows (K03 step 2), so there is no 0/1 step: the re-selection's weight is [bandWeight].
      */
     fun applyBand(reselected: FloatArray, previous: FloatArray, support: BooleanArray, bandBottom: Int, w: Int): FloatArray =
         FloatArray(previous.size) { i ->
+            val weight = bandWeight(i / w, bandBottom)
             when {
                 support[i] -> 0f
-                i < bandBottom * w -> reselected[i]
-                else -> previous[i]
+                weight >= 1f -> reselected[i]
+                weight <= 0f -> previous[i]
+                else -> previous[i] + weight * (reselected[i] - previous[i]) // exact when the two are equal (guard tripped)
             }
         }
+
+    /** Weight of the re-selection in [row]: 1 two rows above [bandBottom], falling by a third per row to 0 one row below it. */
+    private fun bandWeight(row: Int, bandBottom: Int): Float =
+        ((bandBottom - row + 1).toFloat() / BAND_BLEND_PX).coerceIn(0f, 1f)
+
+    /**
+     * The S5 guide (K03 step 1): luminance of the filled photo above [bandBottom] (the hanger is gone there), that of the
+     * original photo below it.
+     */
+    fun bandGuide(originalLuminance: FloatArray, filledLuminance: FloatArray, bandBottom: Int, w: Int): FloatArray =
+        FloatArray(originalLuminance.size) { i -> if (i / w < bandBottom) filledLuminance[i] else originalLuminance[i] }
+
+    /**
+     * Colour decontamination (K03 step 3): where [alpha] is above 0 within [NEAR_KILL_PX] of [support] (the dilated kill, so
+     * including its own pixels), the colour becomes [colour], the fill colour; other pixels keep [argb]. The caller composites
+     * the low 24 bits only.
+     */
+    fun decontaminate(argb: IntArray, alpha: ByteArray, support: BooleanArray, colour: Int, w: Int, h: Int): IntArray {
+        val near = MaskOps.dilate(support, w, h, 2 * NEAR_KILL_PX + 1)
+        return IntArray(argb.size) { i ->
+            if (near[i] && (alpha[i].toInt() and 0xFF) > 0) colour else argb[i]
+        }
+    }
 
     /**
      * The band rule with its guard (K02 (a)). Inside the band (rows above [bandBottom], outside [support]) the re-selection

@@ -281,7 +281,7 @@ class MaskOpsTest {
     }
 
     @Test
-    fun applyBand_keepsTheReselectionOnlyAboveTheBandAndClearsTheSupport() {
+    fun applyBand_blendsTheReselectionIntoThePreviousOverThreeRowsAndClearsTheSupport() {
         val w = 4
         val h = 4
         val reselected = FloatArray(w * h) { 1f }
@@ -291,9 +291,44 @@ class MaskOpsTest {
         val out = HangerRemoval.applyBand(reselected, previous, support, bandBottom = 2, w = w)
 
         assertEquals(0f, out[0], 0f) // support above the band
-        assertEquals(1f, out[w + 2], 0f) // re-selection above the band
-        assertEquals(0.5f, out[2 * w + 2], 0f) // previous below the band
+        assertEquals(1f, out[2], 0f) // re-selection two rows above the band bottom
+        assertEquals(5f / 6f, out[w + 2], 1e-6f) // one row above: 2/3 re-selection
+        assertEquals(2f / 3f, out[2 * w + 2], 1e-6f) // first row below: 1/3 re-selection
+        assertEquals(0.5f, out[3 * w + 2], 0f) // two rows below: previous only
         assertEquals(0f, out[3 * w + 1], 0f) // support below the band
+    }
+
+    /** Soft alpha pixels (not clearly 0 or 255) per row, counted in [cols] and averaged over [rows] (the width helper of compare.py). */
+    private fun edgeWidth(alpha: ByteArray, w: Int, rows: IntRange, cols: IntRange): Double =
+        rows.map { y -> cols.count { x -> (alpha[y * w + x].toInt() and 0xFF) in 6..249 }.toDouble() }.average()
+
+    /**
+     * V-K03-1: a garment with a hanger inside its top band, the hanger's edges well away from the garment sides. On each side
+     * the band's edge is no wider than the body's (≤ 1.5×), so the band-local guide and the 3-row blend do not soften it.
+     */
+    @Test
+    fun hangerBand_sideEdgesInTheBandAreNoWiderThanInTheBody() {
+        val w = 64
+        val h = 48
+        val bandBottom = 12
+        val garmentColumns = 8..55
+        val hanger = BooleanArray(w * h) { i -> i / w in 0..9 && i % w in 24..39 }
+        // The original photo shows the dark hanger inside the garment; the filled photo has the garment colour there.
+        val original = FloatArray(w * h) { i -> if (i % w in garmentColumns && !hanger[i]) 0.6f else 0.1f }
+        val filled = FloatArray(w * h) { i -> if (i % w in garmentColumns) 0.6f else 0.1f }
+        val selection = FloatArray(w * h) { i -> if (i % w in garmentColumns) 1f else 0f }
+        val support = BooleanArray(w * h) { hanger[it] }
+        val band = HangerRemoval.applyBand(selection, selection, support, bandBottom, w)
+
+        val alpha = MaskOps.refineAlpha(HangerRemoval.bandGuide(original, filled, bandBottom, w), band, w, h)
+
+        val leftZone = 0 until 16
+        val rightZone = 48 until 64
+        for (zone in listOf(leftZone, rightZone)) {
+            val inBand = edgeWidth(alpha, w, 2 until 10, zone)
+            val body = edgeWidth(alpha, w, 20 until 40, zone)
+            assertTrue("band $inBand px vs body $body px in $zone", body > 0.0 && inBand <= 1.5 * body)
+        }
     }
 
     @Test

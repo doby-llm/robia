@@ -4,6 +4,11 @@ Runs tools/segmentation-bench/pipeline_v11.py logic (chosen variant: BAND=1, FIL
 and writes OUT_DIR/<stem>/{s1_saliency,s2_selection,s4_kill,s4b_filled,s4b_reselect,s5_alpha}.png, s3_hanger.json,
 final.png (RGBA, cropped) and report.json.
 
+K03 (hanger-band edges), the same three changes as the app's PreciseCutoutEngine / HangerRemoval, so the parity check keeps
+comparing like with like. The S5 guide is the filled photo above band_bottom (`finish_band`, replacing pipeline_v11.finish
+there). The band selection blends into the previous one over 3 rows instead of a 0/1 switch. Pixels with alpha > 0 within
+2 px of the kill support take the ring-median fill colour in final.png. Other stages are unchanged.
+
 Usage (models in tools/segmentation-bench/models, see its README):
   python -I reference_stages.py IN_DIR OUT_DIR
 Personal photos must never be committed; IN_DIR/OUT_DIR live outside the repository.
@@ -22,16 +27,29 @@ sys.path.insert(0, str(BENCH))
 import onnxruntime as ort  # noqa: E402
 from ai_edge_litert.interpreter import Interpreter  # noqa: E402
 from bench import MODELS, run  # noqa: E402
-from bench_v2 import magic  # noqa: E402
+from bench_v2 import guided, magic  # noqa: E402
 from bench_v3 import third_points  # noqa: E402
 from bench_v6 import MobileSam  # noqa: E402
-from pipeline_v11 import finish, hanger_mask, save  # noqa: E402
+from pipeline_v10 import drop_islands  # noqa: E402
+from pipeline_v11 import hanger_mask, save  # noqa: E402
 
 MD = BENCH / 'models'
 
 
 def png(a, path):
     Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8)).save(path)
+
+
+def finish_band(rgb, sel, filled=None, band_bottom=0):
+    """pipeline_v11.finish (r=3, eps=1e-3, interior 0.97, support 0.05 dilated 5x5), with the S5 guide taken from the filled
+    photo's grey above band_bottom when [filled] is given (K03 step 1)."""
+    sel = drop_islands(sel)
+    grey = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+    if filled is not None:
+        grey[:band_bottom] = cv2.cvtColor(filled, cv2.COLOR_RGB2GRAY)[:band_bottom].astype(np.float32) / 255.0
+    a = np.clip(guided(grey, sel, r=3, eps=1e-3), 0, 1)
+    a = np.where(sel > 0.97, 1.0, a) * cv2.dilate((sel > 0.05).astype(np.uint8), np.ones((5, 5), np.uint8))
+    return (a * 255).astype(np.uint8)
 
 
 def select(u2, mt, im, rgb):
@@ -74,6 +92,7 @@ def main():
         rep = {'work': list(rgb.shape[1::-1]), 's2_points': pts, 'hanger_box': box, 'kill': kill is not None}
         (d / 's3_hanger.json').write_text(json.dumps({'box': box}))
         final_sel = sel
+        guide_rgb, band_bottom, out_rgb = None, 0, rgb
         if kill is not None:
             png(kill.astype(np.float32), d / 's4_kill.png')
             km = cv2.dilate(kill.astype(np.uint8), np.ones((9, 9), np.uint8))
@@ -90,14 +109,20 @@ def main():
             bx0, by0, bx1, by1 = box
             ys_, _ = np.where(sel > 0.5)
             band_bottom = int(min(by1 + max(0.6 * (by1 - by0), 0.08 * (ys_.max() - ys_.min())), rgb.shape[0]))
-            band = np.zeros(sel.shape, bool)
-            band[:band_bottom, :] = True
-            final_sel = np.where(band, selA, np.where(kb, 0, sel))
+            # K03 step 2: the re-selection's weight is (band_bottom - row + 1) / 3, clipped to 0..1 (3-row linear blend).
+            weight = np.clip((band_bottom - np.arange(sel.shape[0]) + 1) / 3, 0, 1)[:, None]
+            final_sel = np.where(kb, 0, sel + weight * (selA - sel))
             png(final_sel, d / 's4b_reselect.png')
             rep['band_bottom'] = band_bottom
-        a8 = finish(rgb, final_sel)
+            # K03 step 3: alpha > 0 within 2 px of the kill support takes the fill colour in final.png.
+            guide_rgb = filled
+            near = cv2.dilate(km, np.ones((5, 5), np.uint8)).astype(bool)
+            out_rgb = rgb.copy()
+        a8 = finish_band(rgb, final_sel, guide_rgb, band_bottom)
+        if kill is not None:
+            out_rgb[near & (a8 > 0)] = med.astype(np.uint8)
         png(a8.astype(np.float32) / 255.0, d / 's5_alpha.png')
-        save(rgb, a8, d / 'final.png')
+        save(out_rgb, a8, d / 'final.png')
         rep['seconds'] = round(time.perf_counter() - t0, 2)
         rep['opaque_fraction_of_s2'] = round(float((a8 > 127).sum() / max((sel > 0.5).sum(), 1)), 3)
         (d / 'report.json').write_text(json.dumps(rep, indent=1))
