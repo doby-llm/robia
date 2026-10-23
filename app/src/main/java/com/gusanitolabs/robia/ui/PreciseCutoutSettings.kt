@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -20,6 +21,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -223,8 +225,10 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
     when (openChoice) {
         OpenCutoutChoice.Method -> CutoutChoiceDialog(
             title = stringResource(R.string.cutout_method),
-            options = listOf(CutoutEngineChoice.Automatic, CutoutEngineChoice.Standard),
+            options = listOf(CutoutEngineChoice.Standard, CutoutEngineChoice.Automatic),
             labelOf = { it.labelRes() },
+            suffixOf = { cutoutMethodExperimentalRes(it) },
+            supportingOf = { if (it == CutoutEngineChoice.Automatic) R.string.cutout_method_experimental_hint else null },
             current = settings.cutoutEngine,
             onSelected = { value ->
                 openChoice = null
@@ -325,6 +329,11 @@ private fun CutoutEngineChoice.labelRes(): Int = when (this) {
     CutoutEngineChoice.Standard -> R.string.cutout_method_standard
 }
 
+/** K00: the precise (Automatic) method is labelled Experimental until G-CUT passes; Standard carries no label. */
+@StringRes
+internal fun cutoutMethodExperimentalRes(engine: CutoutEngineChoice): Int? =
+    if (engine == CutoutEngineChoice.Automatic) R.string.cutout_method_experimental else null
+
 @StringRes
 private fun HangerSensitivity.labelRes(): Int = when (this) {
     HangerSensitivity.Normal -> R.string.cutout_hanger_normal
@@ -381,6 +390,7 @@ private fun <T> CutoutChoiceDialog(
     options: List<T>,
     labelOf: (T) -> Int,
     supportingOf: (T) -> Int? = { null },
+    suffixOf: (T) -> Int? = { null },
     current: T,
     onSelected: (T) -> Unit,
     onDismiss: () -> Unit,
@@ -404,7 +414,23 @@ private fun <T> CutoutChoiceDialog(
                     ) {
                         RadioButton(selected = option == current, onClick = null)
                         Column(modifier = Modifier.padding(start = 8.dp)) {
-                            Text(text = stringResource(labelOf(option)))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = stringResource(labelOf(option)))
+                                suffixOf(option)?.let { suffixRes ->
+                                    Surface(
+                                        modifier = Modifier.padding(start = 8.dp),
+                                        shape = RoundedCornerShape(percent = 50),
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                    ) {
+                                        Text(
+                                            text = stringResource(suffixRes),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
+                            }
                             supportingOf(option)?.let { supportingRes ->
                                 Text(
                                     text = stringResource(supportingRes),

@@ -6,13 +6,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** V-SG2-6: the precise cutout setting is on when nothing is stored; a stored choice is kept. */
+/** V-SG2-6: the precise cutout setting is off when nothing is stored (K00 default: Standard); a stored choice is kept. */
 class PreciseCutoutSettingTest {
     private val preciseCutoutEnabledKey = booleanPreferencesKey("precise_cutout_enabled")
 
     @Test
-    fun absentKey_meansOn() {
-        assertTrue(mutablePreferencesOf().toRobiaSettings().preciseCutoutEnabled)
+    fun absentKey_meansOff() {
+        assertFalse(mutablePreferencesOf().toRobiaSettings().preciseCutoutEnabled)
     }
 
     @Test

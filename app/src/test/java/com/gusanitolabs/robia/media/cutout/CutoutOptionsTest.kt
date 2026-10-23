@@ -38,10 +38,10 @@ class CutoutOptionsTest {
     }
 
     @Test
-    fun defaults_giveTodaysBehaviour_automaticWithHangersNormalAndSoft() {
+    fun defaults_giveStandardWithHangersNormalAndSoft() {
         val options = cutoutOptionsOf(RobiaSettings(), packReady = true)
 
-        assertEquals(CutoutOptions(usePrecise = true, removeHanger = true, hangerThreshold = 0.25f, edges = CutoutEdges.Soft), options)
+        assertEquals(CutoutOptions(usePrecise = false, removeHanger = true, hangerThreshold = 0.25f, edges = CutoutEdges.Soft), options)
     }
 
     @Test
@@ -78,8 +78,8 @@ class CutoutOptionsTest {
     }
 
     @Test
-    fun nothingStored_isAutomatic() {
-        assertEquals(CutoutEngineChoice.Automatic, mutablePreferencesOf().toRobiaSettings().cutoutEngine)
+    fun nothingStored_isStandard() {
+        assertEquals(CutoutEngineChoice.Standard, mutablePreferencesOf().toRobiaSettings().cutoutEngine)
     }
 
     @Test

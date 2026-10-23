@@ -785,6 +785,9 @@
     <string name="redo_cutout_precise">Preciso</string>
     <string name="redo_cutout_precise_keep_hanger">Preciso sin quitar perchas</string>
     <string name="redo_cutout_failed">No se pudo repetir el recorte</string>
+    <!-- K00 -->
+    <string name="cutout_method_experimental">Experimental</string>
+    <string name="cutout_method_experimental_hint">Puede quitar partes de la prenda. Revisa cada resultado.</string>
     <!-- ED1 -->
     <string name="editor_smart_whole_garment">Eso selecciona toda la prenda. Toca el fondo o las piezas de la percha, o usa el pincel.</string>
 </resources>

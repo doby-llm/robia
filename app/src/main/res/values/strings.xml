@@ -785,6 +785,9 @@
     <string name="redo_cutout_precise">Precise</string>
     <string name="redo_cutout_precise_keep_hanger">Precise without hanger removal</string>
     <string name="redo_cutout_failed">Could not redo the cutout</string>
+    <!-- K00 -->
+    <string name="cutout_method_experimental">Experimental</string>
+    <string name="cutout_method_experimental_hint">May remove parts of the garment. Check each result.</string>
     <!-- ED1 -->
     <string name="editor_smart_whole_garment">That selects the whole garment. Tap the background or hanger pieces, or use the brush.</string>
 </resources>
