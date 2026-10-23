@@ -2857,6 +2857,7 @@ private fun RobiaNavHost(
             onSelectionSet = onBrowseSelectionSet,
             onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) },
             onFiltersClick = { onRouteSelected(RobiaRoute.AdvancedFilters) },
+            onAnalyticsClick = { onRouteSelected(RobiaRoute.Analytics) },
             filters = filters,
             availableTags = availableTags,
             mainColors = mainColors,
