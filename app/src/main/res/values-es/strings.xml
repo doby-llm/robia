@@ -780,9 +780,11 @@
     <string name="batch_speed_balanced">Equilibrada</string>
     <string name="batch_speed_memory_saver">Ahorro de memoria</string>
     <string name="batch_speed_hint">El ahorro de memoria procesa una foto a la vez.</string>
-    <string name="redo_cutout">Repetir recorte</string>
+    <string name="redo_cutout">Volver a recortar</string>
     <string name="redo_cutout_standard">Estándar</string>
     <string name="redo_cutout_precise">Preciso</string>
     <string name="redo_cutout_precise_keep_hanger">Preciso sin quitar perchas</string>
     <string name="redo_cutout_failed">No se pudo repetir el recorte</string>
+    <!-- ED1 -->
+    <string name="editor_smart_whole_garment">Eso selecciona toda la prenda. Toca el fondo o las piezas de la percha, o usa el pincel.</string>
 </resources>
