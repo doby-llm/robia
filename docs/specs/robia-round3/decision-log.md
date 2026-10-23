@@ -160,3 +160,10 @@ When Drive was configured and is now disconnected, Browse shows one sign-in bann
 - Guard margin under R3-DEC-022 (reviewer arithmetic): with the 15 % kill cap, a good result is rejected once S1 > 1.21 x S2; without the kill, once S1 > 1.43 x S2. Accepted trade-off: the ML Kit fallback is the safe outcome. This records the number; it is not a threshold change.
 - V-K02-2 wording now matches R3-DEC-022 and the code: denominator max(S1 hard, S2 hard); ORIGINAL_FALLBACK with failure message garment_loss.
 
+## R3-DEC-026 — DUP1 review round 1: dismissal rule, banner gating, scan cadence, calibration reachability, Delete colour (PLAN-CHANGE 2026-10-23) · D
+- Dismissed pairs: a dismissed pair never sits in one group, even when a later garment links its two members through a third one (REQ-DU-02, session scope). groupsFromEdges must refuse that merge. The dismissal test in DuplicateScanTest.kt (about lines 87-88) asserts the inverted behaviour and is corrected.
+- Banner gating: the duplicates banner is hidden while the merge proposal card, the review-complete overlay or any sync attention card is shown. Sync attention cards count as prompts.
+- Scan cadence: a scan runs at most once per 24 hours per process, or after 5 new garments. The 5-garment trigger is not limited by the daily rule (REQ-DU-04 reads "or after N=5" as a separate trigger). Persisting the last-scan time needs storage outside DUP1's Files, so it is not added: a cold start rescans once. This is a deliberate deviation from a daily cap that survives restarts; revisit with DUP2 if Manu wants it persisted.
+- Calibration screen: reachable only through the existing developer-mode unlock, the same gate as the other developer tools. Accepted; not restricted to debug builds.
+- The Delete button on the duplicate review screen uses the error colour (REQ-DU-03). ReviewScaffold.kt gets one parameter with its current default; no other screen changes.
+
