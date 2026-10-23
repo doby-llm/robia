@@ -144,3 +144,13 @@ The GPU run failed with `ComputeEmbedding failed: TensorBuffer must have all sta
 ### 5. G-ADB2
 
 Not run, so V-K02-4 and V-K03-3 have no numbers. Current baseline for V-K02-4: `compare.py` exits 1, with s2 < 0.95 on 6 of 10 photos and s5 < 0.97 on 5. After the fixes above, expect K02 to own D1–D4. For V-K03-3 the only photo currently measurable is the pink source, which has the real hanger band (ratio 1.36, from the reference's band row, so unreliable); the only app ratio over 1.5 is 161436 at 3.89.
+
+## R3-DEC-022 — K02 garment-loss denominator and K02 scope (PLAN-CHANGE 2026-10-23) · D
+K02 step 2 (V-K02-2) divides by the S2 area. E1 (R3-DEC-021, D3) showed that S2 can be a weak map (pink shorts: S2 covers about 12 % of the reference garment). Decision: the denominator is max(S1 hard, S2 hard), as implemented in PR #147. Trade-off: an oversized S1 can raise false rejects; a rejected result falls back to ML Kit, which is safe, not data loss. Required: one test for the oversized-S1 case. Scope: media/cutout/CutoutDebugDump.kt, media/PhotoBackgroundRemover.kt and the two test files added to tasks.md are part of K02, because brief steps 2 and 5 require the garment_loss chain reason and the report.json keys.
+
+## R3-DEC-023 — SparkleBurst placement (SPK step 3) · D
+The brief says one-shot SparkleBurst on completion. Four of the five controls leave the screen or cover themselves when tapped (See similar, Review colours, Review garments, Filters sparkle when it opens the model prompt), and Edit photo's Done covers its button. Decision: the burst plays only on Edit photo when processing ends and the button is visible again. The other four show no burst; their ✦ stays static. Rejected: a burst on tap at all five, which does not mark completion.
+
+## R3-DEC-024 — Drive disconnected: one top banner, no per-photo Sign in or Waiting (Manu, 2026-10-23) · M
+When Drive was configured and is now disconnected, Browse shows one sign-in banner at the top. While it shows, cards do not repeat "Sign in" or "Waiting" (BrowseCardText.browseCardBadgeFor, rule hiddenByBanner). This is the behaviour already merged in VIS (#146). Manu confirmed it on 2026-10-23 after the A/B question: a single banner, as it is now. Photo-restore attention is kept. No code change in this PR.
+

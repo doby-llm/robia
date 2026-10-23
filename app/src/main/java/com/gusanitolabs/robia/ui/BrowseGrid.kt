@@ -131,6 +131,7 @@ import com.gusanitolabs.robia.suggestions.sortNewestFirst
 import com.gusanitolabs.robia.suggestions.sha256Hex16
 import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.sync.SyncAttention
+import com.gusanitolabs.robia.sync.SyncAttentionKind
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -168,6 +169,8 @@ internal data class UiWardrobeItem(
     val photoRestoreState: PhotoRestoreState,
     /** Offline: the pending garment waits for the connection, shown instead of "Pending upload". */
     val waitingForConnection: Boolean = false,
+    /** False while Drive is not added or disabled: nothing waits for it, so no Waiting badge (R3-DEC-018). */
+    val driveEnabled: Boolean = true,
 )
 
 internal data class UiTag(
@@ -216,6 +219,8 @@ internal fun BrowseWardrobeScreen(
     onColumnsChange: (Int) -> Unit = {},
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
+    // The sign-in banner is an attention card above the grid; while it shows, cards drop their Waiting and Sign in badges.
+    val signInBannerShown = attentions.any { it.kind == SyncAttentionKind.SignInRequired }
     val searchActive = searchQuery.isNotBlank() || similarToName != null
     val gridState = rememberLazyGridState()
     val backfill = (LocalContext.current.applicationContext as? RobiaApplication)?.embeddingBackfill
@@ -372,6 +377,7 @@ internal fun BrowseWardrobeScreen(
                     onFavoriteClick = { onToggleFavorite(item.id) },
                     modifier = animation,
                     columns = effectiveColumns,
+                    signInBannerShown = signInBannerShown,
                 )
                 BrowseCell.Card -> GarmentGridCard(
                     item = item,
@@ -382,6 +388,7 @@ internal fun BrowseWardrobeScreen(
                     onFavoriteClick = { onToggleFavorite(item.id) },
                     modifier = animation,
                     columns = effectiveColumns,
+                    signInBannerShown = signInBannerShown,
                 )
             }
         }
@@ -486,6 +493,7 @@ private fun GarmentCardShell(
     footer: (@Composable () -> Unit)?,
     modifier: Modifier = Modifier,
     columns: Int = 2,
+    signInBannerShown: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val favoriteDescription = stringResource(R.string.content_favorite)
@@ -554,7 +562,13 @@ private fun GarmentCardShell(
                 }
             }
             GarmentCloudStatusBadge(
-                badge = cardBadgeFor(item.syncStatus, item.hasMissingRestoredPhoto),
+                badge = browseCardBadgeFor(
+                    status = item.syncStatus,
+                    photoNeedsAttention = item.hasMissingRestoredPhoto,
+                    driveEnabled = item.driveEnabled,
+                    signInBannerShown = signInBannerShown,
+                ),
+                columns = columns,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(8.dp),
@@ -592,6 +606,7 @@ private fun GarmentPhotoTile(
     onFavoriteClick: () -> Unit,
     modifier: Modifier = Modifier,
     columns: Int = 2,
+    signInBannerShown: Boolean = false,
 ) {
     val untitled = stringResource(R.string.browse_similar_untitled)
     val collator = remember { browseCollator() }
@@ -607,6 +622,7 @@ private fun GarmentPhotoTile(
         footer = null,
         modifier = modifier,
         columns = columns,
+        signInBannerShown = signInBannerShown,
     )
 }
 
@@ -620,6 +636,7 @@ private fun GarmentGridCard(
     onFavoriteClick: () -> Unit,
     modifier: Modifier = Modifier,
     columns: Int = 2,
+    signInBannerShown: Boolean = false,
 ) {
     val itemDescription = stringResource(R.string.content_open_item_detail)
     val selectDescription = stringResource(R.string.content_select_garment)
@@ -666,6 +683,7 @@ private fun GarmentGridCard(
         },
         modifier = modifier,
         columns = columns,
+        signInBannerShown = signInBannerShown,
     )
 }
 
@@ -673,6 +691,7 @@ private fun GarmentGridCard(
 private fun GarmentCloudStatusBadge(
     badge: CardBadge?,
     modifier: Modifier = Modifier,
+    columns: Int = 2,
 ) {
     val reducedMotion = LocalReducedMotion.current
     var shown by remember { mutableStateOf(badge) }
@@ -697,7 +716,7 @@ private fun GarmentCloudStatusBadge(
         enter = EnterTransition.None,
         exit = if (reducedMotion) ExitTransition.None else fadeOut(animationSpec = tween(BADGE_FADE_MILLIS)),
     ) {
-        lastShown?.let { GarmentCloudBadgePill(it) }
+        lastShown?.let { GarmentCloudBadgePill(it, iconOnly = badgeIconOnly(columns)) }
     }
 }
 
@@ -707,7 +726,7 @@ private const val BADGE_FADE_MILLIS = 200
 private const val FAVORITE_HIT_AREA_DP = 32
 
 @Composable
-private fun GarmentCloudBadgePill(badge: CardBadge) {
+private fun GarmentCloudBadgePill(badge: CardBadge, iconOnly: Boolean = false) {
     Surface(
         shape = RoundedCornerShape(percent = 50),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
@@ -720,15 +739,18 @@ private fun GarmentCloudBadgePill(badge: CardBadge) {
         ) {
             Icon(
                 imageVector = badge.icon,
-                contentDescription = null,
+                // With the label hidden, the icon carries it for TalkBack.
+                contentDescription = if (iconOnly) stringResource(badge.labelRes) else null,
                 modifier = Modifier.size(14.dp),
             )
-            Text(
-                text = stringResource(badge.labelRes),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (!iconOnly) {
+                Text(
+                    text = stringResource(badge.labelRes),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -783,10 +805,11 @@ internal fun GarmentPhotoPlaceholder(
     clip: Boolean = true,
 ) {
     val swatchColor = item.primaryColor.swatchColor()
+    val nearWhite = isNearWhite(item.primaryColor, item.primaryPaletteColorHex ?: item.primaryRawValue)
     Box(
         modifier = modifier
             .then(if (clip) Modifier.clip(MaterialTheme.shapes.large) else Modifier)
-            .background(rememberGarmentSwatchBrush(swatchColor)),
+            .background(rememberGarmentSwatchBrush(swatchColor, nearWhite)),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf { it.isNotBlank() }
@@ -908,5 +931,6 @@ internal fun List<ClothingItem>.toUiWardrobeItems(
         syncFailureMessage = item.syncFailureMessage,
         photoRestoreState = item.photoRestoreState,
         waitingForConnection = cloud.waitingForConnection,
+        driveEnabled = syncState.connectionStatus.isDriveEnabled,
     )
 }

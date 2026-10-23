@@ -3246,6 +3246,10 @@ internal val WaitingForConnectionStatuses = setOf(
     GarmentSyncStatus.FailedRetryable,
 )
 
+/** Drive is added unless it is not configured or disabled; then nothing waits for it. */
+internal val DriveSyncConnectionStatus.isDriveEnabled: Boolean
+    get() = this != DriveSyncConnectionStatus.NotConfigured && this != DriveSyncConnectionStatus.Disabled
+
 internal fun GarmentSyncStatus.resolveForConnection(
     driveSyncConnectionStatus: DriveSyncConnectionStatus,
     online: Boolean,
