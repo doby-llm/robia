@@ -160,9 +160,9 @@ internal object HangerRemoval {
         }
 
     /**
-     * The band rule with its guard (K02 (a)). Inside the band (rows above [bandBottom], outside [support]) the re-selection may
-     * keep at most 15 % of the opaque pixels the first selection had there. When it keeps less than 85 % of them, the first
-     * selection is used inside the band as well ([BandOutcome.guardTripped], logged as `band_guard=1`).
+     * The band rule with its guard (K02 (a)). Inside the band (rows above [bandBottom], outside [support]) the re-selection
+     * must keep at least 85 % of the opaque pixels the first selection had there. When it keeps less than 85 % of them, the
+     * first selection is used inside the band as well ([BandOutcome.guardTripped], logged as `band_guard=1`).
      */
     fun guardedBand(reselected: FloatArray, previous: FloatArray, support: BooleanArray, bandBottom: Int, w: Int): BandOutcome {
         var previousOpaque = 0
