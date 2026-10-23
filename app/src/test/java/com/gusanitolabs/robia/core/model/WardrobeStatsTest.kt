@@ -71,6 +71,7 @@ class WardrobeStatsTest {
             listOf(
                 WardrobeStatsBar(WardrobeStatsKey.Tag("occasion-everyday", "occasion"), "Everyday", 2),
                 WardrobeStatsBar(WardrobeStatsKey.Tag("occasion-formal", "occasion"), "Formal", 1),
+                WardrobeStatsBar(WardrobeStatsKey.NotSet("occasion"), "", 1),
             ),
             group(result, WardrobeStatsSection.Occasions).bars,
         )
@@ -170,7 +171,7 @@ class WardrobeStatsTest {
     }
 
     @Test
-    fun customCategoriesFollowSystemGroupsAndEmptyGroupsAreLeftOut() {
+    fun customCategoriesFollowSystemGroupsAndEmptyWardrobeHasNoGroups() {
         val result = stats(
             listOf(garment("a", tags = listOf(travel, summer, closet))),
             categories = listOf(customCategory),
@@ -178,7 +179,9 @@ class WardrobeStatsTest {
 
         assertEquals(
             listOf(
+                WardrobeStatsSection.Categories,
                 WardrobeStatsSection.Colours,
+                WardrobeStatsSection.Occasions,
                 WardrobeStatsSection.Seasons,
                 WardrobeStatsSection.Fit,
                 WardrobeStatsSection.Locations,
