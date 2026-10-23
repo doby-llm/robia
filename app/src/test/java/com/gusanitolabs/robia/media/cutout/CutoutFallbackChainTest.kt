@@ -1,6 +1,9 @@
 package com.gusanitolabs.robia.media.cutout
 
+import com.gusanitolabs.robia.media.BackgroundRemovalFailure
+import com.gusanitolabs.robia.media.BackgroundRemovalFailureReason
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
+import com.gusanitolabs.robia.media.notRemovedFallback
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -16,7 +19,13 @@ import kotlin.time.Duration.Companion.seconds
 /** The precise → ML Kit chain under virtual time: the 30 s budget and the REMOVED check are part of the chain. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CutoutFallbackChainTest {
-    private data class Outcome(val status: BackgroundRemovalStatus, val source: String)
+    private data class Outcome(val status: BackgroundRemovalStatus, val source: String, val failure: BackgroundRemovalFailure? = null)
+
+    /** The failure the precise engine attaches to its garment-loss result (K02 (b)). */
+    private val garmentLossFailure = BackgroundRemovalFailure(
+        reason = BackgroundRemovalFailureReason.SEGMENTATION_FAILED,
+        message = FALLBACK_GARMENT_LOSS,
+    )
 
     private val preciseRemoved = Outcome(BackgroundRemovalStatus.REMOVED, "precise")
 
@@ -165,6 +174,7 @@ class CutoutFallbackChainTest {
     private suspend fun chainOutcome(
         precise: suspend () -> Outcome?,
         skipReason: () -> String = { "not_active" },
+        notRemovedReason: (Outcome) -> String = { FALLBACK_NOT_REMOVED },
         timeout: Duration = 30.seconds,
     ): Pair<Outcome, CutoutOutcome> {
         val outcomes = mutableListOf<CutoutOutcome>()
@@ -174,6 +184,7 @@ class CutoutFallbackChainTest {
             isRemoved = isRemoved,
             timeout = timeout,
             skipReason = skipReason,
+            notRemovedReason = notRemovedReason,
             onOutcome = { outcomes += it },
         )
         assertEquals(1, outcomes.size)
@@ -231,6 +242,29 @@ class CutoutFallbackChainTest {
 
         assertSame(mlKitOutcome, result)
         assertEquals("mlkit", outcome.engine)
+        assertEquals("not_removed", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_preciseGarmentLoss_isGarmentLossAndMlKitResultIsReturnedUnchanged() = runTest {
+        val (result, outcome) = chainOutcome(
+            precise = { Outcome(BackgroundRemovalStatus.ORIGINAL_FALLBACK, "precise", garmentLossFailure) },
+            notRemovedReason = { notRemovedFallback(it.failure) },
+        )
+
+        assertSame(mlKitOutcome, result)
+        assertEquals("mlkit", outcome.engine)
+        assertEquals("garment_loss", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_preciseNotRemovedWithoutGarmentLossMarker_isStillNotRemoved() = runTest {
+        val (result, outcome) = chainOutcome(
+            precise = { Outcome(BackgroundRemovalStatus.ORIGINAL_FALLBACK, "precise", failure = null) },
+            notRemovedReason = { notRemovedFallback(it.failure) },
+        )
+
+        assertSame(mlKitOutcome, result)
         assertEquals("not_removed", outcome.fallback)
     }
 

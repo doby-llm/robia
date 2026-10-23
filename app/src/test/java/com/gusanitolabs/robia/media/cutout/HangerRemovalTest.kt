@@ -1,7 +1,10 @@
 package com.gusanitolabs.robia.media.cutout
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** V-SG4-3 (threshold part): the S3 threshold reaches both detector passes, with a fake detector. */
@@ -62,5 +65,65 @@ class HangerRemovalTest {
         val region = HangerRemoval.hangerSearchRegion(garment, w, h)
 
         assertEquals(listOf(2, 70, 98, 170), region.toList())
+    }
+
+    /** A 10×10 photo: the band is rows 0–4 (indices 0–49); [mask] sets the listed indices to 1. */
+    private val bandW = 10
+    private val bandBottom = 5
+    private val noSupport = BooleanArray(100)
+
+    private fun mask(vararg indices: IntRange): FloatArray = FloatArray(100) { i -> if (indices.any { i in it }) 1f else 0f }
+
+    @Test
+    fun guardedBand_keepsTheFirstSelectionInTheBandWhenTheReselectionKeepsLessThan85Percent() {
+        val previous = mask(0..9, 60..69)
+        val reselected = mask(0..7, 20..21) // keeps 8 of the 10 opaque band pixels
+
+        val outcome = HangerRemoval.guardedBand(reselected, previous, noSupport, bandBottom, bandW)
+
+        assertTrue(outcome.guardTripped)
+        assertArrayEquals(previous, outcome.selection, 0f)
+    }
+
+    @Test
+    fun guardedBand_keepsTheReselectionInTheBandWhenItKeeps85PercentOrMore() {
+        val previous = mask(0..9, 60..69)
+        val reselected = mask(0..8, 20..21) // keeps 9 of 10; the new pixels at 20–21 stay
+
+        val outcome = HangerRemoval.guardedBand(reselected, previous, noSupport, bandBottom, bandW)
+
+        assertFalse(outcome.guardTripped)
+        assertArrayEquals(mask(0..8, 20..21, 60..69), outcome.selection, 0f)
+    }
+
+    @Test
+    fun guardedBand_exactly85PercentKeptIsNotTripped() {
+        val previous = mask(0..19)
+        val reselected = mask(0..16) // keeps 17 of 20
+
+        assertFalse(HangerRemoval.guardedBand(reselected, previous, noSupport, bandBottom, bandW).guardTripped)
+    }
+
+    @Test
+    fun guardedBand_countsOnlyPixelsOutsideTheSupport() {
+        val support = BooleanArray(100) { it in 0..4 }
+        val previous = mask(0..9)
+        val reselected = mask(5..8) // of the 5 opaque pixels outside the support, 4 are kept
+
+        val outcome = HangerRemoval.guardedBand(reselected, previous, support, bandBottom, bandW)
+
+        assertTrue(outcome.guardTripped)
+        assertArrayEquals(mask(5..9), outcome.selection, 0f)
+    }
+
+    @Test
+    fun guardedBand_withNoOpaquePixelInTheBandIsNotTripped() {
+        val previous = mask(60..69)
+        val reselected = mask(0..4)
+
+        val outcome = HangerRemoval.guardedBand(reselected, previous, noSupport, bandBottom, bandW)
+
+        assertFalse(outcome.guardTripped)
+        assertArrayEquals(mask(0..4, 60..69), outcome.selection, 0f)
     }
 }

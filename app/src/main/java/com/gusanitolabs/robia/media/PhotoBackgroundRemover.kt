@@ -5,7 +5,9 @@ import android.net.Uri
 import android.util.Log
 import com.gusanitolabs.robia.media.cutout.CUTOUT_LOG_TAG
 import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
+import com.gusanitolabs.robia.media.cutout.FALLBACK_GARMENT_LOSS
 import com.gusanitolabs.robia.media.cutout.FALLBACK_NOT_ACTIVE
+import com.gusanitolabs.robia.media.cutout.FALLBACK_NOT_REMOVED
 import com.gusanitolabs.robia.media.cutout.FALLBACK_TRIPPED
 import com.gusanitolabs.robia.media.cutout.cutoutFallbackChain
 import kotlinx.coroutines.CancellationException
@@ -23,6 +25,7 @@ class PhotoBackgroundRemover(
             mlKit = { mlKitResult(context, sourceUri) },
             isRemoved = { it.status == BackgroundRemovalStatus.REMOVED },
             skipReason = { preciseSkipReason() },
+            notRemovedReason = { notRemovedFallback(it.failure) },
             onOutcome = { Log.i(CUTOUT_LOG_TAG, "cutout_result engine=${it.engine} fallback=${it.fallback} ms=${it.ms}") },
         )
 
@@ -56,6 +59,13 @@ class PhotoBackgroundRemover(
             )
         }
 }
+
+/**
+ * Why a precise result that is not REMOVED was not used. The precise engine marks its garment-loss result with
+ * [FALLBACK_GARMENT_LOSS] as the failure message; any other not-removed result is [FALLBACK_NOT_REMOVED].
+ */
+internal fun notRemovedFallback(failure: BackgroundRemovalFailure?): String =
+    if (failure?.message == FALLBACK_GARMENT_LOSS) FALLBACK_GARMENT_LOSS else FALLBACK_NOT_REMOVED
 
 fun Uri.originalFallback(failure: BackgroundRemovalFailure): BackgroundRemovalResult = BackgroundRemovalResult(
     originalUri = this,

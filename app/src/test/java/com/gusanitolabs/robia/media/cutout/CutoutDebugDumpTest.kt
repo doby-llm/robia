@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.media.cutout
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,13 +51,20 @@ class CutoutDebugDumpTest {
                 bandBottom = null,
                 seconds = 4.5,
                 opaqueFractionOfS2 = 0.98,
+                bandGuard = false,
+                garmentLoss = false,
+                s2Fallback = true,
+                s2Accepted = 1,
                 engine = "precise",
                 fallback = "none",
             ),
         )
 
         assertEquals(
-            setOf("work", "s2_points", "hanger_box", "kill", "band_bottom", "seconds", "opaque_fraction_of_s2", "engine", "fallback"),
+            setOf(
+                "work", "s2_points", "hanger_box", "kill", "band_bottom", "seconds", "opaque_fraction_of_s2",
+                "band_guard", "garment_loss", "s2_fallback", "s2_accepted", "engine", "fallback",
+            ),
             report.keys().asSequence().toSet(),
         )
         assertEquals(1024, report.getJSONArray("work").getInt(0))
@@ -66,6 +74,10 @@ class CutoutDebugDumpTest {
         assertTrue(report.isNull("hanger_box"))
         assertFalse(report.getBoolean("kill"))
         assertTrue(report.isNull("band_bottom"))
+        assertFalse(report.getBoolean("band_guard"))
+        assertFalse(report.getBoolean("garment_loss"))
+        assertTrue(report.getBoolean("s2_fallback"))
+        assertEquals(1, report.getInt("s2_accepted"))
         assertEquals("precise", report.getString("engine"))
         assertEquals("none", report.getString("fallback"))
         assertFalse(report.has("error"))
@@ -83,6 +95,10 @@ class CutoutDebugDumpTest {
                 bandBottom = 7,
                 seconds = 0.0,
                 opaqueFractionOfS2 = 0.0,
+                bandGuard = true,
+                garmentLoss = true,
+                s2Fallback = false,
+                s2Accepted = 3,
                 engine = "mlkit",
                 fallback = "error",
                 error = "IllegalStateException: boom",
@@ -92,6 +108,84 @@ class CutoutDebugDumpTest {
         assertEquals(4, report.getJSONArray("hanger_box").length())
         assertTrue(report.getBoolean("kill"))
         assertEquals(7, report.getInt("band_bottom"))
+        assertEquals("IllegalStateException: boom", report.getString("error"))
+    }
+
+    @Test
+    fun reportJson_recordsTheGuardDecisionsAndTheS2FallbackNotOnlyInTheLog() {
+        val report = JSONObject(
+            reportJson(
+                width = 10,
+                height = 10,
+                s2Points = listOf(S2Point(1, 2, accepted = false)),
+                hangerBox = null,
+                kill = false,
+                bandBottom = null,
+                seconds = 0.0,
+                opaqueFractionOfS2 = 0.0,
+                bandGuard = true,
+                garmentLoss = true,
+                s2Fallback = true,
+                s2Accepted = 0,
+                engine = "mlkit",
+                fallback = "garment_loss",
+            ),
+        )
+
+        assertTrue(report.getBoolean("band_guard"))
+        assertTrue(report.getBoolean("garment_loss"))
+        assertTrue(report.getBoolean("s2_fallback"))
+        assertEquals(0, report.getInt("s2_accepted"))
+        assertEquals("garment_loss", report.getString("fallback"))
+    }
+
+    @Test
+    fun s2FallbackOf_isNullUntilS2FinishesThenTrueOnlyWhenNoPromptWasAccepted() {
+        // The run threw before S2 (e.g. in saliency): nothing was tested, so no fallback is claimed.
+        assertNull(s2FallbackOf(PreciseRunInfo()))
+
+        // The run threw inside S2 after one prompt: the partial verdict is kept, but S2 did not finish.
+        val threwInsideS2 = PreciseRunInfo().apply { s2Points.add(S2Point(1, 2, accepted = false)) }
+        assertNull(s2FallbackOf(threwInsideS2))
+
+        val finishedNoAccepted = PreciseRunInfo().apply {
+            s2Points.add(S2Point(1, 2, accepted = false))
+            s2Completed = true
+        }
+        assertTrue(s2FallbackOf(finishedNoAccepted) == true)
+
+        val finishedAccepted = PreciseRunInfo().apply {
+            s2Points.add(S2Point(1, 2, accepted = true))
+            s2Completed = true
+        }
+        assertFalse(s2FallbackOf(finishedAccepted) == true)
+    }
+
+    @Test
+    fun reportJson_writesS2FallbackAsJsonNullWhenTheRunThrewBeforeS2() {
+        val report = JSONObject(
+            reportJson(
+                width = 1024,
+                height = 768,
+                s2Points = emptyList(),
+                hangerBox = null,
+                kill = false,
+                bandBottom = null,
+                seconds = 0.5,
+                opaqueFractionOfS2 = 0.0,
+                bandGuard = false,
+                garmentLoss = false,
+                s2Fallback = s2FallbackOf(PreciseRunInfo()),
+                s2Accepted = 0,
+                engine = "mlkit",
+                fallback = "error",
+                error = "IllegalStateException: boom",
+            ),
+        )
+
+        assertTrue(report.has("s2_fallback"))
+        assertTrue(report.isNull("s2_fallback"))
+        assertEquals(0, report.getInt("s2_accepted"))
         assertEquals("IllegalStateException: boom", report.getString("error"))
     }
 
