@@ -302,7 +302,10 @@ internal fun ItemDetailScreen(
                 }
             }
         }
-        item { GarmentCloudStatusRow(item) }
+        // Developer mode only: the sync row is for debugging; attention cards below stay visible for everyone.
+        if (showSyncDetails) {
+            item { GarmentCloudStatusRow(item) }
+        }
         item.parkedAttentionKind()?.let { kind ->
             item {
                 SyncAttentionCard(

@@ -10,6 +10,12 @@ import com.gusanitolabs.robia.core.model.DisplayColorLabel
 
 private const val GARMENT_SWATCH_ALPHA = 0.26f
 
+/** Above this luma a swatch would vanish on the white card, so it gets the neutral backdrop instead (R3-02). */
+private const val NEAR_WHITE_LUMA = 0.82f
+
+/** Warm neutral backdrop for near-white garments, top to bottom (current palette values). */
+private val NEAR_WHITE_STOPS = listOf(Color(0xFFE6E0D9), Color(0xFFCFC5BA))
+
 internal fun DisplayColorLabel.swatchColor(): Color = when (this) {
     DisplayColorLabel.Black -> Color(0xFF1F1F1F)
     DisplayColorLabel.Blue -> Color(0xFF315F8E)
@@ -29,16 +35,45 @@ internal fun DisplayColorLabel.swatchColor(): Color = when (this) {
 /** The fixed label a raw colour value (hex or name) maps to; a missing or unparsable value is Unknown. */
 internal fun garmentSwatchLabel(hex: String?): DisplayColorLabel = ColorLabelResolver.fromRawValue(hex)
 
-/** Top stop is the theme surface, bottom stop is the swatch at a fixed alpha. */
-internal fun garmentSwatchStops(swatch: Color, surfaceTop: Color): List<Color> =
-    listOf(surfaceTop, swatch.copy(alpha = GARMENT_SWATCH_ALPHA))
+/** Rec. 709 luma of a colour's sRGB channels, 0..1. */
+internal fun swatchLuma(colour: Color): Float = 0.2126f * colour.red + 0.7152f * colour.green + 0.0722f * colour.blue
 
-internal fun garmentSwatchBrush(swatch: Color, surfaceTop: Color): Brush =
-    Brush.verticalGradient(garmentSwatchStops(swatch, surfaceTop))
+internal fun isNearWhiteSwatch(swatch: Color): Boolean = swatchLuma(swatch) > NEAR_WHITE_LUMA
 
-/** The Browse photo background; remembered so a grid of cards does not rebuild the brush on every frame. */
+/** White, or a colour lighter than [NEAR_WHITE_LUMA]. The hex is the colour when it parses, else the label's swatch. */
+internal fun isNearWhite(label: DisplayColorLabel, hex: String?): Boolean =
+    label == DisplayColorLabel.White || isNearWhiteSwatch(hex?.let(::hexSwatch) ?: label.swatchColor())
+
+/** A `#RRGGBB` value as an opaque colour; null for names, blanks and anything else. */
+private fun hexSwatch(hex: String): Color? {
+    val digits = hex.trim().removePrefix("#")
+    if (digits.length != 6 || digits.any { it.digitToIntOrNull(16) == null }) return null
+    return Color(0xFF000000L or digits.toLong(16))
+}
+
+/**
+ * Top stop is the theme surface, bottom stop is the swatch at a fixed alpha.
+ * A near-white garment gets the warm neutral stops instead, so it reads against the white card.
+ */
+internal fun garmentSwatchStops(
+    swatch: Color,
+    surfaceTop: Color,
+    nearWhite: Boolean = isNearWhiteSwatch(swatch),
+): List<Color> =
+    if (nearWhite) NEAR_WHITE_STOPS else listOf(surfaceTop, swatch.copy(alpha = GARMENT_SWATCH_ALPHA))
+
+internal fun garmentSwatchBrush(
+    swatch: Color,
+    surfaceTop: Color,
+    nearWhite: Boolean = isNearWhiteSwatch(swatch),
+): Brush = Brush.verticalGradient(garmentSwatchStops(swatch, surfaceTop, nearWhite))
+
+/**
+ * The Browse photo background; remembered so a grid of cards does not rebuild the brush on every frame.
+ * [nearWhite] comes from the garment's label and hex where the caller has them; otherwise the swatch decides.
+ */
 @Composable
-internal fun rememberGarmentSwatchBrush(swatch: Color): Brush {
+internal fun rememberGarmentSwatchBrush(swatch: Color, nearWhite: Boolean = isNearWhiteSwatch(swatch)): Brush {
     val surfaceTop = MaterialTheme.colorScheme.surfaceContainerLow
-    return remember(swatch, surfaceTop) { garmentSwatchBrush(swatch, surfaceTop) }
+    return remember(swatch, surfaceTop, nearWhite) { garmentSwatchBrush(swatch, surfaceTop, nearWhite) }
 }
