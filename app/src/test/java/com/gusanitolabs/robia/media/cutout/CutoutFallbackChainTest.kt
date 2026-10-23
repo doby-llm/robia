@@ -7,8 +7,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /** The precise → ML Kit chain under virtual time: the 30 s budget and the REMOVED check are part of the chain. */
@@ -154,5 +156,99 @@ class CutoutFallbackChainTest {
         assertTrue(thrown is CancellationException)
         assertEquals(0, mlKitCalls)
         assertFalse(latch.isTripped)
+    }
+
+    private val mlKitOutcome = Outcome(BackgroundRemovalStatus.REMOVED, "mlkit")
+    private val isRemoved: (Outcome) -> Boolean = { it.status == BackgroundRemovalStatus.REMOVED }
+
+    /** Runs the chain once with a fake ML Kit and returns its result with the single outcome it reported. */
+    private suspend fun chainOutcome(
+        precise: suspend () -> Outcome?,
+        skipReason: () -> String = { "not_active" },
+        timeout: Duration = 30.seconds,
+    ): Pair<Outcome, CutoutOutcome> {
+        val outcomes = mutableListOf<CutoutOutcome>()
+        val result = cutoutFallbackChain(
+            precise = precise,
+            mlKit = { mlKitOutcome },
+            isRemoved = isRemoved,
+            timeout = timeout,
+            skipReason = skipReason,
+            onOutcome = { outcomes += it },
+        )
+        assertEquals(1, outcomes.size)
+        return result to outcomes.single()
+    }
+
+    @Test
+    fun outcome_acceptedPrecise_isPreciseWithNoneAndMlKitIsNotUsed() = runTest {
+        val (result, outcome) = chainOutcome(precise = { preciseRemoved })
+
+        assertSame(preciseRemoved, result)
+        assertEquals("precise", outcome.engine)
+        assertEquals("none", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_nullPreciseNotActive_isNotActiveAndMlKitResultIsReturnedUnchanged() = runTest {
+        val (result, outcome) = chainOutcome(precise = { null })
+
+        assertSame(mlKitOutcome, result)
+        assertEquals("mlkit", outcome.engine)
+        assertEquals("not_active", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_nullPreciseWithTrippedSkipReason_isTripped() = runTest {
+        val (result, outcome) = chainOutcome(precise = { null }, skipReason = { "tripped" })
+
+        assertSame(mlKitOutcome, result)
+        assertEquals("mlkit", outcome.engine)
+        assertEquals("tripped", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_preciseOverBudget_isTimeoutAndMlKitResultIsReturnedUnchanged() = runTest {
+        val (result, outcome) = chainOutcome(precise = { delay(31.seconds); preciseRemoved })
+
+        assertSame(mlKitOutcome, result)
+        assertEquals("mlkit", outcome.engine)
+        assertEquals("timeout", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_preciseThrows_isErrorAndMlKitResultIsReturnedUnchanged() = runTest {
+        val (result, outcome) = chainOutcome(precise = { error("model missing") })
+
+        assertSame(mlKitOutcome, result)
+        assertEquals("mlkit", outcome.engine)
+        assertEquals("error", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_preciseNotRemoved_isNotRemovedAndMlKitResultIsReturnedUnchanged() = runTest {
+        val (result, outcome) = chainOutcome(precise = { Outcome(BackgroundRemovalStatus.ORIGINAL_FALLBACK, "precise") })
+
+        assertSame(mlKitOutcome, result)
+        assertEquals("mlkit", outcome.engine)
+        assertEquals("not_removed", outcome.fallback)
+    }
+
+    @Test
+    fun outcome_callerCancellation_reportsNothing() = runTest {
+        val outcomes = mutableListOf<CutoutOutcome>()
+
+        try {
+            cutoutFallbackChain(
+                precise = { throw CancellationException("cancelled by the caller") },
+                mlKit = { mlKitOutcome },
+                isRemoved = isRemoved,
+                onOutcome = { outcomes += it },
+            )
+        } catch (cancellation: CancellationException) {
+            assertEquals("cancelled by the caller", cancellation.message)
+        }
+
+        assertTrue(outcomes.isEmpty())
     }
 }
