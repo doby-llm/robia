@@ -75,7 +75,7 @@ internal class PreciseCutoutEngine(
                 try {
                     val argb = IntArray(work.width * work.height).also { work.getPixels(it, 0, work.width, 0, 0, work.width, work.height) }
                     val callerContext = coroutineContext
-                    val alpha = CutoutEngineRegistry.preciseLatch.guard {
+                    val composite = CutoutEngineRegistry.preciseLatch.guard {
                         OnnxSessions(packDir).use { models ->
                             selectorFactory(context).use { selector ->
                                 CutoutRun(
@@ -87,7 +87,7 @@ internal class PreciseCutoutEngine(
                             }
                         }
                     }
-                    if (alpha == null) {
+                    if (composite == null) {
                         // K02 (b): the precise result lost most of the garment, so it is not used and the chain falls back.
                         // The failure message names the reason, which PhotoBackgroundRemover maps to the fallback reason.
                         if (BuildConfig.DEBUG) Log.i(CUTOUT_LOG_TAG, "garment_loss=1")
@@ -104,8 +104,8 @@ internal class PreciseCutoutEngine(
                     }
                     val composed = Bitmap.createBitmap(work.width, work.height, Bitmap.Config.ARGB_8888)
                     val cropped = try {
-                        composed.setPixels(IntArray(argb.size) { i -> ((alpha[i].toInt() and 0xFF) shl 24) or (argb[i] and 0xFFFFFF) }, 0, work.width, 0, 0, work.width, work.height)
-                        cropToAlpha(composed, alpha)
+                        composed.setPixels(IntArray(argb.size) { i -> ((composite.alpha[i].toInt() and 0xFF) shl 24) or (composite.rgb[i] and 0xFFFFFF) }, 0, work.width, 0, 0, work.width, work.height)
+                        cropToAlpha(composed, composite.alpha)
                     } catch (failure: Throwable) {
                         composed.recycle()
                         throw failure
@@ -169,6 +169,12 @@ internal class PreciseCutoutEngine(
     }
 }
 
+/** S5 alpha of the work photo (0..255 per pixel) and the RGB it composites with, after colour decontamination (K03 step 3). */
+private class CutoutComposite(val alpha: ByteArray, val rgb: IntArray)
+
+/** What the hanger removal leaves for S5 and the composite: the filled photo, its support, the fill colour and the band bottom. */
+private class HangerFill(val filled: IntArray, val support: BooleanArray, val colour: Int, val bandBottom: Int)
+
 /** One photo through the pipeline. [work] and [argb] are the same 1024-long-edge pixels. */
 private class CutoutRun(
     private val models: OnnxSessions,
@@ -185,11 +191,14 @@ private class CutoutRun(
     private val w = work.width
     private val h = work.height
 
+    /** Set by [hangerFirst] when the hanger is removed; S5 and the composite use it. */
+    private var hangerFill: HangerFill? = null
+
     /**
-     * Per-pixel alpha 0..255 of the work photo, or null when the garment-loss guard (K02 (b)) rejects it. With hanger removal
-     * off, S3–S4b and their models are skipped.
+     * Per-pixel alpha 0..255 of the work photo with the RGB it composites with, or null when the garment-loss guard (K02 (b))
+     * rejects it. With hanger removal off, S3–S4b and their models are skipped.
      */
-    fun alpha(): ByteArray? {
+    fun alpha(): CutoutComposite? {
         val coarse = stage("s1") { saliency(argb) }
         if (wantsStages(sink)) sink.mask("s1_saliency", coarse, w, h)
         val selection = stage("s2") { garmentSelection(coarse, work, info.s2Points) }
@@ -222,8 +231,12 @@ private class CutoutRun(
                 }
             },
         )
+        val fill = hangerFill
         val alpha = stage("s5") {
-            MaskOps.refineAlpha(MaskOps.luminance(argb), MaskOps.dropIslands(result, w, h), w, h, cutout.edges)
+            // K03 step 1: above the band bottom the guide is the filled photo, so the hanger's edges do not steer the filter.
+            val original = MaskOps.luminance(argb)
+            val guide = if (fill == null) original else HangerRemoval.bandGuide(original, MaskOps.luminance(fill.filled), fill.bandBottom, w)
+            MaskOps.refineAlpha(guide, MaskOps.dropIslands(result, w, h), w, h, cutout.edges)
         }
         val opaque = alpha.count { (it.toInt() and 0xFF) > 127 }
         if (wantsStages(sink)) {
@@ -234,7 +247,8 @@ private class CutoutRun(
             info.garmentLoss = true
             return null
         }
-        return alpha
+        val rgb = if (fill == null) argb else HangerRemoval.decontaminate(argb, alpha, fill.support, fill.colour, w, h)
+        return CutoutComposite(alpha, rgb)
     }
 
     /** S1: u2netp saliency, min-max normalised and resampled to the work size. The 320 input is antialiased as PIL does (D4). */
@@ -328,13 +342,15 @@ private class CutoutRun(
     /** S4b: fill the hanger, run S1+S2 again on the filled photo, and keep the previous result below the band. */
     private fun hangerFirst(selection: FloatArray, kill: BooleanArray, hanger: MaskBox, garmentHeight: Int): FloatArray {
         val support = HangerRemoval.killSupport(kill, w, h)
-        val filled = HangerRemoval.fill(argb, w, h, support)
+        val colour = HangerRemoval.ringColour(argb, w, h, support)
+        val filled = HangerRemoval.fill(argb, w, h, support, colour)
         if (wantsStages(sink)) sink.image("s4b_filled", filled, w, h)
         val filledBitmap = Bitmap.createBitmap(filled, w, h, Bitmap.Config.ARGB_8888)
         try {
             val reselected = garmentSelection(saliency(filled), filledBitmap)
             val bandBottom = HangerRemoval.bandBottom(hanger, garmentHeight, h)
             info.bandBottom = bandBottom
+            hangerFill = HangerFill(filled, support, colour, bandBottom)
             val banded = HangerRemoval.guardedBand(
                 reselected = reselected,
                 previous = selection,

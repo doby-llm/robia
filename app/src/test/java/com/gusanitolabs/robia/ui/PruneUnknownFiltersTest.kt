@@ -71,6 +71,19 @@ class PruneUnknownFiltersTest {
     }
 
     @Test
+    fun fitSelectionIsNeverPruned() {
+        val filters = BrowseFilterState().toggleFit(FitFilter.DoesNotFit)
+
+        val pruned = pruneUnknownFilters(
+            filters = filters,
+            availableTagIds = setOf(dresses.id),
+            paletteColorIds = setOf(red.id),
+        )
+
+        assertSame(filters, pruned)
+    }
+
+    @Test
     fun emptyTagListDoesNotStopColourPruning() {
         val filters = BrowseFilterState()
             .toggleTag(summer)

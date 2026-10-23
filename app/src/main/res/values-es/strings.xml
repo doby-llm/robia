@@ -823,4 +823,6 @@
     <string name="duplicate_export_chooser">Compartir marcas</string>
     <string name="duplicate_cosine">Coseno %1$.4f</string>
     <string name="duplicate_pair_title">Par %1$d</string>
+    <!-- FIT -->
+    <string name="filter_fit">Ajuste</string>
 </resources>
