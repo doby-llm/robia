@@ -4,6 +4,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** V-SG3-1: keep/remove with smart (hard) and brush (soft) masks, undo ≥ 10, reset. */
@@ -124,19 +125,23 @@ class RefineSessionTest {
         assertFalse(session.isChanged)
     }
 
+    /** REQ-ED-03: the history has no depth limit, so the first of 12 changes is still undoable after 11 undos (was: 10 steps). */
     @Test
-    fun undo_keepsOnlyTheLastTenChanges() {
+    fun undo_keepsEveryChange_beyondTheOldLimitOfTen() {
         val session = RefineSession(w, h, filled(soft))
         val afterFirst = run {
             session.apply(RefineSession.Mode.Keep, pointMask(0, 0), hard = false)
             session.currentAlpha()
         }
-        repeat(10) { x -> session.apply(RefineSession.Mode.Keep, pointMask(x + 1, 1), hard = false) }
+        repeat(11) { x -> session.apply(RefineSession.Mode.Keep, pointMask(x + 1, 1), hard = false) }
 
-        repeat(10) { session.undo() }
+        repeat(11) { session.undo() }
 
         assertArrayEquals(afterFirst, session.currentAlpha(), 0f)
+        assertTrue(session.canUndo)
+        session.undo()
         assertFalse(session.canUndo)
+        assertFalse(session.isChanged)
     }
 
     @Test
