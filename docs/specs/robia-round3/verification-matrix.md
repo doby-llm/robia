@@ -76,6 +76,8 @@ Levels: **CI** = JVM test/build in GitHub Actions on the PR; **REC** = command o
 | V-VIS-2 | VIS | CI | `BrowseCardTextTest`: `badgeFor(status, columns, signInBannerShown)` — columns ≥ 4 → icon-only flag; banner shown → AuthBlocked/Waiting → null; Uploading and photo-attention unchanged (update the old AuthBlocked → sign_in assertions to the new rule with equal strength) | pass |
 | V-VIS-3 | VIS | REV | `ItemDetailScreen`: `GarmentCloudStatusRow` rendered only when `showSyncDetails`; attention cards unchanged | confirmed |
 | V-VIS-D | VIS | DEV | White top visible on its tile; 4 columns show only the cloud icon; with Drive signed out only the banner says Sign in | Manu |
+| V-VIS-4 | VIS | CI | `BrowseCardTextTest`: Dirty, Queued and FailedRetryable give no badge when Drive is NotConfigured or Disabled; Connected Dirty still gives Waiting; Disconnected Queued keeps sign-in; Running and photo attention unchanged | pass |
+| V-VIS-5 | VIS | DEV | Drive not added: no Waiting badge on any card. Add Drive: Waiting comes back on unsynced cards | Manu |
 | V-SPK-1 | SPK | REC | `grep -rn "aiSurface\|rememberAiShimmerBrush" app/src/main` → no hits | empty |
 | V-SPK-2 | SPK | CI | `MotionTest`: burst disabled when reduced motion; `SparkleBurst` duration ≤ 900 ms | pass |
 | V-SPK-D | SPK | DEV | No shiny buttons; ✦ next to Filters is a plain icon; applying suggestions shows one short sparkle | Manu |
@@ -91,6 +93,8 @@ Levels: **CI** = JVM test/build in GitHub Actions on the PR; **REC** = command o
 | V-ANA-1 | ANA | CI | `WardrobeStatsTest`: counts per tag group (multi-tag counted per tag), primary colour, fit (Fits incl. null), "Not set" last, ties alphabetical by Collator, archived excluded | pass |
 | V-ANA-2 | ANA | CI | tap mapping: bar → `BrowseFilterState` with exactly that filter (pure function) | pass |
 | V-ANA-D | ANA | DEV | Analytics opens from the icon; tapping "Dresses" shows only dresses in Browse | Manu |
+| V-ANA-3 | ANA | CI | `WardrobeStatsTest`: bar width for progress 0..1 is monotonic and clamped, equals the final width at 1, and jumps to the final width when reduced motion is on | pass |
+| V-ANA-4 | ANA | REV | bars animate once on screen entry (<= 400 ms, left to right), not on data change or recomposition | confirmed |
 | V-OUT-1 | OUT | CI | `OutfitComposerTest`: composition rules (dress/jumpsuit excludes top+bottom; outerwear only for Autumn/Winter); season/occasion filters; 3 outfits differ in ≥ 1 slot; deterministic for a seed | pass |
 | V-OUT-2 | OUT | CI | ranking = mean IMAGE cosine to chosen items (+ prompt TEXT cosine when a prompt is given); garments without vectors excluded | pass |
 | V-OUT-D | OUT | DEV | G-OUT: Manu rates ≥ 20 proposals in a week; export shared with the planner | Manu |

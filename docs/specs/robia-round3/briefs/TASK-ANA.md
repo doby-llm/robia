@@ -22,3 +22,9 @@ V-ANA-1, V-ANA-2, V-ANA-D pass; CI green.
 
 ## Do not
 Add a library or new DB queries.
+
+## PLAN-CHANGE 2026-10-23 (feedback item 2): bars grow on open
+Source: feedback/2026-10-23-manu-telegram.md item 2.
+
+4. Bar growth on open: when the screen is shown, each bar animates its width from 0 to its value, from the axis (left) to the right, in one short smooth transition (<= 400 ms; Compose animateFloatAsState or Animatable; no new library). A pure function maps progress (0..1, clamped) to width and is monotonic and equals the final width at progress 1. When reduced motion is on (system animator duration scale 0), show the final width at once.
+5. Tests: V-ANA-3 is the pure mapping test in WardrobeStatsTest. V-ANA-4 is a review item: the animation runs on screen entry, not on every data change or recomposition.

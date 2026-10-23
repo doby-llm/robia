@@ -143,9 +143,9 @@
 ## VIS — Browse/detail small visuals: white garments, dev-only sync row, 4-column pill, sign-in badges
 - **Reqs:** REQ-BR3-02, REQ-BR3-03, REQ-BR3-04, REQ-DT-01 · **Predecessors:** BAT1 · **Successors:** DUP1, SPK
 - **Files:** `ui/GarmentSwatchBackground.kt`; `ui/BrowseGrid.kt`; `ui/BrowseCardText.kt`; `ui/ItemDetailScreen.kt`; `ui/RobiaApp.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/GarmentSwatchBackgroundTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/BrowseCardTextTest.kt`; `app/src/test/java/com/gusanitolabs/robia/RegressionSourceContractTest.kt`.
-- **In scope:** Neutral backdrop for near-white colours; `GarmentCloudStatusRow` only in developer mode; icon-only pill at ≥ 4 columns; no Waiting/Sign-in card badges while the sign-in banner shows.
+- **In scope:** Neutral backdrop for near-white colours; `GarmentCloudStatusRow` only in developer mode; icon-only pill at ≥ 4 columns; no Waiting/Sign-in card badges while the sign-in banner shows; PLAN-CHANGE 2026-10-23 (feedback item 1): also no Waiting badge (Dirty, Queued, FailedRetryable) on any card while Drive is NotConfigured or Disabled; the badge stays when Drive is connected.
 - **Out of scope:** Palette tokens (pending); header sync indicator.
-- **Acceptance:** V-VIS-1, V-VIS-2, V-VIS-3, V-VIS-D.
+- **Acceptance:** V-VIS-1, V-VIS-2, V-VIS-3, V-VIS-4, V-VIS-5, V-VIS-D.
 
 ## SPK — Smart features without the shiny animation
 - **Reqs:** REQ-AI-01, REQ-AI-02 · **Predecessors:** VIS, W0 · **Successors:** EX1, FIT, OR1, SEL
@@ -178,9 +178,9 @@
 ## ANA — Analytics screen
 - **Reqs:** REQ-AN-01, REQ-AN-02, REQ-AN-03 · **Predecessors:** FIT, PRF · **Successors:** OUT
 - **Files:** new `ui/AnalyticsScreen.kt`; new `core/model/WardrobeStats.kt`; `ui/BrowseFilterBar.kt`; `ui/RobiaApp.kt`; new `app/src/test/java/com/gusanitolabs/robia/core/model/WardrobeStatsTest.kt`.
-- **In scope:** Icon next to Filters, route, bar charts per group, tap → Browse filtered.
+- **In scope:** Icon next to Filters, route, bar charts per group, tap → Browse filtered; PLAN-CHANGE 2026-10-23 (feedback item 2): on open, bars grow from the axis left to right in one short smooth transition (≤ 400 ms), none when reduced motion is on.
 - **Out of scope:** Chart libraries; time series.
-- **Acceptance:** V-ANA-1, V-ANA-2, V-ANA-D.
+- **Acceptance:** V-ANA-1, V-ANA-2, V-ANA-3, V-ANA-4, V-ANA-D.
 
 ## OUT — Outfit lab (developer)
 - **Reqs:** REQ-OF-01, G-OUT · **Predecessors:** ANA, DUP1 · **Successors:** EX1
