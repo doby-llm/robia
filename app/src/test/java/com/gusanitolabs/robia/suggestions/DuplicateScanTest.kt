@@ -85,7 +85,21 @@ class DuplicateScanTest {
 
         assertTrue(scan(items, vectors, currentHashes, dismissed = group.pairKeys()).isEmpty())
         val onePairDismissed = scan(items, vectors, currentHashes, dismissed = setOf(DuplicatePairKey.of("b", "a")))
-        assertEquals(listOf(listOf("a", "b", "c")), onePairDismissed.map { it.garmentIds })
+        assertEquals(listOf(listOf("a", "c")), onePairDismissed.map { it.garmentIds })
+    }
+
+    @Test
+    fun dismissedPairNeverJoinsOneGroupThroughALaterGarment() {
+        val ids = listOf("a", "b", "c", "d")
+        val items = ids.map { garment(it) }
+        val vectors = ids.associateWith { id -> GarmentVectors(id, floatArrayOf(1f, 0f), null, imageInputHash = "h1") }
+        val currentHashes = ids.associateWith { "h1" }
+        val dismissed = DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto).pairKeys()
+
+        val groups = scan(items, vectors, currentHashes, dismissed = dismissed)
+
+        assertEquals(listOf(listOf("a", "d")), groups.map { it.garmentIds })
+        assertTrue(groups.none { group -> group.pairKeys().any { it in dismissed } })
     }
 
     @Test

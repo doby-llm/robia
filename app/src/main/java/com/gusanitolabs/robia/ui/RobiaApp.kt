@@ -1088,7 +1088,7 @@ private fun RobiaShell(
         val count = clothingItems.size
         val now = System.currentTimeMillis()
         if (!duplicateScanDue(DuplicateScanHistory.last, count, now)) return@LaunchedEffect
-        duplicateGroups = scanDuplicates(context, clothingItems, duplicateRepository, duplicateDismissals)
+        duplicateGroups = scanDuplicates(context, clothingItems, duplicateRepository) { duplicateDismissals }
         DuplicateScanHistory.last = DuplicateScanRecord(atEpochMillis = now, garmentCount = count)
     }
     val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group ->
@@ -1099,11 +1099,6 @@ private fun RobiaShell(
         onDeleteItems(ids)
         duplicateGroups = duplicateGroups.afterRemoving(ids.toSet())
     }
-    // The banner waits while another prompt or dialog is visible (REQ-DU-03).
-    val duplicatePromptVisible = syncState.restoreProgress != null || mergeConfirmationPending || backupConflictPending ||
-        showUseBackupConfirmation || showKeepPhoneConfirmation || activeFirstRunPrompt != null || showBrowseDeleteDialog ||
-        showBackupDeletionConfirmation || pendingColorReviewChangeSet != null || pendingTagReview != null || tagReviewOfferInFlight
-    val duplicateBannerCount = if (duplicatePromptVisible) 0 else duplicateGroups.size
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,
         cloudAuthorizationInFlight = cloudAuthorizationInFlight,
@@ -1781,6 +1776,13 @@ private fun RobiaShell(
     } else {
         null
     }
+    // The banner waits while another prompt, dialog, merge proposal, review-complete overlay or sync attention card is
+    // visible (REQ-DU-03, R3-DEC-026).
+    val duplicatePromptVisible = syncState.restoreProgress != null || mergeConfirmationPending || backupConflictPending ||
+        showUseBackupConfirmation || showKeepPhoneConfirmation || activeFirstRunPrompt != null || showBrowseDeleteDialog ||
+        showBackupDeletionConfirmation || pendingColorReviewChangeSet != null || pendingTagReview != null || tagReviewOfferInFlight ||
+        mergeProposalCardShown || reviewComplete != null || browseAttentions.isNotEmpty()
+    val duplicateBannerCount = if (duplicatePromptVisible) 0 else duplicateGroups.size
 
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(

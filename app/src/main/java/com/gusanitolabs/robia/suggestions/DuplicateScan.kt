@@ -2,6 +2,8 @@ package com.gusanitolabs.robia.suggestions
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
+import com.gusanitolabs.robia.BuildConfig
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.GarmentVectors
@@ -23,6 +25,8 @@ const val DUPLICATE_RESCAN_NEW_GARMENTS = 5
 const val CALIBRATION_PAIR_COUNT = 30
 
 private const val DAY_MILLIS = 24L * 60 * 60 * 1000
+
+private const val DUPLICATE_LOG_TAG = "RobiaDuplicates"
 
 /** The tag category whose tags name a garment's kind (DefaultTags). */
 private const val CATEGORY_CATEGORY_ID = "category"
@@ -76,7 +80,7 @@ fun scan(
         .flatMap { sameHash -> sameHash.map(Eligible::id).unorderedPairs() }
         .map { (a, b) -> Edge(a, b, strength = 1f) }
         .filterNot { edge -> DuplicatePairKey.of(edge.a, edge.b) in dismissed }
-    return groupsFromEdges(edges, DuplicateTier.SamePhoto)
+    return groupsFromEdges(edges, DuplicateTier.SamePhoto, dismissed)
 }
 
 /**
@@ -133,17 +137,25 @@ fun duplicateScanDue(last: DuplicateScanRecord?, garmentCount: Int, nowEpochMill
 
 /**
  * The background scan (REQ-DU-04): a one-shot vector snapshot, then the current photo hash of the candidates only. A
- * garment whose stored hash is unique cannot pair, so its photo is not re-encoded.
+ * garment whose stored hash is unique cannot pair, so its photo is not re-encoded. [dismissed] is read after the
+ * snapshot and the hashes, so a dismissal made while they were read is still honoured. A failed scan returns no groups.
  */
 suspend fun scanDuplicates(
     context: Context,
     items: List<ClothingItem>,
     embeddingRepository: EmbeddingRepository,
-    dismissed: Set<DuplicatePairKey>,
+    dismissed: () -> Set<DuplicatePairKey>,
 ): List<DuplicateGroup> = withContext(Dispatchers.IO) {
-    val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
-    val currentHashes = currentPhotoHashes(context, sharedHashCandidates(items, vectors), items)
-    scan(items, vectors, currentHashes, dismissed)
+    try {
+        val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
+        val currentHashes = currentPhotoHashes(context, sharedHashCandidates(items, vectors), items)
+        scan(items, vectors, currentHashes, dismissed())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        if (BuildConfig.DEBUG) Log.w(DUPLICATE_LOG_TAG, "Duplicate scan failed: ${failure::class.java.simpleName}", failure)
+        emptyList()
+    }
 }
 
 /** The calibration list (G-DUP): every active garment is checked, because same-category pairs are not limited to a shared hash. */
@@ -211,9 +223,14 @@ private fun eligibleGarments(
 
 /**
  * Connected components of [edges], capped at [DUPLICATE_GROUP_MAX_SIZE]. Edges are taken strongest first and an edge
- * that would join two groups past the cap is skipped, so a large component splits by its strongest pairs.
+ * that would join two groups past the cap is skipped, so a large component splits by its strongest pairs. Two groups
+ * never join when a [dismissed] pair links them, so a dismissed pair never ends up in one group (R3-DEC-026).
  */
-private fun groupsFromEdges(edges: List<Edge>, tier: DuplicateTier): List<DuplicateGroup> {
+private fun groupsFromEdges(
+    edges: List<Edge>,
+    tier: DuplicateTier,
+    dismissed: Set<DuplicatePairKey>,
+): List<DuplicateGroup> {
     val parent = HashMap<String, String>()
     val members = HashMap<String, MutableList<String>>()
     fun root(id: String): String {
@@ -229,6 +246,7 @@ private fun groupsFromEdges(edges: List<Edge>, tier: DuplicateTier): List<Duplic
             val ma = members.getOrPut(ra) { mutableListOf(ra) }
             val mb = members.getOrPut(rb) { mutableListOf(rb) }
             if (ma.size + mb.size > DUPLICATE_GROUP_MAX_SIZE) return@forEach
+            if (ma.any { a -> mb.any { b -> DuplicatePairKey.of(a, b) in dismissed } }) return@forEach
             parent[rb] = ra
             ma.addAll(mb)
             members.remove(rb)

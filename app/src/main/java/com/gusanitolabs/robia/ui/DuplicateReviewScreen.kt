@@ -90,6 +90,10 @@ internal fun DuplicateReviewScreen(
                 label = pluralStringResource(R.plurals.duplicate_delete_selected, deleteIds.size, deleteIds.size),
                 enabled = deleteIds.isNotEmpty(),
                 onClick = { confirmDelete = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
             )
         }
     }

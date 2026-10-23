@@ -605,7 +605,6 @@ private fun GarmentCardShell(
     }
 }
 
-/** Photos-only tile (default Browse layout): the photo box alone, with title and metadata kept for TalkBack. */
 /** REQ-DU-03: "Possible duplicates found · N groups to review · Review", in the slot of the suggestions banner. */
 @Composable
 private fun DuplicatesBanner(groupCount: Int, onReview: () -> Unit) {
@@ -627,6 +626,7 @@ private fun DuplicatesBanner(groupCount: Int, onReview: () -> Unit) {
     }
 }
 
+/** Photos-only tile (default Browse layout): the photo box alone, with title and metadata kept for TalkBack. */
 @Composable
 private fun GarmentPhotoTile(
     item: UiWardrobeItem,
