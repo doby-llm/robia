@@ -298,13 +298,24 @@ class MaskOpsTest {
         assertEquals(0f, out[3 * w + 1], 0f) // support below the band
     }
 
-    /** Soft alpha pixels (not clearly 0 or 255) per row, counted in [cols] and averaged over [rows] (the width helper of compare.py). */
-    private fun edgeWidth(alpha: ByteArray, w: Int, rows: IntRange, cols: IntRange): Double =
-        rows.map { y -> cols.count { x -> (alpha[y * w + x].toInt() and 0xFF) in 6..249 }.toDouble() }.average()
+    /**
+     * Mean transition width (px) over [rows], measured as compare.py does: alpha strictly between 0.05 and 0.95 counted
+     * per row, halved ("two edges per row"), for the rows whose largest alpha is above 0.95. Counted within [cols] only,
+     * so each side is measured separately; the halving cancels in the band/body ratio.
+     */
+    private fun edgeWidth(alpha: ByteArray, w: Int, rows: IntRange, cols: IntRange): Double {
+        fun value(y: Int, x: Int): Float = (alpha[y * w + x].toInt() and 0xFF) / 255f
+        return rows
+            .filter { y -> (0 until w).any { x -> value(y, x) > 0.95f } }
+            .map { y -> cols.count { x -> value(y, x) > 0.05f && value(y, x) < 0.95f } / 2.0 }
+            .average()
+    }
 
     /**
      * V-K03-1: a garment with a hanger inside its top band, the hanger's edges well away from the garment sides. On each side
-     * the band's edge is no wider than the body's (≤ 1.5×), so the band-local guide and the 3-row blend do not soften it.
+     * the band's edge is no wider than the body's (≤ 1.5×). This checks that outcome on this scene only. It does not show
+     * that the band-local guide or the 3-row blend causes it: a float32 replica (outside the JVM) gives the same ratio with
+     * the pre-K03 guide and switch, so this test does not fail on the old behaviour.
      */
     @Test
     fun hangerBand_sideEdgesInTheBandAreNoWiderThanInTheBody() {
