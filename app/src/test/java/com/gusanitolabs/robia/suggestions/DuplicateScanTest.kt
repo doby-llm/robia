@@ -54,7 +54,7 @@ class DuplicateScanTest {
             entry("c", floatArrayOf(1f, 0f), "h1"),
         )
 
-        val groups = scan(items, vectors, currentPhotoHashes = mapOf("a" to "h1", "b" to "h1"))
+        val groups = scan(items, vectors, currentPhotoHashes = mapOf("a" to "h1", "b" to "h1", "c" to "h1"))
 
         assertEquals(listOf(listOf("b", "c")), groups.map { it.garmentIds })
     }
