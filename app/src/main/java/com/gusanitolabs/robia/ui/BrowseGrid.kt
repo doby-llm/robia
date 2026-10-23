@@ -220,6 +220,8 @@ internal fun BrowseWardrobeScreen(
     browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
     columns: Int = 2,
     onColumnsChange: (Int) -> Unit = {},
+    /** Null hides the Analytics icon in the filter bar. */
+    onAnalyticsClick: (() -> Unit)? = null,
 ) {
     val isSelectionMode = selectedItemIds.isNotEmpty()
     // The sign-in banner is an attention card above the grid; while it shows, cards drop their Waiting and Sign in badges.
@@ -324,6 +326,7 @@ internal fun BrowseWardrobeScreen(
                 onClearSimilar = onClearSimilar,
                 modelState = modelState,
                 onOpenSettings = onOpenSettings,
+                onAnalyticsClick = onAnalyticsClick,
             )
         }
         if (backfillProgress.remaining > 0) {
