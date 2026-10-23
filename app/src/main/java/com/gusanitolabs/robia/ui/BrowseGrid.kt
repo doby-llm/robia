@@ -71,6 +71,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -137,6 +138,11 @@ import kotlinx.coroutines.withContext
 
 private const val GRID_THUMBNAIL_MAX_EDGE_PX = 384
 
+/**
+ * Compose skips a card whose item is equal to the one it drew. The list is built once per garment or connection
+ * change and never mutated; `tags` stays a List, because no collections library is added for it.
+ */
+@Immutable
 internal data class UiWardrobeItem(
     val id: String,
     val name: String,
