@@ -33,6 +33,7 @@ import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.suggestions.CalibrationPair
+import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.calibrationMarksJson
 import com.gusanitolabs.robia.suggestions.scanCalibrationPairs
 
@@ -45,13 +46,16 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
     val itemsById = remember(items) { items.associateBy(ClothingItem::id) }
-    val ids = remember(items) { items.map(ClothingItem::id) }
+    // A same-id garment can get a new photo or category while this screen is open; its cosine then describes the old photo.
+    val signatures = remember(items) { calibrationSignatures(items) }
     var pairs by remember { mutableStateOf<List<CalibrationPair>?>(null) }
-    var marks by remember { mutableStateOf(emptyMap<Int, Boolean>()) }
-    // Keyed on the id list: a wardrobe emission that keeps the same garments keeps the marks.
-    LaunchedEffect(ids) {
-        pairs = scanCalibrationPairs(context, items, EmbeddingRepository(app.database.embeddingDao()))
+    // Keyed by the pair's garment ids, not by row, so a rescan cannot move a mark onto another pair.
+    var marks by remember { mutableStateOf(emptyMap<DuplicatePairKey, Boolean>()) }
+    // Keyed on the signatures: a wardrobe emission that changes no photo, category or archive state keeps the scan and the marks.
+    LaunchedEffect(signatures) {
+        pairs = null
         marks = emptyMap()
+        pairs = scanCalibrationPairs(context, items, EmbeddingRepository(app.database.embeddingDao()))
     }
 
     LazyColumn(
@@ -75,6 +79,7 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
                 )
             }
         } else if (loaded != null) {
+            val markRows = calibrationMarkRows(loaded, marks)
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -86,7 +91,7 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
                         onClick = {
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("application/json")
-                                .putExtra(Intent.EXTRA_TEXT, calibrationMarksJson(loaded, marks))
+                                .putExtra(Intent.EXTRA_TEXT, calibrationMarksJson(loaded, markRows))
                             context.startActivity(Intent.createChooser(send, context.getString(R.string.duplicate_export_chooser)))
                         },
                     ) {
@@ -97,7 +102,8 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
             itemsIndexed(loaded) { index, pair ->
                 val first = itemsById[pair.a] ?: return@itemsIndexed
                 val second = itemsById[pair.b] ?: return@itemsIndexed
-                val mark = marks[index]
+                val key = DuplicatePairKey.of(pair.a, pair.b)
+                val mark = marks[key]
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     modifier = Modifier.fillMaxWidth(),
@@ -118,12 +124,12 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = mark == true,
-                                onClick = { marks = toggledMark(marks, index, true) },
+                                onClick = { marks = toggledMark(marks, key, true) },
                                 label = { Text(stringResource(R.string.duplicate_mark_same)) },
                             )
                             FilterChip(
                                 selected = mark == false,
-                                onClick = { marks = toggledMark(marks, index, false) },
+                                onClick = { marks = toggledMark(marks, key, false) },
                                 label = { Text(stringResource(R.string.duplicate_mark_different)) },
                             )
                         }
@@ -135,5 +141,29 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
 }
 
 /** Tapping the mark a pair already has clears it; tapping the other one switches it. */
-private fun toggledMark(marks: Map<Int, Boolean>, index: Int, value: Boolean): Map<Int, Boolean> =
-    if (marks[index] == value) marks - index else marks + (index to value)
+internal fun <K> toggledMark(marks: Map<K, Boolean>, key: K, value: Boolean): Map<K, Boolean> =
+    if (marks[key] == value) marks - key else marks + (key to value)
+
+/** What a calibration row was computed from. A change in any field makes the row stale. */
+internal data class CalibrationSignature(
+    val id: String,
+    val photoUri: String?,
+    val categoryId: String?,
+    val isArchived: Boolean,
+)
+
+internal fun calibrationSignatures(items: List<ClothingItem>): List<CalibrationSignature> = items.map { item ->
+    CalibrationSignature(
+        id = item.id,
+        photoUri = item.photoUri,
+        // The category tag, in the "category" group of DefaultTags.
+        categoryId = item.tags.firstOrNull { tag -> tag.categoryId == "category" }?.id,
+        isArchived = item.isArchived,
+    )
+}
+
+/** The marks by row index, the form [calibrationMarksJson] reads. Each pair is looked up by its garment ids. */
+internal fun calibrationMarkRows(pairs: List<CalibrationPair>, marks: Map<DuplicatePairKey, Boolean>): Map<Int, Boolean> =
+    pairs.withIndex().mapNotNull { (index, pair) ->
+        marks[DuplicatePairKey.of(pair.a, pair.b)]?.let { mark -> index to mark }
+    }.toMap()

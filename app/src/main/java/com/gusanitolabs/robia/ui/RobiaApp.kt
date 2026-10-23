@@ -1082,9 +1082,11 @@ private fun RobiaShell(
             quietEnough = !firstRunBusy && quietEnoughSince(lastBusyTransitionMs, calmCheckMs),
         ),
     )
-    // REQ-DU-04: a one-shot scan off the main thread, at rest in Browse and after the embedding backfill settles.
-    LaunchedEffect(clothingItems.size, currentRoute, duplicateBackfill.remaining, wardrobeItemsLoading) {
-        if (wardrobeItemsLoading || currentRoute != RobiaRoute.Browse || duplicateBackfill.remaining > 0) return@LaunchedEffect
+    // REQ-DU-04: a one-shot scan off the main thread, at rest in Browse and after the embedding backfill has finished a pass
+    // with nothing left (settled); before that, remaining = 0 only means "not computed yet".
+    LaunchedEffect(clothingItems.size, currentRoute, duplicateBackfill.remaining, duplicateBackfill.settled, wardrobeItemsLoading) {
+        if (wardrobeItemsLoading || currentRoute != RobiaRoute.Browse) return@LaunchedEffect
+        if (!duplicateBackfill.settled || duplicateBackfill.remaining > 0) return@LaunchedEffect
         val count = clothingItems.size
         val now = System.currentTimeMillis()
         if (!duplicateScanDue(DuplicateScanHistory.last, count, now)) return@LaunchedEffect
