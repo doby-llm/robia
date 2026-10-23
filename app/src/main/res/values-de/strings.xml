@@ -794,4 +794,6 @@
     <string name="dev_model_benchmark_gpu">Modell-Benchmark (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Abbrechen</string>
+    <!-- FIT -->
+    <string name="filter_fit">Passform</string>
 </resources>

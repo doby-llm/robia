@@ -217,6 +217,18 @@ internal fun AdvancedFiltersScreen(
                 )
             }
             item {
+                FilterCard(
+                    title = stringResource(R.string.filter_fit),
+                    icon = null,
+                    count = filters.fit.size,
+                ) {
+                    FitFilterChips(
+                        selected = filters.fit,
+                        onFitToggled = { fit -> onFiltersChange(filters.toggleFit(fit)) },
+                    )
+                }
+            }
+            item {
                 TagFilterCard(
                     categoryId = "location",
                     title = stringResource(R.string.filter_location),
@@ -389,6 +401,26 @@ private fun FilterTagChips(
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FitFilterChips(selected: Set<FitFilter>, onFitToggled: (FitFilter) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FitFilter.entries.forEach { fit ->
+            val isSelected = fit in selected
+            FilterChip(
+                selected = isSelected,
+                onClick = { onFitToggled(fit) },
+                label = { Text(stringResource(fit.labelRes())) },
+                leadingIcon = if (isSelected) {
+                    { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                } else {
+                    null
+                },
+            )
         }
     }
 }
