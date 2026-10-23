@@ -158,6 +158,57 @@ class MaskOpsTest {
         assertTrue(out.all { kotlin.math.abs(it - 0.25f) < 1e-6f })
     }
 
+    /** A checkerboard of [cell]-pixel squares with values 20 (top-left) and 220. */
+    private fun checker(n: Int, cell: Int): FloatArray =
+        FloatArray(n * n) { i -> if (((i % n) / cell + (i / n) / cell) % 2 == 0) 20f else 220f }
+
+    @Test
+    fun resizeBilinearAntialias_matchesPilBilinearOnAnIntegerDownscale() {
+        // PIL: Image.fromarray(checker 12×12, 3 px cells).resize((4, 4), Image.BILINEAR)
+        val expected = intArrayOf(64, 162, 78, 176, 162, 89, 151, 78, 78, 151, 89, 162, 176, 78, 162, 64)
+
+        val out = MaskOps.resizeBilinearAntialias(checker(12, 3), 12, 12, 4, 4)
+
+        for (i in expected.indices) assertEquals("pixel $i", expected[i].toFloat(), out[i], 1f)
+    }
+
+    @Test
+    fun resizeBilinearAntialias_matchesPilBilinearOnANonIntegerDownscale() {
+        // PIL: Image.fromarray(checker 10×10, 2 px cells).resize((4, 4), Image.BILINEAR)
+        val expected = intArrayOf(100, 125, 125, 100, 125, 119, 119, 125, 125, 119, 119, 125, 100, 125, 125, 100)
+
+        val out = MaskOps.resizeBilinearAntialias(checker(10, 2), 10, 10, 4, 4)
+
+        for (i in expected.indices) assertEquals("pixel $i", expected[i].toFloat(), out[i], 1f)
+    }
+
+    @Test
+    fun resizeBilinearAntialias_keepsConstantPlanesConstant() {
+        val out = MaskOps.resizeBilinearAntialias(FloatArray(800 * 600) { 0.25f }, 800, 600, 320, 320)
+
+        assertTrue(out.all { kotlin.math.abs(it - 0.25f) < 1e-5f })
+    }
+
+    @Test
+    fun samInputSize_scalesTheLongEdgeToExactly1024AndRoundsTheOtherSide() {
+        // Work sizes: already 1024 long edge (no change), 1024 × 768 (no change), 800 × 600 (scaled by 1.28), portrait 600 × 800.
+        assertEquals(576 to 1024, MaskOps.samInputSize(576, 1024))
+        assertEquals(1024 to 768, MaskOps.samInputSize(1024, 768))
+        assertEquals(1024 to 768, MaskOps.samInputSize(800, 600))
+        assertEquals(768 to 1024, MaskOps.samInputSize(600, 800))
+    }
+
+    @Test
+    fun samScale_multipliesPointAndBoxCoordinatesLikeTheReference() {
+        // bench_v6.MobileSam: scale = 1024 / max(h, w); points and box corners are multiplied by it.
+        val scale = MaskOps.samScale(800, 600)
+
+        assertEquals(1.28, scale, 1e-9)
+        assertEquals(128.0, 100 * scale, 1e-6)
+        assertEquals(64.0, 50 * scale, 1e-6)
+        assertEquals(1.0, MaskOps.samScale(576, 1024), 1e-12)
+    }
+
     @Test
     fun hangerPlausibility_needsWidthAtTheTopOfTheGarment() {
         val garment = MaskBox(0, 100, 99, 400)

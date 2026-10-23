@@ -2,8 +2,10 @@ package com.gusanitolabs.robia.media.cutout
 
 import com.gusanitolabs.robia.core.model.CutoutEdges
 import com.gusanitolabs.robia.media.AlphaRefiner
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.round
 import kotlin.math.sqrt
 
 /** A pixel position in a w×h row-major mask; x grows right, y grows down. */
@@ -31,6 +33,7 @@ internal object MaskOps {
     private const val SUPPORT = 0.05f
     private const val SHARP_LOW = 0.47f
     private const val SHARP_HIGH = 0.53f
+    private const val SAM_LONG_EDGE_PX = 1024
 
     fun thresholded(soft: FloatArray, threshold: Float = 0.5f): BooleanArray = BooleanArray(soft.size) { soft[it] > threshold }
 
@@ -266,6 +269,62 @@ internal object MaskOps {
         }
         return out
     }
+
+    /**
+     * Bilinear resample as PIL's `BILINEAR` (the reference's u2netp input, D4): a triangle filter whose support grows with the
+     * downscale factor, so fine detail is averaged rather than sampled. Upscaling gives the same result as [resizeBilinear].
+     */
+    fun resizeBilinearAntialias(source: FloatArray, sw: Int, sh: Int, dw: Int, dh: Int): FloatArray {
+        val horizontal = axisWeights(sw, dw)
+        val vertical = axisWeights(sh, dh)
+        val rows = FloatArray(sh * dw)
+        for (y in 0 until sh) {
+            for (x in 0 until dw) {
+                var sum = 0f
+                for (k in horizontal.weights[x].indices) sum += source[y * sw + horizontal.first[x] + k] * horizontal.weights[x][k]
+                rows[y * dw + x] = sum
+            }
+        }
+        val out = FloatArray(dh * dw)
+        for (y in 0 until dh) {
+            for (x in 0 until dw) {
+                var sum = 0f
+                for (k in vertical.weights[y].indices) sum += rows[(vertical.first[y] + k) * dw + x] * vertical.weights[y][k]
+                out[y * dw + x] = sum
+            }
+        }
+        return out
+    }
+
+    /** Scale from a work photo to the MobileSAM input (`bench_v6.MobileSam.embed`): the long edge becomes exactly 1024. */
+    fun samScale(width: Int, height: Int): Double = SAM_LONG_EDGE_PX.toDouble() / max(width, height)
+
+    /** MobileSAM input size: both sides times [samScale], rounded half to even as Python's `round()`. */
+    fun samInputSize(width: Int, height: Int): Pair<Int, Int> {
+        val scale = samScale(width, height)
+        return round(width * scale).toInt() to round(height * scale).toInt()
+    }
+
+    /** Per output index of one axis: the first source index and the normalised weights (PIL's `BILINEAR` table). */
+    private class AxisWeights(val first: IntArray, val weights: Array<FloatArray>)
+
+    private fun axisWeights(inSize: Int, outSize: Int): AxisWeights {
+        val scale = inSize.toDouble() / outSize
+        val support = max(scale, 1.0)
+        val first = IntArray(outSize)
+        val weights = Array(outSize) { index ->
+            val center = (index + 0.5) * scale
+            val start = max((center - support + 0.5).toInt(), 0)
+            val end = min((center + support + 0.5).toInt(), inSize)
+            val raw = DoubleArray(end - start) { k -> triangle((start + k - center + 0.5) / support) }
+            val total = raw.sum()
+            first[index] = start
+            FloatArray(raw.size) { k -> (raw[k] / total).toFloat() }
+        }
+        return AxisWeights(first, weights)
+    }
+
+    private fun triangle(distance: Double): Double = max(0.0, 1.0 - abs(distance))
 
     /** Mean over a (2r+1)² window, OpenCV's default reflect-101 border, computed as two separable box sums. */
     fun boxMean(source: FloatArray, w: Int, h: Int, radius: Int): FloatArray {

@@ -2,6 +2,8 @@ package com.gusanitolabs.robia.media.cutout
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
+import com.gusanitolabs.robia.BuildConfig
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.ByteBufferExtractor
 import com.google.mediapipe.tasks.components.containers.NormalizedKeypoint
@@ -34,6 +36,8 @@ internal class MediaPipeInteractiveSelector(context: Context) : InteractiveSelec
         val input = BitmapImageBuilder(bitmap).build()
         val result = segmenter.segment(input, InteractiveSegmenterLegacy.RegionOfInterest.create(keypoint))
         val masks = result.confidenceMasks().get()
+        // D1 (R3-DEC-021): how many masks one tap returns, on the device; debug builds only.
+        if (BuildConfig.DEBUG) Log.d(CUTOUT_LOG_TAG, "s2_masks=${masks.size} x=$x y=$y")
         try {
             val mask = masks[0]
             check(mask.width == bitmap.width && mask.height == bitmap.height) { "Selection mask size does not match the photo" }

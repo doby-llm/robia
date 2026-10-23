@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.util.Log
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
 import com.gusanitolabs.robia.media.BackgroundRemovalResult
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
@@ -82,6 +83,16 @@ internal class PreciseCutoutEngine(
                                 ).alpha()
                             }
                         }
+                    }
+                    if (alpha == null) {
+                        // K02 (b): the precise result lost most of the garment, so it is not used and the chain falls back.
+                        Log.i(CUTOUT_LOG_TAG, "garment_loss=1")
+                        return@withContext BackgroundRemovalResult(
+                            originalUri = sourceUri,
+                            outputUri = sourceUri,
+                            status = BackgroundRemovalStatus.ORIGINAL_FALLBACK,
+                            timings = timings.toMap(),
+                        )
                     }
                     val composed = Bitmap.createBitmap(work.width, work.height, Bitmap.Config.ARGB_8888)
                     val cropped = try {
@@ -166,8 +177,11 @@ private class CutoutRun(
     private val w = work.width
     private val h = work.height
 
-    /** Per-pixel alpha 0..255 of the work photo. With hanger removal off, S3–S4b and their models are skipped. */
-    fun alpha(): ByteArray {
+    /**
+     * Per-pixel alpha 0..255 of the work photo, or null when the garment-loss guard (K02 (b)) rejects it. With hanger removal
+     * off, S3–S4b and their models are skipped.
+     */
+    fun alpha(): ByteArray? {
         val coarse = stage("s1") { saliency(argb) }
         if (wantsStages(sink)) sink.mask("s1_saliency", coarse, w, h)
         val selection = stage("s2") { garmentSelection(coarse, work, info.s2Points) }
@@ -175,6 +189,7 @@ private class CutoutRun(
         val hard = MaskOps.thresholded(selection)
         val garment = MaskOps.bbox(hard, w, h) ?: error("Garment selection is empty")
         val garmentArea = MaskOps.count(hard)
+        val s1Area = MaskOps.count(MaskOps.thresholded(coarse))
 
         val result = applyHangerGate(
             removeHanger = cutout.removeHanger,
@@ -201,17 +216,18 @@ private class CutoutRun(
         val alpha = stage("s5") {
             MaskOps.refineAlpha(MaskOps.luminance(argb), MaskOps.dropIslands(result, w, h), w, h, cutout.edges)
         }
+        val opaque = alpha.count { (it.toInt() and 0xFF) > 127 }
         if (wantsStages(sink)) {
             sink.mask("s5_alpha", FloatArray(alpha.size) { (alpha[it].toInt() and 0xFF) / 255f }, w, h)
-            info.opaqueFractionOfS2 = alpha.count { (it.toInt() and 0xFF) > 127 }.toDouble() / max(garmentArea, 1)
+            info.opaqueFractionOfS2 = opaque.toDouble() / max(garmentArea, 1)
         }
-        return alpha
+        return if (garmentLost(opaque, s1Area, garmentArea)) null else alpha
     }
 
-    /** S1: u2netp saliency, min-max normalised and resampled to the work size. */
+    /** S1: u2netp saliency, min-max normalised and resampled to the work size. The 320 input is antialiased as PIL does (D4). */
     private fun saliency(pixels: IntArray): FloatArray {
         val planes = CHANNEL_SHIFTS.map { MaskOps.channel(pixels, it) }
-        val resized = planes.map { MaskOps.resizeBilinear(it, w, h, SALIENCY_SIZE, SALIENCY_SIZE) }
+        val resized = planes.map { MaskOps.resizeBilinearAntialias(it, w, h, SALIENCY_SIZE, SALIENCY_SIZE) }
         val denominator = max(resized.maxOf { plane -> plane.max() }, 1e-6f)
         val input = FloatArray(3 * SALIENCY_SIZE * SALIENCY_SIZE)
         for (c in 0 until 3) {
@@ -306,45 +322,57 @@ private class CutoutRun(
             val reselected = garmentSelection(saliency(filled), filledBitmap)
             val bandBottom = HangerRemoval.bandBottom(hanger, garmentHeight, h)
             info.bandBottom = bandBottom
-            return HangerRemoval.applyBand(
+            val banded = HangerRemoval.guardedBand(
                 reselected = reselected,
                 previous = selection,
                 support = support,
                 bandBottom = bandBottom,
                 w = w,
             )
+            if (banded.guardTripped) Log.i(CUTOUT_LOG_TAG, "band_guard=1")
+            return banded.selection
         } finally {
             filledBitmap.recycle()
         }
     }
 
-    /** MobileSAM image embedding of the work photo at its work size (no resize here). */
+    /**
+     * MobileSAM image embedding of the work photo, resized so its long edge is exactly 1024 with bilinear sampling, as
+     * `bench_v6.MobileSam.embed` does (K02 (c)). Work photos up to 1024 are upscaled to it; a 1024 photo is used as it is.
+     */
     private fun samEmbedding(): FloatArray {
-        val data = FloatArray(w * h * 3)
-        for (i in 0 until w * h) {
-            for (c in 0 until 3) data[i * 3 + c] = ((argb[i] shr CHANNEL_SHIFTS[c]) and 0xFF).toFloat()
+        val (inputW, inputH) = MaskOps.samInputSize(w, h)
+        val data = FloatArray(inputW * inputH * 3)
+        for (c in 0 until 3) {
+            val plane = MaskOps.channel(argb, CHANNEL_SHIFTS[c])
+            val resized = if (inputW == w && inputH == h) plane else MaskOps.resizeBilinear(plane, w, h, inputW, inputH)
+            for (i in resized.indices) data[i * 3 + c] = resized[i].roundToInt().coerceIn(0, 255).toFloat()
         }
         return models.run(
             models.samEncoder,
-            mapOf("input_image" to FloatTensor(data, longArrayOf(h.toLong(), w.toLong(), 3))),
+            mapOf("input_image" to FloatTensor(data, longArrayOf(inputH.toLong(), inputW.toLong(), 3))),
         )[0]
     }
 
-    /** One MobileSAM decode: positive/negative points plus the box corners; the best of four masks by IoU, as probabilities. */
+    /**
+     * One MobileSAM decode: positive/negative points plus the box corners, scaled by [MaskOps.samScale]; the best of four masks
+     * by IoU, as probabilities. `orig_im_size` stays the work size, so the mask comes back at the work size (`bench_v6.predict`).
+     */
     private fun samDecode(embedding: FloatArray, box: MaskBox, positive: List<MaskPoint>, negative: List<MaskPoint>): FloatArray {
+        val scale = MaskOps.samScale(w, h).toFloat()
         val coords = ArrayList<Float>()
         val labels = ArrayList<Float>()
         for (p in positive) {
-            coords += p.x.toFloat()
-            coords += p.y.toFloat()
+            coords += p.x * scale
+            coords += p.y * scale
             labels += 1f
         }
         for (p in negative) {
-            coords += p.x.toFloat()
-            coords += p.y.toFloat()
+            coords += p.x * scale
+            coords += p.y * scale
             labels += 0f
         }
-        coords += listOf(box.x0.toFloat(), box.y0.toFloat(), box.x1.toFloat(), box.y1.toFloat())
+        coords += listOf(box.x0 * scale, box.y0 * scale, box.x1 * scale, box.y1 * scale)
         labels += listOf(2f, 3f)
         val points = labels.size
         val outputs = models.run(
@@ -410,6 +438,17 @@ internal fun applyHangerGate(
     val killMask = kill(hanger) ?: return selection
     return reselect(hanger, killMask)
 }
+
+/** Share of the garment the final opaque area must keep (K02 (b)). */
+private const val GARMENT_KEEP_FRACTION = 0.70
+
+/**
+ * The garment-loss guard (K02 (b), with the S1 comparison of R3-DEC-021 D3): the final opaque area (alpha > 127) is compared
+ * with the larger of the S1 and S2 hard areas, so a weak S2 cannot hide a lost garment. Below 70 % of that area the precise
+ * result is rejected.
+ */
+internal fun garmentLost(opaque: Int, s1Area: Int, s2Area: Int): Boolean =
+    opaque < GARMENT_KEEP_FRACTION * max(s1Area, s2Area)
 
 /**
  * Work size of a photo: a long edge above [WORK_LONG_EDGE_PX] is scaled down to it; a smaller photo keeps its size, as the

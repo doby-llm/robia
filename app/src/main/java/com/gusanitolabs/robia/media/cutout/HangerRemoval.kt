@@ -4,6 +4,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+/** Result of [HangerRemoval.guardedBand]: the S4b selection, and whether the band guard kept the first selection in the band. */
+internal class BandOutcome(val selection: FloatArray, val guardTripped: Boolean)
+
 /**
  * Hanger rules of the precise pipeline (S3, S4 and S4b), pure so they run on the JVM. Ported from `pipeline_v11.py`
  * with the BAND=1 FILL=median variant that REQ-SG-05 specifies.
@@ -11,6 +14,8 @@ import kotlin.math.roundToInt
 internal object HangerRemoval {
     const val MAX_KILL_FRACTION = 0.15f
     private const val CONTAINED_FRACTION = 0.85f
+    private const val BAND_KEEP_FRACTION = 0.85f
+    private const val OPAQUE_LEVEL = 0.5f
     private const val BOX_MARGIN_PX = 4
     private const val KILL_DILATION = 9
     private const val RING_PX = 25
@@ -153,6 +158,28 @@ internal object HangerRemoval {
                 else -> previous[i]
             }
         }
+
+    /**
+     * The band rule with its guard (K02 (a)). Inside the band (rows above [bandBottom], outside [support]) the re-selection may
+     * keep at most 15 % of the opaque pixels the first selection had there. When it keeps less than 85 % of them, the first
+     * selection is used inside the band as well ([BandOutcome.guardTripped], logged as `band_guard=1`).
+     */
+    fun guardedBand(reselected: FloatArray, previous: FloatArray, support: BooleanArray, bandBottom: Int, w: Int): BandOutcome {
+        var previousOpaque = 0
+        var kept = 0
+        for (i in 0 until min(bandBottom * w, previous.size)) {
+            if (support[i] || previous[i] <= OPAQUE_LEVEL) continue
+            previousOpaque++
+            if (reselected[i] > OPAQUE_LEVEL) kept++
+        }
+        val tripped = previousOpaque > 0 && kept < BAND_KEEP_FRACTION * previousOpaque
+        val selection = if (tripped) {
+            applyBand(previous, previous, support, bandBottom, w)
+        } else {
+            applyBand(reselected, previous, support, bandBottom, w)
+        }
+        return BandOutcome(selection, tripped)
+    }
 
     private val SHIFTS = intArrayOf(16, 8, 0)
 
