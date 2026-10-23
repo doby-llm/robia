@@ -146,6 +146,8 @@ internal fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var benchmarkText by remember { mutableStateOf<String?>(null) }
     var benchmarkRunning by remember { mutableStateOf(false) }
+    var benchmarkGpuText by remember { mutableStateOf<String?>(null) }
+    var benchmarkGpuRunning by remember { mutableStateOf(false) }
     var showBrowseLayoutDialog by rememberSaveable { mutableStateOf(false) }
     val cutoutSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val cutoutPackState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
@@ -258,7 +260,7 @@ internal fun SettingsScreen(
                             trailingContent = {
                                 Row {
                                     TextButton(
-                                        enabled = !benchmarkRunning,
+                                        enabled = !benchmarkRunning && !benchmarkGpuRunning,
                                         onClick = {
                                             benchmarkRunning = true
                                             scope.launch {
@@ -266,6 +268,7 @@ internal fun SettingsScreen(
                                                     DevBenchmark(
                                                         context = context,
                                                         holder = app.embeddingEngineHolder,
+                                                        modelStore = app.modelStore,
                                                         syncLog = app.restoreSyncLogRepository,
                                                     ).measure()
                                                 } catch (failure: Exception) {
@@ -284,6 +287,57 @@ internal fun SettingsScreen(
                                     TextButton(
                                         enabled = benchmarkText != null && !benchmarkRunning,
                                         onClick = { clipboard.setText(AnnotatedString(benchmarkText.orEmpty())) },
+                                    ) {
+                                        Text(stringResource(R.string.dev_copy))
+                                    }
+                                }
+                            },
+                        )
+                        Divider()
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dev_model_benchmark_gpu)) },
+                            supportingContent = {
+                                val result = benchmarkGpuText
+                                if (benchmarkGpuRunning) {
+                                    Text(stringResource(R.string.dev_benchmark_running))
+                                } else if (result != null) {
+                                    Text(
+                                        text = result,
+                                        fontFamily = FontFamily.Monospace,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                Row {
+                                    TextButton(
+                                        enabled = !benchmarkRunning && !benchmarkGpuRunning,
+                                        onClick = {
+                                            benchmarkGpuRunning = true
+                                            scope.launch {
+                                                benchmarkGpuText = try {
+                                                    DevBenchmark(
+                                                        context = context,
+                                                        holder = app.embeddingEngineHolder,
+                                                        modelStore = app.modelStore,
+                                                        syncLog = app.restoreSyncLogRepository,
+                                                    ).measure(useGpu = true)
+                                                } catch (failure: Exception) {
+                                                    context.getString(
+                                                        R.string.dev_benchmark_failed,
+                                                        failure.message ?: failure.javaClass.simpleName,
+                                                    )
+                                                } finally {
+                                                    benchmarkGpuRunning = false
+                                                }
+                                            }
+                                        },
+                                    ) {
+                                        Text(stringResource(R.string.dev_run))
+                                    }
+                                    TextButton(
+                                        enabled = benchmarkGpuText != null && !benchmarkGpuRunning,
+                                        onClick = { clipboard.setText(AnnotatedString(benchmarkGpuText.orEmpty())) },
                                     ) {
                                         Text(stringResource(R.string.dev_copy))
                                     }

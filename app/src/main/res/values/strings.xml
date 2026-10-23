@@ -790,4 +790,6 @@
     <string name="cutout_method_experimental_hint">May remove parts of the garment. Check each result.</string>
     <!-- ED1 -->
     <string name="editor_smart_whole_garment">That selects the whole garment. Tap the background or hanger pieces, or use the brush.</string>
+    <!-- GPU -->
+    <string name="dev_model_benchmark_gpu">Model benchmark (GPU)</string>
 </resources>
