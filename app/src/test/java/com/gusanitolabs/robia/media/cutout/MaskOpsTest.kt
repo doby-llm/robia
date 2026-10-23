@@ -166,7 +166,8 @@ class MaskOpsTest {
      * Expected values generated with PIL 11.1.0 (numpy 2.2.4) by these commands, run from any directory:
      * 12×12 with 3 px cells: `python3 -I -c "import numpy as np; from PIL import Image; y, x = np.indices((12, 12)); a = np.where(((x // 3) + (y // 3)) % 2 == 0, 20, 220).astype(np.uint8); print(np.asarray(Image.fromarray(a).resize((4, 4), Image.BILINEAR)).ravel().tolist())"`
      * 10×10 with 2 px cells: the same with `np.indices((10, 10))` and `// 2` in both places.
-     * The old resizeBilinear was NOT run against these values, so this test does not show that it fails them.
+     * The old resizeBilinear is run against the same 12×12 input in resizeBilinear_doesNotMatchPilBilinearOnTheCheckerDownscale,
+     * which shows it misses these values.
      */
     @Test
     fun resizeBilinearAntialias_matchesPilBilinearOnAnIntegerDownscale() {
@@ -176,6 +177,22 @@ class MaskOpsTest {
         val out = MaskOps.resizeBilinearAntialias(checker(12, 3), 12, 12, 4, 4)
 
         for (i in expected.indices) assertEquals("pixel $i", expected[i].toFloat(), out[i], 1f)
+    }
+
+    /**
+     * D4 proof (R3-DEC-025): the OLD resizeBilinear, on the same 12×12 checker as the PIL test above, must NOT produce the PIL
+     * values. It samples each 3×3 cell's centre, so it returns 20/220 where PIL returns 64..176; the largest gap is 69
+     * (pixels 5, 6, 9, 10). Checked outside the JVM with a float32 replica of the old loop against PIL 11.1.0 (numpy 2.2.4).
+     */
+    @Test
+    fun resizeBilinear_doesNotMatchPilBilinearOnTheCheckerDownscale() {
+        // PIL: Image.fromarray(checker 12×12, 3 px cells).resize((4, 4), Image.BILINEAR), as in the PIL test above.
+        val pil = intArrayOf(64, 162, 78, 176, 162, 89, 151, 78, 78, 151, 89, 162, 176, 78, 162, 64)
+
+        val old = MaskOps.resizeBilinear(checker(12, 3), 12, 12, 4, 4)
+
+        val matches = pil.indices.all { kotlin.math.abs(old[it] - pil[it]) <= 1f }
+        assertFalse("old resizeBilinear = ${old.toList()}, PIL = ${pil.toList()}", matches)
     }
 
     @Test
