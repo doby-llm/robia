@@ -37,11 +37,11 @@
 
 ## K02 — Precise engine fixes from the device dumps
 - **Reqs:** REQ-CU-02 · **Predecessors:** K01, G-ADB1 · **Successors:** K03 · **Independent review: yes**
-- **Files:** `media/cutout/PreciseCutoutEngine.kt`; `media/cutout/HangerRemoval.kt`; `media/cutout/MaskOps.kt`; `media/cutout/InteractiveSelector.kt`; `media/cutout/CutoutEngineRegistry.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/HangerRemovalTest.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/MaskOpsTest.kt`; new `app/src/test/java/com/gusanitolabs/robia/media/cutout/GarmentLossGuardTest.kt`; `media/cutout/CutoutDebugDump.kt`; `media/PhotoBackgroundRemover.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/CutoutFallbackChainTest.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/CutoutDebugDumpTest.kt`.
+- **Files:** `media/cutout/PreciseCutoutEngine.kt`; `media/cutout/HangerRemoval.kt`; `media/cutout/MaskOps.kt`; `media/cutout/InteractiveSelector.kt`; `media/cutout/CutoutEngineRegistry.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/HangerRemovalTest.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/MaskOpsTest.kt`; new `app/src/test/java/com/gusanitolabs/robia/media/cutout/GarmentLossGuardTest.kt`; `media/cutout/CutoutDebugDump.kt`; `media/PhotoBackgroundRemover.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/CutoutFallbackChainTest.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/CutoutDebugDumpTest.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/InteractiveSelectionSeamTest.kt`.
 - **In scope:** Closed list (a)–(c) of REQ-CU-02 plus the defects recorded in the G-ADB1 PLAN-CHANGE (d).
 - **Out of scope:** Hanger-band edges (K03); editor; any new model; default method (stays Standard).
 - **Acceptance:** V-K02-1, V-K02-2, V-K02-3, V-K02-4, V-K02-5.
-- **PLAN-CHANGE 2026-10-23 (coordinator):** the four files added to Files are required by brief steps 2 and 5 (garment_loss chain reason, report.json keys). Denominator decision: R3-DEC-022.
+- **PLAN-CHANGE 2026-10-23 (coordinator):** the four files added to Files are required by brief steps 2 and 5 (garment_loss chain reason, report.json keys). Denominator decision: R3-DEC-022. Round 2: `InteractiveSelectionSeamTest.kt` added to Files (R3-DEC-025).
 - **Closed defect list (G-ADB1):** R3-DEC-021 (PLAN-CHANGE 2026-10-23): D1 (hypothesis, verify first), D2, D3, D4 (hypothesis), D5 (hypothesis, re-check after D1).
 
 ## K03 — Crisp edges in the hanger band
