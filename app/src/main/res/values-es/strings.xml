@@ -794,6 +794,8 @@
     <string name="dev_model_benchmark_gpu">Prueba del modelo (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Cancelar</string>
+    <!-- ED2 -->
+    <string name="refine_redo">Rehacer</string>
     <!-- DUP1 -->
     <plurals name="duplicate_banner_groups">
         <item quantity="one">Posibles duplicados encontrados · %1$d grupo por revisar</item>

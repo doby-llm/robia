@@ -701,6 +701,7 @@ fun AddEditClothingScreen(
                     )
                 }
             },
+            keepsHistory = !isEditing,
         )
     }
 
