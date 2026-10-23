@@ -1,7 +1,6 @@
 package com.gusanitolabs.robia.ui
 
 import android.content.Context
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -44,7 +43,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -87,7 +85,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -120,11 +117,7 @@ import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.data.toDomain
-import com.gusanitolabs.robia.media.ImagePipeline
-import com.gusanitolabs.robia.media.ImagePriority
 import com.gusanitolabs.robia.media.ImagePurpose
-import com.gusanitolabs.robia.media.ImageRequest
-import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.SearchMode
 import com.gusanitolabs.robia.suggestions.garmentTextInput
@@ -136,7 +129,6 @@ import com.gusanitolabs.robia.sync.SyncAttention
 import com.gusanitolabs.robia.sync.SyncAttentionKind
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -255,8 +247,6 @@ internal fun BrowseWardrobeScreen(
             scrollAnchor.intValue = -1
         }
     }
-    BrowseImagePrefetch(items = items, gridState = gridState)
-
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Fixed(effectiveColumns),
@@ -411,65 +401,6 @@ internal fun BrowseWardrobeScreen(
         }
     }
 }
-
-@Composable
-private fun BrowseImagePrefetch(
-    items: List<UiWardrobeItem>,
-    gridState: LazyGridState,
-) {
-    val context = LocalContext.current
-    val pipeline = remember(context) { ImagePipeline.shared(context) }
-    LaunchedEffect(pipeline, items, gridState) {
-        try {
-            var previousFirstIndex = 0
-            snapshotFlow {
-                gridState.layoutInfo.visibleItemsInfo
-                    .map { it.index }
-                    .let { visible ->
-                        visible.minOrNull().orDefault(0) to visible.maxOrNull().orDefault(-1)
-                    }
-            }.collectLatest { (firstIndex, lastIndex) ->
-                if (lastIndex < 0) return@collectLatest
-                if (firstIndex != previousFirstIndex) {
-                    pipeline.cancelPrefetch()
-                }
-                val movingForward = firstIndex >= previousFirstIndex
-                previousFirstIndex = firstIndex
-                val gridIndices = if (movingForward) {
-                    (lastIndex + 1)..(lastIndex + GRID_PREFETCH_ITEM_COUNT)
-                } else {
-                    (firstIndex - GRID_PREFETCH_ITEM_COUNT until firstIndex).reversed()
-                }
-                gridIndices
-                    .map { it - 1 } // index zero is the full-width filter row
-                    .filter { it in items.indices }
-                    .take(GRID_PREFETCH_ITEM_COUNT)
-                    .mapNotNull { items.getOrNull(it) }
-                    .mapNotNull { item ->
-                        val uri = item.photoUri?.takeIf(String::isNotBlank) ?: return@mapNotNull null
-                        ImageRequest(
-                            sourceUri = Uri.parse(uri),
-                            purpose = ImagePurpose.Browse,
-                            targetBounds = ImageTargetBounds(
-                                GRID_THUMBNAIL_MAX_EDGE_PX * 3 / 4,
-                                GRID_THUMBNAIL_MAX_EDGE_PX,
-                            ),
-                            sourceRevision = "${item.id}:$uri",
-                            priority = ImagePriority.Prefetch,
-                            maxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX,
-                        )
-                    }
-                    .forEach(pipeline::prefetch)
-            }
-        } finally {
-            pipeline.cancelPrefetch()
-        }
-    }
-}
-
-private fun Int?.orDefault(default: Int): Int = this ?: default
-
-private const val GRID_PREFETCH_ITEM_COUNT = 6
 
 @Composable
 private fun BrowseWardrobeLoadingCard() {

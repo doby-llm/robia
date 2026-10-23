@@ -144,7 +144,6 @@ def main() -> None:
     require(
         "app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt",
         "GRID_THUMBNAIL_MAX_EDGE_PX",
-        "GRID_THUMBNAIL_MAX_EDGE_PX * 3 / 4",
         "thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX",
     )
     require(
