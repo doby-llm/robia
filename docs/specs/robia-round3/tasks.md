@@ -41,6 +41,7 @@
 - **In scope:** Closed list (a)–(c) of REQ-CU-02 plus the defects recorded in the G-ADB1 PLAN-CHANGE (d).
 - **Out of scope:** Hanger-band edges (K03); editor; any new model; default method (stays Standard).
 - **Acceptance:** V-K02-1, V-K02-2, V-K02-3, V-K02-4, V-K02-5.
+- **Closed defect list (G-ADB1):** R3-DEC-021 (PLAN-CHANGE 2026-10-23): D1 (hypothesis, verify first), D2, D3, D4 (hypothesis), D5 (hypothesis, re-check after D1).
 
 ## K03 — Crisp edges in the hanger band
 - **Reqs:** REQ-CU-03 · **Predecessors:** K02 · **Successors:** OR1 · **Independent review: yes**
@@ -62,6 +63,7 @@
 - **In scope:** Operation log with checkpoints for smart/brush/reset, "Cut out again" photos as cache temp files, Undo + Redo buttons, 64 MB budget; editor-wiring defects from the G-ADB1 PLAN-CHANGE.
 - **Out of scope:** Keeping history after the editor closes; Keep-mode restore (OR3).
 - **Acceptance:** V-ED2-1, V-ED2-2, V-ED2-3, V-ED2-4, V-ED2-D.
+- **G-ADB1 editor findings (R3-DEC-021):** none supported; step 4 has no defect to fix. Scope is the history only.
 
 ## GPU — Developer benchmark: EmbeddingGemma 2 on GPU
 - **Reqs:** REQ-OF-02 · **Predecessors:** W0 · **Successors:** DUP1, ED2, K02, PRF
