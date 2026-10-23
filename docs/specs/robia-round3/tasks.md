@@ -117,10 +117,11 @@
 
 ## DUP1 — Duplicate finder: same-photo tier, banner, review, calibration screen
 - **Reqs:** REQ-DU-01 (tier 1), REQ-DU-03, REQ-DU-04, G-DUP · **Predecessors:** VIS, GPU · **Successors:** DUP2, OUT, SEL
-- **Files:** new `suggestions/DuplicateScan.kt`; new `ui/DuplicateReviewScreen.kt`; new `ui/DuplicateCalibrationScreen.kt`; `ui/BrowseGrid.kt`; `ui/RobiaApp.kt`; `ui/SettingsScreen.kt`; `data/EmbeddingRepository.kt`; new `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`.
+- **Files:** new `suggestions/DuplicateScan.kt`; new `ui/DuplicateReviewScreen.kt`; new `ui/DuplicateCalibrationScreen.kt`; `ui/BrowseGrid.kt`; `ui/RobiaApp.kt`; `ui/SettingsScreen.kt`; `data/EmbeddingRepository.kt`; `ui/ReviewScaffold.kt` (destructive colour parameter only); new `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`.
 - **In scope:** Pure scan (exact input_hash tier + scored candidate pairs), banner, review with Keep/Delete, session-only "Not duplicates", developer calibration list.
 - **Out of scope:** Persisted dismissals and the cosine tier (DUP2).
 - **Acceptance:** V-DUP1-1, V-DUP1-2, V-DUP1-3, V-DUP1-D.
+- **PLAN-CHANGE 2026-10-23 (review round 1, NOT SAFE on PR #152):** ReviewScaffold.kt added to Files (R3-DEC-026). Required: dismissed pairs never merge across groups; banner hidden while merge proposal, review-complete overlay or any sync attention card shows; Delete in error colour; KDoc; scan entry points do not throw.
 
 ## DUP2 — Duplicates: "very similar" tier and remembered dismissals
 - **Reqs:** REQ-DU-01 (tier 2), REQ-DU-02 · **Predecessors:** DUP1, G-DUP, OR2, ZIP · **Successors:** — · **Independent review: yes**
