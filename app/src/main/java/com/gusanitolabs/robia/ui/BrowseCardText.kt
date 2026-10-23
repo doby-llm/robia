@@ -81,6 +81,37 @@ internal fun cardBadgeFor(status: GarmentSyncStatus, photoNeedsAttention: Boolea
     }
 }
 
+/** Statuses that wait for an upload to Drive. */
+private val WAITING_BADGE_STATUSES = setOf(
+    GarmentSyncStatus.Dirty,
+    GarmentSyncStatus.Queued,
+    GarmentSyncStatus.FailedRetryable,
+)
+
+/**
+ * The badge on a Browse card, after `resolveForConnection`. Two rules sit on top of [cardBadgeFor]:
+ * without Drive added (NotConfigured or Disabled) nothing waits, so waiting statuses show no badge;
+ * while the sign-in banner shows, no card shows Waiting or Sign in. Photo-restore attention is kept.
+ */
+internal fun browseCardBadgeFor(
+    status: GarmentSyncStatus,
+    photoNeedsAttention: Boolean,
+    driveEnabled: Boolean,
+    signInBannerShown: Boolean,
+): CardBadge? {
+    val hiddenByDrive = !driveEnabled && status in WAITING_BADGE_STATUSES
+    val hiddenByBanner = signInBannerShown &&
+        (status in WAITING_BADGE_STATUSES || status == GarmentSyncStatus.AuthBlocked)
+    // A hidden sync status reads as LocalOnly, which has no badge; photo attention still applies.
+    val shownStatus = if (hiddenByDrive || hiddenByBanner) GarmentSyncStatus.LocalOnly else status
+    return cardBadgeFor(shownStatus, photoNeedsAttention)
+}
+
+/** From this many columns the per-card cloud pill shows only its icon; the label stays as its content description. */
+internal const val ICON_ONLY_BADGE_MIN_COLUMNS = 4
+
+internal fun badgeIconOnly(columns: Int): Boolean = columns >= ICON_ONLY_BADGE_MIN_COLUMNS
+
 /** Keeps a shown badge for [BADGE_HOLD_MILLIS] so it does not blink; a badge that was not shown yet appears at once. */
 internal fun visibleBadge(previous: CardBadge?, shownAtMs: Long, current: CardBadge?, nowMs: Long): CardBadge? =
     if (previous != null && nowMs - shownAtMs < BADGE_HOLD_MILLIS) previous else current

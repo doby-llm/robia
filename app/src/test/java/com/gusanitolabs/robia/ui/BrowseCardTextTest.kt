@@ -6,12 +6,15 @@ import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Error
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import java.text.Collator
 import java.util.Locale
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BrowseCardTextTest {
@@ -99,5 +102,73 @@ class BrowseCardTextTest {
         assertEquals(badgeFor(GarmentSyncStatus.AuthBlocked), cardBadgeFor(GarmentSyncStatus.AuthBlocked, photoNeedsAttention = true))
         assertEquals(waiting, cardBadgeFor(GarmentSyncStatus.Dirty, photoNeedsAttention = false))
         assertNull(cardBadgeFor(GarmentSyncStatus.Synced, photoNeedsAttention = false))
+    }
+
+    private val waiting = CardBadge(Icons.Rounded.CloudUpload, R.string.badge_waiting, isError = false)
+    private val uploading = CardBadge(Icons.Rounded.CloudUpload, R.string.badge_uploading, isError = false)
+    private val signIn = CardBadge(Icons.Rounded.CloudOff, R.string.badge_sign_in, isError = true)
+    private val needsAttention = CardBadge(Icons.Rounded.Error, R.string.badge_needs_attention, isError = true)
+    private val waitingStatuses = listOf(GarmentSyncStatus.Dirty, GarmentSyncStatus.Queued, GarmentSyncStatus.FailedRetryable)
+
+    @Test
+    fun driveIsNotAddedOnlyWhenNotConfiguredOrDisabled() {
+        assertEquals(
+            setOf(DriveSyncConnectionStatus.NotConfigured, DriveSyncConnectionStatus.Disabled),
+            DriveSyncConnectionStatus.entries.filterNot { it.isDriveEnabled }.toSet(),
+        )
+    }
+
+    @Test
+    fun withoutDriveNoWaitingStatusShowsAWaitingBadge() {
+        listOf(DriveSyncConnectionStatus.NotConfigured, DriveSyncConnectionStatus.Disabled).forEach { drive ->
+            waitingStatuses.forEach { status ->
+                assertNull(
+                    "$drive $status",
+                    browseCardBadgeFor(status, photoNeedsAttention = false, driveEnabled = drive.isDriveEnabled, signInBannerShown = false),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun withDriveWaitingStillShowsForUnsyncedGarments() {
+        waitingStatuses.forEach { status ->
+            assertEquals(
+                status.name,
+                waiting,
+                browseCardBadgeFor(status, photoNeedsAttention = false, driveEnabled = true, signInBannerShown = false),
+            )
+        }
+    }
+
+    @Test
+    fun uploadingAndPhotoAttentionAreNotHiddenByDriveOrBanner() {
+        assertEquals(uploading, browseCardBadgeFor(GarmentSyncStatus.Running, false, driveEnabled = false, signInBannerShown = true))
+        assertEquals(needsAttention, browseCardBadgeFor(GarmentSyncStatus.NeedsUserAction, false, driveEnabled = false, signInBannerShown = true))
+        assertEquals(needsAttention, browseCardBadgeFor(GarmentSyncStatus.Synced, true, driveEnabled = false, signInBannerShown = false))
+        assertEquals(needsAttention, browseCardBadgeFor(GarmentSyncStatus.Dirty, true, driveEnabled = false, signInBannerShown = false))
+        assertEquals(needsAttention, browseCardBadgeFor(GarmentSyncStatus.AuthBlocked, true, driveEnabled = true, signInBannerShown = true))
+        assertNull(browseCardBadgeFor(GarmentSyncStatus.Synced, false, driveEnabled = true, signInBannerShown = true))
+    }
+
+    @Test
+    fun signedOutSignInBadgeStaysWhenTheBannerIsNotShown() {
+        // Disconnected maps a pending garment to AuthBlocked in resolveForConnection; Drive is set up, so the rule does not apply.
+        assertEquals(signIn, browseCardBadgeFor(GarmentSyncStatus.AuthBlocked, false, driveEnabled = true, signInBannerShown = false))
+    }
+
+    @Test
+    fun whileTheSignInBannerShowsNoCardShowsWaitingOrSignIn() {
+        (waitingStatuses + GarmentSyncStatus.AuthBlocked).forEach { status ->
+            assertNull(status.name, browseCardBadgeFor(status, false, driveEnabled = true, signInBannerShown = true))
+        }
+    }
+
+    @Test
+    fun iconOnlyPillFromFourColumns() {
+        assertFalse(badgeIconOnly(2))
+        assertFalse(badgeIconOnly(3))
+        assertTrue(badgeIconOnly(4))
+        assertTrue(badgeIconOnly(5))
     }
 }
