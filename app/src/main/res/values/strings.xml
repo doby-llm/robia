@@ -792,4 +792,6 @@
     <string name="editor_smart_whole_garment">That selects the whole garment. Tap the background or hanger pieces, or use the brush.</string>
     <!-- GPU -->
     <string name="dev_model_benchmark_gpu">Model benchmark (GPU)</string>
+    <!-- BAT2 -->
+    <string name="cutout_pack_cancel">Cancel</string>
 </resources>

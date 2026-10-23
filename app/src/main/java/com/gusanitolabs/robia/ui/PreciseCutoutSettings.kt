@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -38,6 +39,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.model.BatchCutoutMode
@@ -45,8 +48,10 @@ import com.gusanitolabs.robia.core.model.CutoutEdges
 import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.core.model.HangerSensitivity
 import com.gusanitolabs.robia.core.model.RobiaSettings
+import com.gusanitolabs.robia.suggestions.model.ModelDownloadWorker
 import com.gusanitolabs.robia.suggestions.model.ModelFailure
 import com.gusanitolabs.robia.suggestions.model.ModelState
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private const val BYTES_PER_MB = 1_048_576L
@@ -75,15 +80,21 @@ private enum class OpenCutoutChoice { Method, HangerDetection, Edges, BatchSpeed
 
 /**
  * Sub-screen behind Settings > Smart features > Precise cutout. The download follows the Smart suggestions model:
- * Wi-Fi first, then the mobile-data confirmation. Downloads and deletes run on the app scope, so leaving the screen
- * does not stop them.
+ * Wi-Fi first, then the mobile-data confirmation. Downloads run as unique WorkManager work
+ * ([ModelDownloadWorker.enqueueCutoutPack]), so leaving the screen does not stop them; deletes run on the app scope.
  */
 @Composable
 internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
     val settings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
-    val packState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
+    val packStored by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
+    val packQueued by remember(context) {
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(ModelDownloadWorker.CUTOUT_PACK_WORK_NAME)
+            .map { infos -> infos.any { info -> info.state == WorkInfo.State.ENQUEUED } }
+    }.collectAsState(initial = false)
+    // Queued work that the network constraint holds back shows as waiting for Wi-Fi (same rule as Smart suggestions).
+    val packState = settingsModelState(packStored, packQueued)
     var showMobileDataConfirm by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
     var openChoice by rememberSaveable { mutableStateOf<OpenCutoutChoice?>(null) }
@@ -91,10 +102,11 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
     val packReady = packState is ModelState.Ready
     val hangerAvailable = cutoutHangerOptionsAvailable(packReady, settings.cutoutEngine)
     val hangerDetectionShown = hangerDetectionVisible(packReady, settings.cutoutEngine, settings.cutoutRemoveHanger)
-    // Without allowMetered the store holds the pack in WaitingForWifi on a metered network; the user then chooses mobile data.
+    // Without allowMetered the work waits for Wi-Fi; the user then chooses mobile data.
     val startDownload: (Boolean) -> Unit = { allowMetered ->
-        app.appScope.launch { app.cutoutPack.download(allowMetered = allowMetered) }
+        ModelDownloadWorker.enqueueCutoutPack(context, allowMobileData = allowMetered)
     }
+    val cancelDownload: () -> Unit = { ModelDownloadWorker.cancelCutoutPack(context) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -123,6 +135,9 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
                             OutlinedButton(onClick = { showMobileDataConfirm = true }) {
                                 Text(stringResource(R.string.model_use_mobile_data))
                             }
+                            OutlinedButton(onClick = cancelDownload) {
+                                Text(stringResource(R.string.cutout_pack_cancel))
+                            }
                         }
                         is ModelState.Downloading -> {
                             Text(
@@ -136,6 +151,9 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
                                 progress = { if (state.total > 0) state.bytes.toFloat() / state.total else 0f },
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                            OutlinedButton(onClick = cancelDownload) {
+                                Text(stringResource(R.string.cutout_pack_cancel))
+                            }
                         }
                         ModelState.Verifying -> Text(stringResource(R.string.model_state_verifying))
                         is ModelState.Ready -> {
