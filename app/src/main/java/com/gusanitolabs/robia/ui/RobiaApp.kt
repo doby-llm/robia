@@ -949,7 +949,8 @@ private fun RobiaShell(
         .filter { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
         .take(MAX_BROWSE_ATTENTION_CARDS)
     val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
-    val items = remember(context, clothingItems, syncState, online, needsWardrobeUiModels) {
+    // Keyed on the connection status, the only sync input the items read: other sync emissions keep the list.
+    val items = remember(context, clothingItems, syncState.connectionStatus, online, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, online, context) else emptyList()
     }
     val filteredItems = remember(items, browseFilters, mainColors, needsWardrobeUiModels) {

@@ -272,7 +272,7 @@ class RegressionSourceContractTest {
         val browseGrid = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
         val browseScreen = browseGrid
             .substringAfter("fun BrowseWardrobeScreen(")
-            .substringBefore("@Composable\nprivate fun BrowseImagePrefetch(")
+            .substringBefore("@Composable\nprivate fun BrowseWardrobeLoadingCard(")
 
         assertTrue(browseScreen.contains("isInitialLoading: Boolean"))
         assertTrue(browseScreen.contains("if (isInitialLoading)"))
@@ -1085,7 +1085,7 @@ class RegressionSourceContractTest {
         val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
         val browseScreen = browseGrid
             .substringAfter("fun BrowseWardrobeScreen(")
-            .substringBefore("@Composable\nprivate fun BrowseImagePrefetch(")
+            .substringBefore("@Composable\nprivate fun BrowseWardrobeLoadingCard(")
 
         // The card's long-press still toggles the item, and it is the only thing that arms the drag.
         assertTrue(browseScreen.contains("dragArm.arm(item.id, selectedItemIds)"))

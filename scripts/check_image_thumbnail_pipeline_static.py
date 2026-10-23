@@ -76,6 +76,19 @@ def main() -> None:
     require("app/src/main/res/xml/file_paths.xml", "name=\"private_thumbnails\"", "path=\"robia_thumbnails/\"")
 
     require(
+        "app/src/main/java/com/gusanitolabs/robia/media/ImagePipelineContracts.kt",
+        "fun interface ImageTelemetrySink",
+        "val isEnabled: Boolean",
+        "class ImageTelemetryRecorder",
+        "internal fun defaultImageTelemetrySink()",
+        "BuildConfig.DEBUG",
+    )
+    forbid(
+        "app/src/main/java/com/gusanitolabs/robia/media/ImagePipeline.kt",
+        "val stats = cacheStats()",
+        "telemetry.record(",
+    )
+    require(
         "app/src/main/java/com/gusanitolabs/robia/ui/BoundedGarmentImage.kt",
         "thumbnailMaxEdgePx: Int?",
         "ImagePipeline.shared",
@@ -108,6 +121,10 @@ def main() -> None:
         "evictionCount.addAndGet",
         "diskCacheEntries = diskCacheEntryCount()",
         "errorRecorded",
+        "telemetryRecorder.record",
+        "telemetryScope",
+        "readStats = ::cacheStats",
+        "trackEvictions = telemetry.isEnabled",
     )
     for stage in REQUIRED_IMAGE_STAGES:
         if f'"{stage}"' not in pipeline:
@@ -125,11 +142,13 @@ def main() -> None:
             raise AssertionError(f"{relative} must use BoundedGarmentImage instead of direct ImageView previews")
 
     require(
-        "app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt",
+        "app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt",
         "GRID_THUMBNAIL_MAX_EDGE_PX",
-        "DETAIL_DISPLAY_MAX_EDGE_PX",
-        "GRID_THUMBNAIL_MAX_EDGE_PX * 3 / 4",
         "thumbnailMaxEdgePx = GRID_THUMBNAIL_MAX_EDGE_PX",
+    )
+    require(
+        "app/src/main/java/com/gusanitolabs/robia/ui/ItemDetailScreen.kt",
+        "DETAIL_DISPLAY_MAX_EDGE_PX",
         "thumbnailMaxEdgePx = DETAIL_DISPLAY_MAX_EDGE_PX",
     )
     require(
@@ -140,7 +159,6 @@ def main() -> None:
     require(
         "app/src/main/java/com/gusanitolabs/robia/ui/AddEditClothingScreen.kt",
         "EDITOR_PREVIEW_MAX_EDGE_PX",
-        "QUICK_EDIT_PREVIEW_MAX_EDGE_PX",
         "ImagePurpose.Editor",
     )
     require(

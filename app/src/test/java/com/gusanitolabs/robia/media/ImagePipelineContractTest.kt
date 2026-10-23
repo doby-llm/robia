@@ -121,4 +121,61 @@ class ImagePipelineContractTest {
             assertTrue(messages.any { message -> message.contains("stage=$stage") })
         }
     }
+
+    @Test
+    fun releaseSinkReadsNoCacheStatsAndDispatchesNoWork() {
+        var statsReads = 0
+        var dispatched = 0
+        val recorder = ImageTelemetryRecorder(
+            sink = NoOpImageTelemetrySink,
+            readStats = {
+                statsReads += 1
+                ImageCacheStats(null, null, emptySet(), null, null)
+            },
+            dispatch = { dispatched += 1 },
+        )
+
+        repeat(100) {
+            recorder.record { listOf(placeholderEvent()) }
+        }
+
+        assertEquals(0, statsReads)
+        assertEquals(0, dispatched)
+    }
+
+    @Test
+    fun developerSinkStillReceivesEventsWithCacheStats() {
+        val messages = mutableListOf<String>()
+        var statsReads = 0
+        val recorder = ImageTelemetryRecorder(
+            sink = SampledImageTelemetrySink(sampleEvery = 1) { _, message -> messages += message },
+            readStats = {
+                statsReads += 1
+                ImageCacheStats(
+                    memoryCacheBytes = 1024L,
+                    memoryCacheEntries = 2,
+                    memoryCacheKeys = setOf("a", "b"),
+                    diskCacheBytes = 2048L,
+                    diskCacheEntries = 3,
+                )
+            },
+            dispatch = { work -> work() },
+        )
+
+        recorder.record { stats -> listOf(placeholderEvent(stats.diskCacheEntries)) }
+
+        assertEquals(1, statsReads)
+        assertEquals(1, messages.size)
+        assertTrue(messages.single().contains("stage=placeholder_visible"))
+        assertTrue(messages.single().contains("diskCacheEntries=3"))
+    }
+
+    private fun placeholderEvent(diskCacheEntries: Int? = null) = ImageTelemetryEvent(
+        stage = "placeholder_visible",
+        requestId = "hashed-request-id",
+        purpose = ImagePurpose.Browse,
+        priority = ImagePriority.Visible,
+        target = ImageTargetBounds(288, 384),
+        diskCacheEntries = diskCacheEntries,
+    )
 }
