@@ -289,10 +289,13 @@ internal class EditHistory(
  * "Cut out again" restores the photo and its alpha history where they were. Over the [budget], the oldest of these photos
  * is dropped, and undo stops at the oldest one kept. [release] frees a photo that was read back but could not be moved on
  * screen. [close] deletes the files.
+ *
+ * [root] is shared by the histories of a cache directory, so each one writes to its own unique subdirectory [directory]:
+ * construction deletes nothing, and [close] deletes only that subdirectory.
  */
 internal class PhotoHistory<P>(
     private val budget: EditBudget,
-    private val directory: File,
+    root: File,
     private val write: (P, File) -> Unit,
     private val read: (File) -> P,
     private val release: (P) -> Unit,
@@ -302,6 +305,8 @@ internal class PhotoHistory<P>(
     /** A photo brought back on screen by [back] or [forward]. */
     class Restored<T>(val photo: T, val session: RefineSession, val fromRedo: Boolean)
 
+    internal val directory = File(root, UUID.randomUUID().toString())
+
     /** Photos before the one on screen; the nearest is last. */
     private val before = ArrayDeque<Step>()
 
@@ -309,8 +314,6 @@ internal class PhotoHistory<P>(
     private val after = ArrayDeque<Step>()
 
     init {
-        // Files left by an editor that did not close (its process died): no photo refers to them any more.
-        directory.listFiles()?.forEach { it.delete() }
         budget.registerKept(this)
     }
 
@@ -321,7 +324,16 @@ internal class PhotoHistory<P>(
     /** Cut out again: the photo on screen is kept, and the undone photos after it are dropped. */
     fun cutOut(current: P, session: RefineSession, fromRedo: Boolean) {
         before.addLast(spill(current, session, fromRedo))
-        dropAfter()
+        discardRedo()
+    }
+
+    /** A new edit on the photo on screen: the undone photos after it can no longer be redone. */
+    fun discardRedo() {
+        after.forEach { step ->
+            step.file.delete()
+            step.session.close()
+        }
+        after.clear()
     }
 
     /** Undo across a cut out: the photo on screen goes to [after]; null when there is no earlier photo. */
@@ -344,23 +356,24 @@ internal class PhotoHistory<P>(
         return Restored(arriving, step.session, step.fromRedo)
     }
 
-    /** Drops the oldest photo kept off screen: the first of [before], else the nearest of [after] (the oldest there). */
+    /**
+     * Drops the oldest photo kept off screen: the first of [before], else the first of [after], which is the one farthest from
+     * the photo on screen. The nearest of [after] is the next Redo target, so it is never the one dropped.
+     */
     override fun dropOldest(): Boolean {
-        val step = before.removeFirstOrNull() ?: after.removeLastOrNull() ?: return false
+        val step = before.removeFirstOrNull() ?: after.removeFirstOrNull() ?: return false
         step.file.delete()
         step.session.close()
         return true
     }
 
-    /** Deletes every photo file and releases the sessions that are not on screen. */
+    /** Deletes this history's directory and every photo in it, and releases the sessions that are not on screen. */
     fun close() {
         budget.unregisterKept(this)
-        (before + after).forEach { step ->
-            step.file.delete()
-            step.session.close()
-        }
+        (before + after).forEach { step -> step.session.close() }
         before.clear()
         after.clear()
+        directory.deleteRecursively()
     }
 
     /** Spills [current] for a move. When that fails, [arriving] is released: nothing on screen will show it. */
@@ -378,12 +391,17 @@ internal class PhotoHistory<P>(
         write(photo, file)
         return Step(file, session, fromRedo)
     }
+}
 
-    private fun dropAfter() {
-        after.forEach { step ->
-            step.file.delete()
-            step.session.close()
-        }
-        after.clear()
+/**
+ * Runs [block], and calls [release] when it throws (cancellation included) before rethrowing. Redo cutout uses it for the new
+ * photo: until that photo is on screen, nothing else releases it.
+ */
+internal suspend fun releaseOnFailure(release: () -> Unit, block: suspend () -> Unit) {
+    try {
+        block()
+    } catch (throwable: Throwable) {
+        release()
+        throw throwable
     }
 }

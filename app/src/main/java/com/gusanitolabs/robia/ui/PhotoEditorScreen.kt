@@ -124,6 +124,7 @@ import com.gusanitolabs.robia.media.cutout.brushRadiusPx
 import com.gusanitolabs.robia.media.cutout.clipToTouched
 import com.gusanitolabs.robia.media.cutout.redoCutoutChoices
 import com.gusanitolabs.robia.media.cutout.redoCutoutOptions
+import com.gusanitolabs.robia.media.cutout.releaseOnFailure
 import com.gusanitolabs.robia.media.cutout.removesMostOfGarment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -161,7 +162,7 @@ private const val REDO_CACHE_DIRECTORY = "redo-cutout"
 private const val LIGHT_BRIGHTNESS_OFFSET = 110f
 private const val LIGHT_TEMPERATURE_OFFSET = 46f
 
-/** Cache subdirectory of the photos that Cut out again sets aside; deleted with the editor's history (REQ-ED-03). */
+/** Cache subdirectory of the photos that Cut out again sets aside; each editor deletes its own, on close (REQ-ED-03). */
 private const val EDITOR_HISTORY_DIRECTORY = "editor-history"
 
 private enum class EditorTab { Cutout, Light }
@@ -230,7 +231,7 @@ fun PhotoEditorScreen(
     val photoHistory = remember(photoUri) {
         PhotoHistory<Bitmap>(
             budget = editBudget,
-            directory = File(context.cacheDir, EDITOR_HISTORY_DIRECTORY),
+            root = File(context.cacheDir, EDITOR_HISTORY_DIRECTORY),
             write = { bitmap, file -> file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } },
             read = { file -> checkNotNull(BitmapFactory.decodeFile(file.path)) { "Photo ${file.name} is unreadable" } },
             release = { bitmap -> bitmap.recycle() },
@@ -323,8 +324,28 @@ fun PhotoEditorScreen(
             flat[2 * i] = point.x
             flat[2 * i + 1] = point.y
         }
-        current.session.applyBrush(mode, flat, radius, feather)
-        revision++
+        scope.launch {
+            sourceMutex.withLock {
+                // Queued before an Undo, a Redo or a Cut out again replaced this photo; its bitmap is already recycled.
+                if (current.source.isRecycled) return@withLock
+                current.session.applyBrush(mode, flat, radius, feather)
+                photoHistory.discardRedo()
+                revision++
+            }
+        }
+    }
+
+    /** Reset: back to the automatic cutout. Like any edit, it discards what was undone. */
+    fun resetEdits() {
+        val current = photo ?: return
+        scope.launch {
+            sourceMutex.withLock {
+                if (current.source.isRecycled || !current.session.isChanged) return@withLock
+                current.session.reset()
+                photoHistory.discardRedo()
+                revision++
+            }
+        }
     }
 
     fun runSmartSelection(points: List<Offset>, current: CutoutPhoto) {
@@ -390,6 +411,7 @@ fun PhotoEditorScreen(
                     return@withLock
                 }
                 current.session.apply(mode, clipped, hard = true)
+                photoHistory.discardRedo()
                 revision++
             }
             if (refused) {
@@ -446,12 +468,13 @@ fun PhotoEditorScreen(
      * or after it across a Cut out again (see [movePhoto]). Undo, Redo and the gestures wait until the step is done.
      */
     fun historyStep(forward: Boolean) {
-        val current = photo ?: return
         if (replaying) return
         replaying = true
         scope.launch {
             try {
                 sourceMutex.withLock {
+                    // Read under the lock: a stroke or a smart selection queued before this step may have replaced the photo.
+                    val current = photo ?: return@withLock
                     val ownEdit = if (forward) current.session.canRedo else current.session.canUndo
                     if (ownEdit) {
                         withContext(Dispatchers.Default) {
@@ -479,7 +502,7 @@ fun PhotoEditorScreen(
      * and the stored photo is untouched until Done. A failure leaves the photo and its undo step as they were.
      */
     fun redoCutout(choice: RedoCutoutChoice, rawUri: Uri) {
-        if (redoing || photo == null) return
+        if (redoing || replaying || photo == null) return
         redoing = true
         scope.launch {
             val startedAt = SystemClock.elapsedRealtime()
@@ -489,12 +512,22 @@ fun PhotoEditorScreen(
                 // For a moment two bitmaps exist: the current photo and the new one (at most 2048 px on the long edge from ML Kit,
                 // 1024 px from the precise engine).
                 val bitmap = runRedoCutout(context, rawUri, options, File(app.filesDir, CutoutPackManifest.DIRECTORY))
-                val alpha = withContext(Dispatchers.Default) { alphaOf(bitmap) }
-                sourceMutex.withLock {
-                    val previous = checkNotNull(photo)
-                    withContext(Dispatchers.IO) { photoHistory.cutOut(previous.source, previous.session, previous.fromRedo) }
-                    previous.source.recycle()
-                    photo = CutoutPhoto(bitmap, RefineSession(bitmap.width, bitmap.height, alpha, editBudget), fromRedo = true)
+                // Until the new photo is on screen, any failure or cancellation recycles it.
+                releaseOnFailure(release = { bitmap.recycle() }) {
+                    val alpha = withContext(Dispatchers.Default) { alphaOf(bitmap) }
+                    sourceMutex.withLock {
+                        val previous = checkNotNull(photo)
+                        // The session is built before the photo is written away, so a failed Cut out closes it.
+                        val next = RefineSession(bitmap.width, bitmap.height, alpha, editBudget)
+                        try {
+                            withContext(Dispatchers.IO) { photoHistory.cutOut(previous.source, previous.session, previous.fromRedo) }
+                        } catch (throwable: Throwable) {
+                            next.close()
+                            throw throwable
+                        }
+                        previous.source.recycle()
+                        photo = CutoutPhoto(bitmap, next, fromRedo = true)
+                    }
                 }
                 onDiagnostic(redoDoneDiagnostic(choice, options, SystemClock.elapsedRealtime() - startedAt))
                 null
@@ -734,17 +767,14 @@ fun PhotoEditorScreen(
                             onModeChange = { mode = it },
                             brush = brush,
                             onBrushChange = { brush = it },
-                            canUndo = canUndo && !redoing && !replaying,
+                            canUndo = canUndo && !redoing && !replaying && !saving,
                             canRedo = canRedo && !redoing && !replaying,
-                            canReset = changed && !redoing && !replaying,
+                            canReset = changed && !redoing && !replaying && !saving,
                             onUndo = ::undoEdit,
                             onRedoEdit = ::redoEdit,
-                            onReset = {
-                                photo?.session?.reset()
-                                revision++
-                            },
+                            onReset = ::resetEdits,
                             onRedo = if (rawSourceUri != null) ({ showRedoSheet = true }) else null,
-                            redoEnabled = !redoing && photo != null,
+                            redoEnabled = !redoing && !replaying && photo != null,
                         )
                     } else {
                         LightControls(

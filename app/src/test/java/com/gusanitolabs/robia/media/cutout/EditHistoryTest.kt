@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.media.cutout
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -11,7 +12,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
 import java.io.IOException
 import kotlin.random.Random
 
@@ -27,7 +27,7 @@ class EditHistoryTest {
 
     private fun newHistory(budget: EditBudget = EditBudget(), release: (String) -> Unit = {}) = PhotoHistory<String>(
         budget = budget,
-        directory = folder.root,
+        root = folder.root,
         write = { text, file -> file.writeText(text) },
         read = { file -> file.readText() },
         release = release,
@@ -160,7 +160,7 @@ class EditHistoryTest {
         // photo-0, photo-1 and photo-2 were dropped, so undo stops at photo-3, the oldest kept photo.
         assertEquals("photo-3", photo)
         assertEquals(2, backs)
-        assertEquals(backs, folder.root.listFiles()!!.size)
+        assertEquals(backs, history.directory.listFiles()!!.size)
 
         session.close()
         history.close()
@@ -178,7 +178,7 @@ class EditHistoryTest {
         val atCut = first.currentAlpha()
 
         history.cutOut("photo-1", first, fromRedo = false)
-        assertEquals(listOf("photo-1"), folder.root.listFiles()!!.map { it.readText() })
+        assertEquals(listOf("photo-1"), history.directory.listFiles()!!.map { it.readText() })
 
         val second = RefineSession(w, h, baseAlpha())
         second.apply(RefineSession.Mode.Keep, FloatArray(w * h) { if (it == 0) 1f else 0f }, hard = true)
@@ -190,7 +190,7 @@ class EditHistoryTest {
         assertTrue(restored.session === first)
         assertFalse(restored.fromRedo)
         assertArrayEquals(atCut, first.currentAlpha(), 0f)
-        assertEquals(listOf("photo-2"), folder.root.listFiles()!!.map { it.readText() })
+        assertEquals(listOf("photo-2"), history.directory.listFiles()!!.map { it.readText() })
 
         first.undo()
         assertArrayEquals("undo keeps the restored session's position", afterOne, first.currentAlpha(), 0f)
@@ -201,7 +201,7 @@ class EditHistoryTest {
         assertTrue(forward.session === second)
         assertTrue(forward.fromRedo)
         assertArrayEquals(secondAtCut, second.currentAlpha(), 0f)
-        assertEquals(listOf("photo-1"), folder.root.listFiles()!!.map { it.readText() })
+        assertEquals(listOf("photo-1"), history.directory.listFiles()!!.map { it.readText() })
 
         history.close()
         assertTrue(folder.root.listFiles()!!.isEmpty())
@@ -218,7 +218,7 @@ class EditHistoryTest {
         history.cutOut("photo-1", RefineSession(w, h, baseAlpha()), fromRedo = false)
 
         assertFalse(history.canGoForward)
-        assertEquals(listOf("photo-1"), folder.root.listFiles()!!.map { it.readText() })
+        assertEquals(listOf("photo-1"), history.directory.listFiles()!!.map { it.readText() })
         history.close()
     }
 
@@ -245,15 +245,26 @@ class EditHistoryTest {
         }
     }
 
-    /** Item 3 (review): the files of an editor whose process died are deleted when the next history starts. */
+    /**
+     * Item 4 (review): histories that share a cache root each write to their own subdirectory. A new history deletes
+     * nothing, and closing one leaves the other's files.
+     */
     @Test
-    fun creatingAHistory_deletesTheFilesLeftByADeadEditor() {
-        File(folder.root, "left-over.png").writeText("photo-0")
+    fun twoHistoriesOnOneRoot_eachKeepsItsOwnFiles() {
+        val first = newHistory()
+        first.cutOut("photo-1", RefineSession(w, h, baseAlpha()), fromRedo = false)
 
-        val history = newHistory()
+        val second = newHistory()
+        second.cutOut("photo-2", RefineSession(w, h, baseAlpha()), fromRedo = false)
 
+        assertTrue(first.directory != second.directory)
+        assertEquals(listOf("photo-1"), first.directory.listFiles()!!.map { it.readText() })
+        assertEquals(listOf("photo-2"), second.directory.listFiles()!!.map { it.readText() })
+
+        second.close()
+        assertEquals(listOf("photo-1"), first.directory.listFiles()!!.map { it.readText() })
+        first.close()
         assertTrue(folder.root.listFiles()!!.isEmpty())
-        history.close()
     }
 
     /**
@@ -266,7 +277,7 @@ class EditHistoryTest {
         var writable = true
         val history = PhotoHistory<String>(
             budget = EditBudget(),
-            directory = folder.root,
+            root = folder.root,
             write = { text, file ->
                 if (!writable) throw IOException("disk full")
                 file.writeText(text)
@@ -291,5 +302,108 @@ class EditHistoryTest {
         assertEquals(listOf("photo-1", "photo-2"), released)
         assertTrue(history.canGoForward)
         history.close()
+    }
+
+    /**
+     * Item 1 (review): the photo that Redo would bring back next is never the one dropped. A, B, C and D are cut out in turn,
+     * then undone to A: B and C are kept after it, D is the farthest. With room for one photo less, a new session drops D,
+     * and redo goes to B and then to C.
+     */
+    @Test
+    fun overBudgetOnTheAfterSide_dropsTheFarthestPhoto_andRedoStillGoesBThenC() {
+        val probe = EditBudget()
+        RefineSession(w, h, baseAlpha(), probe)
+        val sessionBytes = probe.used
+
+        val budget = EditBudget(limit = 4 * sessionBytes)
+        val history = newHistory(budget)
+        val made = mutableMapOf<String, RefineSession>()
+        var photo = "A"
+        var session = RefineSession(w, h, baseAlpha(), budget).also { made[photo] = it }
+        for (next in listOf("B", "C", "D")) {
+            history.cutOut(photo, session, fromRedo = false)
+            photo = next
+            session = RefineSession(w, h, baseAlpha(), budget).also { made[photo] = it }
+        }
+        repeat(3) {
+            val restored = checkNotNull(history.back(photo, session, fromRedo = false))
+            photo = restored.photo
+            session = restored.session
+        }
+        assertEquals("A", photo)
+        assertEquals(4 * sessionBytes, budget.used)
+
+        // The new session makes the budget five photos: the farthest kept photo, D, is dropped.
+        val extra = RefineSession(w, h, baseAlpha(), budget)
+        assertEquals(listOf("B", "C"), history.directory.listFiles()!!.map { it.readText() }.sorted())
+        extra.close()
+        assertEquals(3 * sessionBytes, budget.used)
+
+        val second = checkNotNull(history.forward(photo, session, fromRedo = false))
+        assertEquals("B", second.photo)
+        assertTrue(second.session === made["B"])
+        val third = checkNotNull(history.forward(second.photo, second.session, fromRedo = false))
+        assertEquals("C", third.photo)
+        assertTrue(third.session === made["C"])
+        assertFalse(history.canGoForward)
+
+        third.session.close()
+        history.close()
+        assertEquals(0L, budget.used)
+    }
+
+    /** Item 2 (review): a new edit after an undo across a Cut out again discards the photo redo tail too. */
+    @Test
+    fun aNewEditAfterUndoingACut_discardsThePhotoRedoTail() {
+        val budget = EditBudget()
+        val history = newHistory(budget)
+        history.cutOut("photo-1", RefineSession(w, h, baseAlpha(), budget), fromRedo = false)
+        val restored = checkNotNull(history.back("photo-2", RefineSession(w, h, baseAlpha(), budget), fromRedo = true))
+        assertTrue(history.canGoForward)
+
+        restored.session.applyBrush(RefineSession.Mode.Remove, floatArrayOf(3f, 3f), 2f, 1f)
+        history.discardRedo()
+
+        assertFalse(history.canGoForward)
+        assertFalse(restored.session.canRedo)
+        assertTrue(history.directory.listFiles()!!.isEmpty())
+        restored.session.close()
+        history.close()
+        assertEquals(0L, budget.used)
+    }
+
+    /** Item 3 (review): when Cut out again throws, the new photo that was not installed is released. */
+    @Test
+    fun redoCutout_whenCutOutThrows_theNewPhotoIsReleased() = runBlocking {
+        val released = mutableListOf<String>()
+        val history = PhotoHistory<String>(
+            budget = EditBudget(),
+            root = folder.root,
+            write = { _, _ -> throw IOException("disk full") },
+            read = { file -> file.readText() },
+            release = {},
+        )
+        val failure = runCatching {
+            releaseOnFailure(release = { released += "new photo" }) {
+                history.cutOut("photo-1", RefineSession(w, h, baseAlpha()), fromRedo = false)
+            }
+        }
+
+        assertTrue(failure.exceptionOrNull() is IOException)
+        assertEquals(listOf("new photo"), released)
+        assertFalse(history.canGoBack)
+        history.close()
+    }
+
+    /** Item 3 (review): a cancelled Redo cutout releases the new photo too, and the cancellation is rethrown. */
+    @Test
+    fun redoCutout_whenCancelled_theNewPhotoIsReleased() = runBlocking {
+        var released = 0
+        val failure = runCatching {
+            releaseOnFailure(release = { released++ }) { throw CancellationException("left the editor") }
+        }
+
+        assertTrue(failure.exceptionOrNull() is CancellationException)
+        assertEquals(1, released)
     }
 }
