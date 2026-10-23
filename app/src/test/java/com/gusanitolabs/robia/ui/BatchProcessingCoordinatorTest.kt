@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
@@ -627,6 +628,97 @@ class BatchProcessingCoordinatorTest {
 
         assertTrue(published.none { it.status == BatchDraftStatus.Ready })
         assertEquals(BatchDraftStatus.Interrupted, drafts.single().status)
+    }
+
+    @Test
+    fun cancel_returnsTheJobSoCallersCleanUpOnlyAfterTheCutoutStopped() = runBlocking {
+        val drafts = batchOf(1)
+        val processingStarted = CompletableDeferred<Unit>()
+        var cutoutStopped = false
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = {
+                processingStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    cutoutStopped = true
+                }
+            },
+            suggest = { draft, _ -> draft },
+            publish = { draft -> drafts.replaceById(draft) },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+        )
+
+        processingStarted.await()
+        coordinator.cancel()?.join()
+
+        assertTrue(cutoutStopped)
+        assertEquals(BatchDraftStatus.Interrupted, drafts.single().status)
+    }
+
+    @Test
+    fun cancellation_cutoutFinishingAfterCancelDiscardsItsOutputInsteadOfPublishing() = runBlocking {
+        val drafts = batchOf(1)
+        val published = mutableListOf<BatchDraftItem>()
+        val discarded = mutableListOf<CutoutStageResult>()
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = { draft ->
+                coordinator.cancel()
+                readyCutout(draft)
+            },
+            suggest = { draft, _ -> draft.copy(status = BatchDraftStatus.Ready) },
+            publish = { draft ->
+                published.add(draft)
+                drafts.replaceById(draft)
+            },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+            discardOutput = { _, result -> discarded.add(result) },
+        )
+
+        repeat(10) { yield() }
+
+        assertTrue(published.none { it.status == BatchDraftStatus.Ready })
+        val output = discarded.single() as CutoutStageResult.Ready
+        assertEquals("content://cropped/${drafts.single().id}", output.croppedUri)
+    }
+
+    @Test
+    fun cancel_afterAnEarlierCutoutFinishedButBeforeTheLoopResumes_discardsThatOutput() = runBlocking {
+        val drafts = batchOf(3)
+        val published = mutableListOf<BatchDraftItem>()
+        val discarded = mutableListOf<String>()
+        val coordinator = BatchProcessingCoordinator(this)
+
+        coordinator.processQueued(
+            drafts = { drafts.toList() },
+            cutout = { draft ->
+                // Draft 1's cutout runs after draft 0's has completed, but before the loop resumes to publish draft 0.
+                if (draft.orderIndex == 1) coordinator.cancel()
+                readyCutout(draft)
+            },
+            suggest = { draft, _ -> draft.copy(status = BatchDraftStatus.Ready) },
+            publish = { draft ->
+                published.add(draft)
+                drafts.replaceById(draft)
+            },
+            onInterrupted = { draft -> drafts.replaceById(draft.copy(status = BatchDraftStatus.Interrupted)) },
+            discardOutput = { _, result -> discarded.add((result as CutoutStageResult.Ready).croppedUri) },
+        )
+
+        // cancel() ran inside a cutout, so no handle to the job is held here: join the children of this scope.
+        coroutineContext.job.children.toList().forEach { it.join() }
+
+        assertTrue(published.none { it.status == BatchDraftStatus.Ready })
+        assertEquals(
+            setOf(readyCutout(drafts[0]).croppedUri, readyCutout(drafts[1]).croppedUri),
+            discarded.toSet(),
+        )
     }
 
     @Test

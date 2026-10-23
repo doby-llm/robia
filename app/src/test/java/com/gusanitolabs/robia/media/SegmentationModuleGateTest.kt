@@ -1,11 +1,16 @@
 package com.gusanitolabs.robia.media
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,6 +44,20 @@ class SegmentationModuleGateTest {
 
         suspend fun delay(ms: Long) {
             elapsedMs += ms
+        }
+
+        fun nowMs(): Long = elapsedMs
+    }
+
+    private class SwitchableModulePort : ModuleInstallPort {
+        var available = false
+        var installRequests = 0
+
+        override suspend fun isAvailable(): Boolean = available
+
+        override suspend fun requestInstall(): Boolean {
+            installRequests++
+            return true
         }
     }
 
@@ -157,6 +176,95 @@ class SegmentationModuleGateTest {
 
         assertTrue(propagated)
         assertFalse(gate.preparing.value)
+    }
+
+    @Test
+    fun batch_waitBudgetIsSixtySecondsAndRetryDoesNotResetIt() = runBlocking {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val clock = VirtualClock()
+        val gate = SegmentationModuleGate(port, clock::delay, clock::nowMs)
+
+        gate.startBatch()
+        assertTrue(gate.ensureAvailable(60.seconds) is GateResult.Unavailable)
+        assertEquals(60_000L, clock.elapsedMs)
+
+        // The retry in runWithModuleRetry asks again: the budget is spent, so it returns at once.
+        assertTrue(gate.ensureAvailable(60.seconds) is GateResult.Unavailable)
+        assertEquals(60_000L, clock.elapsedMs)
+        assertEquals(1, port.installRequests)
+        assertFalse(gate.preparing.value)
+    }
+
+    @Test
+    fun batch_laterCallWaitsOnlyForWhatIsLeftOfTheBudget() = runBlocking {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val clock = VirtualClock()
+        val gate = SegmentationModuleGate(port, clock::delay, clock::nowMs)
+
+        gate.startBatch()
+        gate.ensureAvailable(20.seconds)
+        assertEquals(20_000L, clock.elapsedMs)
+
+        gate.ensureAvailable(60.seconds)
+        assertEquals(60_000L, clock.elapsedMs)
+    }
+
+    @Test
+    fun batch_fastPathStillWinsWhenTheModuleAppearsAfterTheBudgetIsSpent() = runBlocking {
+        val port = SwitchableModulePort()
+        val clock = VirtualClock()
+        val gate = SegmentationModuleGate(port, clock::delay, clock::nowMs)
+
+        gate.startBatch()
+        assertTrue(gate.ensureAvailable(60.seconds) is GateResult.Unavailable)
+
+        port.available = true
+        assertEquals(GateResult.Available, gate.ensureAvailable(60.seconds))
+        assertEquals(1, port.installRequests)
+        assertEquals(60_000L, clock.elapsedMs)
+    }
+
+    @Test
+    fun batch_concurrentCallsShareOneBudget_laterCallWaitsOnlyForTheRemainder() = runTest {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val gate = SegmentationModuleGate(port, { delay(it) }, { currentTime })
+
+        gate.startBatch()
+        val first = async { gate.ensureAvailable(60.seconds) }
+        delay(20.seconds)
+        // Started while the first call is still waiting: it must end at the batch deadline (60 s), not 20 s + 60 s.
+        val second = async { gate.ensureAvailable(60.seconds) }
+        val results = awaitAll(first, second)
+
+        assertTrue(results.all { it is GateResult.Unavailable })
+        assertEquals(60_000L, currentTime)
+        assertEquals(2, port.installRequests)
+    }
+
+    @Test
+    fun outsideBatch_eachCallWaitsItsOwnTimeout() = runBlocking {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val clock = VirtualClock()
+        val gate = SegmentationModuleGate(port, clock::delay, clock::nowMs)
+
+        assertTrue(gate.ensureAvailable(60.seconds) is GateResult.Unavailable)
+        assertTrue(gate.ensureAvailable(60.seconds) is GateResult.Unavailable)
+        assertEquals(120_000L, clock.elapsedMs)
+        assertEquals(2, port.installRequests)
+    }
+
+    @Test
+    fun endBatch_restoresPerCallTimeouts() = runBlocking {
+        val port = FakeModulePort(installedAfterPolls = null)
+        val clock = VirtualClock()
+        val gate = SegmentationModuleGate(port, clock::delay, clock::nowMs)
+
+        gate.startBatch()
+        gate.ensureAvailable(60.seconds)
+        gate.endBatch()
+        assertTrue(gate.ensureAvailable(60.seconds) is GateResult.Unavailable)
+
+        assertEquals(120_000L, clock.elapsedMs)
     }
 
     private class HangingInstallPort : ModuleInstallPort {

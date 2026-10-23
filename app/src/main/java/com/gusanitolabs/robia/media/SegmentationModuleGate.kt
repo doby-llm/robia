@@ -62,16 +62,32 @@ sealed interface GateResult {
 /**
  * Makes sure the subject-segmentation module is installed before ML Kit is asked to segment.
  * Installing is requested once and then polled; [onPreparing] is true only while that wait runs.
+ *
+ * Between [startBatch] and [endBatch] every wait shares one [BATCH_MODULE_WAIT_BUDGET_MS] budget, so a batch of
+ * photos waits for the module once in total. Outside a batch each call waits up to its own timeout.
  */
 class SegmentationModuleGate(
     private val port: ModuleInstallPort,
     private val delayFn: suspend (Long) -> Unit = { delay(it) },
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     private val activeWaits = AtomicInteger(0)
     private val _preparing = MutableStateFlow(false)
 
+    /** Monotonic time (ms) when the current batch's wait budget ends; null outside a batch. */
+    @Volatile
+    private var batchWaitDeadlineMs: Long? = null
+
     /** True while at least one [ensureAvailable] call is waiting for the module to install. */
     val preparing: StateFlow<Boolean> = _preparing.asStateFlow()
+
+    fun startBatch() {
+        batchWaitDeadlineMs = nowMs() + BATCH_MODULE_WAIT_BUDGET_MS
+    }
+
+    fun endBatch() {
+        batchWaitDeadlineMs = null
+    }
 
     suspend fun ensureAvailable(
         timeout: Duration = 60.seconds,
@@ -79,24 +95,33 @@ class SegmentationModuleGate(
     ): GateResult {
         if (port.isAvailable()) return GateResult.Available
 
+        val waitMs = waitBudgetMs(timeout.inWholeMilliseconds)
+        if (waitMs <= 0L) return GateResult.Unavailable("Module wait budget for this batch is spent")
+
         onPreparing(true)
         markWaiting(true)
         try {
-            return withTimeoutOrNull<GateResult>(timeout) {
+            return withTimeoutOrNull<GateResult>(waitMs) {
                 if (!port.requestInstall()) return@withTimeoutOrNull GateResult.Unavailable("Module install request was rejected")
 
                 var waitedMs = 0L
-                while (waitedMs < timeout.inWholeMilliseconds) {
+                while (waitedMs < waitMs) {
                     delayFn(POLL_INTERVAL_MS)
                     waitedMs += POLL_INTERVAL_MS
                     if (port.isAvailable()) return@withTimeoutOrNull GateResult.Available
                 }
-                GateResult.Unavailable("Module not available after $timeout")
-            } ?: GateResult.Unavailable("Module not available after $timeout")
+                GateResult.Unavailable("Module not available after $waitMs ms")
+            } ?: GateResult.Unavailable("Module not available after $waitMs ms")
         } finally {
             markWaiting(false)
             onPreparing(false)
         }
+    }
+
+    /** The wait this call may use: its own [requestedMs], cut down to what is left of the batch budget. */
+    private fun waitBudgetMs(requestedMs: Long): Long {
+        val deadline = batchWaitDeadlineMs ?: return requestedMs
+        return minOf(requestedMs, deadline - nowMs())
     }
 
     private fun markWaiting(waiting: Boolean) {
@@ -105,6 +130,7 @@ class SegmentationModuleGate(
 
     private companion object {
         const val POLL_INTERVAL_MS = 2_000L
+        const val BATCH_MODULE_WAIT_BUDGET_MS = 60_000L
     }
 }
 

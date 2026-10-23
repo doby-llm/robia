@@ -24,6 +24,9 @@ object ClothingImageStore {
     private const val IMAGE_DIRECTORY = "robia_clothing_images"
     private const val THUMBNAIL_DIRECTORY = "robia_thumbnails"
 
+    /** Names this store gives to the files of a batch draft: the raw copy, the subject and the cropped cutout. */
+    private val BATCH_DRAFT_FILE_NAME = Regex("(gallery|camera|subject|cropped-subject)-[0-9a-f-]{36}\\.(jpg|png)")
+
     fun createCaptureUri(context: Context): Uri {
         val imageFile = createImageFile(context, "camera")
         return FileProvider.getUriForFile(
@@ -307,9 +310,22 @@ object ClothingImageStore {
         }
     }
 
+    /**
+     * Deletes the image files a batch draft created (raw copy, subject, cropped cutout), given as URIs. Only names
+     * this store creates in the image folder are deleted, so other photos are never touched.
+     */
+    fun deleteBatchDraftFiles(context: Context, uris: List<String>) {
+        val imageDir = imageDirectory(context)
+        uris.mapNotNull { uri -> Uri.parse(uri).lastPathSegment }
+            .filter(BATCH_DRAFT_FILE_NAME::matches)
+            .forEach { name -> File(imageDir, name).delete() }
+    }
+
+    private fun imageDirectory(context: Context): File =
+        File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir, IMAGE_DIRECTORY)
+
     private fun createImageFile(context: Context, prefix: String, extension: String = "jpg"): File {
-        val picturesDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir
-        val imageDir = File(picturesDir, IMAGE_DIRECTORY).apply { mkdirs() }
+        val imageDir = imageDirectory(context).apply { mkdirs() }
         return File(imageDir, "$prefix-${UUID.randomUUID()}.$extension")
     }
 

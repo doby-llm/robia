@@ -365,7 +365,7 @@
     <string name="batch_helper_empty">Wähle mehrere Galeriefotos, um einen Batch zu starten.</string>
     <string name="batch_helper_ready">Bereit, %1$d Teile zu speichern.</string>
     <string name="batch_discard_title">Diesen Batch verwerfen?</string>
-    <string name="batch_discard_body">Verarbeitete Fotos und Details werden nicht gespeichert.</string>
+    <string name="batch_discard_body">Die Verarbeitung wird gestoppt und nicht gespeicherte Kleidungsstücke gehen verloren.</string>
     <string name="batch_tile_content_description">Foto %1$d von %2$d, %3$s.</string>
     <string name="advanced_filters_title">Erweiterte Filter</string>
     <string name="reset_filters">Alle zurücksetzen</string>

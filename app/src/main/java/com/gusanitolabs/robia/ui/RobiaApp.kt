@@ -179,6 +179,7 @@ import com.gusanitolabs.robia.data.WardrobeRepository
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.data.toDomain
+import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.GarmentShareColor
 import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
@@ -190,6 +191,7 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.ImageRequest
 import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
+import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.BackfillProgress
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
@@ -900,6 +902,9 @@ private fun RobiaShell(
     var selectedBatchDraftId by remember { mutableStateOf<String?>(null) }
     var batchSaveStatusMessage by remember { mutableStateOf<String?>(null) }
     var showBatchDiscardDialog by remember { mutableStateOf(false) }
+    // Created when a batch starts: its first gap runs from the batch start. Batch completions update the shown ETA.
+    var batchEtaEstimator by remember { mutableStateOf<BatchEtaEstimator?>(null) }
+    var batchEta by remember { mutableStateOf<BatchEta?>(null) }
     var selectedBrowseItemIds by remember { mutableStateOf(emptySet<String>()) }
     var showBrowseDeleteDialog by remember { mutableStateOf(false) }
     var showColorReviewDiscardDialog by remember { mutableStateOf(false) }
@@ -1155,7 +1160,15 @@ private fun RobiaShell(
 
     fun updateBatchDraft(updated: BatchDraftItem) {
         val index = batchDrafts.indexOfFirst { draft -> draft.id == updated.id }
-        if (index >= 0) batchDrafts[index] = updated
+        if (index < 0) return
+        val previous = batchDrafts[index]
+        batchDrafts[index] = updated
+        // Stamp the completion here, when it is published, not when the screen happens to compose.
+        if (previous.isProcessingActive() && !updated.isProcessingActive()) {
+            batchEtaEstimator?.onTerminal()
+            val remaining = batchDrafts.count(BatchDraftItem::isProcessingActive)
+            batchEta = if (remaining > 0) batchEtaEstimator?.estimate(remaining) else null
+        }
     }
 
     fun processQueuedBatchDrafts() {
@@ -1185,6 +1198,15 @@ private fun RobiaShell(
                     ?.interruptedForBatch(context.getString(R.string.batch_interrupted_message))
                     ?.let(::updateBatchDraft)
             },
+            discardOutput = { draft, result ->
+                // Deleted off the main thread. A crop fallback is the raw copy the draft still references, so it stays.
+                val ready = result as? CutoutStageResult.Ready
+                if (ready != null && ready.croppedUri != draft.originalPhotoUri) {
+                    batchProcessingScope.launch(Dispatchers.IO) {
+                        ClothingImageStore.deleteBatchDraftFiles(context, listOf(ready.croppedUri))
+                    }
+                }
+            },
         )
     }
 
@@ -1195,7 +1217,10 @@ private fun RobiaShell(
         photoUris.forEachIndexed { index, uri ->
             batchDrafts += BatchDraftItem(orderIndex = index, originalPhotoUri = uri)
         }
+        batchEtaEstimator = BatchEtaEstimator { System.currentTimeMillis() }
+        batchEta = null
         selectedBatchDraftId = null
+        SegmentationModuleGates.get(context).startBatch()
         replaceRoute(RobiaRoute.BatchAddClothing)
         processQueuedBatchDrafts()
     }
@@ -1209,15 +1234,36 @@ private fun RobiaShell(
     fun discardBatchDraft(draft: BatchDraftItem) {
         batchDrafts.removeAll { it.id == draft.id }
         if (selectedBatchDraftId == draft.id) selectedBatchDraftId = null
+        val files = draft.tempFileUris()
+        batchProcessingScope.launch(Dispatchers.IO) { ClothingImageStore.deleteBatchDraftFiles(context, files) }
     }
 
     fun cancelBatchAdd() {
-        batchProcessingCoordinator.cancel()
+        // Snapshot the unsaved drafts first: cancel() marks them interrupted and the list is cleared below.
+        val unsavedFiles = batchDrafts.flatMap(BatchDraftItem::tempFileUris)
+        val cancelledJob = batchProcessingCoordinator.cancel()
         batchDrafts.clear()
         batchSaveStatusMessage = null
         selectedBatchDraftId = null
         showBatchDiscardDialog = false
+        batchEtaEstimator = null
+        batchEta = null
         replaceRoute(RobiaRoute.Browse)
+        // The job can still write a cutout, or wait for the module, until it has stopped. So the batch wait budget ends and
+        // the files are deleted only after the join.
+        batchProcessingScope.launch(Dispatchers.IO) {
+            cancelledJob?.join()
+            SegmentationModuleGates.get(context).endBatch()
+            ClothingImageStore.deleteBatchDraftFiles(context, unsavedFiles)
+        }
+    }
+
+    fun requestBatchCancel() {
+        if (batchDrafts.isNotEmpty()) {
+            showBatchDiscardDialog = true
+        } else {
+            cancelBatchAdd()
+        }
     }
 
     // Garments that still reference a removed palette colour (a delete, or a restore-defaults), minus the ones a review already writes.
@@ -1551,20 +1597,6 @@ private fun RobiaShell(
         }
     }
 
-    if (showBatchDiscardDialog) {
-        AlertDialog(
-            onDismissRequest = { showBatchDiscardDialog = false },
-            title = { Text(stringResource(R.string.batch_discard_title)) },
-            text = { Text(stringResource(R.string.batch_discard_body)) },
-            confirmButton = {
-                TextButton(onClick = ::cancelBatchAdd) { Text(stringResource(R.string.discard_changes)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBatchDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
-            },
-        )
-    }
-
     if (showBackupDeletionConfirmation) {
         AlertDialog(
             onDismissRequest = { showBackupDeletionConfirmation = false },
@@ -1721,12 +1753,17 @@ private fun RobiaShell(
                                 contentDescription = stringResource(R.string.cancel),
                             )
                         }
+                    } else if (currentRoute == RobiaRoute.BatchAddClothing) {
+                        IconButton(onClick = ::requestBatchCancel) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.cancel),
+                            )
+                        }
                     } else if (routeStack.size > 1 && currentRoute != RobiaRoute.AddEditClothing) {
                         IconButton(
                             onClick = {
-                                if (currentRoute == RobiaRoute.BatchAddClothing && batchDrafts.isNotEmpty()) {
-                                    showBatchDiscardDialog = true
-                                } else if (currentRoute == RobiaRoute.ColorReview) {
+                                if (currentRoute == RobiaRoute.ColorReview) {
                                     requestColorReviewDiscard()
                                 } else if (currentRoute == RobiaRoute.TagReview) {
                                     requestTagReviewDiscard()
@@ -1841,6 +1878,10 @@ private fun RobiaShell(
             batchDrafts = batchDrafts,
             selectedBatchDraft = batchDrafts.firstOrNull { draft -> draft.id == selectedBatchDraftId },
             batchSaveStatusMessage = batchSaveStatusMessage,
+            batchEta = batchEta,
+            showBatchDiscardDialog = showBatchDiscardDialog,
+            onRequestBatchCancel = ::requestBatchCancel,
+            onDismissBatchDiscardDialog = { showBatchDiscardDialog = false },
             tagCategories = tagCategories,
             availableTags = availableTags,
             mainColors = mainColors,
@@ -1909,6 +1950,7 @@ private fun RobiaShell(
                     batchDrafts.size,
                 )
                 selectedBatchDraftId = null
+                if (batchDrafts.isEmpty()) SegmentationModuleGates.get(context).endBatch()
                 if (batchDrafts.isEmpty()) replaceRoute(RobiaRoute.Browse)
             },
             onCancelBatch = {
@@ -2644,6 +2686,10 @@ private fun RobiaNavHost(
     batchDrafts: List<BatchDraftItem>,
     selectedBatchDraft: BatchDraftItem?,
     batchSaveStatusMessage: String?,
+    batchEta: BatchEta?,
+    showBatchDiscardDialog: Boolean,
+    onRequestBatchCancel: () -> Unit,
+    onDismissBatchDiscardDialog: () -> Unit,
     tagCategories: List<TagCategory>,
     availableTags: List<GarmentTag>,
     mainColors: List<MainColor>,
@@ -2809,6 +2855,10 @@ private fun RobiaNavHost(
             drafts = batchDrafts,
             availableTags = availableTags,
             mainColors = mainColors,
+            eta = batchEta,
+            showDiscardDialog = showBatchDiscardDialog,
+            onRequestCancel = onRequestBatchCancel,
+            onDismissDiscardDialog = onDismissBatchDiscardDialog,
             onDraftSelected = onDraftSelected,
             onRetryDraft = onRetryBatchDraft,
             onDiscardDraft = onDiscardBatchDraft,
@@ -2842,6 +2892,10 @@ private fun RobiaNavHost(
             drafts = batchDrafts,
             availableTags = availableTags,
             mainColors = mainColors,
+            eta = batchEta,
+            showDiscardDialog = showBatchDiscardDialog,
+            onRequestCancel = onRequestBatchCancel,
+            onDismissDiscardDialog = onDismissBatchDiscardDialog,
             onDraftSelected = onDraftSelected,
             onRetryDraft = onRetryBatchDraft,
             onDiscardDraft = onDiscardBatchDraft,
