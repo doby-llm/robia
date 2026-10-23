@@ -86,13 +86,13 @@ class ReplaceLocalWithRemoteTest {
     @Test
     fun replaceKeepsTheDefaultTaxonomyRows() {
         // Room behaviour needs a database, so this pins the contract in the source: replace clears only items and
-        // their links, and the remote taxonomy comes in through importSnapshot's upserts. Default tags are not deleted,
+        // their links, and the remote taxonomy comes in through importRecords' upserts. Default tags are not deleted,
         // so no re-seeding is needed after a replace.
         val source = File("src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt").readText()
         val replace = source.substringAfter("override suspend fun replaceLocalWithRemote(")
             .substringBefore("data class ImportSnapshotResult")
 
         assertFalse(replace.contains("tagDao."))
-        assertTrue(replace.contains("importSnapshot(snapshot)"))
+        assertTrue(replace.contains("importRecords(snapshot"))
     }
 }

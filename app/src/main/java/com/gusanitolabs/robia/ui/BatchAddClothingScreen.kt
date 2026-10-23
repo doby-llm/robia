@@ -106,6 +106,8 @@ internal data class BatchDraftItem(
     /** The kept original of the cutout, and its recipe (REQ-OR-01/02); null when the photo was not cut out. */
     val originalUri: String? = null,
     val originalRecipe: CutoutRecipe? = null,
+    /** The engine's subject file of the cutout, kept until the garment is saved; null when no subject was made. */
+    val subjectUri: String? = null,
 )
 
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
@@ -541,6 +543,7 @@ internal sealed interface CutoutStageResult {
         val needsOriginalFallbackReview: Boolean,
         val originalUri: String? = null,
         val originalRecipe: CutoutRecipe? = null,
+        val subjectUri: String? = null,
     ) : CutoutStageResult
 
     data class Failed(val message: String?) : CutoutStageResult
@@ -554,6 +557,9 @@ internal suspend fun cutoutStage(
 ): CutoutStageResult {
     // The kept original is written before the crop; a stage that ends without a Ready result deletes it (see the catches).
     var keptOriginal: Uri? = null
+    // The subject is the crop's input. It is kept until the garment is saved (released on save, like the raw copy), so it
+    // is deleted here only when the stage ends without a Ready result.
+    var subjectFile: Uri? = null
     return try {
         val sourceUri = Uri.parse(draft.originalPhotoUri)
         val sourceAspectRatio = withContext(Dispatchers.IO) {
@@ -561,21 +567,10 @@ internal suspend fun cutoutStage(
         }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
         val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
         keptOriginal = withContext(NonCancellable + Dispatchers.IO) { OriginalPhotoStore.saveAndRecycle(context, backgroundResult.inputFrame) }
-        // The engine's subject file is only the crop's input. It is deleted once the crop has replaced it, or when this
-        // stage is cancelled first, so a cancelled or discarded garment leaves no subject file behind.
-        val subjectUri = backgroundResult.outputUri.takeUnless { backgroundResult.usedFallback }
-        var cropResult: Uri? = null
-        val croppedUri = try {
-            fallbackUnlessCancelled(backgroundResult.outputUri) {
-                // Not cancellable: once the crop has written its file, cropResult records it, and the cancel path below deletes it.
-                withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
-            }.also { cropResult = it }
-        } finally {
-            if (subjectUri != null && cropResult != subjectUri) {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    ClothingImageStore.deleteBatchDraftFiles(context, listOf(subjectUri.toString()))
-                }
-            }
+        subjectFile = backgroundResult.outputUri.takeUnless { backgroundResult.usedFallback }
+        // Not cancellable: the crop writes its file once. A cancel after this point is seen by the inner catch, which deletes it.
+        val croppedUri = fallbackUnlessCancelled(backgroundResult.outputUri) {
+            withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
         }
         try {
             val displayAspectRatio = withContext(Dispatchers.IO) {
@@ -589,8 +584,13 @@ internal suspend fun cutoutStage(
                 .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
                 ?.color
                 ?.id
-            // The raw copy is released once the garment is saved; a crop fallback is the raw copy itself, which the name check keeps.
-            ClothingImageStore.registerPhotoFilesForRelease(context, croppedUri.toString(), listOf(sourceUri.toString()))
+            // The raw copy and the subject are released once the garment is saved; a crop fallback is the raw copy or the
+            // subject itself, which the name check keeps.
+            ClothingImageStore.registerPhotoFilesForRelease(
+                context,
+                croppedUri.toString(),
+                listOfNotNull(sourceUri.toString(), subjectFile?.toString()),
+            )
             CutoutStageResult.Ready(
                 croppedUri = croppedUri.toString(),
                 displayAspectRatio = displayAspectRatio,
@@ -600,6 +600,7 @@ internal suspend fun cutoutStage(
                 needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
                 originalUri = keptOriginal?.toString(),
                 originalRecipe = backgroundResult.recipe.takeIf { keptOriginal != null },
+                subjectUri = subjectFile?.toString(),
             )
         } catch (cancellation: CancellationException) {
             // A cancelled stage hands no result to the batch, so the cropped output it made is deleted here. A crop fallback
@@ -612,19 +613,20 @@ internal suspend fun cutoutStage(
             throw cancellation
         }
     } catch (throwable: CancellationException) {
-        deleteKeptOriginal(context, keptOriginal)
+        deleteStageFiles(context, keptOriginal, subjectFile)
         throw throwable
     } catch (throwable: Exception) {
-        deleteKeptOriginal(context, keptOriginal)
+        deleteStageFiles(context, keptOriginal, subjectFile)
         CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
     }
 }
 
-/** Deletes the original a stage kept when the stage ends without handing it to the batch. */
-private suspend fun deleteKeptOriginal(context: android.content.Context, original: Uri?) {
-    if (original == null) return
+/** Deletes the files a stage made when it ends without handing them to the batch: the kept original and the subject. */
+private suspend fun deleteStageFiles(context: android.content.Context, keptOriginal: Uri?, subjectFile: Uri?) {
+    val uris = listOfNotNull(keptOriginal, subjectFile).map(Uri::toString)
+    if (uris.isEmpty()) return
     withContext(NonCancellable + Dispatchers.IO) {
-        ClothingImageStore.deleteBatchDraftFiles(context, listOf(original.toString()))
+        ClothingImageStore.deleteBatchDraftFiles(context, uris)
     }
 }
 
@@ -664,6 +666,7 @@ internal suspend fun suggestStage(
         photoAspectRatio = cutout.displayAspectRatio,
         originalUri = cutout.originalUri,
         originalRecipe = cutout.originalRecipe,
+        subjectUri = cutout.subjectUri,
         status = resolvedStatus,
         selectedPrimaryColorId = cutout.primaryColorId,
         selectedSecondaryColorId = cutout.secondaryColorId,
@@ -681,6 +684,10 @@ internal suspend fun suggestStage(
 } catch (throwable: CancellationException) {
     throw throwable
 } catch (throwable: Exception) {
+    // The failed draft does not reference the cutout, so the subject it kept for a save is deleted here.
+    cutout.subjectUri?.let { subject ->
+        withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.deleteBatchDraftFiles(context, listOf(subject)) }
+    }
     draft.copy(
         status = BatchDraftStatus.Failed,
         errorMessage = throwable.message?.takeIf { it.isNotBlank() },
@@ -701,10 +708,10 @@ internal fun BatchDraftItem.isAcceptedForSave(): Boolean =
         (status == BatchDraftStatus.NeedsReview && explicitlyAccepted)
 
 /**
- * The image files this draft owns: its raw copy, the photo it shows now (the same file until a cutout replaces it) and the
- * kept original of that cutout.
+ * The image files this draft owns: its raw copy, the photo it shows now (the same file until a cutout replaces it), the
+ * kept original of that cutout and its subject file. A discarded or cancelled draft deletes all of them.
  */
-internal fun BatchDraftItem.tempFileUris(): List<String> = listOfNotNull(originalPhotoUri, photoUri, originalUri).distinct()
+internal fun BatchDraftItem.tempFileUris(): List<String> = listOfNotNull(originalPhotoUri, photoUri, originalUri, subjectUri).distinct()
 
 internal fun BatchDraftItem.isProcessingActive(): Boolean =
     status == BatchDraftStatus.Queued || status == BatchDraftStatus.Processing
