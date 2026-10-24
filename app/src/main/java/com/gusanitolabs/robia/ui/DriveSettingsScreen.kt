@@ -155,7 +155,7 @@ internal fun DriveSettingsScreen(
                                         R.string.drive_usage_value,
                                         Formatter.formatShortFileSize(context, usage.totalBytes),
                                         usage.photoCount,
-                                    )
+                                    ) + stringResource(R.string.drive_usage_originals, usage.originalCount)
                                 } ?: stringResource(R.string.drive_usage_unknown),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
