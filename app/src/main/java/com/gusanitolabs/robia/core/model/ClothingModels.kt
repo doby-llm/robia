@@ -31,11 +31,18 @@ data class ClothingItem(
 /** Version of the [CutoutRecipe] JSON. A recipe written with a later version is read as absent. */
 const val CUTOUT_RECIPE_VERSION = 1
 
+/** Where the top-left pixel of a stored cutout sits in its original frame (REQ-OR-05), in the original's pixels. */
+data class CanvasOffset(val left: Int, val top: Int)
+
 /**
  * The processing that turned an original photo into a cutout (REQ-OR-02). [engine] is `precise` or `mlkit`. The crop is in
  * the original's pixels, with [cropRight] and [cropBottom] exclusive. [rotationDegrees] is the EXIF rotation applied when the
  * frame was decoded; the saved original carries no EXIF, so reprocessing does not apply it again. Mirrors are not recorded.
  * ML Kit records the full frame, and [hangerThreshold] is 0 because it has no hanger step.
+ *
+ * [storedCanvasOffset] is where the stored cutout's top-left pixel sits in the work frame (the original): the engine crop plus
+ * every trim made after it. It is null for recipes saved before OR3, which then have no Keep from the original and no Cut out
+ * again. [version] is unchanged by it: the field is optional in the JSON.
  */
 data class CutoutRecipe(
     val engine: String,
@@ -51,6 +58,7 @@ data class CutoutRecipe(
     val cropRight: Int,
     val cropBottom: Int,
     val version: Int = CUTOUT_RECIPE_VERSION,
+    val storedCanvasOffset: CanvasOffset? = null,
 ) {
     fun toJson(): String = JSONObject()
         .put("engine", engine)
@@ -66,6 +74,11 @@ data class CutoutRecipe(
         .put("cropRight", cropRight)
         .put("cropBottom", cropBottom)
         .put("version", version)
+        .apply {
+            storedCanvasOffset?.let { offset ->
+                put("storedCanvasOffset", JSONObject().put("left", offset.left).put("top", offset.top))
+            }
+        }
         .toString()
 
     companion object {
@@ -93,6 +106,9 @@ data class CutoutRecipe(
                     cropRight = obj.getInt("cropRight"),
                     cropBottom = obj.getInt("cropBottom"),
                     version = version,
+                    storedCanvasOffset = obj.optJSONObject("storedCanvasOffset")?.let { offset ->
+                        CanvasOffset(left = offset.getInt("left"), top = offset.getInt("top"))
+                    },
                 )
             } catch (failure: JSONException) {
                 null
