@@ -140,7 +140,6 @@ internal fun SettingsScreen(
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
     onRestoreSyncLogClick: () -> Unit,
     onDuplicateCalibrationClick: () -> Unit,
-    onOutfitLabClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as RobiaApplication
@@ -250,13 +249,6 @@ internal fun SettingsScreen(
                             supportingContent = { Text(stringResource(R.string.duplicate_calibration_summary)) },
                             leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                             modifier = Modifier.clickable(onClick = onDuplicateCalibrationClick),
-                        )
-                        Divider()
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.outfit_lab_title)) },
-                            supportingContent = { Text(stringResource(R.string.outfit_lab_summary_settings)) },
-                            leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-                            modifier = Modifier.clickable(onClick = onOutfitLabClick),
                         )
                         Divider()
                         ListItem(

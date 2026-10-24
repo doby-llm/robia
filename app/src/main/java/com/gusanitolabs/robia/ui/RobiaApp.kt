@@ -333,10 +333,6 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.analytics_title
     }
 
-    data object OutfitLab : RobiaRoute {
-        override val titleRes = R.string.outfit_lab_title
-    }
-
     data class Export(val itemId: String) : RobiaRoute {
         override val titleRes = R.string.export_title
     }
@@ -1944,7 +1940,6 @@ private fun RobiaShell(
                 currentRoute != RobiaRoute.TagReview &&
                 currentRoute != RobiaRoute.DuplicateReview &&
                 currentRoute != RobiaRoute.DuplicateCalibration &&
-                currentRoute != RobiaRoute.OutfitLab &&
                 currentRoute != RobiaRoute.Analytics &&
                 currentRoute !is RobiaRoute.Export
             ) {
@@ -2109,7 +2104,6 @@ private fun RobiaShell(
             onDismissDuplicateGroup = dismissDuplicateGroup,
             onDeleteDuplicateItems = onDeleteItems,
             onDuplicateCalibrationClick = { pushRoute(RobiaRoute.DuplicateCalibration) },
-            onOutfitLabClick = { pushRoute(RobiaRoute.OutfitLab) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
             mergeProposalCard = mergeProposalCard,
@@ -2897,7 +2891,6 @@ private fun RobiaNavHost(
     onDismissDuplicateGroup: (DuplicateGroup) -> Unit,
     onDeleteDuplicateItems: (List<String>) -> Unit,
     onDuplicateCalibrationClick: () -> Unit,
-    onOutfitLabClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
     mergeProposalCard: (@Composable () -> Unit)? = null,
@@ -3005,9 +2998,6 @@ private fun RobiaNavHost(
         )
         RobiaRoute.DuplicateCalibration -> if (developerModeUnlocked && developerModeEnabled) {
             DuplicateCalibrationScreen(innerPadding = innerPadding, items = domainItems)
-        }
-        RobiaRoute.OutfitLab -> if (developerModeUnlocked && developerModeEnabled) {
-            OutfitLabScreen(innerPadding = innerPadding, garments = domainItems)
         }
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(
             innerPadding = innerPadding,
@@ -3145,7 +3135,6 @@ private fun RobiaNavHost(
             onBrowseLayoutChange = onBrowseLayoutChange,
             onRestoreSyncLogClick = onRestoreSyncLogClick,
             onDuplicateCalibrationClick = onDuplicateCalibrationClick,
-            onOutfitLabClick = onOutfitLabClick,
         )
         RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
             DeveloperRestoreSyncLogScreen(
@@ -3171,7 +3160,6 @@ private fun RobiaNavHost(
                 onBrowseLayoutChange = onBrowseLayoutChange,
                 onRestoreSyncLogClick = onRestoreSyncLogClick,
                 onDuplicateCalibrationClick = onDuplicateCalibrationClick,
-                onOutfitLabClick = onOutfitLabClick,
             )
         }
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
