@@ -885,4 +885,6 @@
     <string name="zip_export_hint">Fotos, Originale und Daten, gespeichert, wo du sie wählst</string>
     <string name="zip_export_progress">Deine Daten werden vorbereitet… %1$d von %2$d</string>
     <string name="zip_export_failed">Der Export wurde nicht abgeschlossen. Bitte versuche es erneut.</string>
+    <!-- BAT3 -->
+    <string name="batch_follow">Folgen</string>
 </resources>

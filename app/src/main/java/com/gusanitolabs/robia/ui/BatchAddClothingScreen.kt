@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -37,17 +38,24 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -64,6 +72,8 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
+import com.gusanitolabs.robia.core.designsystem.PopIn
 import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -178,6 +188,30 @@ internal fun BatchAddClothingScreen(
     val collator = remember { browseCollator() }
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
+    val listState = rememberLazyListState()
+    val reducedMotion = LocalReducedMotion.current
+    var follow by remember { mutableStateOf(BatchFollowState()) }
+    val following = follow.following
+    val target = follow.targetIndex(drafts)
+    // Only a finger drag reports Drag; the list's own animated scroll to the target does not.
+    val followConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.Drag && available.y != 0f) follow = follow.onUserScroll()
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(target, following) {
+        val index = target ?: return@LaunchedEffect
+        if (!following) return@LaunchedEffect
+        if (reducedMotion) listState.scrollToItem(index) else listState.animateScrollToItem(index)
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.canScrollForward }.collect { canScrollForward ->
+            if (!canScrollForward) follow = follow.onAtBottom()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -194,7 +228,8 @@ internal fun BatchAddClothingScreen(
                 modifier = Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp),
             )
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).nestedScroll(followConnection),
+                state = listState,
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     top = 10.dp,
@@ -271,6 +306,18 @@ internal fun BatchAddClothingScreen(
                     Icon(Icons.Rounded.Save, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
                     Text(stringResource(R.string.batch_save_items, acceptedCount))
+                }
+            }
+        }
+        // Overlay above the bottom bar: it shows only while following is off and a garment is being processed.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = with(density) { bottomBarHeightPx.toDp() } + 8.dp),
+        ) {
+            PopIn(visible = !following && target != null) {
+                TextButton(onClick = { follow = follow.onFollowTapped() }) {
+                    Text(stringResource(R.string.batch_follow))
                 }
             }
         }
