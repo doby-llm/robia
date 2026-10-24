@@ -211,3 +211,90 @@
 - **In scope:** Checklist of every DEV row and gate result, with the latest main staging APK link.
 - **Out of scope:** Code.
 - **Acceptance:** V-CHK-1.
+
+- **PLAN-CHANGE 2026-10-24 (R3-DEC-041):** CHK also lists the DEV rows of the Round 3b tasks below; its predecessors include them.
+
+---
+
+## Round 3b — device feedback (2026-10-24)
+
+Source: Manu's device feedback of 2026-10-24 (`feedback-2026-10-24` in the planner workspace; items F1–F13 in the REQ-FB lines of `requirements.md`). Rule from Manu: anything not mentioned is approved (R3-DEC-040). All Round 3 tasks above are merged; the Round 3b tasks start from latest `origin/main`. Same worker rules 0–13. Task list and ordering: R3-DEC-041.
+
+**Dependency summary.** Conflict-driven: the four sync tasks share `sync/GoogleDriveWardrobeRepository.kt`, `sync/WardrobeSyncOutboxProcessor.kt` and `ui/RobiaApp.kt`, so they run in a chain; the other four are independent of everything and of each other.
+```
+SYNC-AUTH   <- (none)
+SYNC-BANNER <- SYNC-AUTH
+SYNC-ETA    <- SYNC-BANNER
+SYNC-SPEED  <- SYNC-AUTH, SYNC-ETA
+UI-CAL      <- (none)        (then G-DUP is redone by Manu on a build containing UI-CAL)
+UI-WHITE    <- (none)
+EX2         <- (none)
+BAT3        <- (none)
+CHK         <- ALL (round 3 and 3b)
+```
+Shared files (writers in order): `sync/GoogleDriveWardrobeRepository.kt` SYNC-AUTH → SYNC-ETA → SYNC-SPEED; `sync/WardrobeSyncOutboxProcessor.kt` SYNC-AUTH → SYNC-BANNER → SYNC-ETA; `ui/RobiaApp.kt` SYNC-BANNER → SYNC-ETA; `sync/DriveHttpErrors.kt` SYNC-AUTH → SYNC-SPEED; `sync/fakes/FakeDriveSnapshotApi.kt` SYNC-AUTH → SYNC-SPEED.
+
+### Open decisions (Manu has not decided; no task is written for them)
+- **D-F10 (smart background remove, ED1):** Manu chooses between (C, recommended) fixing the selector with a deterministic pure-Kotlin tap that removes the tapped opaque connected component of the current alpha (`MaskOps.labelComponents`; gesture, trail, 60 % guard, history and hint stay) or (B) removing the feature (brush becomes the only tool; `MediaPipeInteractiveSelector` stays because `PreciseCutoutEngine` uses it). Option A (fix the MediaPipe selector) is not offered. The task UI-SMART is written once he chooses. V-ED1-D stays open.
+- **D-F13 (Outfit lab, OUT):** the Outfit lab is dropped by Manu's feedback (embeddings only pick similar colours). Removal task OUT-DROP is written once he confirms. V-OUT-D and G-OUT stay open until then.
+- **D-F12 (garment review redesign, colour + tag review):** designs (several mockups) are in progress; REQ-FB-12 is a placeholder and no task exists until Manu picks a design.
+
+## SYNC-AUTH — Drive sign-in errors: refresh and retry, correct classification, honest banner (F8)
+- **Reqs:** REQ-FB-08 · **Predecessors:** — · **Successors:** SYNC-BANNER, SYNC-SPEED · **Independent review: yes**
+- **Files:** `sync/DriveHttpErrors.kt`; `sync/GoogleDriveWardrobeRepository.kt`; `sync/WardrobeSyncOutboxProcessor.kt`; `MainActivity.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/DriveHttpErrorsTest.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/fakes/FakeDriveSnapshotApi.kt`.
+- **In scope:** On `Unauthorized`, run `authorize()` once more and retry the failed call once before Blocked; 403 `dailyLimitExceeded`, `sharingRateLimitExceeded`, `quotaExceeded` and status `RESOURCE_EXHAUSTED` are Transient (only 401 and 403 `forbidden`/`insufficientPermissions` stay AuthRequired; an unlisted 403 reason or an empty/HTML 403 body becomes Permanent(403), not a sign-in error); the HTTP code and reason appear in the "sync ended" log line for every non-Success outcome, and the Blocked cause is logged for ordinary uploads; the `authBlocked` flow is cleared when a cycle starts; tapping Sign in while no real disconnect exists gives visible feedback (toast) and requests a sync instead of doing nothing; `Retry-After` (seconds form) is parsed into Transient and `withRetry` waits max(backoff, Retry-After), capped at 60 s.
+- **Out of scope:** Concurrency, speed, new auth flows or scopes, the merge banner (SYNC-BANNER), Drive settings UI.
+- **Acceptance:** V-SYNC-AUTH-1, V-SYNC-AUTH-2, V-SYNC-AUTH-3, V-SYNC-AUTH-4, V-SYNC-AUTH-5, V-SYNC-AUTH-D.
+
+## SYNC-BANNER — Combine/Replace card only while a proposal is pending or combining (F2)
+- **Reqs:** REQ-FB-02 · **Predecessors:** SYNC-AUTH · **Successors:** SYNC-ETA · **Independent review: yes** (Replace is destructive)
+- **Files:** `ui/RobiaApp.kt` (the combine timeout and the card condition only); `ui/MergeCombineState.kt`; `sync/WardrobeSyncOutboxProcessor.kt` (the `pendingMergeSummary` clearing only); `app/src/test/java/com/gusanitolabs/robia/ui/MergeCombineStateTest.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/MergeProposalScenarioTest.kt`.
+- **In scope:** The 90 s combine timeout never fires while a sync cycle is running; Combining/Failed with a newer finished cycle and no pending proposal returns to Idle; the card shows only with a pending proposal or while the phase is Combining; `pendingMergeSummary` clears once the local merge import succeeded, whatever the upload result.
+- **Out of scope:** The merge decision logic, the Combine/Replace actions themselves, upload ETA or speed.
+- **Acceptance:** V-SYNC-BANNER-1, V-SYNC-BANNER-2, V-SYNC-BANNER-3, V-SYNC-BANNER-4, V-SYNC-BANNER-5, V-SYNC-BANNER-D.
+- **Test replaced by this design:** `MergeCombineStateTest.idleAndDoneAndFailedDoNotMove` pinned "Failed never moves". Rewrite it with equal strength: Idle and Done still never move; Failed moves to Idle only with a newer finished cycle and no pending proposal, and stays Failed while a proposal is pending or no newer cycle exists.
+
+## SYNC-ETA — ETA in "Updating cloud backup" (F1)
+- **Reqs:** REQ-FB-01 (a) · **Predecessors:** SYNC-BANNER · **Successors:** SYNC-SPEED
+- **Files:** `ui/CloudRestoreProgressText.kt`; `ui/RobiaApp.kt` (the restore overlay only); `sync/WardrobeSyncGateway.kt`; `sync/DriveWardrobeRepository.kt` (callback signature only); `sync/GoogleDriveWardrobeRepository.kt` (the photo-progress callback only); `sync/WardrobeSyncOutboxProcessor.kt` (the `onPhotoProgress` lambda only); `app/src/test/java/com/gusanitolabs/robia/sync/UploadProgressForwardingTest.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/fakes/FakeDriveWardrobeRepository.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/CloudRestoreProgressTextTest.kt`.
+- **In scope:** Reuse `BatchEtaEstimator`; `RestoreUploadProgress` gains `reusedPhotos` (default 0) and the progress callback carries it, so instant Reuse completions do not enter the gap window; the overlay shows the ETA under the Uploading phase with the `batch_eta_*` strings (or new `cloud_restore_eta_*` strings if the wording must differ); no ETA before the first real upload completes.
+- **Out of scope:** The download-phase byte ETA (unchanged), upload speed (SYNC-SPEED), the ordinary non-overlay upload path.
+- **Acceptance:** V-SYNC-ETA-1, V-SYNC-ETA-2, V-SYNC-ETA-3, V-SYNC-ETA-D.
+
+## SYNC-SPEED — Faster photo upload, safely (F1, speed)
+- **Reqs:** REQ-FB-01 (b) · **Predecessors:** SYNC-AUTH, SYNC-ETA · **Successors:** — · **Independent review: yes**
+- **Files:** `sync/GoogleDriveWardrobeRepository.kt`; `sync/DriveFileIndex.kt`; `sync/DriveHttpErrors.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/fakes/FakeDriveSnapshotApi.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/PhotoUploadVerifyTest.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/UploadSkipTest.kt`.
+- **In scope:** In this order, each kept only if the previous tests stay green: (1) skip the POST when the index lists the same name and size (as `originalReusable` does); (2) skip the find-GET when the full index lacks the name; (3) keep connections alive (disconnect only on error); (4) bounded concurrency 2–3 for upload and attachOriginal using the `Semaphore` pattern of `restorePhotoBlobs`, cancelling siblings on Unauthorized/Transient and dropping to 1 on 429/`Retry-After`; never a duplicate blob (a `findFileByName` failure must not turn into a duplicate POST); a failed cycle does not re-upload blobs already in the index.
+- **Out of scope:** Resumable uploads, snapshot format, restore/download speed, ETA wiring, auth handling (SYNC-AUTH).
+- **Acceptance:** V-SYNC-SPEED-1, V-SYNC-SPEED-2, V-SYNC-SPEED-3, V-SYNC-SPEED-4, V-SYNC-SPEED-D.
+- **Device gate:** the 100-garment upload time is measured after the build and compared with the before number from Manu's report (about 3 s per photo, about 160 s for 114 garments); record the number, no hard target.
+
+## UI-CAL — Duplicate calibration screen: loading and empty states (F9)
+- **Reqs:** REQ-FB-09 · **Predecessors:** — · **Successors:** G-DUP (redone)
+- **Files:** `ui/DuplicateCalibrationScreen.kt`; `suggestions/DuplicateScan.kt`; `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/DuplicateCalibrationScreenTest.kt`.
+- **In scope:** A progress indicator while the pairs are not ready; an empty state that shows the counts (active garments, with vector, hash matched, categorised); scan failures logged outside DEBUG; a pure Loading/Empty/Pairs state function with a JVM test.
+- **Out of scope:** The pair selection (top 30), thresholds, the Browse duplicate scan behaviour, DUP2.
+- **Acceptance:** V-UI-CAL-1, V-UI-CAL-2, V-UI-CAL-D.
+
+## UI-WHITE — Neutral grey gradient for white garments (F5)
+- **Reqs:** REQ-FB-05 (updates REQ-BR3-02) · **Predecessors:** — · **Successors:** —
+- **Files:** `ui/GarmentSwatchBackground.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/GarmentSwatchBackgroundTest.kt`.
+- **In scope:** `NEAR_WHITE_STOPS` becomes `#F3F3F4` → about `#D6D5D6` (neutral, subtle grey gradient); Browse, detail, colour review and tag review follow; the near-white rule stays.
+- **Out of scope:** The rule itself, other colours' gradients, the add-flow backdrops.
+- **Acceptance:** V-UI-WHITE-1, V-UI-WHITE-D.
+- **Test replaced by this design:** `nearWhiteSwatchesGetTheWarmNeutralStops` pinned `#E6E0D9` → `#CFC5BA`. Rewrite it with equal strength to the new stops, plus an assertion that each stop's RGB channel spread is below 10 (neutral).
+
+## EX2 — Export: Robia frame switch and a visible Preview (F3, F4)
+- **Reqs:** REQ-FB-03, REQ-FB-04 · **Predecessors:** — · **Successors:** —
+- **Files:** `ui/ExportScreen.kt`; `media/GarmentShareExporter.kt`; `media/PdfLayout.kt`; `data/SettingsRepository.kt`; `core/model/ClothingModels.kt` (`ExportOptions` gains the frame flag only); `app/src/test/java/com/gusanitolabs/robia/ui/ExportOptionsTest.kt`; `app/src/test/java/com/gusanitolabs/robia/media/PdfLayoutTest.kt`.
+- **In scope:** F3: a "Robia frame" switch (the white border and the logo around the image, for Image and PDF), on by default and persisted; it may be switched off only when every other Show option is off, so the output is the pure photo (Original or Robia cutout); with any field on, the switch is on and disabled. F4: Preview gives visible feedback: a loading state while it renders and a smooth scroll to the preview when it is ready; no animated scroll when reduced motion is on.
+- **Out of scope:** Zip, sharing several garments, new fonts, export options other than the frame.
+- **Acceptance:** V-EX2-1, V-EX2-2, V-EX2-3, V-EX2-4, V-EX2-D.
+- **PLAN-CHANGE (R3-DEC-041):** `core/model/ClothingModels.kt` is in Files because `ExportOptions` lives there (one boolean field, backward-compatible default).
+
+## BAT3 — Batch processing: the list follows the garment being processed (F7)
+- **Reqs:** REQ-FB-07 · **Predecessors:** — · **Successors:** —
+- **Files:** `ui/BatchAddClothingScreen.kt`; new `ui/BatchFollowState.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/BatchFollowStateTest.kt`.
+- **In scope:** While a batch processes, the list scrolls smoothly to follow the garment being processed; following stops as soon as the user scrolls manually and resumes via a small "Follow" affordance or when the user returns to the bottom; no scroll animation with reduced motion (jump or none). The follow decision is a pure function in `BatchFollowState.kt`.
+- **Out of scope:** Batch ordering, ETA, coordinator concurrency, row layout.
+- **Acceptance:** V-BAT3-1, V-BAT3-2, V-BAT3-D.

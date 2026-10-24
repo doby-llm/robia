@@ -100,11 +100,50 @@ Levels: **CI** = JVM test/build in GitHub Actions on the PR; **REC** = command o
 | V-OUT-D | OUT | DEV | G-OUT: Manu rates ≥ 20 proposals in a week; export shared with the planner | Manu |
 | V-CHK-1 | CHK | REC | checklist lists every `-D` row of verification-matrix.md with Pass/Fail/Notes columns and the APK link | complete |
 
+
+### Round 3b — device feedback (2026-10-24)
+| ID | Task | Level | Check | Pass |
+|---|---|---|---|---|
+| V-SYNC-AUTH-1 | SYNC-AUTH | CI | `DriveHttpErrorsTest`: 403 `dailyLimitExceeded`, `sharingRateLimitExceeded`, `quotaExceeded` and status `RESOURCE_EXHAUSTED` → Transient; 401 and 403 `forbidden`/`insufficientPermissions` → AuthRequired; an unlisted 403 reason or an empty/HTML 403 body → Permanent(403); the old "unlisted → AuthRequired" assertions are replaced with equal strength | pass |
+| V-SYNC-AUTH-2 | SYNC-AUTH | CI | fake `DriveSnapshotApi` (+ authorize counter): 401 then 200 → Success with `authorize()` called twice; 401 twice → Blocked after exactly one retry; 401 on the snapshot PUT is retried the same way | pass |
+| V-SYNC-AUTH-3 | SYNC-AUTH | CI | `Retry-After: N` (seconds) parsed into Transient (HTTP-date or garbage → null, value capped at 60 s); `withRetry` with an injected sleeper waits max(backoff, Retry-After) | pass |
+| V-SYNC-AUTH-4 | SYNC-AUTH | CI | processor test: the "sync ended" line carries HTTP code and reason for AuthBlocked/Retry outcomes and the Blocked cause of an ordinary upload is logged; the `authBlocked` flow is cleared when a cycle starts | pass |
+| V-SYNC-AUTH-5 | SYNC-AUTH | REV | `MainActivity` Sign in tap with Drive still Connected shows a toast and requests a sync (no silent no-op); nothing else changes in the sign-in flow | confirmed |
+| V-SYNC-AUTH-D | SYNC-AUTH | DEV | Add 100+ garments and let them upload: no red Drive sign-in error appears. If one still appears, Developer › log "sync ended" line names the HTTP code and reason (send it) | Manu |
+| V-SYNC-BANNER-1 | SYNC-BANNER | CI | `MergeCombineStateTest`: pure timeout predicate is false while a cycle is running (`restoreProgress != null` or Syncing) and true after 90 s with no cycle | pass |
+| V-SYNC-BANNER-2 | SYNC-BANNER | CI | `MergeCombineStateTest`: Combining/Failed + newer finished cycle + no pending proposal → Idle; Combining + newer cycle + proposal pending → Failed; Failed + proposal pending stays Failed; Idle and Done never move (replaces `idleAndDoneAndFailedDoNotMove`, equal strength) | pass |
+| V-SYNC-BANNER-3 | SYNC-BANNER | CI | `MergeCombineStateTest`: pure card-visible function — true only with a pending proposal (dialog dismissed) or phase Combining; false for Failed/Done/Idle without a proposal | pass |
+| V-SYNC-BANNER-4 | SYNC-BANNER | CI | `MergeProposalScenarioTest`: `pendingMergeSummary` is cleared once the local merge import succeeded when the upload ends AuthBlocked or Retry; a later cycle is not blocked by it | pass |
+| V-SYNC-BANNER-5 | SYNC-BANNER | REV | independent review: Replace is reachable only from a pending proposal; no path shows Replace in Failed with an empty summary | confirmed |
+| V-SYNC-BANNER-D | SYNC-BANNER | DEV | Sign in with the Google account that has a backup, tap Combine in the popup and wait until the upload finishes: Browse shows no Combine/Replace card afterwards | Manu |
+| V-SYNC-ETA-1 | SYNC-ETA | CI | `UploadProgressForwardingTest` + fake repo: the callback carries completed, total and reused counts through `RestoreUploadProgress.reusedPhotos` | pass |
+| V-SYNC-ETA-2 | SYNC-ETA | CI | `CloudRestoreProgressTextTest`: pure upload-ETA function — no ETA before the first real upload completes; Reuse completions add no gap; remaining = total − completed; text uses the batch_eta strings | pass |
+| V-SYNC-ETA-3 | SYNC-ETA | REV | overlay shows the ETA only in the Uploading phase; the download-phase byte ETA is unchanged | confirmed |
+| V-SYNC-ETA-D | SYNC-ETA | DEV | Combine or upload 20+ garments: "Updating cloud backup" shows "About N min/s left" after the first photos and it does not jump wildly | Manu |
+| V-SYNC-SPEED-1 | SYNC-SPEED | CI | fake API: a blob whose name+size the index lists causes no POST; a name absent from the full index causes no find-GET | pass |
+| V-SYNC-SPEED-2 | SYNC-SPEED | CI | fake API: with concurrency 2–3 every garment ends with exactly one cutout blob and one original blob (no duplicates), progress counts are monotonic, and a `findFileByName` failure never produces a duplicate POST | pass |
+| V-SYNC-SPEED-3 | SYNC-SPEED | CI | fake API: Unauthorized/Transient on one worker cancels its siblings; 429/Retry-After drops concurrency to 1; a failed cycle followed by a retry uploads no blob already in the index | pass |
+| V-SYNC-SPEED-4 | SYNC-SPEED | REV | independent review: connection is disconnected only on error; no shared mutable state without synchronisation; memory bounded by the concurrency limit | confirmed |
+| V-SYNC-SPEED-D | SYNC-SPEED | DEV | Upload 100 garments on the new build and send the total time from the Developer log (before: about 160 s for 114 garments); no sign-in error, no duplicate files in Drive | Manu |
+| V-UI-CAL-1 | UI-CAL | CI | `DuplicateScanTest`: the scan reports counts (active, with vector, hash matched, categorised) for a mix of no vector, stale hash and no category | pass |
+| V-UI-CAL-2 | UI-CAL | CI | `DuplicateCalibrationScreenTest`: pure state function — pairs null → Loading, empty list → Empty(counts), non-empty → Pairs | pass |
+| V-UI-CAL-D | UI-CAL | DEV | Developer › Duplicate calibration shows a progress indicator, then the pairs (or an empty state with counts); then redo the 30 pairs (G-DUP) | Manu |
+| V-UI-WHITE-1 | UI-WHITE | CI | `GarmentSwatchBackgroundTest`: White, Cream/Beige-light and luminance > 0.82 → stops `#F3F3F4`→about `#D6D5D6`; each stop's RGB channel spread < 10; Black/Navy/Burgundy unchanged (replaces `nearWhiteSwatchesGetTheWarmNeutralStops`, equal strength) | pass |
+| V-UI-WHITE-D | UI-WHITE | DEV | A white T-shirt in Browse shows a subtle grey gradient like in the add flow, not flat beige; same in the garment detail | Manu |
+| V-EX2-1 | EX2 | CI | `ExportOptionsTest`: the frame flag defaults to on and round-trips through persistence; pure rule — it may be off only when every Show field is off, and with any field on it resolves to on and disabled | pass |
+| V-EX2-2 | EX2 | CI | `PdfLayoutTest`: frame off + no fields → only the photo, no border, no logo, no text; frame on → unchanged output | pass |
+| V-EX2-3 | EX2 | CI | image card layout: frame off + no fields → output is the photo alone (Original or Robia cutout); size rules of V-EX1-3 hold with the frame on | pass |
+| V-EX2-4 | EX2 | REV | Preview shows a loading state, then scrolls smoothly to the preview; no animated scroll when reduced motion is on | confirmed |
+| V-EX2-D | EX2 | DEV | Export: turn every field off, then switch Robia frame off → Preview shows the pure photo; turn one field on → the switch turns on and is disabled; tap Preview → the screen scrolls down to it | Manu |
+| V-BAT3-1 | BAT3 | CI | `BatchFollowStateTest`: following starts on; a manual scroll turns it off; the Follow affordance or returning to the bottom turns it on; the target index is the garment being processed | pass |
+| V-BAT3-2 | BAT3 | REV | no scroll animation with reduced motion; the Follow affordance shows only while following is off; ETA header and ✕ unaffected | confirmed |
+| V-BAT3-D | BAT3 | DEV | Batch-add 30+ garments and watch: the list follows the garment being processed; scroll up by hand and it stops; tap Follow and it resumes | Manu |
+
 ## Gates
 | Gate | After | Who | Pass |
 |---|---|---|---|
 | G-ADB1 | K00, K01, ED1, GPU merged | coordinator + Manu | dumps collected for the diagnostic set, compare.py report saved, first divergent stage per photo recorded; editor tap dumps; Browse baseline saved; GPU numbers saved → PLAN-CHANGE |
-| G-DUP | DUP1 | Manu | 30 pairs marked; T_DUP = lowest cosine with 100 % precision on Same + 0.005 → PLAN-CHANGE |
+| G-DUP | DUP1, UI-CAL | Manu | 30 pairs marked on a build that contains UI-CAL (the 2026-10-24 calibration screen was blank, R3-DEC-040: Manu redoes the 30 pairs on that build); T_DUP = lowest cosine with 100 % precision on Same + 0.005 → PLAN-CHANGE |
 | G-ADB2 | K03, ED2, PRF | coordinator + Manu | compare.py exit 0 on the diagnostic set (V-K02-4, V-K03-3); Browse janky % and p90 lower than G-ADB1 (V-PRF-4) |
 | G-CUT | G-ADB2 | Manu | Experimental NOK < Standard NOK on ≥ 10 garments and no part lost that Standard kept → Manu decides the default |
 | G-OUT | OUT (after the round) | Manu | ≥ 20 rated proposals; ≥ 60 % 👍 → user feature planned next round |
