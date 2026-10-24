@@ -817,7 +817,7 @@
     <string name="duplicate_empty">No quedan posibles duplicados.</string>
     <string name="duplicate_calibration_title">Calibración de duplicados</string>
     <string name="duplicate_calibration_summary">Marca como Igual o Distinto los pares más parecidos de la misma categoría.</string>
-    <string name="duplicate_calibration_empty">Todavía no hay pares de la misma categoría con vector de imagen.</string>
+    <string name="duplicate_calibration_empty">Todavía no hay pares que comparar. Prendas activas: %1$d · con vector: %2$d · foto coincidente: %3$d · con categoría: %4$d</string>
     <string name="duplicate_mark_same">Igual</string>
     <string name="duplicate_mark_different">Distinto</string>
     <string name="duplicate_calibration_progress">%1$d de %2$d marcados</string>
@@ -885,4 +885,6 @@
     <string name="zip_export_hint">Fotos, originales y datos, guardados donde elijas</string>
     <string name="zip_export_progress">Preparando tus datos… %1$d de %2$d</string>
     <string name="zip_export_failed">La exportación no terminó. Inténtalo de nuevo.</string>
+    <!-- UI-CAL -->
+    <string name="duplicate_calibration_loading">Comparando fotos de prendas…</string>
 </resources>

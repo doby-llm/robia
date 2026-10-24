@@ -55,6 +55,19 @@ data class DuplicateGroup(val garmentIds: List<String>, val tier: DuplicateTier)
 /** One calibration candidate: two garments of the same category and their IMAGE cosine. */
 data class CalibrationPair(val a: String, val b: String, val cosine: Float)
 
+/**
+ * Why a calibration list can be short. A funnel: each count is over the garments that passed the step before it, so
+ * [categorised] is how many garments can form a pair.
+ */
+data class CalibrationCounts(val active: Int, val withVector: Int, val hashMatched: Int, val categorised: Int) {
+    companion object {
+        val NONE = CalibrationCounts(active = 0, withVector = 0, hashMatched = 0, categorised = 0)
+    }
+}
+
+/** The calibration pairs of one scan, with the counts that explain an empty list. */
+data class CalibrationScan(val pairs: List<CalibrationPair>, val counts: CalibrationCounts)
+
 /** When a scan ran and how many active garments it saw. */
 data class DuplicateScanRecord(val atEpochMillis: Long, val garmentCount: Int)
 
@@ -196,24 +209,43 @@ suspend fun scanDuplicates(
 
 /**
  * The calibration list (G-DUP): every active garment is checked, because same-category pairs are not limited to a shared
- * hash. A failed scan returns no pairs.
+ * hash. A failed scan returns no pairs and [CalibrationCounts.NONE], and logs one line outside DEBUG (no photo data).
  */
 suspend fun scanCalibrationPairs(
     context: Context,
     items: List<ClothingItem>,
     embeddingRepository: EmbeddingRepository,
-): List<CalibrationPair> = withContext(Dispatchers.IO) {
+): CalibrationScan = withContext(Dispatchers.IO) {
     try {
         val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
         val active = items.filterNot(ClothingItem::isArchived).map(ClothingItem::id).toSet()
         val currentHashes = currentPhotoHashes(context, active, items)
-        calibrationPairs(items, vectors, currentHashes)
+        CalibrationScan(
+            pairs = calibrationPairs(items, vectors, currentHashes),
+            counts = calibrationCounts(items, vectors, currentHashes),
+        )
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (failure: Exception) {
-        if (BuildConfig.DEBUG) Log.w(DUPLICATE_LOG_TAG, "Calibration scan failed: ${failure::class.java.simpleName}", failure)
-        emptyList()
+        Log.w(DUPLICATE_LOG_TAG, "Calibration scan failed: ${failure::class.java.simpleName}: ${failure.message}")
+        CalibrationScan(emptyList(), CalibrationCounts.NONE)
     }
+}
+
+/** The funnel behind [scanCalibrationPairs]: active, with an IMAGE vector, hash matched, then categorised. */
+internal fun calibrationCounts(
+    items: List<ClothingItem>,
+    vectors: Map<String, GarmentVectors>,
+    currentPhotoHashes: Map<String, String>,
+): CalibrationCounts {
+    val active = items.filterNot(ClothingItem::isArchived)
+    val eligible = eligibleGarments(items, vectors, currentPhotoHashes)
+    return CalibrationCounts(
+        active = active.size,
+        withVector = active.count { item -> vectors[item.id]?.image != null },
+        hashMatched = eligible.size,
+        categorised = eligible.count { garment -> garment.category != null },
+    )
 }
 
 /** Active garments whose stored IMAGE hash is shared with another garment that has an IMAGE vector. */
