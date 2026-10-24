@@ -877,4 +877,10 @@
     <string name="duplicate_calibration_loading">Comparando fotos de prendas…</string>
     <!-- UI-SMART -->
     <string name="editor_smart_keep_hint">El toque inteligente quita las piezas sueltas. Elige Quitar, o usa el pincel para conservar partes.</string>
+    <!-- DARK1 -->
+    <string name="settings_group_appearance">Apariencia</string>
+    <string name="settings_theme">Tema</string>
+    <string name="settings_theme_light">Claro</string>
+    <string name="settings_theme_dark">Oscuro</string>
+    <string name="settings_theme_system">Seguir al sistema</string>
 </resources>

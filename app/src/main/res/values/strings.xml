@@ -877,4 +877,10 @@
     <string name="duplicate_calibration_loading">Comparing garment photos…</string>
     <!-- UI-SMART -->
     <string name="editor_smart_keep_hint">Smart tap removes loose pieces. Choose Remove, or use the brush to keep parts.</string>
+    <!-- DARK1 -->
+    <string name="settings_group_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_system">Follow system</string>
 </resources>

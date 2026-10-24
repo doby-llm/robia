@@ -33,6 +33,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -161,6 +162,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
+import com.gusanitolabs.robia.core.designsystem.resolveDarkTheme
 import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -175,6 +177,7 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.core.model.ThemeMode
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
@@ -361,6 +364,7 @@ fun RobiaApp(
     onRequestCloudSetup: () -> Unit = {},
     performanceFixtureUris: List<String> = emptyList(),
     performanceBatch: Boolean = false,
+    themeMode: ThemeMode = ThemeMode.Light,
 ) {
     val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
     val settingsLoaded = persistedSettings != null
@@ -418,7 +422,7 @@ fun RobiaApp(
     }
 
     LocalizedRobiaContent(settings.languagePreference) {
-        RobiaTheme {
+        RobiaTheme(darkTheme = resolveDarkTheme(themeMode, isSystemInDarkTheme())) {
         val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
         RobiaShell(
             suggestionService = suggestionService,
@@ -3302,7 +3306,7 @@ private fun PlaceholderScreen(
     }
 }
 
-internal fun MainColor.swatchColor(): Color = hex.toComposeColor() ?: Color(0xFFDADADA)
+internal fun MainColor.swatchColor(): Color = hex.toComposeColor() ?: Color(0xFFDADADA) // theme-fixed: garment colour data
 
 internal fun String?.normalizedHexOrNull(): String? {
     val normalized = this?.trim()?.removePrefix("#") ?: return null
