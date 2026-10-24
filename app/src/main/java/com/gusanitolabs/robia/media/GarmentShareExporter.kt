@@ -54,13 +54,17 @@ object GarmentShareExporter {
     private const val CARD_CHIP_LETTER_SIZE = 30f
     private const val CARD_CHIP_TEXT_PAD = 24f
 
-    /** The share file for the image card (PNG, [CARD_WIDTH] x [CARD_HEIGHT]) with the chosen [fields]. */
+    /**
+     * The share file for the image card (PNG, [CARD_WIDTH] x [CARD_HEIGHT]) with the chosen [fields].
+     * Frame off gives the photo alone.
+     */
     fun createShareCard(
         context: Context,
         item: GarmentShareItem,
         fields: Set<ExportField>,
+        showFrame: Boolean,
     ): Uri {
-        val bitmap = renderShareCard(context, item, fields)
+        val bitmap = renderShareCard(context, item, fields, showFrame)
         return bitmap.use { card ->
             val file = shareFile(context, item.name, "png")
             file.outputStream().use { output ->
@@ -75,8 +79,10 @@ object GarmentShareExporter {
         context: Context,
         item: GarmentShareItem,
         fields: Set<ExportField>,
+        showFrame: Boolean,
     ): Bitmap {
         val source = decodeGarmentImage(context, item.imageUri)
+        if (!showFrame) return source.use { photoOnlyCard(it) }
         val logo = context.assets.open(ROBIA_LOGO_ASSET).use(BitmapFactory::decodeStream)
         val fonts = PdfFonts.load(context)
         val swatches = if (ExportField.Colors in fields) item.pdfSwatchColors() else emptyList()
@@ -114,11 +120,15 @@ object GarmentShareExporter {
             }
         } ?: error("Unable to open PDF preview")
 
-    /** The PDF card with the chosen [fields]: the existing A4 layout fed only with what is chosen. */
+    /**
+     * The PDF card with the chosen [fields]: the existing A4 layout fed only with what is chosen.
+     * Frame off gives the photo alone.
+     */
     fun createSharePdf(
         context: Context,
         item: GarmentShareItem,
         fields: Set<ExportField>,
+        showFrame: Boolean,
     ): Uri {
         val bitmap = decodeGarmentImage(context, item.imageUri)
         return bitmap.use { source ->
@@ -128,6 +138,7 @@ object GarmentShareExporter {
             val layout = computePdfLayout(
                 content = item.pdfContent(context, fields, swatches),
                 measurer = PdfPaintMeasurer(fonts),
+                showFrame = showFrame,
             )
             val document = PdfDocument()
             layout.pages.forEachIndexed { index, pageLayout ->
@@ -276,6 +287,22 @@ object GarmentShareExporter {
         )
     }
 
+    /**
+     * Frame off (EX2): the photo alone at [photoOnlyCardSize]; no paper, border, logo or text.
+     * A cutout keeps its transparency.
+     */
+    private fun photoOnlyCard(photo: Bitmap): Bitmap {
+        val (width, height) = photoOnlyCardSize(photo.width, photo.height)
+        val card = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Canvas(card).drawBitmap(
+            photo,
+            null,
+            RectF(0f, 0f, width.toFloat(), height.toFloat()),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+        )
+        return card
+    }
+
     /** A chip keeps its colour fill when it is a colour; the text turns white on dark fills. */
     private fun drawChip(canvas: Canvas, box: PdfBox, text: String, fill: Int?, fonts: PdfFonts) {
         val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fill ?: chipFill }
@@ -296,6 +323,10 @@ object GarmentShareExporter {
         swatchColors: List<GarmentShareColor>,
         fonts: PdfFonts,
     ) {
+        if (!page.framed) {
+            page.photo?.let { drawBitmapFitContain(canvas, photo, RectF(it.x, it.y, it.x + it.w, it.bottom)) }
+            return
+        }
         canvas.drawColor(paper)
         drawHeader(canvas, fonts)
         page.photo?.let { drawPhoto(canvas, photo, it, accent) }

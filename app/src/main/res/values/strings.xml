@@ -885,4 +885,8 @@
     <string name="zip_export_hint">Photos, originals and data, saved where you choose</string>
     <string name="zip_export_progress">Preparing your data… %1$d of %2$d</string>
     <string name="zip_export_failed">The export didn\'t finish. Try again.</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Robia frame</string>
+    <string name="export_frame_hint">White border and Robia logo around the photo</string>
+    <string name="export_frame_locked_hint">Turn off the other Show options to hide the frame.</string>
 </resources>
