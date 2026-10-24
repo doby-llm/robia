@@ -102,10 +102,11 @@
 
 ## CLN — One-time cleanup of orphan photo files
 - **Reqs:** REQ-OR-03 (existing files) · **Predecessors:** OR1 · **Successors:** — · **Independent review: yes**
-- **Files:** `media/ClothingImageStore.kt`; new `media/OrphanPhotoCleanup.kt`; `RobiaApplication.kt`; new `app/src/test/java/com/gusanitolabs/robia/media/OrphanPhotoCleanupTest.kt`.
+- **Files:** `media/ClothingImageStore.kt`; new `media/OrphanPhotoCleanup.kt`; `RobiaApplication.kt`; `ui/AddEditClothingScreen.kt` (registration only); new `app/src/test/java/com/gusanitolabs/robia/media/OrphanPhotoCleanupTest.kt`.
 - **In scope:** Delete unreferenced `gallery-*`, `camera-*`, `subject-*`, `cropped-subject-*` files older than 24 h once per install (flag), never referenced files.
 - **Out of scope:** Restored files, thumbnails, caches, models, originals.
 - **Acceptance:** V-CLN-1, V-CLN-2, V-CLN-D.
+- **PLAN-CHANGE 2026-10-24 (R3-DEC-037):** CLN review round 1 (NOT SAFE, one BLOCKING item): an unsaved add/edit draft whose photo is older than 24 h would be deleted while in use, because `AddEditClothingScreen.kt` keeps `photoUri` and `originalPhotoUri` in `rememberSaveable` (a draft survives process death and an app update), the one-time cleanup runs at the first ON_START of the new build, and `ActivePhotoRefs` has no register call sites. Files gain `ui/AddEditClothingScreen.kt`, for registration only: register the draft's photo URIs in `ActivePhotoRefs` when they are set or restored and unregister on save or leave; no other behaviour change. The one-time run waits 60 s after the first ON_START (on IO) so a restored draft has registered before the planner runs; the run-once flag is still set only after a completed run. A planner test covers that a registered file older than 24 h is kept. Deferred: JVM test of `deleteOrphans` / the run-once path; `File.delete()` failures are not retried; V-CLN-D label wording (use Android Settings > Apps > Robia > Storage). Acceptance IDs unchanged.
 
 ## EX1 — Export screen: photo, format and fields
 - **Reqs:** REQ-EX-01, REQ-EX-02 · **Predecessors:** OR1, SPK, OUT · **Successors:** ZIP
