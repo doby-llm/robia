@@ -7,6 +7,9 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.util.Log
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -19,6 +22,9 @@ import com.gusanitolabs.robia.data.LocalTagRepository
 import com.gusanitolabs.robia.data.LocalWardrobeRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.local.RobiaDatabase
+import com.gusanitolabs.robia.media.ActivePhotoRefs
+import com.gusanitolabs.robia.media.ClothingImageStore
+import com.gusanitolabs.robia.media.OrphanPhotoCleanup
 import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import com.gusanitolabs.robia.media.cutout.CutoutPack
@@ -46,16 +52,22 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal val Context.settingsDataStore by preferencesDataStore(name = "robia_settings")
 internal const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
+private val ORPHAN_CLEANUP_DONE_KEY = booleanPreferencesKey("orphan_cleanup_v1_done")
+private const val ORPHAN_CLEANUP_DELAY_MILLIS = 60_000L
 
 class RobiaApplication : Application() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,6 +76,8 @@ class RobiaApplication : Application() {
 
     /** Whether the device has an internet network right now; the cloud sync indicator shows "Waiting for connection" without one. */
     val online: StateFlow<Boolean> = onlineState.asStateFlow()
+
+    private val orphanCleanupStarted = AtomicBoolean(false)
 
     private val cloudAuthorizationInFlightState = MutableStateFlow(false)
 
@@ -178,7 +192,10 @@ class RobiaApplication : Application() {
         registerConnectivityCallback()
         ProcessLifecycleOwner.get().lifecycle.addObserver(LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> embeddingBackfill.resume()
+                Lifecycle.Event.ON_START -> {
+                    embeddingBackfill.resume()
+                    if (orphanCleanupStarted.compareAndSet(false, true)) appScope.launch { cleanUpOrphanPhotosOnce() }
+                }
                 Lifecycle.Event.ON_STOP -> {
                     embeddingBackfill.pause()
                     embeddingEngineHolder.release()
@@ -210,6 +227,34 @@ class RobiaApplication : Application() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) embeddingEngineHolder.release()
+    }
+
+    /**
+     * Deletes the orphan photo files of older builds once per install (REQ-OR-03). The garments' photo and original URIs
+     * and the active drafts are the referenced set. The run waits 60 s so a restored draft has registered its photos
+     * first. The flag is set only after a run completes, so a failed run retries.
+     */
+    private suspend fun cleanUpOrphanPhotosOnce() {
+        if (settingsDataStore.data.first()[ORPHAN_CLEANUP_DONE_KEY] == true) return
+        try {
+            withContext(Dispatchers.IO) {
+                delay(ORPHAN_CLEANUP_DELAY_MILLIS)
+                val referenced = database.wardrobeDao().getAllItemsForSync()
+                    .flatMap { row -> listOf(row.item.photoUri, row.item.originalUri) }
+                    .filterNotNull()
+                    .toSet() + ActivePhotoRefs.snapshot()
+                OrphanPhotoCleanup.deleteOrphans(
+                    imageDir = ClothingImageStore.imageDirectory(this@RobiaApplication),
+                    referenced = referenced,
+                    now = System.currentTimeMillis(),
+                )
+            }
+            settingsDataStore.edit { preferences -> preferences[ORPHAN_CLEANUP_DONE_KEY] = true }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(OrphanPhotoCleanup.LOG_TAG, "Orphan photo cleanup failed; it runs again on the next start", error)
+        }
     }
 
     private fun registerConnectivityCallback() {
