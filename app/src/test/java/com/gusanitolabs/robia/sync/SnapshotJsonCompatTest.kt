@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
+import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
 import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
 import com.gusanitolabs.robia.core.model.TagSyncRecord
@@ -137,4 +138,61 @@ class SnapshotJsonCompatTest {
         assertTrue(tagsById.getValue("category-shirts").suggestOccasions)
         assertNull(tagsById.getValue("category-shirts").description)
     }
+
+    /** V-OR2-1: a schema-2 snapshot written before the original fields decodes with them null and re-encodes byte-identical. */
+    @Test
+    fun photoWithoutOriginalFieldsReEncodesByteIdentical() {
+        val legacy = DriveSnapshotJson.encode(
+            WardrobeSyncSnapshot(
+                photos = listOf(
+                    GarmentPhotoRecord(
+                        garmentId = "garment-1",
+                        localUri = "content://phone/garment-1",
+                        blobPath = "photos/garment-1/0123456789abcdef.webp",
+                        mimeType = "image/webp",
+                        contentHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        byteSize = 12L,
+                        sourceHash = "fedcba9876543210",
+                    ),
+                ),
+            ),
+        )
+
+        val decoded = DriveSnapshotJson.decode(legacy).photos.single()
+
+        assertNull(decoded.originalBlobPath)
+        assertNull(decoded.originalHash)
+        assertNull(decoded.originalByteSize)
+        assertNull(decoded.recipe)
+        assertFalse(legacy.contains("original"))
+        assertEquals(legacy, DriveSnapshotJson.encode(DriveSnapshotJson.decode(legacy)))
+    }
+
+    /** V-OR2-1: the original fields round-trip; the local-only URIs never reach Drive. */
+    @Test
+    fun originalFieldsRoundTripAndLocalUrisStayOnThePhone() {
+        val photo = GarmentPhotoRecord(
+            garmentId = "garment-1",
+            localUri = "content://phone/garment-1",
+            blobPath = "photos/garment-1/0123456789abcdef.webp",
+            originalBlobPath = "originals/garment-1/fedcba9876543210.jpg",
+            originalHash = "fedcba9876543210",
+            originalByteSize = 4096L,
+            recipe = """{"engine":"precise","version":1}""",
+            localOriginalUri = "content://phone/original-garment-1",
+            restoredOriginalLocalUri = "content://phone/restored-original-garment-1",
+        )
+
+        val json = DriveSnapshotJson.encode(WardrobeSyncSnapshot(photos = listOf(photo)))
+        val decoded = DriveSnapshotJson.decode(json).photos.single()
+
+        assertEquals("originals/garment-1/fedcba9876543210.jpg", decoded.originalBlobPath)
+        assertEquals("fedcba9876543210", decoded.originalHash)
+        assertEquals(4096L, decoded.originalByteSize)
+        assertEquals("""{"engine":"precise","version":1}""", decoded.recipe)
+        assertNull(decoded.localOriginalUri)
+        assertNull(decoded.restoredOriginalLocalUri)
+        assertFalse(json.contains("original-garment-1"))
+    }
 }
+

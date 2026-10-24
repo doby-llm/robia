@@ -209,6 +209,18 @@ data class GarmentPhotoRecord(
     val restoreDiagnosticEvents: List<String> = emptyList(),
     /** SHA-256 (first 16 hex digits) of the local photo bytes; serialized, the change-detection key of TS§4.2. Null before S03. */
     val sourceHash: String? = null,
+    /** Drive blob of the original photo (`originals/<garmentId>/<hash16>.jpg`); optional, schema 2 stays. REQ-OR-04. */
+    val originalBlobPath: String? = null,
+    /** SHA-256 (first 16 hex digits) of the original's bytes; serialized. */
+    val originalHash: String? = null,
+    /** Byte size of the original's bytes; serialized. */
+    val originalByteSize: Long? = null,
+    /** How to reproduce the cutout from the original, as [CutoutRecipe] JSON text; serialized. */
+    val recipe: String? = null,
+    /** Local-only: the original photo on this phone, read by the upload to hash and store it. Not serialized to Drive. */
+    val localOriginalUri: String? = null,
+    /** Local-only: the original downloaded during restore. Not serialized to Drive. */
+    val restoredOriginalLocalUri: String? = null,
 )
 
 data class SyncTombstoneRecord(
