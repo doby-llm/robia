@@ -1234,7 +1234,6 @@ private fun writeCutout(context: Context, photo: CutoutPhoto, refine: Boolean = 
 
 /** The original in the canvas of a stored cutout of [canvasW] × [canvasH], or null when it cannot be read. */
 private fun loadOriginalLayer(context: Context, originalUri: String, recipe: CutoutRecipe, canvasW: Int, canvasH: Int): IntArray? {
-    if (recipe.storedCanvasOffset == null) return null
     val original = context.contentResolver.openInputStream(Uri.parse(originalUri))?.use(BitmapFactory::decodeStream) ?: return null
     return try {
         originalLayer(argbOf(original), original.width, original.height, canvasW, canvasH, recipe)
