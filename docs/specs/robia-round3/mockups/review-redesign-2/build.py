@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # keep round 1's folder untouched when importing it
 OUT = Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("r1", OUT.parent / "review-redesign" / "build.py")
 r1 = importlib.util.module_from_spec(_spec)
