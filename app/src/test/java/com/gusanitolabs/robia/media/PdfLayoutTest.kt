@@ -135,6 +135,111 @@ class PdfLayoutTest {
         assertEquals(listOf("Category", "Fit"), page.metadata.map { it.label })
     }
 
+    /** V-EX1-2: the PDF shows only the fields that were chosen; a field with no value leaves no row. */
+    @Test
+    fun chosenLocation_isOnTheSecondRowAfterFitAndBlankRowsStayOut() {
+        val content = typical.copy(
+            metadata = listOf(
+                "Category" to listOf("Dresses"),
+                "Fit" to emptyList(),
+                "Location" to listOf("Wardrobe 2"),
+            ),
+            notes = "",
+        )
+        val page = computePdfLayout(content, measurer).pages.single()
+
+        assertEquals(listOf("Category", "Location"), page.metadata.map { it.label })
+        assertNull(page.notes)
+        assertInsideMarginsAndFooter(page)
+    }
+
+    @Test
+    fun allMetadataRowsChosen_fitInsideMarginsAndFooter() {
+        val content = typical.copy(
+            metadata = listOf(
+                "Category" to listOf("Dresses"),
+                "Season" to listOf("Summer"),
+                "Occasions" to listOf("Dressed-up", "Everyday", "Work"),
+                "Fit" to listOf("Good fit"),
+                "Location" to listOf("Wardrobe 2"),
+            ),
+        )
+        val page = computePdfLayout(content, measurer).pages.single()
+
+        assertEquals(5, page.metadata.size)
+        assertInsideMarginsAndFooter(page)
+        assertNoBandAboveFooter(page)
+    }
+
+    /** V-EX1-3: the image card is 1200 x 1600 px (long edge 1600) whatever the fields. */
+    @Test
+    fun imageCard_isPortraitWithLongEdge1600() {
+        assertEquals(1600f, CARD_HEIGHT, 0f)
+        assertEquals(1200f, CARD_WIDTH, 0f)
+        val card = computeCardLayout(cardContent(sections = emptyList()), measurer)
+
+        assertTrue(card.photo.bottom <= card.mark.y)
+        assertEquals(CARD_HEIGHT - 72f, card.mark.bottom, 0f)
+    }
+
+    /** V-EX1-3: the field block grows with the chosen fields only; the photo gives up the difference. */
+    @Test
+    fun fieldBlock_growsWithChosenFieldsOnly() {
+        val none = computeCardLayout(cardContent(sections = emptyList()), measurer)
+        val two = computeCardLayout(cardContent(sections = cardSections(2)), measurer)
+        val four = computeCardLayout(cardContent(sections = cardSections(4)), measurer)
+        val withBlank = computeCardLayout(
+            cardContent(sections = cardSections(2) + CardSection("Notes", emptyList(), chips = false)),
+            measurer,
+        )
+
+        assertTrue(two.photo.h < none.photo.h)
+        assertTrue(four.photo.h < two.photo.h)
+        assertEquals(two.photo.h, withBlank.photo.h, 0f)
+        assertEquals(2, withBlank.sections.size)
+    }
+
+    @Test
+    fun cardBoxes_stayInsideCardAndBelowThePhoto() {
+        val card = computeCardLayout(cardContent(sections = cardSections(4), notes = "n".repeat(300)), measurer)
+
+        val texts = listOfNotNull(card.title?.box, card.notes?.box) + card.sections.flatMap { it.boxes + it.labelBox }
+        texts.forEach { box ->
+            assertTrue("box $box is outside the card margins", box.x >= 72f && box.x + box.w <= 1128f)
+            assertTrue("box $box overlaps the photo", box.y >= card.photo.bottom)
+            assertTrue("box $box overlaps the mark", box.bottom <= card.mark.y)
+        }
+    }
+
+    @Test
+    fun longNotes_areCutToKeepTheMinimumPhoto() {
+        val card = computeCardLayout(cardContent(sections = cardSections(4), notes = "n".repeat(20_000)), measurer)
+
+        assertTrue("photo ${card.photo.h} keeps 640 px", card.photo.h >= 640f)
+        assertTrue(card.notes!!.lineCount < measurer.lineCount("n".repeat(20_000), 30f, 1056f))
+    }
+
+    @Test
+    fun chipsWrapWithinTheCardWidth() {
+        val values = List(12) { "Occasion $it" }
+        val card = computeCardLayout(cardContent(sections = listOf(CardSection("Occasions", values, chips = true))), measurer)
+
+        val chips = card.sections.single().boxes
+        assertEquals(12, chips.size)
+        assertTrue("chips should take more than one row", chips.map { it.y }.distinct().size > 1)
+        chips.forEach { assertTrue(it.x + it.w <= 1128f) }
+    }
+
+    private fun cardSections(count: Int): List<CardSection> = listOf(
+        CardSection("Category", listOf("Dresses"), chips = false),
+        CardSection("Colors", listOf("Burgundy", "Cream"), chips = true, swatchHex = listOf("#800020", "#FFFDD0")),
+        CardSection("Occasions", listOf("Dressed-up", "Everyday"), chips = true),
+        CardSection("Fit", listOf("Good fit"), chips = false),
+    ).take(count)
+
+    private fun cardContent(sections: List<CardSection>, notes: String = ""): CardContent =
+        CardContent(title = "Burgundy wrap dress", sections = sections, notes = notes)
+
     private fun boxesOf(page: PdfPage): List<PdfBox> {
         val boxes = mutableListOf<PdfBox>()
         page.photo?.let { boxes += it }

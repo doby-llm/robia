@@ -992,7 +992,7 @@ class RegressionSourceContractTest {
         assertTrue(gridCard.contains("GRID_THUMBNAIL_MAX_EDGE_PX"))
         assertTrue(app.contains("DETAIL_DISPLAY_MAX_EDGE_PX = 512"))
         assertTrue(detailMedia.contains("thumbnailMaxEdgePx = DETAIL_DISPLAY_MAX_EDGE_PX"))
-        assertTrue(detailMedia.contains("onShareImageClick"))
+        assertTrue(detailMedia.contains("onShareClick"))
 
         assertTrue(batch.contains("BATCH_THUMBNAIL_MAX_EDGE_PX"))
         assertTrue(addEdit.contains("EDITOR_PREVIEW_MAX_EDGE_PX"))

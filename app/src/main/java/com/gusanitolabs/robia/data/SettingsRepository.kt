@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.BatchCutoutMode
 import com.gusanitolabs.robia.core.model.BrowseLayout
@@ -14,6 +15,11 @@ import com.gusanitolabs.robia.core.model.CutoutEdges
 import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.DEFAULT_EXPORT_FIELDS
+import com.gusanitolabs.robia.core.model.ExportField
+import com.gusanitolabs.robia.core.model.ExportFormat
+import com.gusanitolabs.robia.core.model.ExportOptions
+import com.gusanitolabs.robia.core.model.ExportPhoto
 import com.gusanitolabs.robia.core.model.HangerSensitivity
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
@@ -68,6 +74,8 @@ interface SettingsRepository {
     suspend fun setDriveBoundAccountEmail(email: String?) {}
     /** Google account of the latest authorization; null clears it. Default no-op for fakes that do not model accounts. */
     suspend fun setDriveAuthorizedAccountEmail(email: String?) {}
+    /** Export screen choices (EX1); default no-op for fakes that do not model them. */
+    suspend fun setExportOptions(options: ExportOptions) {}
 }
 
 class DataStoreSettingsRepository(
@@ -153,6 +161,10 @@ class DataStoreSettingsRepository(
 
     override suspend fun setBatchCutoutMode(mode: BatchCutoutMode) {
         dataStore.edit { preferences -> preferences[batchCutoutModeKey] = mode.name }
+    }
+
+    override suspend fun setExportOptions(options: ExportOptions) {
+        dataStore.edit { preferences -> preferences.writeExportOptions(options) }
     }
 
     override suspend fun pauseSyncForDriveBackupDeletion() {
@@ -267,7 +279,22 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         batchCutoutMode = preferences[batchCutoutModeKey].toEnumOr(BatchCutoutMode.Balanced),
         driveBoundAccountEmail = preferences[driveBoundAccountEmailKey]?.takeIf(String::isNotBlank),
         driveAuthorizedAccountEmail = preferences[driveAuthorizedAccountEmailKey]?.takeIf(String::isNotBlank),
+        exportOptions = exportOptions(),
     )
+}
+
+/** EX1: absent keys fall back to the defaults; unknown values are dropped. */
+internal fun Preferences.exportOptions(): ExportOptions = ExportOptions(
+    photo = this[exportPhotoKey].toEnumOr(ExportPhoto.Robia),
+    format = this[exportFormatKey].toEnumOr(ExportFormat.Image),
+    fields = this[exportFieldsKey]?.mapNotNull { name -> ExportField.entries.firstOrNull { it.name == name } }?.toSet()
+        ?: DEFAULT_EXPORT_FIELDS,
+)
+
+internal fun MutablePreferences.writeExportOptions(options: ExportOptions) {
+    this[exportPhotoKey] = options.photo.name
+    this[exportFormatKey] = options.format.name
+    this[exportFieldsKey] = options.fields.map(ExportField::name).toSet()
 }
 
 private fun String?.toLanguagePreference(): LanguagePreference =
@@ -335,3 +362,6 @@ private val syncConflictKey = booleanPreferencesKey("sync_conflict")
 private val syncConflictRemoteRevisionKey = longPreferencesKey("sync_conflict_remote_revision")
 private val driveBoundAccountEmailKey = stringPreferencesKey("drive_bound_account_email")
 private val driveAuthorizedAccountEmailKey = stringPreferencesKey("drive_authorized_account_email")
+private val exportPhotoKey = stringPreferencesKey("export_photo")
+private val exportFormatKey = stringPreferencesKey("export_format")
+private val exportFieldsKey = stringSetPreferencesKey("export_fields")

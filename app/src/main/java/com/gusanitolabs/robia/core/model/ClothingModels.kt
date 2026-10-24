@@ -234,8 +234,34 @@ data class RobiaSettings(
     val driveBoundAccountEmail: String? = null,
     /** Google account of the latest authorization; a value other than [driveBoundAccountEmail] blocks every Drive write. */
     val driveAuthorizedAccountEmail: String? = null,
+    /** Choices of the Export screen (EX1); reused for the next export. */
+    val exportOptions: ExportOptions = ExportOptions(),
 ) {
     /** The Developer switch's view of [cutoutEngine]: on when the method is Automatic. */
     val preciseCutoutEnabled: Boolean
         get() = cutoutEngine == CutoutEngineChoice.Automatic
 }
+
+/** Export screen choices (REQ-EX-01). [photo] is the Robia photo unless the garment has an original. */
+data class ExportOptions(
+    val photo: ExportPhoto = ExportPhoto.Robia,
+    val format: ExportFormat = ExportFormat.Image,
+    val fields: Set<ExportField> = DEFAULT_EXPORT_FIELDS,
+) {
+    /** The photo an export of a garment uses: the original only when it has one, else the Robia photo. */
+    fun photoFor(hasOriginal: Boolean): ExportPhoto =
+        if (photo == ExportPhoto.Original && hasOriginal) ExportPhoto.Original else ExportPhoto.Robia
+}
+
+enum class ExportPhoto { Robia, Original }
+
+enum class ExportFormat { Image, Pdf }
+
+enum class ExportField { Name, Category, Colors, Occasions, Seasons, Fit, Location, Notes }
+
+val DEFAULT_EXPORT_FIELDS: Set<ExportField> = setOf(
+    ExportField.Name,
+    ExportField.Category,
+    ExportField.Colors,
+    ExportField.Occasions,
+)

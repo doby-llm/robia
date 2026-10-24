@@ -864,4 +864,20 @@
     <string name="outfit_lab_export_chooser">Compartir valoraciones</string>
     <!-- OR2 -->
     <string name="drive_usage_originals">· %d originales</string>
+    <!-- EX1 -->
+    <string name="export_title">Exportar</string>
+    <string name="export_photo_section">Foto</string>
+    <string name="export_photo_robia">Foto de Robia</string>
+    <string name="export_photo_original">Foto original</string>
+    <string name="export_photo_original_help">Original = tu foto antes de quitar el fondo, con el mismo tamaño que la foto de Robia.</string>
+    <string name="export_format_section">Formato</string>
+    <string name="export_format_image">Imagen</string>
+    <string name="export_format_pdf">PDF</string>
+    <string name="export_show_section">Mostrar</string>
+    <string name="export_field_name">Nombre</string>
+    <string name="export_field_seasons">Temporadas</string>
+    <string name="export_field_notes">Notas</string>
+    <string name="export_preview">Vista previa</string>
+    <string name="export_share">Compartir</string>
+    <string name="export_preview_description">Vista previa de la exportación</string>
 </resources>

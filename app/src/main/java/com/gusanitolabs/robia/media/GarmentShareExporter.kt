@@ -11,12 +11,15 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.content.FileProvider
 import androidx.core.content.res.ResourcesCompat
+import androidx.core.graphics.ColorUtils
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.model.ExportField
 import java.io.File
 import java.text.Normalizer
 import java.time.LocalDate
@@ -45,44 +48,85 @@ object GarmentShareExporter {
     private val muted = Color.rgb(129, 116, 114)
     private val rule = Color.rgb(227, 226, 224)
     private val rowRule = Color.rgb(238, 236, 235)
+    private val chipFill = Color.rgb(241, 220, 201)
+    private const val CARD_LABEL_LETTER_SIZE = 24f
+    private const val CARD_VALUE_LETTER_SIZE = 34f
+    private const val CARD_CHIP_LETTER_SIZE = 30f
+    private const val CARD_CHIP_TEXT_PAD = 24f
 
-    fun createShareImage(
+    /** The share file for the image card (PNG, [CARD_WIDTH] x [CARD_HEIGHT]) with the chosen [fields]. */
+    fun createShareCard(
         context: Context,
-        sourceUri: Uri,
-        garmentName: String,
+        item: GarmentShareItem,
+        fields: Set<ExportField>,
     ): Uri {
-        val bitmap = context.contentResolver.openInputStream(sourceUri)?.use(BitmapFactory::decodeStream)
-            ?: error("Unable to open garment image")
-        return bitmap.use { source ->
-            val file = shareFile(context, garmentName, "png")
+        val bitmap = renderShareCard(context, item, fields)
+        return bitmap.use { card ->
+            val file = shareFile(context, item.name, "png")
             file.outputStream().use { output ->
-                check(source.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode share image" }
+                check(card.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode share image" }
             }
             contentUriFor(context, file)
         }
     }
 
+    /** The image card in memory, for the in-screen preview and for [createShareCard]. The caller recycles it. */
+    fun renderShareCard(
+        context: Context,
+        item: GarmentShareItem,
+        fields: Set<ExportField>,
+    ): Bitmap {
+        val source = decodeGarmentImage(context, item.imageUri)
+        val logo = context.assets.open(ROBIA_LOGO_ASSET).use(BitmapFactory::decodeStream)
+        val fonts = PdfFonts.load(context)
+        val swatches = if (ExportField.Colors in fields) item.pdfSwatchColors() else emptyList()
+        val layout = computeCardLayout(
+            content = item.cardContent(context, fields, swatches),
+            measurer = PdfPaintMeasurer(fonts),
+        )
+        val card = Bitmap.createBitmap(CARD_WIDTH.toInt(), CARD_HEIGHT.toInt(), Bitmap.Config.ARGB_8888)
+        try {
+            drawCard(
+                canvas = Canvas(card),
+                layout = layout,
+                photo = source,
+                logo = logo,
+                accent = item.primaryColor.hex?.toAndroidColorOrNull(),
+                fonts = fonts,
+            )
+        } finally {
+            source.recycle()
+            logo.recycle()
+        }
+        return card
+    }
+
+    /** Page 1 of a PDF made by [createSharePdf], rendered for the in-screen preview. The caller recycles it. */
+    fun renderPdfPreview(context: Context, pdfUri: Uri): Bitmap =
+        context.contentResolver.openFileDescriptor(pdfUri, "r")?.use { descriptor ->
+            PdfRenderer(descriptor).use { renderer ->
+                renderer.openPage(0).use { page ->
+                    Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888).apply {
+                        eraseColor(Color.WHITE)
+                        page.render(this, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    }
+                }
+            }
+        } ?: error("Unable to open PDF preview")
+
+    /** The PDF card with the chosen [fields]: the existing A4 layout fed only with what is chosen. */
     fun createSharePdf(
         context: Context,
         item: GarmentShareItem,
+        fields: Set<ExportField>,
     ): Uri {
-        val bitmap = context.contentResolver.openInputStream(item.imageUri)?.use(BitmapFactory::decodeStream)
-            ?: error("Unable to open garment image")
+        val bitmap = decodeGarmentImage(context, item.imageUri)
         return bitmap.use { source ->
             val logo = context.assets.open(ROBIA_LOGO_ASSET).use(BitmapFactory::decodeStream)
             val fonts = PdfFonts.load(context)
-            val swatches = item.pdfSwatchColors()
+            val swatches = if (ExportField.Colors in fields) item.pdfSwatchColors() else emptyList()
             val layout = computePdfLayout(
-                content = PdfContent(
-                    title = pdfTitle(
-                        name = item.name,
-                        categoryValues = item.metadata.firstOrNull { it.icon == GarmentShareMetadataIcon.Category }?.values.orEmpty(),
-                        fallback = context.getString(R.string.pdf_title_fallback),
-                    ),
-                    notes = item.notes,
-                    metadata = item.metadata.map { it.label to it.values },
-                    colors = swatches.map { it.role to it.name.ifBlank { item.noColorLabel } },
-                ),
+                content = item.pdfContent(context, fields, swatches),
                 measurer = PdfPaintMeasurer(fonts),
             )
             val document = PdfDocument()
@@ -108,6 +152,76 @@ object GarmentShareExporter {
         }
     }
 
+    private fun decodeGarmentImage(context: Context, uri: Uri): Bitmap =
+        context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
+            ?: error("Unable to open garment image")
+
+    /** Rows for the fields that are chosen and have a value, in card order: Category, Season, Occasion, Fit, Location. */
+    private fun GarmentShareItem.shareRows(context: Context, fields: Set<ExportField>): List<ShareRow> {
+        val metadataRows = listOf(
+            Triple(ExportField.Category, GarmentShareMetadataIcon.Category, false),
+            Triple(ExportField.Seasons, GarmentShareMetadataIcon.Season, true),
+            Triple(ExportField.Occasions, GarmentShareMetadataIcon.Occasion, true),
+            Triple(ExportField.Fit, GarmentShareMetadataIcon.Fit, false),
+        ).mapNotNull { (field, icon, chips) ->
+            val row = metadata.firstOrNull { it.icon == icon } ?: return@mapNotNull null
+            ShareRow(field, row.label, row.values.filter(String::isNotBlank), chips)
+        }
+        val locationRow = ShareRow(
+            ExportField.Location,
+            context.getString(R.string.metadata_location),
+            location.filter(String::isNotBlank),
+            chips = false,
+        )
+        return (metadataRows + locationRow).filter { it.field in fields && it.values.isNotEmpty() }
+    }
+
+    private fun GarmentShareItem.pdfContent(
+        context: Context,
+        fields: Set<ExportField>,
+        swatches: List<GarmentShareColor>,
+    ): PdfContent {
+        val rows = shareRows(context, fields)
+        return PdfContent(
+            title = pdfTitle(
+                name = if (ExportField.Name in fields) name else "",
+                categoryValues = rows.firstOrNull { it.field == ExportField.Category }?.values.orEmpty(),
+                fallback = context.getString(R.string.pdf_title_fallback),
+            ),
+            notes = if (ExportField.Notes in fields) notes else "",
+            metadata = rows.map { it.label to it.values },
+            colors = swatches.map { it.role to it.name.ifBlank { noColorLabel } },
+        )
+    }
+
+    private fun GarmentShareItem.cardContent(
+        context: Context,
+        fields: Set<ExportField>,
+        swatches: List<GarmentShareColor>,
+    ): CardContent {
+        val rows = shareRows(context, fields)
+        val (category, others) = rows.partition { it.field == ExportField.Category }
+        val colors = if (swatches.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(
+                CardSection(
+                    label = colorSectionLabel,
+                    values = swatches.map { it.name.ifBlank { noColorLabel } },
+                    chips = true,
+                    swatchHex = swatches.map { it.hex },
+                ),
+            )
+        }
+        return CardContent(
+            title = if (ExportField.Name in fields) name.trim() else "",
+            sections = category.map { CardSection(it.label, it.values, chips = false) } +
+                colors +
+                others.map { CardSection(it.label, it.values, it.chips) },
+            notes = if (ExportField.Notes in fields) notes else "",
+        )
+    }
+
     fun safeFileStem(garmentName: String): String {
         val normalized = Normalizer.normalize(garmentName.trim(), Normalizer.Form.NFKD)
             .replace(Regex("\\p{Mn}+"), "")
@@ -117,6 +231,60 @@ object GarmentShareExporter {
             .take(48)
             .trim('-')
         return normalized.ifBlank { "robia-garment" }
+    }
+
+    private fun drawCard(
+        canvas: Canvas,
+        layout: CardLayout,
+        photo: Bitmap,
+        logo: Bitmap,
+        accent: Int?,
+        fonts: PdfFonts,
+    ) {
+        canvas.drawColor(paper)
+        drawPhoto(canvas, photo, layout.photo, accent)
+        layout.title?.let { drawTextBlock(canvas, it, textPaint(fonts.bold, it.sizePt, ink)) }
+        layout.sections.forEach { sectionLayout ->
+            val section = sectionLayout.section
+            drawWrapped(
+                canvas,
+                section.label.uppercase(Locale.getDefault()),
+                sectionLayout.labelBox,
+                textPaint(fonts.bold, CARD_LABEL_LETTER_SIZE, muted).apply { letterSpacing = 0.14f },
+            )
+            if (section.chips) {
+                sectionLayout.boxes.zip(section.values).forEachIndexed { index, (box, value) ->
+                    drawChip(canvas, box, value, section.swatchHex.getOrNull(index)?.toAndroidColorOrNull(), fonts)
+                }
+            } else {
+                drawWrapped(
+                    canvas,
+                    section.values.joinToString(", "),
+                    sectionLayout.boxes.single(),
+                    textPaint(fonts.semiBold, CARD_VALUE_LETTER_SIZE, ink),
+                )
+            }
+        }
+        layout.notes?.let { drawTextBlock(canvas, it, textPaint(fonts.regular, it.sizePt, body)) }
+        val markHeight = layout.mark.h
+        val markWidth = markHeight * logo.width / logo.height
+        canvas.drawBitmap(
+            logo,
+            null,
+            RectF(layout.mark.x, layout.mark.y, layout.mark.x + markWidth, layout.mark.bottom),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+        )
+    }
+
+    /** A chip keeps its colour fill when it is a colour; the text turns white on dark fills. */
+    private fun drawChip(canvas: Canvas, box: PdfBox, text: String, fill: Int?, fonts: PdfFonts) {
+        val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fill ?: chipFill }
+        val radius = box.h / 2f
+        canvas.drawRoundRect(RectF(box.x, box.y, box.x + box.w, box.bottom), radius, radius, background)
+        val onFill = if (fill != null && ColorUtils.calculateLuminance(fill) < 0.5) Color.WHITE else ink
+        val paint = textPaint(fonts.regular, CARD_CHIP_LETTER_SIZE, onFill)
+        val baseline = box.y + box.h / 2f - (paint.descent() + paint.ascent()) / 2f
+        canvas.drawText(text, box.x + CARD_CHIP_TEXT_PAD, baseline, paint)
     }
 
     private fun drawPdfPage(
@@ -282,6 +450,9 @@ private class PdfPaintMeasurer(private val fonts: PdfFonts) : PdfTextMeasurer {
         textLayout(text, textPaint(fonts.bold, sizePt, Color.BLACK), widthPt).lineCount
 
     override fun lineHeight(sizePt: Float): Float = sizePt * PDF_LINE_HEIGHT_FACTOR
+
+    /** Chip text is drawn in the regular face, so it is measured in that face. */
+    override fun widthOf(text: String, sizePt: Float): Float = textPaint(fonts.regular, sizePt, Color.BLACK).measureText(text)
 }
 
 private fun textPaint(typeface: Typeface, sizePt: Float, color: Int): TextPaint =
@@ -321,6 +492,16 @@ data class GarmentShareItem(
     val primaryColor: GarmentShareColor,
     val secondaryColor: GarmentShareColor,
     val noColorLabel: String,
+    /** Location values, shown only when the Location field is chosen (not part of [metadata]). */
+    val location: List<String> = emptyList(),
+)
+
+/** One metadata row of the chosen fields; [chips] rows draw one chip per value on the card. */
+private data class ShareRow(
+    val field: ExportField,
+    val label: String,
+    val values: List<String>,
+    val chips: Boolean,
 )
 
 data class GarmentShareMetadata(
