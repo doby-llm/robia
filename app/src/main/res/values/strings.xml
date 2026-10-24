@@ -842,4 +842,24 @@
     <string name="analytics_section_locations">Locations</string>
     <string name="analytics_empty_title">No garments yet</string>
     <string name="analytics_empty_body">Add garments to see how your wardrobe is spread across categories, colours and more.</string>
+    <!-- OUT -->
+    <string name="outfit_lab_title">Outfit lab</string>
+    <string name="outfit_lab_summary_settings">Three outfit proposals from your existing vectors. Developer only.</string>
+    <string name="outfit_lab_summary">Pick a seed garment or describe an outfit. Robia proposes three outfits from your wardrobe using the vectors it already has. Rate them to build the log; nothing leaves the device unless you export it.</string>
+    <string name="outfit_lab_seed_title">Seed garment (optional)</string>
+    <string name="outfit_lab_prompt_label">Or describe the outfit</string>
+    <string name="outfit_lab_prompt_hint">for example: relaxed weekend look</string>
+    <string name="outfit_lab_season_title">Season</string>
+    <string name="outfit_lab_occasion_title">Occasion</string>
+    <string name="outfit_lab_generate">Propose outfits</string>
+    <string name="outfit_lab_prompt_failed">The description could not be processed. Try again once the model is ready.</string>
+    <string name="outfit_lab_empty">No outfit fits these choices.</string>
+    <string name="outfit_lab_why_shares">Shares: %1$s</string>
+    <string name="outfit_lab_why_similar_colours">similar colours</string>
+    <string name="outfit_lab_why_none">No shared tags</string>
+    <string name="outfit_lab_thumbs_up">👍</string>
+    <string name="outfit_lab_thumbs_down">👎</string>
+    <string name="outfit_lab_ratings_count">Ratings saved: %1$d</string>
+    <string name="outfit_lab_export">Export ratings</string>
+    <string name="outfit_lab_export_chooser">Share ratings</string>
 </resources>

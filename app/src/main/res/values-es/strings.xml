@@ -842,4 +842,24 @@
     <string name="analytics_section_locations">Ubicaciones</string>
     <string name="analytics_empty_title">Todavía no hay prendas</string>
     <string name="analytics_empty_body">Añade prendas para ver cómo se reparte tu armario entre categorías, colores y más.</string>
+    <!-- OUT -->
+    <string name="outfit_lab_title">Laboratorio de conjuntos</string>
+    <string name="outfit_lab_summary_settings">Tres propuestas de conjuntos con tus vectores actuales. Solo modo desarrollador.</string>
+    <string name="outfit_lab_summary">Elige una prenda base o describe un conjunto. Robia propone tres conjuntos de tu armario con los vectores que ya tiene. Valóralos para crear el registro; nada sale del dispositivo salvo que lo exportes.</string>
+    <string name="outfit_lab_seed_title">Prenda base (opcional)</string>
+    <string name="outfit_lab_prompt_label">O describe el conjunto</string>
+    <string name="outfit_lab_prompt_hint">por ejemplo: look relajado de fin de semana</string>
+    <string name="outfit_lab_season_title">Temporada</string>
+    <string name="outfit_lab_occasion_title">Ocasión</string>
+    <string name="outfit_lab_generate">Proponer conjuntos</string>
+    <string name="outfit_lab_prompt_failed">No se pudo procesar la descripción. Inténtalo cuando el modelo esté listo.</string>
+    <string name="outfit_lab_empty">Ningún conjunto encaja con estas opciones.</string>
+    <string name="outfit_lab_why_shares">Comparten: %1$s</string>
+    <string name="outfit_lab_why_similar_colours">colores parecidos</string>
+    <string name="outfit_lab_why_none">Sin etiquetas en común</string>
+    <string name="outfit_lab_thumbs_up">👍</string>
+    <string name="outfit_lab_thumbs_down">👎</string>
+    <string name="outfit_lab_ratings_count">Valoraciones guardadas: %1$d</string>
+    <string name="outfit_lab_export">Exportar valoraciones</string>
+    <string name="outfit_lab_export_chooser">Compartir valoraciones</string>
 </resources>
