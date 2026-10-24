@@ -1,8 +1,11 @@
 package com.gusanitolabs.robia.sync
 
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.IOException
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.math.roundToLong
 
 /** How a failed Drive call should be handled. 403 is split by Google's error reason. */
@@ -28,6 +31,7 @@ private val TRANSIENT_FORBIDDEN_REASONS = setOf(
 )
 private val AUTH_FORBIDDEN_REASONS = setOf("forbidden", "insufficientPermissions")
 private const val RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
+private val RATE_LIMIT_REASONS = setOf("rateLimitExceeded", "userRateLimitExceeded")
 
 internal fun classify(code: Int, body: String, retryAfterMillis: Long? = null): DriveErrorClass = when (code) {
     401 -> DriveErrorClass.AuthRequired
@@ -52,6 +56,10 @@ private fun classifyForbidden(body: String, retryAfterMillis: Long?): DriveError
         else -> DriveErrorClass.Permanent(403)
     }
 }
+
+/** A 429, a Retry-After or a Google rate-limit reason: the upload sends fewer calls at once for the rest of the cycle. */
+internal fun isRateLimited(code: Int, body: String, retryAfterMillis: Long?): Boolean =
+    code == 429 || retryAfterMillis != null || driveErrorReason(body) in RATE_LIMIT_REASONS
 
 /** Network-level IOExceptions (timeout, DNS, connect, reset) are transient; other throwables are not. */
 internal fun classify(t: Throwable): DriveErrorClass = when (t) {
@@ -96,12 +104,34 @@ internal suspend fun <T> withRetry(
     var attempt = 1
     while (true) {
         val result = block()
+        result.reportRateLimit()
         if (result !is DriveApiResult.Transient || attempt >= maxAttempts) return result
         val baseMillis = 1_000L shl (attempt - 1)
         val backoffMillis = (baseMillis * (0.8 + 0.4 * random())).roundToLong()
         sleeper(maxOf(backoffMillis, result.retryAfterMillis ?: 0L))
         attempt++
     }
+}
+
+/**
+ * The upload concurrency of one cycle: [maxConcurrency] workers until a Drive call is rate-limited, then one. It travels in
+ * the coroutine context so the retry loop, which retries 429s before returning them, can report each one.
+ */
+internal class DriveRateLimitGate(maxConcurrency: Int) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<DriveRateLimitGate>
+
+    @Volatile
+    var concurrency: Int = maxConcurrency
+        private set
+
+    fun onRateLimited() {
+        concurrency = 1
+    }
+}
+
+/** Tells the cycle's [DriveRateLimitGate], when there is one, that this result was rate-limited. */
+internal suspend fun DriveApiResult<*>.reportRateLimit() {
+    if (this is DriveApiResult.Transient && rateLimited) currentCoroutineContext()[DriveRateLimitGate]?.onRateLimited()
 }
 
 /**
@@ -118,9 +148,14 @@ internal class DriveCallAuth(
 
     suspend fun <T> call(block: suspend (accessToken: String) -> DriveApiResult<T>): DriveApiResult<T> {
         val first = block(accessToken)
-        if (first !is DriveApiResult.Unauthorized) return first
-        val fresh = refresh() ?: return first
-        accessToken = fresh
-        return block(fresh)
+        val result = if (first !is DriveApiResult.Unauthorized) {
+            first
+        } else {
+            val fresh = refresh() ?: return first
+            accessToken = fresh
+            block(fresh)
+        }
+        result.reportRateLimit()
+        return result
     }
 }

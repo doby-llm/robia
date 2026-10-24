@@ -4,13 +4,16 @@ import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.sync.DriveApiResult
 import com.gusanitolabs.robia.sync.DriveBlob
 import com.gusanitolabs.robia.sync.DriveFileMetadata
+import com.gusanitolabs.robia.sync.DriveRateLimitGate
 import com.gusanitolabs.robia.sync.DriveSnapshotApi
 import com.gusanitolabs.robia.sync.UploadedBlobInfo
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -25,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class FakeDriveSnapshotApi(
     private val downloadDelayMillis: Long = 0L,
+    private val uploadDelayMillis: Long = 0L,
 ) : DriveSnapshotApi {
     val files = ConcurrentHashMap<String, ByteArray>()
     val failures = ConcurrentHashMap<String, DriveApiResult<Nothing>>()
@@ -32,6 +36,21 @@ class FakeDriveSnapshotApi(
     val blobUploads = AtomicInteger(0)
     val snapshotUploads = AtomicInteger(0)
     val maxInFlight = AtomicInteger(0)
+    /** Blob writes that create a file (no id known to the caller), per blob name: a value above 1 is a duplicate. */
+    val creates = ConcurrentHashMap<String, AtomicInteger>()
+    /** Lookups by name that the HTTP layer makes before creating a blob whose id the caller does not know. */
+    val findLookups = AtomicInteger(0)
+    /** Every blob write fails with this result for that name, and is never stored. */
+    val blobFailures = ConcurrentHashMap<String, DriveApiResult<Nothing>>()
+    /** The lookup for that name fails with this result (the HTTP layer returns it, never a create). */
+    val findFailures = ConcurrentHashMap<String, DriveApiResult<Nothing>>()
+    val maxUploadInFlight = AtomicInteger(0)
+    private val uploadsInFlight = AtomicInteger(0)
+    /** When set, the first blob write reports a rate limit to the cycle, as a 429 retried inside the HTTP layer would. */
+    var rateLimitOnFirstWrite = false
+    private val firstWrite = AtomicBoolean(true)
+    /** The cycle's upload concurrency seen by each blob write, in call order. */
+    val concurrencySeen = CopyOnWriteArrayList<Int>()
     /** When set, the next snapshot JSON upload fails with this result (V-S03c). */
     var snapshotFailure: DriveApiResult<Nothing>? = null
     private val inFlight = AtomicInteger(0)
@@ -103,12 +122,31 @@ class FakeDriveSnapshotApi(
         bytes: ByteArray,
         mimeType: String?,
         fileId: String?,
+        knownAbsent: Boolean,
     ): DriveApiResult<UploadedBlobInfo> {
         tokensSeen += accessToken
         scriptedResult("upsertBlob")?.let { result -> return result }
-        blobUploads.incrementAndGet()
-        files[blobPath] = bytes
-        return DriveApiResult.Success(UploadedBlobInfo(size = bytes.size.toLong(), sha256 = sha256Hex(bytes)))
+        // The HTTP layer looks a name up before creating it unless the caller knows the id or that the name is absent.
+        if (fileId == null && !knownAbsent) {
+            findLookups.incrementAndGet()
+            findFailures[blobPath]?.let { failure -> return failure }
+        }
+        blobFailures[blobPath]?.let { failure -> return failure }
+        currentCoroutineContext()[DriveRateLimitGate]?.let { gate -> concurrencySeen += gate.concurrency }
+        if (rateLimitOnFirstWrite && firstWrite.getAndSet(false)) {
+            currentCoroutineContext()[DriveRateLimitGate]?.onRateLimited()
+        }
+        val inFlight = uploadsInFlight.incrementAndGet()
+        try {
+            maxUploadInFlight.accumulateAndGet(inFlight) { a, b -> maxOf(a, b) }
+            if (uploadDelayMillis > 0L) delay(uploadDelayMillis)
+            blobUploads.incrementAndGet()
+            if (fileId == null) creates.getOrPut(blobPath) { AtomicInteger(0) }.incrementAndGet()
+            files[blobPath] = bytes
+            return DriveApiResult.Success(UploadedBlobInfo(size = bytes.size.toLong(), sha256 = sha256Hex(bytes)))
+        } finally {
+            uploadsInFlight.decrementAndGet()
+        }
     }
 
     override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {
