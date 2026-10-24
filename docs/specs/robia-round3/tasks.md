@@ -58,6 +58,7 @@
 - **In scope:** Trail in smart mode, no 600 ms drop, sampling ≤ 12 points, clip to touched components, whole-garment guard + hint, dev mask overlay + tap dump, rename "Redo cutout".
 - **Out of scope:** Undo/redo history (ED2); InteractiveSelector internals (K02); Keep-mode restore (OR3).
 - **Acceptance:** V-ED1-1, V-ED1-2, V-ED1-3, V-ED1-4, V-ED1-D.
+- **PLAN-CHANGE 2026-10-24 (R3-DEC-043):** the model-based tap does not work on the device. UI-SMART (Round 3c) replaces the selector call with a deterministic component tap; V-ED1-D is replaced by V-UI-SMART-D.
 
 ## ED2 — Editor: full undo/redo history
 - **Reqs:** REQ-ED-03 · **Predecessors:** ED1, G-ADB1 · **Successors:** OR1 · **Independent review: yes**
@@ -204,6 +205,7 @@
 - **In scope:** Seed garment or prompt → 3 outfits from existing vectors and tags; why-line; 👍/👎 log; export of ratings.
 - **Out of scope:** User-facing entry; new models; training.
 - **Acceptance:** V-OUT-1, V-OUT-2, V-OUT-D.
+- **PLAN-CHANGE 2026-10-24 (R3-DEC-042):** the lab is dropped by Manu. Merged code is removed by OUT-DROP (Round 3c). V-OUT-D and G-OUT are closed as dropped.
 
 ## CHK — Device checklist for round 3
 - **Reqs:** all · **Predecessors:** ALL · **Successors:** —
@@ -213,6 +215,7 @@
 - **Acceptance:** V-CHK-1.
 
 - **PLAN-CHANGE 2026-10-24 (R3-DEC-041):** CHK also lists the DEV rows of the Round 3b tasks below; its predecessors include them.
+- **PLAN-CHANGE 2026-10-24 (R3-DEC-046):** CHK also lists the DEV rows of the Round 3c tasks (OUT-DROP, UI-SMART, DARK1 to DARK4) and REV when it exists; its predecessors include them. V-OUT-D is not listed (dropped).
 
 ---
 
@@ -234,10 +237,24 @@ CHK         <- ALL (round 3 and 3b)
 ```
 Shared files (writers in order): `sync/GoogleDriveWardrobeRepository.kt` SYNC-AUTH → SYNC-ETA → SYNC-SPEED; `sync/WardrobeSyncOutboxProcessor.kt` SYNC-AUTH → SYNC-BANNER → SYNC-ETA; `ui/RobiaApp.kt` SYNC-BANNER → SYNC-ETA; `sync/DriveHttpErrors.kt` SYNC-AUTH → SYNC-SPEED; `sync/fakes/FakeDriveSnapshotApi.kt` SYNC-AUTH → SYNC-SPEED.
 
-### Open decisions (Manu has not decided; no task is written for them)
-- **D-F10 (smart background remove, ED1):** Manu chooses between (C, recommended) fixing the selector with a deterministic pure-Kotlin tap that removes the tapped opaque connected component of the current alpha (`MaskOps.labelComponents`; gesture, trail, 60 % guard, history and hint stay) or (B) removing the feature (brush becomes the only tool; `MediaPipeInteractiveSelector` stays because `PreciseCutoutEngine` uses it). Option A (fix the MediaPipe selector) is not offered. The task UI-SMART is written once he chooses. V-ED1-D stays open.
-- **D-F13 (Outfit lab, OUT):** the Outfit lab is dropped by Manu's feedback (embeddings only pick similar colours). Removal task OUT-DROP is written once he confirms. V-OUT-D and G-OUT stay open until then.
-- **D-F12 (garment review redesign, colour + tag review):** designs (several mockups) are in progress; REQ-FB-12 is a placeholder and no task exists until Manu picks a design.
+### Open decisions (D-F10 and D-F13 decided by Manu on 2026-10-24; D-F12 still open)
+- **D-F10 (smart background remove, ED1): decided 2026-10-24 (R3-DEC-043, Manu).** Option C: a deterministic pure-Kotlin tap that removes the tapped connected component of the current alpha; the gesture, trail, 60 % guard, history and hint stay. Task UI-SMART (Round 3c below). If V-UI-SMART-D still fails on the device, the next step is removal of the smart tool (option B), not another fix. V-ED1-D is replaced by V-UI-SMART-D.
+- **D-F13 (Outfit lab, OUT): decided 2026-10-24 (R3-DEC-042, Manu).** The Outfit lab is removed. Task OUT-DROP (Round 3c below). V-OUT-D and G-OUT are closed as dropped.
+- **D-F12 (garment review redesign, colour + tag review):** design round 2 in progress (mockups, `mockups/review-redesign/`); the REV task is written after Manu picks a design. REV will have DARK1 as a predecessor so it is built on the theme tokens (REQ-FB-12; R3-DEC-046).
+
+### Remaining execution order (2026-10-24, R3-DEC-046)
+Merged already: UI-CAL, UI-WHITE, EX2, BAT3. Remaining, in the order the coordinator starts them; "after" is a file conflict, not a logical dependency.
+1. **SYNC-AUTH** (none). Files it shares: `MainActivity.kt` (then DARK1), `sync/GoogleDriveWardrobeRepository.kt`, `sync/WardrobeSyncOutboxProcessor.kt`, `sync/DriveHttpErrors.kt`, the fake API.
+2. **SYNC-BANNER** (after SYNC-AUTH): `ui/RobiaApp.kt`, `sync/WardrobeSyncOutboxProcessor.kt`.
+3. **SYNC-ETA** (after SYNC-BANNER): `ui/RobiaApp.kt`, `sync/GoogleDriveWardrobeRepository.kt`, `sync/WardrobeSyncOutboxProcessor.kt`.
+4. **SYNC-SPEED** (after SYNC-AUTH and SYNC-ETA): `sync/GoogleDriveWardrobeRepository.kt`, `sync/DriveHttpErrors.kt`, the fake API. It shares no file with anything below, so 5 to 7 may run beside it.
+5. **OUT-DROP** (after SYNC-ETA: `ui/RobiaApp.kt`; before DARK1: `ui/RobiaApp.kt`, `ui/SettingsScreen.kt`). Independent review: yes.
+6. **UI-SMART** (no conflicts with the sync chain; may start at any time, even first). Shares `ui/PhotoEditorScreen.kt` with DARK4, so it merges before DARK4.
+7. **DARK1** (after SYNC-AUTH: `MainActivity.kt`; after OUT-DROP: `ui/RobiaApp.kt`, `ui/SettingsScreen.kt`). The base of all dark work and of REV.
+8. **DARK2, DARK3, DARK4** (after DARK1; mutually parallel, disjoint Files). DARK3 follows DARK1 on `ui/SettingsScreen.kt`; DARK4 follows UI-SMART on `ui/PhotoEditorScreen.kt`.
+9. **REV** (after DARK1 and Manu's pick of a design, D-F12; not yet written). Its screens (`ui/ColorReviewScreen.kt`, `ui/TagReviewScreen.kt`, `ui/ReviewScaffold.kt`) are not in DARK2 to DARK4, so there is no conflict with them.
+10. **CHK** (all).
+Lanes: sync chain 1 → 2 → 3 → 4; UI chain 5 → 7 → 8 → 9 (5 waits for 3); 6 anywhere before 8's DARK4. At most one worker per shared file at a time.
 
 ## SYNC-AUTH — Drive sign-in errors: refresh and retry, correct classification, honest banner (F8)
 - **Reqs:** REQ-FB-08 · **Predecessors:** — · **Successors:** SYNC-BANNER, SYNC-SPEED · **Independent review: yes**
@@ -298,3 +315,65 @@ Shared files (writers in order): `sync/GoogleDriveWardrobeRepository.kt` SYNC-AU
 - **In scope:** While a batch processes, the list scrolls smoothly to follow the garment being processed; following stops as soon as the user scrolls manually and resumes via a small "Follow" affordance or when the user returns to the bottom; no scroll animation with reduced motion (jump or none). The follow decision is a pure function in `BatchFollowState.kt`.
 - **Out of scope:** Batch ordering, ETA, coordinator concurrency, row layout.
 - **Acceptance:** V-BAT3-1, V-BAT3-2, V-BAT3-D.
+
+---
+
+## Round 3c — Manu's answers of 2026-10-24 (F10, F13, dark mode)
+
+Source: R3-DEC-042 to R3-DEC-046. Same worker rules 0–13; all tasks start from latest `origin/main`. Rule 9 ("existing theme tokens only") stays: DARK1 is what adds the dark tokens.
+
+**Dependency summary.** Conflict-driven (see "Remaining execution order" above for the full list with the sync chain).
+```
+OUT-DROP <- (none)      (file order only: after SYNC-ETA on ui/RobiaApp.kt)
+UI-SMART <- (none)      (V-ED1-D replaced by V-UI-SMART-D)
+DARK1    <- (none)      (file order only: after SYNC-AUTH on MainActivity.kt, after OUT-DROP on ui/RobiaApp.kt and ui/SettingsScreen.kt)
+DARK2    <- DARK1
+DARK3    <- DARK1       (file order: after DARK1 on ui/SettingsScreen.kt)
+DARK4    <- DARK1       (file order: after UI-SMART on ui/PhotoEditorScreen.kt)
+REV      <- DARK1       (not yet written; D-F12)
+CHK      <- ALL
+```
+
+## OUT-DROP — Remove the Outfit lab (F13)
+- **Reqs:** REQ-FB-13 · **Predecessors:** — (file order: after SYNC-ETA) · **Successors:** DARK1 (file order) · **Independent review: yes** (deletion)
+- **Files:** delete `ui/OutfitLabScreen.kt`; delete `suggestions/OutfitComposer.kt`; delete `app/src/test/java/com/gusanitolabs/robia/suggestions/OutfitComposerTest.kt`; `ui/SettingsScreen.kt` (the Outfit lab row and the `onOutfitLabClick` parameter only); `ui/RobiaApp.kt` (`RobiaRoute.OutfitLab`, its bottom-bar exclusion, its `when` branch and the `onOutfitLabClick` plumbing only); `res/values/strings.xml`, `res/values-es/strings.xml`, `res/values-de/strings.xml` (the `outfit_lab_*` keys only).
+- **In scope:** Remove the Outfit lab: screen, composer, its tests, the Developer › Outfit lab row, the route and navigation, all `outfit_lab_*` strings in the three locales, and with them the "Export ratings" share. Nothing else owned by the lab exists (no Room entity, DAO, ViewModel or repository; its ratings were the text file `filesDir/outfit_lab.jsonl`).
+- **Out of scope:** The database and its schema (untouched; no table belonged to the lab); the shared code the lab only read: `data/GarmentVectors`, `EmbeddingRepository`, `RobiaApplication.embeddingRepository`, `EmbeddingRecipe` (search query prefix), `EmbeddingEngineHolder.embedText`, `SearchRanker`, `CategoryScorer.cosine`, `DefaultTags`; a one-time delete of the old ratings file on devices (the file is a few kilobytes of ids and ratings, local only, not part of any snapshot or zip; it stays and is ignored); other Developer rows.
+- **Acceptance:** V-OUT-DROP-1, V-OUT-DROP-2, V-OUT-DROP-3, V-OUT-DROP-D.
+
+## UI-SMART — Smart remove: deterministic tap on the loose piece (F10)
+- **Reqs:** REQ-FB-10 · **Predecessors:** — · **Successors:** DARK4 (file order) · **Independent review: no**
+- **Files:** `ui/PhotoEditorScreen.kt`; `media/cutout/SelectionClip.kt`; `app/src/test/java/com/gusanitolabs/robia/media/cutout/SelectionClipTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/SmartGestureTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/PhotoEditorMappingTest.kt` (only if a helper it covers is removed); delete `app/src/test/java/com/gusanitolabs/robia/ui/SelectionBackgroundTest.kt` together with the `compositeOverGrey` helper; new `app/src/test/java/com/gusanitolabs/robia/media/cutout/SmartRemoveUndoTest.kt`.
+- **In scope:** In Remove mode a tap removes the connected component of the current alpha (`alpha > 0.5`, 8-connected, `MaskOps.labelComponents`) under the touch, snapped to the nearest component within a small radius; the primary component (largest area) is never removed. A drag keeps the trail and the ≤ 12 sampled points as today and removes every non-primary component its points reach; touching only the primary shows the existing hint and removes nothing. The 60 % guard stays as a backstop. The removal goes through `RefineSession.apply(Remove, mask, hard = true)`, so Undo/Redo, Done and OR3 are unchanged. With Keep selected the smart tool changes nothing and shows a new hint (use Remove or the brush). The model-based call path is removed from the editor: the `selector` lazy and its `close`, `compositeOverGrey`, the developer mask overlay and tap dump (`SelectionOverlay`, `debugSelectionDirectory`, `writeSelectionDump`, `tintedPixels`, `DEBUG_OVERLAY_*`) and `clipToTouched` with its cases, each only after a grep shows no other user.
+- **Out of scope:** `InteractiveSelector.kt` (`MediaPipeInteractiveSelector` stays: `PreciseCutoutEngine` uses it as S2), `PreciseCutoutEngine`, `RefineSession`, `EditHistory`, `MaskOps`; the brush and the OR3 Keep brush; restoring removed parts with the smart tool.
+- **Acceptance:** V-UI-SMART-1, V-UI-SMART-2, V-UI-SMART-3, V-UI-SMART-4, V-UI-SMART-5, V-UI-SMART-D.
+- **Failure rule (R3-DEC-043):** if V-UI-SMART-D fails on the device, the follow-up task removes the smart tool (brush only); no second fix.
+
+## DARK1 — Dark mode: theme, setting, system bars, shared components (F14)
+- **Reqs:** REQ-FB-14 · **Predecessors:** — (file order: after SYNC-AUTH on `MainActivity.kt`, after OUT-DROP on `ui/RobiaApp.kt` and `ui/SettingsScreen.kt`) · **Successors:** DARK2, DARK3, DARK4, REV · **Independent review: no**
+- **Files:** `core/designsystem/Color.kt`; `core/designsystem/Theme.kt`; `core/model/ClothingModels.kt` (`ThemeMode` and `RobiaSettings.themeMode` only); `data/SettingsRepository.kt`; `MainActivity.kt`; `ui/RobiaApp.kt` (the `RobiaTheme` call, one new `themeMode` parameter and the marker on the `swatchColor` fallback only); `ui/SettingsScreen.kt` (the Appearance group and its dialog only); `ui/GarmentSwatchBackground.kt`; `res/values/styles.xml`; `res/values/colors.xml`; the three `strings.xml`; `app/src/test/java/com/gusanitolabs/robia/core/designsystem/RobiaColorSchemeTest.kt` (new); `app/src/test/java/com/gusanitolabs/robia/data/SettingsMappingTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/GarmentSwatchBackgroundTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/ThemeSourceScan.kt` (new helper); `app/src/test/java/com/gusanitolabs/robia/ui/DarkThemeSharedScanTest.kt` (new); `app/src/test/java/com/gusanitolabs/robia/media/ExportsIgnoreThemeTest.kt` (new).
+- **In scope:** `ThemeMode { Light, Dark, System }` persisted as `theme_mode` (absent or unknown → Light), a `themeMode` flow and `setThemeMode` on the repository (defaults on the interface so existing fakes compile); Settings › Appearance › Theme row and radio dialog (Light, Dark, Follow system), written through `app.settingsRepository` as the cutout rows already do; `RobiaTheme(darkTheme)` with a Robia dark `ColorScheme` (table in the brief), `resolveDarkTheme(mode, systemDark)` and the extra tokens (`isDark`, `photoWellTop` `#F3F3F4`, `photoWellBottom` `#D1CFCF`, identical in both themes); `MainActivity` reads the stored mode once at start (bounded, fallback Light), collects it, passes it to `RobiaApp`, and calls `enableEdgeToEdge` with a `SystemBarStyle` from the resolved flag whenever it changes (bar icon colours, window background); a dark window style; `rememberGarmentSwatchBrush` takes its top stop from the photo-well token (same value as today in Light); the `// theme-fixed: <reason>` line marker and `// theme-fixed-file: <reason>` file marker rules (the file marker only for `GarmentSwatchBackground.kt`) and the scan helper; a guard test that the export code never reads the theme.
+- **Out of scope:** Per-screen conversion (DARK2 to DARK4); garment swatch colours; a `values-night` theme or splash change; syncing the setting; any change to how Light looks; exports.
+- **Acceptance:** V-DARK1-1, V-DARK1-2, V-DARK1-3, V-DARK1-4, V-DARK1-5, V-DARK1-6, V-DARK1-D.
+- **Shared files (writers in order):** `MainActivity.kt` SYNC-AUTH → DARK1; `ui/RobiaApp.kt` SYNC-BANNER → SYNC-ETA → OUT-DROP → DARK1; `ui/SettingsScreen.kt` OUT-DROP → DARK1 → DARK3; `data/SettingsRepository.kt` EX2 (merged) → DARK1.
+
+## DARK2 — Dark mode: Browse, detail, add/edit, batch, tags (F14)
+- **Reqs:** REQ-FB-14 · **Predecessors:** DARK1 · **Successors:** — · **Independent review: no**
+- **Files:** `ui/BrowseGrid.kt`; `ui/BrowseFilterBar.kt`; `ui/AdvancedFiltersScreen.kt`; `ui/ItemDetailScreen.kt`; `ui/AddEditClothingScreen.kt`; `ui/BatchAddClothingScreen.kt`; `ui/GarmentFieldRows.kt`; `ui/ManageTagsScreen.kt`; `ui/PhotoProcessingVisuals.kt`; `ui/SuggestionsProgressBanner.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/DarkThemeBrowseScanTest.kt`.
+- **In scope:** Every colour literal in these files becomes a token or carries `// theme-fixed: <reason>` (known: the swatch borders `Color.Black.copy(alpha …)` in `BrowseGrid.kt` and `PhotoProcessingVisuals.kt` become a token that shows on dark; the shimmer and glow over photos stay); photo backdrops use the photo-well tokens (`BatchAddClothingScreen.kt` row backdrop, `AddEditClothingScreen.kt` photo box) so garments stay visible; an audit of every `containerColor`, `.background(` and `.copy(alpha` for light-only assumptions, with the findings in the receipt.
+- **Out of scope:** Layout, spacing or copy changes; `GarmentSwatchBackground.kt` and the swatch palette (DARK1); colour and tag review screens (REV).
+- **Acceptance:** V-DARK2-1, V-DARK2-2, V-DARK2-D.
+
+## DARK3 — Dark mode: Settings, Developer, onboarding, sync, duplicates (F14)
+- **Reqs:** REQ-FB-14 · **Predecessors:** DARK1 · **Successors:** — · **Independent review: no**
+- **Files:** `ui/SettingsScreen.kt`; `ui/DriveSettingsScreen.kt`; `ui/PreciseCutoutSettings.kt`; `ui/LanguagePickerScreen.kt`; `ui/ModelDownloadUi.kt`; `ui/SyncAttentionCard.kt`; `ui/SuggestionDiagnosticsCard.kt`; `ui/DuplicateCalibrationScreen.kt`; `ui/DuplicateReviewScreen.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/DarkThemeSettingsScanTest.kt`.
+- **In scope:** The scan test over these files; a token audit as in DARK2 (state colours for Connected, Needs attention, error and merge cards, progress and download rows, dialogs); fixes for what the audit and Manu's device pass find. These files hold no colour literal today, so the PR may be the scan test and the fixes the audit finds.
+- **Out of scope:** Layout or copy; the Appearance row itself (DARK1); sync logic.
+- **Acceptance:** V-DARK3-1, V-DARK3-2, V-DARK3-D.
+
+## DARK4 — Dark mode: photo editor, analytics, export screen (F14)
+- **Reqs:** REQ-FB-14 · **Predecessors:** DARK1 (file order: after UI-SMART) · **Successors:** — · **Independent review: no**
+- **Files:** `ui/PhotoEditorScreen.kt`; `ui/AnalyticsScreen.kt`; `ui/ExportScreen.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/DarkThemeEditorScanTest.kt`.
+- **In scope:** The editor keeps its transparency checkerboard, Light-tab backdrop, temperature preset swatches and over-photo chips as they are (each literal marked `// theme-fixed: <reason>`); the editor chrome (top bar, mode chips, tool row, sheets, snackbar) follows the theme; analytics bars, axis, legend and empty state have contrast in dark; the Export screen's chrome follows the theme while the preview bitmap and the exported file are unchanged, with the preview separated from the dark page by an outline.
+- **Out of scope:** `media/GarmentShareExporter.kt`, `media/PdfLayout.kt` and every export output; editor behaviour; the smart tap (UI-SMART); colour and tag review screens (look-only check in V-DARK4-D).
+- **Acceptance:** V-DARK4-1, V-DARK4-2, V-DARK4-D.
