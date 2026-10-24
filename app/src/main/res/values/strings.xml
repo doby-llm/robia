@@ -817,7 +817,7 @@
     <string name="duplicate_empty">No possible duplicates left.</string>
     <string name="duplicate_calibration_title">Duplicate calibration</string>
     <string name="duplicate_calibration_summary">Mark the most similar same-category pairs as Same or Different.</string>
-    <string name="duplicate_calibration_empty">No same-category pairs with a stored photo vector yet.</string>
+    <string name="duplicate_calibration_empty">No pairs to compare yet. Active: %1$d · with vector: %2$d · photo matched: %3$d · with category: %4$d</string>
     <string name="duplicate_mark_same">Same</string>
     <string name="duplicate_mark_different">Different</string>
     <string name="duplicate_calibration_progress">%1$d of %2$d marked</string>
@@ -887,4 +887,12 @@
     <string name="zip_export_failed">The export didn\'t finish. Try again.</string>
     <!-- SYNC-AUTH -->
     <string name="sync_auth_checking_connection">Checking your Google Drive connection…</string>
+    <!-- BAT3 -->
+    <string name="batch_follow">Follow</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Robia frame</string>
+    <string name="export_frame_hint">White border and Robia logo around the photo</string>
+    <string name="export_frame_locked_hint">Turn off the other Show options to hide the frame.</string>
+    <!-- UI-CAL -->
+    <string name="duplicate_calibration_loading">Comparing garment photos…</string>
 </resources>
