@@ -895,4 +895,6 @@
     <string name="export_frame_locked_hint">Desactiva las demás opciones de Mostrar para ocultar el marco.</string>
     <!-- UI-CAL -->
     <string name="duplicate_calibration_loading">Comparando fotos de prendas…</string>
+    <!-- UI-SMART -->
+    <string name="editor_smart_keep_hint">El toque inteligente quita las piezas sueltas. Elige Quitar, o usa el pincel para conservar partes.</string>
 </resources>

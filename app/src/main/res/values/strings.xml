@@ -895,4 +895,6 @@
     <string name="export_frame_locked_hint">Turn off the other Show options to hide the frame.</string>
     <!-- UI-CAL -->
     <string name="duplicate_calibration_loading">Comparing garment photos…</string>
+    <!-- UI-SMART -->
+    <string name="editor_smart_keep_hint">Smart tap removes loose pieces. Choose Remove, or use the brush to keep parts.</string>
 </resources>
