@@ -895,4 +895,6 @@
     <string name="export_frame_locked_hint">Schalte die anderen Anzeigen-Optionen aus, um den Rahmen auszublenden.</string>
     <!-- UI-CAL -->
     <string name="duplicate_calibration_loading">Kleidungsfotos werden verglichen…</string>
+    <!-- UI-SMART -->
+    <string name="editor_smart_keep_hint">Die Schnellauswahl entfernt lose Teile. Wähle Entfernen oder nutze den Pinsel, um Teile zu behalten.</string>
 </resources>

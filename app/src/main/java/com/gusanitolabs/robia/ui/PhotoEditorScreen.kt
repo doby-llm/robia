@@ -106,7 +106,6 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.CutoutRecipe
-import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.media.AlphaRefiner
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
@@ -118,19 +117,20 @@ import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import com.gusanitolabs.robia.media.cutout.CutoutOptions
 import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
 import com.gusanitolabs.robia.media.cutout.EditBudget
-import com.gusanitolabs.robia.media.cutout.MediaPipeInteractiveSelector
 import com.gusanitolabs.robia.media.cutout.PhotoHistory
 import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
 import com.gusanitolabs.robia.media.cutout.RedoCutoutChoice
 import com.gusanitolabs.robia.media.cutout.RefineSession
+import com.gusanitolabs.robia.media.cutout.SmartTapOutcome
 import com.gusanitolabs.robia.media.cutout.atEngineCanvas
 import com.gusanitolabs.robia.media.cutout.brushRadiusPx
-import com.gusanitolabs.robia.media.cutout.clipToTouched
+import com.gusanitolabs.robia.media.cutout.componentsToRemove
 import com.gusanitolabs.robia.media.cutout.originalLayer
 import com.gusanitolabs.robia.media.cutout.redoCutoutChoices
 import com.gusanitolabs.robia.media.cutout.redoCutoutOptions
 import com.gusanitolabs.robia.media.cutout.releaseOnFailure
-import com.gusanitolabs.robia.media.cutout.removesMostOfGarment
+import com.gusanitolabs.robia.media.cutout.smartTapOutcome
+import com.gusanitolabs.robia.media.cutout.snapRadiusPhotoPx
 import com.gusanitolabs.robia.media.cutout.trimmedBy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -142,8 +142,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.min
@@ -153,11 +151,9 @@ import kotlin.math.roundToInt
 private const val SMART_MAX_POINTS = 12
 private const val SMART_TRAIL_DASH_DP = 16f
 private const val SMART_TRAIL_GAP_DP = 12f
+/** A smart tap on a transparent pixel picks the loose piece within this distance on screen (see [snapRadiusPhotoPx]). */
+private const val SMART_SNAP_DP = 16f
 private const val PULSE_MS = 300L
-private const val DEBUG_OVERLAY_MS = 1000L
-private const val DEBUG_OVERLAY_ALPHA = 0.4f
-/** Developer overlay of the raw selection; the editor has no terracotta theme token, so this one colour is fixed. */
-private const val DEBUG_OVERLAY_TERRACOTTA = 0xB5583A
 private const val PULSE_RADIUS_DP = 20f
 private const val BRUSH_RADIUS_DP = 24f
 private const val BRUSH_FEATHER_DP = 6f
@@ -185,9 +181,6 @@ private class CutoutPhoto(val source: Bitmap, val session: RefineSession, val fr
 
 /** A tap or drag that must be pulsed for [PULSE_MS]; a new instance per touch so repeated touches restart the pulse. */
 private class PulseMark(val at: Offset)
-
-/** Developer mode: the raw union of one smart selection, shown for [DEBUG_OVERLAY_MS]; a new instance per selection restarts it. */
-private class SelectionOverlay(val mask: ImageBitmap)
 
 /**
  * The original photo that Redo cutout runs on, or null when Redo is hidden (SG4). Only a photo picked in this editing session
@@ -225,14 +218,13 @@ fun PhotoEditorScreen(
     val touchSlop = LocalViewConfiguration.current.touchSlop
     val noSourceHint = stringResource(R.string.refine_no_source_hint)
     val snackbarHostState = remember { SnackbarHostState() }
-    val selector = remember { lazy { MediaPipeInteractiveSelector(context) } }
-    // Guards every read of photo.source and every use of the selector, so dispose can close and recycle after they finish.
+    // Guards every read of photo.source, so dispose can close and recycle after they finish.
     val sourceMutex = remember { Mutex() }
     val app = context.applicationContext as RobiaApplication
     val packReady by app.cutoutPack.ready.collectAsState(initial = false)
-    val appSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val redoFailedMessage = stringResource(R.string.redo_cutout_failed)
     val wholeGarmentMessage = stringResource(R.string.editor_smart_whole_garment)
+    val keepHintMessage = stringResource(R.string.editor_smart_keep_hint)
 
     var tab by rememberSaveable { mutableStateOf(EditorTab.Cutout) }
     var mode by rememberSaveable { mutableStateOf(RefineSession.Mode.Keep) }
@@ -266,7 +258,6 @@ fun PhotoEditorScreen(
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var strokeScreen by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var pulse by remember { mutableStateOf<PulseMark?>(null) }
-    var debugOverlay by remember { mutableStateOf<SelectionOverlay?>(null) }
 
     val session = photo?.session
     val canUndo = remember(revision, session) { session?.canUndo == true || photoHistory.canGoBack }
@@ -281,7 +272,6 @@ fun PhotoEditorScreen(
             // Runs outside the composition scope, which is cancelled here and would not wait for a running select or save.
             CoroutineScope(Dispatchers.Default).launch {
                 sourceMutex.withLock {
-                    if (selector.isInitialized()) selector.value.close()
                     leaving?.source?.recycle()
                     leaving?.session?.close()
                 }
@@ -341,13 +331,6 @@ fun PhotoEditorScreen(
         }
     }
 
-    LaunchedEffect(debugOverlay) {
-        if (debugOverlay != null) {
-            delay(DEBUG_OVERLAY_MS)
-            debugOverlay = null
-        }
-    }
-
     fun commitStroke(points: List<Offset>, current: CutoutPhoto, fit: FitRect) {
         val w = current.source.width
         val radius = brushRadiusPx(BRUSH_RADIUS_DP, density, zoom) * (w / fit.width)
@@ -381,75 +364,30 @@ fun PhotoEditorScreen(
         }
     }
 
-    fun runSmartSelection(points: List<Offset>, current: CutoutPhoto) {
+    fun runSmartSelection(points: List<Offset>, current: CutoutPhoto, snapRadiusPx: Int) {
         scope.launch {
-            var refused = false
-            sourceMutex.withLock {
+            val hint = sourceMutex.withLock {
                 // Queued before an Undo or Redo replaced this photo; its bitmap is already recycled.
-                if (current.source.isRecycled) return@withLock
+                if (current.source.isRecycled) return@withLock null
                 val w = current.source.width
                 val h = current.source.height
                 val touched = points.map { selectPixelOf(it, w, h) }
-                val union = FloatArray(w * h)
-                val timings = mutableListOf<Long>()
-                val result = runCatching {
-                    withContext(Dispatchers.Default) {
-                        val instance = selector.value
-                        // Segmenter input only: photo.source keeps its transparent pixels, and this copy is recycled below.
-                        val selectionBitmap = Bitmap.createBitmap(
-                            compositeOverGrey(current.colour(), current.session.currentAlpha()),
-                            w,
-                            h,
-                            Bitmap.Config.ARGB_8888,
-                        )
-                        try {
-                            for ((x, y) in touched) {
-                                val started = SystemClock.elapsedRealtime()
-                                val mask = instance.select(selectionBitmap, x, y)
-                                timings += SystemClock.elapsedRealtime() - started
-                                for (i in union.indices) if (mask[i] > union[i]) union[i] = mask[i]
-                            }
-                        } finally {
-                            selectionBitmap.recycle()
-                        }
+                val alpha = current.session.currentAlpha()
+                val pick = withContext(Dispatchers.Default) { componentsToRemove(alpha, w, h, touched, snapRadiusPx) }
+                onDiagnostic("refine_component_tap components=${pick.removedComponents} primary=${pick.touchedPrimary}")
+                when (smartTapOutcome(mode, pick, alpha)) {
+                    SmartTapOutcome.Remove -> {
+                        current.session.apply(RefineSession.Mode.Remove, pick.mask, hard = true)
+                        photoHistory.discardRedo()
+                        revision++
+                        null
                     }
+                    SmartTapOutcome.WholeGarmentHint -> wholeGarmentMessage
+                    SmartTapOutcome.KeepHint -> keepHintMessage
+                    SmartTapOutcome.NothingToRemove -> null
                 }
-                timings.forEach { onDiagnostic("refine_tap_ms=$it") }
-                result.onFailure { throwable ->
-                    if (throwable is CancellationException) throw throwable
-                    onDiagnostic("refine_select_failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-                    return@withLock
-                }
-                val clipped = clipToTouched(union, w, h, touched)
-                if (appSettings.developerModeEnabled) {
-                    val overlay = withContext(Dispatchers.Default) {
-                        Bitmap.createBitmap(tintedPixels(union, DEBUG_OVERLAY_TERRACOTTA, DEBUG_OVERLAY_ALPHA), w, h, Bitmap.Config.ARGB_8888)
-                    }
-                    debugOverlay = SelectionOverlay(overlay.asImageBitmap())
-                    debugSelectionDirectory(context)?.let { directory ->
-                        runCatching {
-                            withContext(Dispatchers.IO) {
-                                val input = compositeOverGrey(current.colour(), current.session.currentAlpha())
-                                writeSelectionDump(directory, input, points, touched, union, clipped, w, h)
-                            }
-                        }.onFailure { throwable ->
-                            if (throwable is CancellationException) throw throwable
-                            onDiagnostic("cutout_debug_failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
-                        }
-                    }
-                }
-                // Remove of the whole garment is refused with a hint; Keep applies whatever the touch reached.
-                if (mode == RefineSession.Mode.Remove && removesMostOfGarment(clipped, current.session.currentAlpha())) {
-                    refused = true
-                    return@withLock
-                }
-                current.session.apply(mode, clipped, hard = true)
-                photoHistory.discardRedo()
-                revision++
             }
-            if (refused) {
-                snackbarHostState.showSnackbar(wholeGarmentMessage)
-            }
+            hint?.let { snackbarHostState.showSnackbar(it) }
         }
     }
 
@@ -468,7 +406,8 @@ fun PhotoEditorScreen(
             return
         }
         pulse = PulseMark(touchedAt)
-        runSmartSelection(smartSelectionPoints(photoPath, moved), current)
+        val snapRadiusPx = snapRadiusPhotoPx(SMART_SNAP_DP, density, fit.width / w, zoom)
+        runSmartSelection(smartSelectionPoints(photoPath, moved), current, snapRadiusPx)
     }
 
     /**
@@ -786,19 +725,6 @@ fun PhotoEditorScreen(
                                     center = mark.at,
                                 )
                             }
-                        }
-                        debugOverlay?.let { overlay ->
-                            Image(
-                                bitmap = overlay.mask,
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.fillMaxSize().graphicsLayer {
-                                    scaleX = zoom
-                                    scaleY = zoom
-                                    translationX = pan.x
-                                    translationY = pan.y
-                                },
-                            )
                         }
                     }
                     if (current == null || redoing) {
@@ -1158,35 +1084,6 @@ private fun composeWithAlpha(argb: IntArray, alpha: ByteArray, width: Int, heigh
 }
 
 /**
- * Grey under the cutout for smart selection. The stored PNG has RGB 0 wherever alpha is 0 (the original photo is not kept), so
- * the segmenter would see a transparent area as black and a black garment would blend into it. Mid-grey is neutral for dark and
- * light garments alike.
- */
-internal const val SELECTION_BACKGROUND_GREY = 0x80
-
-/**
- * [argb] (the stored RGB; its own alpha is ignored) blended over [SELECTION_BACKGROUND_GREY] by [alpha] (0..1, the session's current
- * alpha), as opaque ARGB. Removed areas therefore come out grey, and kept areas keep their colour.
- */
-internal fun compositeOverGrey(argb: IntArray, alpha: FloatArray): IntArray {
-    require(alpha.size == argb.size) { "Alpha must match the pixels" }
-    return IntArray(argb.size) { i ->
-        val a = (alpha[i].coerceIn(0f, 1f) * 255f).roundToInt()
-        val pixel = argb[i]
-        (0xFF shl 24) or
-            (blendChannel(pixel shr 16, a) shl 16) or
-            (blendChannel(pixel shr 8, a) shl 8) or
-            blendChannel(pixel, a)
-    }
-}
-
-/** One colour channel ([value] has it in the low 8 bits) over the grey, weighted by [alpha] (0..255), rounded. */
-private fun blendChannel(value: Int, alpha: Int): Int {
-    val channel = value and 0xFF
-    return (channel * alpha + SELECTION_BACKGROUND_GREY * (255 - alpha) + 127) / 255
-}
-
-/**
  * The line Developer diagnostics get after a Redo that ran. The flags say what really ran: hanger removal applies only to the
  * precise engine, so a Standard run reports removeHanger=false whatever the saved setting is.
  */
@@ -1291,57 +1188,6 @@ private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: Cutout
             context.contentResolver.delete(result.outputUri, null, null)
         }
     }
-}
-
-/** A new folder for one developer selection dump, or null when the app has no external files folder. */
-private fun debugSelectionDirectory(context: Context): File? {
-    val root = context.getExternalFilesDir(null) ?: return null
-    val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
-    return File(root, "cutout-debug/editor/$stamp").apply { mkdirs() }
-}
-
-/**
- * Developer dump of one smart selection, on the device only: the segmenter input, the raw union, the clipped mask and the points
- * (photo coordinates, and the pixels they select). Written to [directory].
- */
-private fun writeSelectionDump(
-    directory: File,
-    input: IntArray,
-    points: List<Offset>,
-    touched: List<Pair<Int, Int>>,
-    union: FloatArray,
-    clipped: FloatArray,
-    w: Int,
-    h: Int,
-) {
-    writeDebugPng(File(directory, "input.png"), input, w, h)
-    writeDebugPng(File(directory, "mask.png"), greyPixels(union), w, h)
-    writeDebugPng(File(directory, "clipped.png"), greyPixels(clipped), w, h)
-    val photoPoints = points.joinToString(",") { "[${it.x},${it.y}]" }
-    val pixels = touched.joinToString(",") { "[${it.first},${it.second}]" }
-    File(directory, "points.json").writeText("{\"width\":$w,\"height\":$h,\"points\":[$photoPoints],\"pixels\":[$pixels]}")
-}
-
-/** Writes [pixels] (ARGB, row-major, [w] × [h]) as a PNG and frees the bitmap. */
-private fun writeDebugPng(file: File, pixels: IntArray, w: Int, h: Int) {
-    val bitmap = Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
-    try {
-        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-    } finally {
-        bitmap.recycle()
-    }
-}
-
-/** A selection as opaque grey: white where it is selected. */
-private fun greyPixels(mask: FloatArray): IntArray = IntArray(mask.size) { i ->
-    val value = (mask[i].coerceIn(0f, 1f) * 255f).roundToInt()
-    (0xFF shl 24) or (value shl 16) or (value shl 8) or value
-}
-
-/** A selection as [tint] (RGB) with alpha = selection × [opacity], for the overlay on the photo. */
-private fun tintedPixels(mask: FloatArray, tint: Int, opacity: Float): IntArray = IntArray(mask.size) { i ->
-    val alpha = (mask[i].coerceIn(0f, 1f) * opacity * 255f).roundToInt()
-    (alpha shl 24) or (tint and 0xFFFFFF)
 }
 
 @Composable
