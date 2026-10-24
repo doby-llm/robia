@@ -1095,6 +1095,8 @@ class WardrobeSyncOutboxProcessor(
         // A newer schema is never applied: the conflict stays unresolved and nothing on the phone is cleared.
         if (remote.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) return SyncRunResult.NeedsUser
         snapshotRepository.replaceLocalWithRemote(remote)
+        // The Replace is applied, so a proposal shown before it is answered: it must not keep the Combine/Replace card or block later cycles.
+        pendingMergeSummary.value = null
         settingsRepository.setLastKnownRemoteRevision(remote.metadata.revision, remote.metadata.writerDeviceId)
         settingsRepository.setSyncConflict(false)
         return SyncRunResult.Success
