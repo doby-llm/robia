@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -271,6 +272,13 @@ class CloudRestoreProgressTextTest {
         assertEquals(RestoreStepLine.Hidden, stageProgress(CloudRestorePhase.Uploading).stepLine())
         assertEquals(RestoreStepLine.Hidden, stageProgress(CloudRestorePhase.Downloading).stepLine())
         assertEquals(RestoreStepLine.Steps(remaining = 6, total = 8), stageProgress(CloudRestorePhase.Preparing).stepLine())
+    }
+
+    @Test
+    fun uploadEta_picksTheBatchEtaStringAndItsCountForEachValue() {
+        assertEquals(BatchEtaString(R.string.batch_eta_almost_done, null), BatchEta.AlmostDone.toBatchEtaString())
+        assertEquals(BatchEtaString(R.string.batch_eta_seconds, 30), BatchEta.Seconds(30).toBatchEtaString())
+        assertEquals(BatchEtaString(R.string.batch_eta_minutes, 2), BatchEta.Minutes(2).toBatchEtaString())
     }
 
     private fun stageProgress(

@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
@@ -203,4 +204,13 @@ internal fun uploadEtaAfter(
     repeat((realUploadsNow - realUploadsBefore).coerceAtLeast(0)) { estimator.onTerminal() }
     val remaining = current.totalPhotos - current.completedPhotos
     return if (remaining > 0) estimator.estimate(remaining) else null
+}
+
+/** The batch_eta string for an upload ETA and its count argument; null for [BatchEta.AlmostDone], which takes none. */
+internal data class BatchEtaString(val resId: Int, val count: Int?)
+
+internal fun BatchEta.toBatchEtaString(): BatchEtaString = when (this) {
+    BatchEta.AlmostDone -> BatchEtaString(R.string.batch_eta_almost_done, null)
+    is BatchEta.Seconds -> BatchEtaString(R.string.batch_eta_seconds, s)
+    is BatchEta.Minutes -> BatchEtaString(R.string.batch_eta_minutes, m)
 }

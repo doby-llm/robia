@@ -2435,10 +2435,8 @@ private fun MergeProposalCard(
 }
 
 @Composable
-private fun batchEtaText(eta: BatchEta): String = when (eta) {
-    BatchEta.AlmostDone -> stringResource(R.string.batch_eta_almost_done)
-    is BatchEta.Seconds -> stringResource(R.string.batch_eta_seconds, eta.s)
-    is BatchEta.Minutes -> stringResource(R.string.batch_eta_minutes, eta.m)
+private fun batchEtaText(eta: BatchEta): String = eta.toBatchEtaString().let { (resId, count) ->
+    if (count == null) stringResource(resId) else stringResource(resId, count)
 }
 
 @Composable
