@@ -84,6 +84,26 @@ class OrphanPhotoCleanupTest {
         assertEquals(listOf("subject-draft-0001.png"), planned(files, ActivePhotoRefs.snapshot()))
     }
 
+    @Test
+    fun registeredDraftPhotoAndOriginalOlderThan24HoursAreKept() {
+        val photoUri = "${providerPrefix}subject-restored-draft.png"
+        val originalUri = "${providerPrefix}camera-restored-draft.jpg"
+        val files = listOf(
+            file("subject-restored-draft.png", 3 * DAY_MILLIS),
+            file("camera-restored-draft.jpg", 3 * DAY_MILLIS),
+            file("gallery-abandoned.jpg", 3 * DAY_MILLIS),
+        )
+
+        ActivePhotoRefs.register(photoUri)
+        ActivePhotoRefs.register(originalUri)
+        try {
+            assertEquals(listOf("gallery-abandoned.jpg"), planned(files, ActivePhotoRefs.snapshot()))
+        } finally {
+            ActivePhotoRefs.unregister(photoUri)
+            ActivePhotoRefs.unregister(originalUri)
+        }
+    }
+
     private companion object {
         const val DAY_MILLIS = 24L * 60L * 60L * 1000L
     }

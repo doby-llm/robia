@@ -52,6 +52,7 @@ import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,6 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal val Context.settingsDataStore by preferencesDataStore(name = "robia_settings")
 internal const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 private val ORPHAN_CLEANUP_DONE_KEY = booleanPreferencesKey("orphan_cleanup_v1_done")
+private const val ORPHAN_CLEANUP_DELAY_MILLIS = 60_000L
 
 class RobiaApplication : Application() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -229,12 +231,14 @@ class RobiaApplication : Application() {
 
     /**
      * Deletes the orphan photo files of older builds once per install (REQ-OR-03). The garments' photo and original URIs
-     * and the active drafts are the referenced set. The flag is set only after a run completes, so a failed run retries.
+     * and the active drafts are the referenced set. The run waits 60 s so a restored draft has registered its photos
+     * first. The flag is set only after a run completes, so a failed run retries.
      */
     private suspend fun cleanUpOrphanPhotosOnce() {
         if (settingsDataStore.data.first()[ORPHAN_CLEANUP_DONE_KEY] == true) return
         try {
             withContext(Dispatchers.IO) {
+                delay(ORPHAN_CLEANUP_DELAY_MILLIS)
                 val referenced = database.wardrobeDao().getAllItemsForSync()
                     .flatMap { row -> listOf(row.item.photoUri, row.item.originalUri) }
                     .filterNotNull()
