@@ -303,18 +303,18 @@ class MergeProposalScenarioTest {
             val processor = newTestProcessor(snapshots = snapshots, drive = drive)
 
             processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
-            assertNotNull(expected.name, processor.state.first().pendingMergeSummary)
+            assertNotNull(expected.toString(), processor.state.first().pendingMergeSummary)
 
             processor.confirmMerge()
 
-            assertEquals(expected.name, 1, snapshots.imports.size)
-            assertEquals(expected.name, expected, processor.state.first().lastCycle?.result)
-            assertNull(expected.name, processor.state.first().pendingMergeSummary)
+            assertEquals(expected.toString(), 1, snapshots.imports.size)
+            assertEquals(expected.toString(), expected, processor.state.first().lastCycle?.result)
+            assertNull(expected.toString(), processor.state.first().pendingMergeSummary)
 
             // The upload recovers. A later cycle is not held by a stale proposal, so it finishes Success instead of NeedsUser.
             drive.upsertResult = null
             processor.enqueue(WardrobeSyncOperation.UpsertItem("a"))
-            assertEquals(expected.name, SyncRunResult.Success, processor.state.first().lastCycle?.result)
+            assertEquals(expected.toString(), SyncRunResult.Success, processor.state.first().lastCycle?.result)
         }
     }
 
