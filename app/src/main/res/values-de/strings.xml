@@ -842,26 +842,6 @@
     <string name="analytics_section_locations">Standorte</string>
     <string name="analytics_empty_title">Noch keine Kleidungsstücke</string>
     <string name="analytics_empty_body">Füge Kleidungsstücke hinzu, um zu sehen, wie sich dein Kleiderschrank auf Kategorien, Farben und mehr verteilt.</string>
-    <!-- OUT -->
-    <string name="outfit_lab_title">Outfit-Labor</string>
-    <string name="outfit_lab_summary_settings">Drei Outfit-Vorschläge aus deinen vorhandenen Vektoren. Nur für Entwickler.</string>
-    <string name="outfit_lab_summary">Wähle ein Ausgangsstück oder beschreibe ein Outfit. Robia schlägt drei Outfits aus deinem Kleiderschrank vor, mit den Vektoren, die schon vorhanden sind. Bewerte sie, um das Protokoll aufzubauen; ohne Export verlässt nichts das Gerät.</string>
-    <string name="outfit_lab_seed_title">Ausgangsstück (optional)</string>
-    <string name="outfit_lab_prompt_label">Oder beschreibe das Outfit</string>
-    <string name="outfit_lab_prompt_hint">zum Beispiel: entspannter Wochenend-Look</string>
-    <string name="outfit_lab_season_title">Jahreszeit</string>
-    <string name="outfit_lab_occasion_title">Anlass</string>
-    <string name="outfit_lab_generate">Outfits vorschlagen</string>
-    <string name="outfit_lab_prompt_failed">Die Beschreibung konnte nicht verarbeitet werden. Versuche es erneut, wenn das Modell bereit ist.</string>
-    <string name="outfit_lab_empty">Kein Outfit passt zu dieser Auswahl.</string>
-    <string name="outfit_lab_why_shares">Gemeinsam: %1$s</string>
-    <string name="outfit_lab_why_similar_colours">ähnliche Farben</string>
-    <string name="outfit_lab_why_none">Keine gemeinsamen Schlagwörter</string>
-    <string name="outfit_lab_thumbs_up">👍</string>
-    <string name="outfit_lab_thumbs_down">👎</string>
-    <string name="outfit_lab_ratings_count">Gespeicherte Bewertungen: %1$d</string>
-    <string name="outfit_lab_export">Bewertungen exportieren</string>
-    <string name="outfit_lab_export_chooser">Bewertungen teilen</string>
     <!-- OR2 -->
     <string name="drive_usage_originals">· %d Originale</string>
     <!-- EX1 -->
