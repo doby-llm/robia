@@ -827,4 +827,19 @@
     <string name="duplicate_pair_title">Paar %1$d</string>
     <!-- FIT -->
     <string name="filter_fit">Passform</string>
+    <!-- ANA -->
+    <string name="analytics_open">Kleiderschrank-Statistik</string>
+    <string name="analytics_title">Statistik</string>
+    <plurals name="analytics_garment_count">
+        <item quantity="one">%1$d Kleidungsstück · archivierte zählen nicht</item>
+        <item quantity="other">%1$d Kleidungsstücke · archivierte zählen nicht</item>
+    </plurals>
+    <string name="analytics_section_categories">Kategorien</string>
+    <string name="analytics_section_colours">Farben</string>
+    <string name="analytics_section_occasions">Anlässe</string>
+    <string name="analytics_section_seasons">Jahreszeiten</string>
+    <string name="analytics_section_fit">Passform</string>
+    <string name="analytics_section_locations">Standorte</string>
+    <string name="analytics_empty_title">Noch keine Kleidungsstücke</string>
+    <string name="analytics_empty_body">Füge Kleidungsstücke hinzu, um zu sehen, wie sich dein Kleiderschrank auf Kategorien, Farben und mehr verteilt.</string>
 </resources>

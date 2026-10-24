@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Close
@@ -314,6 +315,8 @@ internal fun FilterBar(
     onClearSimilar: () -> Unit,
     modelState: ModelState,
     onOpenSettings: () -> Unit,
+    /** Null hides the Analytics icon. */
+    onAnalyticsClick: (() -> Unit)? = null,
 ) {
     val filterLabel = if (hasActiveFilters) {
         stringResource(R.string.active_filters_count, activeFilterCount)
@@ -367,6 +370,14 @@ internal fun FilterBar(
                     label = { Text(filterLabel) },
                     leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                 )
+                onAnalyticsClick?.let { onClick ->
+                    IconButton(onClick = onClick) {
+                        Icon(
+                            imageVector = Icons.Outlined.BarChart,
+                            contentDescription = stringResource(R.string.analytics_open),
+                        )
+                    }
+                }
                 if (hasActiveFilters) {
                     TextButton(onClick = onResetFilters) {
                         Text(stringResource(R.string.reset_filters_short))
