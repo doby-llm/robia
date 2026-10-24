@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +34,7 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.data.EmbeddingRepository
+import com.gusanitolabs.robia.suggestions.CalibrationCounts
 import com.gusanitolabs.robia.suggestions.CalibrationPair
 import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.calibrationMarksJson
@@ -49,13 +52,16 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
     // A same-id garment can get a new photo or category while this screen is open; its cosine then describes the old photo.
     val signatures = remember(items) { calibrationSignatures(items) }
     var pairs by remember { mutableStateOf<List<CalibrationPair>?>(null) }
+    var counts by remember { mutableStateOf(CalibrationCounts.NONE) }
     // Keyed by the pair's garment ids, not by row, so a rescan cannot move a mark onto another pair.
     var marks by remember { mutableStateOf(emptyMap<DuplicatePairKey, Boolean>()) }
     // Keyed on the signatures: a wardrobe emission that changes no photo, category or archive state keeps the scan and the marks.
     LaunchedEffect(signatures) {
         pairs = null
         marks = emptyMap()
-        pairs = scanCalibrationPairs(context, items, EmbeddingRepository(app.database.embeddingDao()))
+        val scan = scanCalibrationPairs(context, items, EmbeddingRepository(app.database.embeddingDao()))
+        counts = scan.counts
+        pairs = scan.pairs
     }
 
     LazyColumn(
@@ -70,15 +76,22 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        val loaded = pairs
-        if (loaded != null && loaded.isEmpty()) {
+        val state = calibrationUiState(pairs, counts)
+        if (state is CalibrationUiState.Empty) {
             item {
                 Text(
-                    text = stringResource(R.string.duplicate_calibration_empty),
+                    text = stringResource(
+                        R.string.duplicate_calibration_empty,
+                        state.counts.active,
+                        state.counts.withVector,
+                        state.counts.hashMatched,
+                        state.counts.categorised,
+                    ),
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
-        } else if (loaded != null) {
+        } else if (state is CalibrationUiState.Pairs) {
+            val loaded = state.pairs
             val markRows = calibrationMarkRows(loaded, marks)
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -136,6 +149,19 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
                     }
                 }
             }
+        } else {
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = stringResource(R.string.duplicate_calibration_loading),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
         }
     }
 }
@@ -171,3 +197,17 @@ internal fun calibrationMarkRows(pairs: List<CalibrationPair>, marks: Map<Duplic
     pairs.withIndex().mapNotNull { (index, pair) ->
         marks[DuplicatePairKey.of(pair.a, pair.b)]?.let { mark -> index to mark }
     }.toMap()
+
+/** What the calibration list shows: the scan is still running, found no pairs, or found pairs. */
+internal sealed interface CalibrationUiState {
+    data object Loading : CalibrationUiState
+    data class Empty(val counts: CalibrationCounts) : CalibrationUiState
+    data class Pairs(val pairs: List<CalibrationPair>) : CalibrationUiState
+}
+
+/** Null pairs mean the scan has not finished, so the screen never shows the description alone. [counts] only matter when empty. */
+internal fun calibrationUiState(pairs: List<CalibrationPair>?, counts: CalibrationCounts): CalibrationUiState = when {
+    pairs == null -> CalibrationUiState.Loading
+    pairs.isEmpty() -> CalibrationUiState.Empty(counts)
+    else -> CalibrationUiState.Pairs(pairs)
+}
