@@ -1,7 +1,9 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
+import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.InMemoryEmbeddingDao
@@ -25,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -285,6 +288,74 @@ class MergeProposalScenarioTest {
 
         assertNull(processor.state.first().pendingMergeSummary)
         assertEquals(1, snapshots.imports.size)
+    }
+
+    @Test
+    fun pendingSummaryClearsOnceTheLocalMergeIsImportedWhateverTheUploadEnds() = runBlocking {
+        // SYNC-BANNER (V-SYNC-BANNER-4): the import applied, so the proposal is answered even when the upload then fails.
+        val uploadEnds: List<Pair<DriveSyncResult<DriveManifest>, SyncRunResult>> = listOf(
+            DriveSyncResult.Blocked(DriveSyncDisabledReason.UserNotConnected, "Drive is not connected.") to SyncRunResult.AuthBlocked,
+            DriveSyncResult.Failure(UnknownHostException("www.googleapis.com")) to SyncRunResult.Retry,
+        )
+        for ((upload, expected) in uploadEnds) {
+            val local = exportedSnapshot(garmentEntity("a"), garmentEntity("c"))
+            val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+            val snapshots = FakeWardrobeSnapshotStore(local = local)
+            val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup), upsertResult = upload)
+            val processor = newTestProcessor(snapshots = snapshots, drive = drive)
+
+            processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+            assertNotNull(expected.toString(), processor.state.first().pendingMergeSummary)
+
+            processor.confirmMerge()
+
+            assertEquals(expected.toString(), 1, snapshots.imports.size)
+            assertEquals(expected.toString(), expected, processor.state.first().lastCycle?.result)
+            assertNull(expected.toString(), processor.state.first().pendingMergeSummary)
+
+            // The upload recovers. A later cycle is not held by a stale proposal, so it finishes Success instead of NeedsUser.
+            drive.upsertResult = null
+            processor.enqueue(WardrobeSyncOperation.UpsertItem("a"))
+            assertEquals(expected.toString(), SyncRunResult.Success, processor.state.first().lastCycle?.result)
+        }
+    }
+
+    @Test
+    fun useBackupAnswersThePendingProposalSoALaterCycleIsNotHeldByIt() = runBlocking {
+        // SYNC-BANNER: a completed Replace answers the proposal; a stale one keeps the Combine/Replace card and blocks every later cycle.
+        val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+        val snapshots = FakeWardrobeSnapshotStore(local = exportedSnapshot(garmentEntity("a"), garmentEntity("c")))
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup))
+        val processor = newTestProcessor(snapshots = snapshots, drive = drive)
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+        assertNotNull(processor.state.first().pendingMergeSummary)
+
+        processor.useBackup()
+
+        assertEquals(1, snapshots.replacements.size)
+        assertNull(processor.state.first().pendingMergeSummary)
+        processor.enqueue(WardrobeSyncOperation.UpsertItem("a"))
+        assertNotEquals(SyncRunResult.NeedsUser, processor.state.first().lastCycle?.result)
+    }
+
+    @Test
+    fun aFailedUseBackupKeepsThePendingProposal() = runBlocking {
+        // An empty remote and a newer schema are both refused by useBackup: nothing is replaced, so the proposal stays for the user.
+        val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+        val snapshots = FakeWardrobeSnapshotStore(local = exportedSnapshot(garmentEntity("a"), garmentEntity("c")))
+        val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup))
+        val processor = newTestProcessor(snapshots = snapshots, drive = drive)
+
+        processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+        val newerSchema = backup.copy(metadata = backup.metadata.copy(schemaVersion = WARDROBE_SYNC_SCHEMA_VERSION + 1))
+        for (remote in listOf(WardrobeSyncSnapshot(), newerSchema)) {
+            drive.snapshot = DriveSyncResult.Success(remote)
+            processor.useBackup()
+
+            assertTrue(snapshots.replacements.isEmpty())
+            assertNotNull(processor.state.first().pendingMergeSummary)
+        }
     }
 
     // Round 3. Each scenario runs through the real export and the Drive JSON codec, and each names its finding.

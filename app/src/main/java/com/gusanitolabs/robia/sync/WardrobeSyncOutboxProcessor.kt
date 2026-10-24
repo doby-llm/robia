@@ -961,7 +961,6 @@ class WardrobeSyncOutboxProcessor(
         val result = restoreThenFlush(localSnapshot, userConfirmed)
         if (result == SyncRunResult.Success) {
             settingsRepository.setSyncConflict(false)
-            pendingMergeSummary.value = null
         }
         return result
     }
@@ -1096,6 +1095,8 @@ class WardrobeSyncOutboxProcessor(
         // A newer schema is never applied: the conflict stays unresolved and nothing on the phone is cleared.
         if (remote.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) return SyncRunResult.NeedsUser
         snapshotRepository.replaceLocalWithRemote(remote)
+        // The Replace is applied, so a proposal shown before it is answered: it must not keep the Combine/Replace card or block later cycles.
+        pendingMergeSummary.value = null
         settingsRepository.setLastKnownRemoteRevision(remote.metadata.revision, remote.metadata.writerDeviceId)
         settingsRepository.setSyncConflict(false)
         return SyncRunResult.Success
@@ -1345,6 +1346,9 @@ class WardrobeSyncOutboxProcessor(
         }
         diagnostics.recordLocalSave(importResult)
         onRestoreImported()
+        // The local merge is applied, so the proposal is answered whatever the upload below ends with (Success, Retry or AuthBlocked).
+        // A kept proposal would otherwise block every later cycle (the guard above) and keep the Browse card on Replace.
+        pendingMergeSummary.value = null
 
         restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,

@@ -128,6 +128,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -1162,10 +1163,17 @@ private fun RobiaShell(
             .let { next -> if (next == MergeCombinePhase.Done) MergeCombinePhase.Idle else next }
     }
     // Safety net: no cycle ever finished after the tap (offline, work not scheduled) must not leave 'Combining' forever.
+    // It never fires while a cycle runs: a large upload outlasts the timeout after the merge is already applied (REQ-FB-02).
+    val cycleRunning by rememberUpdatedState(
+        syncState.restoreProgress != null || syncState.connectionStatus == DriveSyncConnectionStatus.Syncing,
+    )
     LaunchedEffect(mergeCombinePhase) {
-        if (mergeCombinePhase == MergeCombinePhase.Combining) {
-            kotlinx.coroutines.delay(MERGE_COMBINE_TIMEOUT_MS)
-            if (mergeCombinePhase == MergeCombinePhase.Combining) mergeCombinePhase = MergeCombinePhase.Failed
+        val tappedAtMs = SystemClock.elapsedRealtime()
+        while (mergeCombinePhase == MergeCombinePhase.Combining) {
+            delay(MERGE_COMBINE_CHECK_INTERVAL_MS)
+            if (mergeCombineTimedOut(mergeCombinePhase, SystemClock.elapsedRealtime() - tappedAtMs, cycleRunning)) {
+                mergeCombinePhase = MergeCombinePhase.Failed
+            }
         }
     }
 
@@ -1799,8 +1807,11 @@ private fun RobiaShell(
         )
     }
 
-    val mergeProposalCardShown = (syncState.pendingMergeSummary != null && mergeDialogDismissed) ||
-        mergeCombinePhase != MergeCombinePhase.Idle
+    val mergeProposalCardShown = mergeCardVisible(
+        proposalPending = syncState.pendingMergeSummary != null,
+        dialogDismissed = mergeDialogDismissed,
+        phase = mergeCombinePhase,
+    )
     val mergeProposalCard: (@Composable () -> Unit)? = if (mergeProposalCardShown) {
         {
             MergeProposalCard(
@@ -2408,11 +2419,14 @@ private fun MergeProposalCard(
                     Button(onClick = onCombine, enabled = !combining, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.sync_merge_confirm))
                     }
-                    DestructiveOutlinedButton(
-                        label = stringResource(R.string.sync_merge_replace),
-                        onClick = onReplace,
-                        enabled = !combining,
-                    )
+                    // Replace is destructive: only a pending proposal offers it, never a finished or failed Combine.
+                    if (summary != null) {
+                        DestructiveOutlinedButton(
+                            label = stringResource(R.string.sync_merge_replace),
+                            onClick = onReplace,
+                            enabled = !combining,
+                        )
+                    }
                 }
             }
         }
