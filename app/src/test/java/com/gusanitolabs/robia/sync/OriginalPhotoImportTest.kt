@@ -145,4 +145,29 @@ class OriginalPhotoImportTest {
 
         assertTrue(replace.indexOf("localItemsFor(snapshot)") in 0 until replace.indexOf("wardrobeDao.deleteAllItems()"))
     }
+
+    @Test
+    fun targetedRetryReadsWhetherTheCutoutChangesBeforeItWritesIt() {
+        // (a) The Room transaction cannot run on the JVM. The retry must know the photo the row held before the update, and pass
+        // whether the restored cutout replaces it to applyRestoredOriginal.
+        val source = File("src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt").readText()
+        val retry = source.substringAfter("override suspend fun applyRestoredPhoto(")
+            .substringBefore("private suspend fun applyRestoredOriginal(")
+
+        val read = retry.indexOf("val photoChanged = rowBefore?.photoUri != restoredUri")
+        assertTrue(read in 0 until retry.indexOf("wardrobeDao.applyRestoredPhoto("))
+        assertTrue(retry.contains("applyRestoredOriginal(photo, photoChanged)"))
+    }
+
+    @Test
+    fun targetedRetryDecidesTheOriginalWithTheBulkRuleAndWritesOnlyAChange() {
+        // (b) applyRestoredOriginal goes through importedOriginal, the rule the bulk import uses, and skips the write when nothing differs.
+        val source = File("src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt").readText()
+        val apply = source.substringAfter("private suspend fun applyRestoredOriginal(")
+            .substringBefore("override suspend fun hasGuardedPhotoRestoreIssues")
+
+        assertTrue(apply.contains("importedOriginal("))
+        assertTrue(apply.contains("photoChanged = photoChanged"))
+        assertTrue(apply.contains("if (original.uri == item.originalUri && original.recipe == item.originalRecipe) return"))
+    }
 }

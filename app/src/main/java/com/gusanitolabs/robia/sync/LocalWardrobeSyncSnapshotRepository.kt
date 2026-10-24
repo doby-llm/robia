@@ -181,13 +181,15 @@ class LocalWardrobeSyncSnapshotRepository(
                 )
             }
 
+            // Read before the update: a cutout that differs from the one the row held replaces it (R3-DEC-039, as in the bulk import).
+            val photoChanged = rowBefore?.photoUri != restoredUri
             val rowsUpdated = wardrobeDao.applyRestoredPhoto(
                 itemId = photo.garmentId,
                 photoUri = restoredUri,
                 revision = expectedRevision,
                 syncedAtEpochMillis = System.currentTimeMillis(),
             )
-            if (rowsUpdated == 1) applyRestoredOriginal(photo)
+            if (rowsUpdated == 1) applyRestoredOriginal(photo, photoChanged)
             val rowAfter = wardrobeDao.restoredPhotoApplyState(photo.garmentId)
             val persisted = rowAfter?.let { row ->
                 row.photoUri == restoredUri &&
@@ -222,12 +224,20 @@ class LocalWardrobeSyncSnapshotRepository(
 
     /**
      * The original a targeted retry downloaded (REQ-OR-04). The photo row was just written in this transaction; this writes the
-     * original columns of that same row, so a retried garment gets its original as a bulk restore gives it.
+     * original columns of that same row, so a retried garment gets its original as a bulk restore gives it. The decision is the
+     * bulk import's ([importedOriginal]): a local original whose cutout was replaced is cleared, not kept.
      */
-    private suspend fun applyRestoredOriginal(photo: GarmentPhotoRecord) {
-        val originalUri = photo.restoredOriginalLocalUri?.takeIf(String::isNotBlank) ?: return
+    private suspend fun applyRestoredOriginal(photo: GarmentPhotoRecord, photoChanged: Boolean) {
         val item = tagDao.clothingItemsByIds(listOf(photo.garmentId)).singleOrNull() ?: return
-        tagDao.upsertClothingItems(listOf(item.copy(originalUri = originalUri, originalRecipe = photo.recipe)))
+        val original = importedOriginal(
+            restoredUri = photo.restoredOriginalLocalUri?.takeIf(String::isNotBlank),
+            restoredRecipe = photo.recipe,
+            localUri = item.originalUri,
+            localRecipe = item.originalRecipe,
+            photoChanged = photoChanged,
+        )
+        if (original.uri == item.originalUri && original.recipe == item.originalRecipe) return
+        tagDao.upsertClothingItems(listOf(item.copy(originalUri = original.uri, originalRecipe = original.recipe)))
     }
 
     override suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
