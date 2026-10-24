@@ -9,6 +9,8 @@ import com.gusanitolabs.robia.sync.UploadedBlobInfo
 import kotlinx.coroutines.delay
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -16,6 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * [failures] replaces the result of [fetchBlobToFile] for one file name. [downloadDelayMillis] keeps
  * each download open so tests can observe how many run at once through [maxInFlight].
+ *
+ * [script] answers the next calls of one method with the given results, in order, before the normal behaviour.
+ * [refreshAccessToken] stands in for authorize(): it counts in [authorizeCalls] and returns [FRESH_TOKEN].
+ * [tokensSeen] records the access token of every call, in order.
  */
 class FakeDriveSnapshotApi(
     private val downloadDelayMillis: Long = 0L,
@@ -29,8 +35,26 @@ class FakeDriveSnapshotApi(
     /** When set, the next snapshot JSON upload fails with this result (V-S03c). */
     var snapshotFailure: DriveApiResult<Nothing>? = null
     private val inFlight = AtomicInteger(0)
+    private val scripted = ConcurrentHashMap<String, ConcurrentLinkedQueue<DriveApiResult<Nothing>>>()
+    val authorizeCalls = AtomicInteger(0)
+    val tokensSeen = CopyOnWriteArrayList<String>()
 
-    override suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot> = DriveApiResult.NotFound
+    /** Queues [results] for the next calls of [method] (fetchSnapshot, listAll, upsertBlob, upsertSnapshot, deleteBlob, fetchBlobToFile). */
+    fun script(method: String, vararg results: DriveApiResult<Nothing>) {
+        scripted.getOrPut(method) { ConcurrentLinkedQueue() }.addAll(results.toList())
+    }
+
+    suspend fun refreshAccessToken(): String? {
+        authorizeCalls.incrementAndGet()
+        return FRESH_TOKEN
+    }
+
+    private fun scriptedResult(method: String): DriveApiResult<Nothing>? = scripted[method]?.poll()
+
+    override suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot> {
+        tokensSeen += accessToken
+        return scriptedResult("fetchSnapshot") ?: DriveApiResult.NotFound
+    }
 
     override suspend fun fetchBlob(
         accessToken: String,
@@ -43,6 +67,8 @@ class FakeDriveSnapshotApi(
     }
 
     override suspend fun fetchBlobToFile(accessToken: String, fileId: String, target: File): DriveApiResult<Long> {
+        tokensSeen += accessToken
+        scriptedResult("fetchBlobToFile")?.let { result -> return result }
         val name = nameOf(fileId)
         failures[name]?.let { failure -> return failure }
         val bytes = files[name] ?: return DriveApiResult.NotFound
@@ -58,6 +84,8 @@ class FakeDriveSnapshotApi(
 
     override suspend fun listAll(accessToken: String): DriveApiResult<List<DriveFileMetadata>> {
         listCalls.incrementAndGet()
+        tokensSeen += accessToken
+        scriptedResult("listAll")?.let { result -> return result }
         // Like the real listing, each file carries its size: the planner reuses a blob only while the size matches.
         return DriveApiResult.Success(
             files.entries.sortedBy { entry -> entry.key }.map { (name, bytes) ->
@@ -76,12 +104,16 @@ class FakeDriveSnapshotApi(
         mimeType: String?,
         fileId: String?,
     ): DriveApiResult<UploadedBlobInfo> {
+        tokensSeen += accessToken
+        scriptedResult("upsertBlob")?.let { result -> return result }
         blobUploads.incrementAndGet()
         files[blobPath] = bytes
         return DriveApiResult.Success(UploadedBlobInfo(size = bytes.size.toLong(), sha256 = sha256Hex(bytes)))
     }
 
     override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {
+        tokensSeen += accessToken
+        scriptedResult("deleteBlob")?.let { result -> return result }
         files.remove(blobPath)
         return DriveApiResult.Success(Unit)
     }
@@ -92,6 +124,8 @@ class FakeDriveSnapshotApi(
     override suspend fun deleteFile(accessToken: String, fileId: String): DriveApiResult<Unit> = DriveApiResult.Success(Unit)
 
     override suspend fun upsertSnapshot(accessToken: String, snapshot: WardrobeSyncSnapshot): DriveApiResult<WardrobeSyncSnapshot> {
+        tokensSeen += accessToken
+        scriptedResult("upsertSnapshot")?.let { result -> return result }
         snapshotUploads.incrementAndGet()
         snapshotFailure?.let { failure -> return failure }
         return DriveApiResult.Success(snapshot)
@@ -100,4 +134,8 @@ class FakeDriveSnapshotApi(
     private fun idOf(name: String): String = "id-$name"
 
     private fun nameOf(fileId: String): String = fileId.removePrefix("id-")
+
+    companion object {
+        const val FRESH_TOKEN = "fresh-token"
+    }
 }
