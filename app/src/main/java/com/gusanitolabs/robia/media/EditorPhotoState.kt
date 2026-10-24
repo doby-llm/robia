@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.media
 
+import com.gusanitolabs.robia.core.model.CutoutRecipe
+
 /**
  * Explicit source-of-truth for the add/edit photo pipeline.
  *
@@ -17,6 +19,9 @@ data class EditorPhotoState(
     val backgroundRemovalStatus: EditorBackgroundRemovalStatus = EditorBackgroundRemovalStatus.None,
     val processingEventId: Long? = null,
     val processingToken: Int = 0,
+    /** The kept original of the photo being added or edited, and the recipe that cut the cutout from it (null if none). */
+    val originalUri: String? = null,
+    val originalRecipe: CutoutRecipe? = null,
 ) {
     val canonicalEditorUri: String?
         get() = currentEditedUri ?: croppedForegroundUri ?: foregroundUri ?: rawSourceUri

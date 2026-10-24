@@ -66,10 +66,12 @@ import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
+import com.gusanitolabs.robia.media.OriginalPhotoStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
@@ -101,6 +103,11 @@ internal data class BatchDraftItem(
     val createdAtEpochMillis: Long = System.currentTimeMillis(),
     val suggestionCapture: SuggestionCapture? = null,
     val backgroundFallback: Boolean = false,
+    /** The kept original of the cutout, and its recipe (REQ-OR-01/02); null when the photo was not cut out. */
+    val originalUri: String? = null,
+    val originalRecipe: CutoutRecipe? = null,
+    /** The engine's subject file of the cutout, kept until the garment is saved; null when no subject was made. */
+    val subjectUri: String? = null,
 )
 
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
@@ -534,6 +541,9 @@ internal sealed interface CutoutStageResult {
         val secondaryColorId: String?,
         val usedFallback: Boolean,
         val needsOriginalFallbackReview: Boolean,
+        val originalUri: String? = null,
+        val originalRecipe: CutoutRecipe? = null,
+        val subjectUri: String? = null,
     ) : CutoutStageResult
 
     data class Failed(val message: String?) : CutoutStageResult
@@ -544,62 +554,80 @@ internal suspend fun cutoutStage(
     context: android.content.Context,
     backgroundRemover: PhotoBackgroundRemover,
     mainColors: List<MainColor>,
-): CutoutStageResult = try {
-    val sourceUri = Uri.parse(draft.originalPhotoUri)
-    val sourceAspectRatio = withContext(Dispatchers.IO) {
-        ClothingImageStore.readImageAspectRatio(context, sourceUri)
-    }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
-    val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
-    // The engine's subject file is only the crop's input. It is deleted once the crop has replaced it, or when this
-    // stage is cancelled first, so a cancelled or discarded garment leaves no subject file behind.
-    val subjectUri = backgroundResult.outputUri.takeUnless { backgroundResult.usedFallback }
-    var cropResult: Uri? = null
-    val croppedUri = try {
-        fallbackUnlessCancelled(backgroundResult.outputUri) {
-            // Not cancellable: once the crop has written its file, cropResult records it, and the cancel path below deletes it.
+): CutoutStageResult {
+    // The kept original is written before the crop; a stage that ends without a Ready result deletes it (see the catches).
+    var keptOriginal: Uri? = null
+    // The subject is the crop's input. It is kept until the garment is saved (released on save, like the raw copy), so it
+    // is deleted here only when the stage ends without a Ready result.
+    var subjectFile: Uri? = null
+    return try {
+        val sourceUri = Uri.parse(draft.originalPhotoUri)
+        val sourceAspectRatio = withContext(Dispatchers.IO) {
+            ClothingImageStore.readImageAspectRatio(context, sourceUri)
+        }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO)
+        val backgroundResult = backgroundRemover.removeBackground(context, sourceUri)
+        keptOriginal = withContext(NonCancellable + Dispatchers.IO) { OriginalPhotoStore.saveAndRecycle(context, backgroundResult.inputFrame) }
+        subjectFile = backgroundResult.outputUri.takeUnless { backgroundResult.usedFallback }
+        // Not cancellable: the crop writes its file once. A cancel after this point is seen by the inner catch, which deletes it.
+        val croppedUri = fallbackUnlessCancelled(backgroundResult.outputUri) {
             withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
-        }.also { cropResult = it }
-    } finally {
-        if (subjectUri != null && cropResult != subjectUri) {
-            withContext(NonCancellable + Dispatchers.IO) {
-                ClothingImageStore.deleteBatchDraftFiles(context, listOf(subjectUri.toString()))
+        }
+        try {
+            val displayAspectRatio = withContext(Dispatchers.IO) {
+                ClothingImageStore.readImageAspectRatio(context, croppedUri)
+            }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
+            val matches = fallbackUnlessCancelled(emptyList<PaletteColorMatch>()) {
+                withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
             }
-        }
-    }
-    try {
-        val displayAspectRatio = withContext(Dispatchers.IO) {
-            ClothingImageStore.readImageAspectRatio(context, croppedUri)
-        }?.coerceIn(PHOTO_PREVIEW_MIN_ASPECT_RATIO, PHOTO_PREVIEW_MAX_ASPECT_RATIO) ?: sourceAspectRatio
-        val matches = fallbackUnlessCancelled(emptyList<PaletteColorMatch>()) {
-            withContext(Dispatchers.IO) { ClothingImageStore.extractPaletteColorDiagnostics(context, croppedUri, mainColors).matches }
-        }
-        val primaryColorId = matches.getOrNull(0)?.color?.id
-        val secondaryColorId = matches.drop(1)
-            .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
-            ?.color
-            ?.id
-        CutoutStageResult.Ready(
-            croppedUri = croppedUri.toString(),
-            displayAspectRatio = displayAspectRatio,
-            primaryColorId = primaryColorId,
-            secondaryColorId = secondaryColorId,
-            usedFallback = backgroundResult.usedFallback,
-            needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
-        )
-    } catch (cancellation: CancellationException) {
-        // A cancelled stage hands no result to the batch, so the cropped output it made is deleted here. A crop fallback
-        // is the raw copy the draft still references, so it stays.
-        if (croppedUri != sourceUri) {
-            withContext(NonCancellable + Dispatchers.IO) {
-                ClothingImageStore.deleteBatchDraftFiles(context, listOf(croppedUri.toString()))
+            val primaryColorId = matches.getOrNull(0)?.color?.id
+            val secondaryColorId = matches.drop(1)
+                .firstOrNull { match -> match.ratio >= SECONDARY_COLOR_MIN_RATIO && match.color.id != primaryColorId }
+                ?.color
+                ?.id
+            // The raw copy and the subject are released once the garment is saved; a crop fallback is the raw copy or the
+            // subject itself, which the name check keeps.
+            ClothingImageStore.registerPhotoFilesForRelease(
+                context,
+                croppedUri.toString(),
+                listOfNotNull(sourceUri.toString(), subjectFile?.toString()),
+            )
+            CutoutStageResult.Ready(
+                croppedUri = croppedUri.toString(),
+                displayAspectRatio = displayAspectRatio,
+                primaryColorId = primaryColorId,
+                secondaryColorId = secondaryColorId,
+                usedFallback = backgroundResult.usedFallback,
+                needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
+                originalUri = keptOriginal?.toString(),
+                originalRecipe = backgroundResult.recipe.takeIf { keptOriginal != null },
+                subjectUri = subjectFile?.toString(),
+            )
+        } catch (cancellation: CancellationException) {
+            // A cancelled stage hands no result to the batch, so the cropped output it made is deleted here. A crop fallback
+            // is the raw copy the draft still references, so it stays.
+            if (croppedUri != sourceUri) {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    ClothingImageStore.deleteBatchDraftFiles(context, listOf(croppedUri.toString()))
+                }
             }
+            throw cancellation
         }
-        throw cancellation
+    } catch (throwable: CancellationException) {
+        deleteStageFiles(context, keptOriginal, subjectFile)
+        throw throwable
+    } catch (throwable: Exception) {
+        deleteStageFiles(context, keptOriginal, subjectFile)
+        CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
     }
-} catch (throwable: CancellationException) {
-    throw throwable
-} catch (throwable: Exception) {
-    CutoutStageResult.Failed(throwable.message?.takeIf { it.isNotBlank() })
+}
+
+/** Deletes the files a stage made when it ends without handing them to the batch: the kept original and the subject. */
+private suspend fun deleteStageFiles(context: android.content.Context, keptOriginal: Uri?, subjectFile: Uri?) {
+    val uris = listOfNotNull(keptOriginal, subjectFile).map(Uri::toString)
+    if (uris.isEmpty()) return
+    withContext(NonCancellable + Dispatchers.IO) {
+        ClothingImageStore.deleteBatchDraftFiles(context, uris)
+    }
 }
 
 /**
@@ -636,6 +664,9 @@ internal suspend fun suggestStage(
     draft.copy(
         photoUri = cutout.croppedUri,
         photoAspectRatio = cutout.displayAspectRatio,
+        originalUri = cutout.originalUri,
+        originalRecipe = cutout.originalRecipe,
+        subjectUri = cutout.subjectUri,
         status = resolvedStatus,
         selectedPrimaryColorId = cutout.primaryColorId,
         selectedSecondaryColorId = cutout.secondaryColorId,
@@ -653,6 +684,10 @@ internal suspend fun suggestStage(
 } catch (throwable: CancellationException) {
     throw throwable
 } catch (throwable: Exception) {
+    // The failed draft does not reference the cutout, so the subject it kept for a save is deleted here.
+    cutout.subjectUri?.let { subject ->
+        withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.deleteBatchDraftFiles(context, listOf(subject)) }
+    }
     draft.copy(
         status = BatchDraftStatus.Failed,
         errorMessage = throwable.message?.takeIf { it.isNotBlank() },
@@ -672,8 +707,11 @@ internal fun BatchDraftItem.isAcceptedForSave(): Boolean =
     status == BatchDraftStatus.Ready ||
         (status == BatchDraftStatus.NeedsReview && explicitlyAccepted)
 
-/** The image files this draft owns: its raw copy and the photo it shows now (the same file until a cutout replaces it). */
-internal fun BatchDraftItem.tempFileUris(): List<String> = listOf(originalPhotoUri, photoUri).distinct()
+/**
+ * The image files this draft owns: its raw copy, the photo it shows now (the same file until a cutout replaces it), the
+ * kept original of that cutout and its subject file. A discarded or cancelled draft deletes all of them.
+ */
+internal fun BatchDraftItem.tempFileUris(): List<String> = listOfNotNull(originalPhotoUri, photoUri, originalUri, subjectUri).distinct()
 
 internal fun BatchDraftItem.isProcessingActive(): Boolean =
     status == BatchDraftStatus.Queued || status == BatchDraftStatus.Processing
@@ -740,6 +778,8 @@ internal fun BatchDraftItem.toClothingItem(
         isArchived = false,
         createdAtEpochMillis = createdAtEpochMillis,
         updatedAtEpochMillis = now,
+        originalUri = originalUri,
+        originalRecipe = originalRecipe,
     )
 }
 
@@ -771,6 +811,8 @@ internal fun ClothingItem.toBatchDraftItem(
     name = name,
     notes = notes,
     photoUri = photoUri ?: previous.photoUri,
+    originalUri = originalUri,
+    originalRecipe = originalRecipe,
     selectedTagIds = tags.map(GarmentTag::id),
     fitValue = fitValue,
     selectedPrimaryColorId = colorMetrics.primaryPaletteColorId,
@@ -810,6 +852,8 @@ internal fun ClothingItem.toBatchDraftFromExisting(
     name = name,
     notes = notes,
     photoUri = photoUri ?: previous.photoUri,
+    originalUri = originalUri,
+    originalRecipe = originalRecipe,
     selectedTagIds = tags.map(GarmentTag::id),
     fitValue = fitValue,
     selectedPrimaryColorId = colorMetrics.primaryPaletteColorId ?: mainColors.nearestColor(colorMetrics.primaryPaletteColorHex ?: colorMetrics.primaryRawValue)?.id,

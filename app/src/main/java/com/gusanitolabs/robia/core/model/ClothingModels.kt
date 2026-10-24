@@ -1,5 +1,8 @@
 package com.gusanitolabs.robia.core.model
 
+import org.json.JSONException
+import org.json.JSONObject
+
 /** Immutable wardrobe item used by UI and sync seams. */
 data class ClothingItem(
     val id: String,
@@ -19,7 +22,86 @@ data class ClothingItem(
     val lastSyncedAtEpochMillis: Long? = null,
     val syncFailureMessage: String? = null,
     val photoRestoreState: PhotoRestoreState = PhotoRestoreState.None,
+    /** The frame the cutout engine processed (REQ-OR-01); null for garments saved before OR1 and for unprocessed photos. */
+    val originalUri: String? = null,
+    /** How to reproduce [photoUri] from [originalUri] (REQ-OR-02); null whenever [originalUri] is null. */
+    val originalRecipe: CutoutRecipe? = null,
 )
+
+/** Version of the [CutoutRecipe] JSON. A recipe written with a later version is read as absent. */
+const val CUTOUT_RECIPE_VERSION = 1
+
+/**
+ * The processing that turned an original photo into a cutout (REQ-OR-02). [engine] is `precise` or `mlkit`. The crop is in
+ * the original's pixels, with [cropRight] and [cropBottom] exclusive. [rotationDegrees] is the EXIF rotation applied when the
+ * frame was decoded; the saved original carries no EXIF, so reprocessing does not apply it again. Mirrors are not recorded.
+ * ML Kit records the full frame, and [hangerThreshold] is 0 because it has no hanger step.
+ */
+data class CutoutRecipe(
+    val engine: String,
+    val removeHanger: Boolean,
+    val hangerThreshold: Float,
+    val edges: CutoutEdges,
+    val workW: Int,
+    val workH: Int,
+    val rotationDegrees: Int,
+    val sampleSize: Int,
+    val cropLeft: Int,
+    val cropTop: Int,
+    val cropRight: Int,
+    val cropBottom: Int,
+    val version: Int = CUTOUT_RECIPE_VERSION,
+) {
+    fun toJson(): String = JSONObject()
+        .put("engine", engine)
+        .put("removeHanger", removeHanger)
+        .put("hangerThreshold", hangerThreshold.toDouble())
+        .put("edges", edges.name)
+        .put("workW", workW)
+        .put("workH", workH)
+        .put("rotationDegrees", rotationDegrees)
+        .put("sampleSize", sampleSize)
+        .put("cropLeft", cropLeft)
+        .put("cropTop", cropTop)
+        .put("cropRight", cropRight)
+        .put("cropBottom", cropBottom)
+        .put("version", version)
+        .toString()
+
+    companion object {
+        /**
+         * The recipe stored as [json], or null when it is missing, unreadable or from a later [CUTOUT_RECIPE_VERSION].
+         * Unknown keys are ignored.
+         */
+        fun fromJson(json: String?): CutoutRecipe? {
+            if (json.isNullOrBlank()) return null
+            return try {
+                val obj = JSONObject(json)
+                val version = obj.getInt("version")
+                if (version > CUTOUT_RECIPE_VERSION) return null
+                CutoutRecipe(
+                    engine = obj.getString("engine"),
+                    removeHanger = obj.getBoolean("removeHanger"),
+                    hangerThreshold = obj.getDouble("hangerThreshold").toFloat(),
+                    edges = CutoutEdges.valueOf(obj.getString("edges")),
+                    workW = obj.getInt("workW"),
+                    workH = obj.getInt("workH"),
+                    rotationDegrees = obj.getInt("rotationDegrees"),
+                    sampleSize = obj.getInt("sampleSize"),
+                    cropLeft = obj.getInt("cropLeft"),
+                    cropTop = obj.getInt("cropTop"),
+                    cropRight = obj.getInt("cropRight"),
+                    cropBottom = obj.getInt("cropBottom"),
+                    version = version,
+                )
+            } catch (failure: JSONException) {
+                null
+            } catch (failure: IllegalArgumentException) {
+                null
+            }
+        }
+    }
+}
 
 data class PhotoRestoreState(
     val guarded: Boolean = false,

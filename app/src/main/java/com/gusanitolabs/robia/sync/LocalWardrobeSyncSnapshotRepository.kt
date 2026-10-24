@@ -89,22 +89,26 @@ class LocalWardrobeSyncSnapshotRepository(
      * Targeted guarded-photo retry uses [applyRestoredPhoto] instead of this bulk import because it
      * must resolve exactly one pre-existing guarded row that has already been claimed as Running.
      */
-    override suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult = importRecords(snapshot, phoneHeldPhotoUris = emptyMap())
+    override suspend fun importSnapshot(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult = database.withTransaction {
+        importRecords(snapshot, phoneHeldPhotoUris = emptyMap(), localItemsById = localItemsFor(snapshot))
+    }
 
-    private suspend fun importRecords(snapshot: WardrobeSyncSnapshot, phoneHeldPhotoUris: Map<String, String>): ImportSnapshotResult {
+    /**
+     * The local rows of the snapshot's garments. Read inside the import's transaction; "Use backup" reads them before it
+     * clears the wardrobe, because the rows are gone after the delete.
+     */
+    private suspend fun localItemsFor(snapshot: WardrobeSyncSnapshot): Map<String, ClothingItemEntity> {
+        if (snapshot.garments.isEmpty()) return emptyMap()
+        return tagDao.clothingItemsByIds(snapshot.garments.map(GarmentSyncRecord::id)).associateBy(ClothingItemEntity::id)
+    }
+
+    private suspend fun importRecords(
+        snapshot: WardrobeSyncSnapshot,
+        phoneHeldPhotoUris: Map<String, String>,
+        localItemsById: Map<String, ClothingItemEntity>,
+    ): ImportSnapshotResult {
         val deterministicSnapshot = snapshot.sortedDeterministically().withoutTombstonedTaxonomy()
-        val remotePhotoByGarmentId = deterministicSnapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
-        val guardedPhotoByGarmentId = deterministicSnapshot.photos
-            .mapNotNull { photo -> photo.toImportPhotoRestoreIssue()?.let { issue -> photo.garmentId to issue } }
-            .toMap()
-        val remoteColorsByGarmentId = deterministicSnapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
-        val restoredItems = deterministicSnapshot.garments.map { garment ->
-            garment.toEntity(
-                photoUri = importedPhotoUri(remotePhotoByGarmentId[garment.id], phoneHeldPhotoUris[garment.id]),
-                photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
-                colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
-            )
-        }
+        val restoredItems = restoredClothingItems(deterministicSnapshot, phoneHeldPhotoUris, localItemsById)
         val itemIds = restoredItems.map(ClothingItemEntity::id)
         val itemIdSet = itemIds.toSet()
         val tagRefs = deterministicSnapshot.garmentTags
@@ -150,6 +154,7 @@ class LocalWardrobeSyncSnapshotRepository(
             importRecords(
                 snapshot,
                 phoneHeldPhotoUris = expectedLocal.photos.filter { it.localUri.isNotBlank() }.associate { it.garmentId to it.localUri },
+                localItemsById = localItemsFor(snapshot),
             )
         }
 
@@ -219,14 +224,17 @@ class LocalWardrobeSyncSnapshotRepository(
     /**
      * "Use backup": the caller has already fetched and decoded [snapshot], so nothing is cleared before this
      * point. Clearing and importing share one Room transaction; any exception rolls both back and leaves the
-     * local wardrobe untouched. Local photo files are deliberately not deleted here.
+     * local wardrobe untouched. Local photo files are deliberately not deleted here. The local original photo and
+     * recipe of each garment the backup still has are written back; the originals of garments the backup lacks are
+     * not deleted and stay as orphan files until cleanup (CLN).
      */
     override suspend fun replaceLocalWithRemote(snapshot: WardrobeSyncSnapshot): ImportSnapshotResult =
         database.withTransaction {
+            val localItemsById = localItemsFor(snapshot)
             database.embeddingDao().deleteEverything()
             wardrobeDao.deleteAllItemTagRefs()
             wardrobeDao.deleteAllItems()
-            importSnapshot(snapshot)
+            importRecords(snapshot, phoneHeldPhotoUris = emptyMap(), localItemsById = localItemsById)
         }
 }
 
@@ -506,10 +514,39 @@ private fun MainColorSyncRecord.toEntity(): MainColorEntity = MainColorEntity(
     lastSyncedAtEpochMillis = System.currentTimeMillis(),
 )
 
+/**
+ * The rows an import writes for the snapshot's garments. A sync record carries no original photo, so a garment that
+ * exists locally keeps its local original fields; a garment new to the phone gets none. The rows are written with an
+ * upsert of every column, so a null here would erase the saved original.
+ */
+internal fun restoredClothingItems(
+    snapshot: WardrobeSyncSnapshot,
+    phoneHeldPhotoUris: Map<String, String>,
+    localItemsById: Map<String, ClothingItemEntity>,
+): List<ClothingItemEntity> {
+    val remotePhotoByGarmentId = snapshot.photos.associateBy(GarmentPhotoRecord::garmentId)
+    val guardedPhotoByGarmentId = snapshot.photos
+        .mapNotNull { photo -> photo.toImportPhotoRestoreIssue()?.let { issue -> photo.garmentId to issue } }
+        .toMap()
+    val remoteColorsByGarmentId = snapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
+    return snapshot.garments.map { garment ->
+        val localItem = localItemsById[garment.id]
+        garment.toEntity(
+            photoUri = importedPhotoUri(remotePhotoByGarmentId[garment.id], phoneHeldPhotoUris[garment.id]),
+            photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
+            colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
+            originalUri = localItem?.originalUri,
+            originalRecipe = localItem?.originalRecipe,
+        )
+    }
+}
+
 private fun GarmentSyncRecord.toEntity(
     photoUri: String?,
     photoRestoreIssue: ImportPhotoRestoreIssue?,
     colorRecords: List<GarmentColorMappingRecord>,
+    originalUri: String?,
+    originalRecipe: String?,
 ): ClothingItemEntity {
     val colorsByRole = colorRecords.associateBy(GarmentColorMappingRecord::role)
     return ClothingItemEntity(
@@ -544,6 +581,8 @@ private fun GarmentSyncRecord.toEntity(
         photoRestoreGuarded = photoRestoreIssue != null,
         retryAfterEpochMillis = photoRestoreIssue?.let { System.currentTimeMillis() },
         photoRestoreRetryDeadlineEpochMillis = photoRestoreIssue?.let { System.currentTimeMillis() + PHOTO_RESTORE_RETRY_WINDOW_MILLIS },
+        originalUri = originalUri,
+        originalRecipe = originalRecipe,
     )
 }
 

@@ -8,6 +8,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
 import com.gusanitolabs.robia.BuildConfig
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
 import com.gusanitolabs.robia.media.BackgroundRemovalFailure
 import com.gusanitolabs.robia.media.BackgroundRemovalFailureReason
@@ -69,9 +70,12 @@ internal class PreciseCutoutEngine(
             withContext(Dispatchers.Default) {
                 val cutout = options()
                 val timings = LinkedHashMap<String, Long>()
-                val work = timings.timed("decode") { decodeWorkBitmap(context, sourceUri) }
+                val decoded = timings.timed("decode") { decodeWorkBitmap(context, sourceUri) }
+                val work = decoded.bitmap
                 runInfo.width = work.width
                 runInfo.height = work.height
+                // The work frame is kept as the original on success; any other exit recycles it.
+                var keepWork = false
                 try {
                     val argb = IntArray(work.width * work.height).also { work.getPixels(it, 0, work.width, 0, 0, work.width, work.height) }
                     val callerContext = coroutineContext
@@ -103,9 +107,13 @@ internal class PreciseCutoutEngine(
                         )
                     }
                     val composed = Bitmap.createBitmap(work.width, work.height, Bitmap.Config.ARGB_8888)
+                    var crop: CropRect? = null
                     val cropped = try {
                         composed.setPixels(IntArray(argb.size) { i -> ((composite.alpha[i].toInt() and 0xFF) shl 24) or (composite.rgb[i] and 0xFFFFFF) }, 0, work.width, 0, 0, work.width, work.height)
-                        cropToAlpha(composed, composite.alpha)
+                        alphaCropRect(composite.alpha, work.width, work.height).let { rect ->
+                            crop = rect
+                            Bitmap.createBitmap(composed, rect.left, rect.top, rect.width, rect.height)
+                        }
                     } catch (failure: Throwable) {
                         composed.recycle()
                         throw failure
@@ -120,14 +128,31 @@ internal class PreciseCutoutEngine(
                         cropped.recycle()
                         if (cropped !== composed) composed.recycle()
                     }
+                    val rect = checkNotNull(crop)
+                    keepWork = true
                     BackgroundRemovalResult(
                         originalUri = sourceUri,
                         outputUri = outputUri,
                         status = BackgroundRemovalStatus.REMOVED,
                         timings = timings.toMap(),
+                        inputFrame = work,
+                        recipe = CutoutRecipe(
+                            engine = ENGINE_PRECISE,
+                            removeHanger = cutout.removeHanger,
+                            hangerThreshold = cutout.hangerThreshold,
+                            edges = cutout.edges,
+                            workW = work.width,
+                            workH = work.height,
+                            rotationDegrees = decoded.rotationDegrees,
+                            sampleSize = decoded.sampleSize,
+                            cropLeft = rect.left,
+                            cropTop = rect.top,
+                            cropRight = rect.right,
+                            cropBottom = rect.bottom,
+                        ),
                     )
                 } finally {
-                    work.recycle()
+                    if (!keepWork) work.recycle()
                 }
             }
         }
@@ -140,33 +165,41 @@ internal class PreciseCutoutEngine(
             this[key] = (System.nanoTime() - started) / NANOS_PER_MILLI
         }
     }
+}
 
-    /** Crop to alpha above 24 with a 4 % pad of the long edge (the pipeline's output rule). */
-    private fun cropToAlpha(source: Bitmap, alpha: ByteArray): Bitmap {
-        val w = source.width
-        val h = source.height
-        var left = w
-        var top = h
-        var right = -1
-        var bottom = -1
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                if ((alpha[y * w + x].toInt() and 0xFF) > CROP_ALPHA_THRESHOLD) {
-                    left = min(left, x)
-                    top = min(top, y)
-                    right = max(right, x)
-                    bottom = max(bottom, y)
-                }
+/** A crop in pixels of the work frame: [left] and [top] inclusive, [right] and [bottom] exclusive. */
+internal data class CropRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+    val width: Int get() = right - left
+    val height: Int get() = bottom - top
+}
+
+/**
+ * The crop of a precise result: alpha above 24 with a 4 % pad of the long edge (the pipeline's output rule). Pure, so the
+ * crop recorded in the recipe is the one the cutout was cut with.
+ */
+internal fun alphaCropRect(alpha: ByteArray, w: Int, h: Int): CropRect {
+    var left = w
+    var top = h
+    var right = -1
+    var bottom = -1
+    for (y in 0 until h) {
+        for (x in 0 until w) {
+            if ((alpha[y * w + x].toInt() and 0xFF) > CROP_ALPHA_THRESHOLD) {
+                left = min(left, x)
+                top = min(top, y)
+                right = max(right, x)
+                bottom = max(bottom, y)
             }
         }
-        check(right >= 0) { "No foreground left after the precise cutout" }
-        val pad = (CROP_PAD_FRACTION * max(w, h)).toInt()
-        val x0 = max(left - pad, 0)
-        val y0 = max(top - pad, 0)
-        val x1 = min(right + pad, w)
-        val y1 = min(bottom + pad, h)
-        return Bitmap.createBitmap(source, x0, y0, x1 - x0, y1 - y0)
     }
+    check(right >= 0) { "No foreground left after the precise cutout" }
+    val pad = (CROP_PAD_FRACTION * max(w, h)).toInt()
+    return CropRect(
+        left = max(left - pad, 0),
+        top = max(top - pad, 0),
+        right = min(right + pad, w),
+        bottom = min(bottom + pad, h),
+    )
 }
 
 /** S5 alpha of the work photo (0..255 per pixel) and the RGB it composites with, after colour decontamination (K03 step 3). */
@@ -477,11 +510,14 @@ internal fun workSize(width: Int, height: Int): Pair<Int, Int> {
     return (width * scale).roundToInt() to (height * scale).roundToInt()
 }
 
+/** The work frame of a photo, with the decode facts the recipe records. */
+internal class DecodedWork(val bitmap: Bitmap, val rotationDegrees: Int, val sampleSize: Int)
+
 /**
  * Decodes the photo with EXIF rotation applied and sized by [workSize]. Mirrored orientations are not flipped back; the
  * phone photos this app takes are not mirrored.
  */
-internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
+internal fun decodeWorkBitmap(context: Context, uri: Uri): DecodedWork {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     val input = context.contentResolver.openInputStream(uri) ?: error("Unable to open source photo")
     input.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -504,12 +540,7 @@ internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
         decoded.recycle()
         throw failure
     }
-    val degrees = when (orientation) {
-        ExifInterface.ORIENTATION_ROTATE_90 -> 90
-        ExifInterface.ORIENTATION_ROTATE_180 -> 180
-        ExifInterface.ORIENTATION_ROTATE_270 -> 270
-        else -> 0
-    }
+    val degrees = exifRotationDegrees(orientation)
     val oriented = if (degrees == 0) {
         decoded
     } else {
@@ -517,6 +548,18 @@ internal fun decodeWorkBitmap(context: Context, uri: Uri): Bitmap {
         Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also { decoded.recycle() }
     }
     val (targetWidth, targetHeight) = workSize(oriented.width, oriented.height)
-    if (targetWidth == oriented.width && targetHeight == oriented.height) return oriented
-    return Bitmap.createScaledBitmap(oriented, targetWidth, targetHeight, true).also { oriented.recycle() }
+    val frame = if (targetWidth == oriented.width && targetHeight == oriented.height) {
+        oriented
+    } else {
+        Bitmap.createScaledBitmap(oriented, targetWidth, targetHeight, true).also { oriented.recycle() }
+    }
+    return DecodedWork(frame, degrees, sample)
+}
+
+/** The pure rotation of an EXIF orientation in degrees (90, 180, 270); flips and transposes are 0 (the phone photos are not mirrored). */
+internal fun exifRotationDegrees(orientation: Int): Int = when (orientation) {
+    ExifInterface.ORIENTATION_ROTATE_90 -> 90
+    ExifInterface.ORIENTATION_ROTATE_180 -> 180
+    ExifInterface.ORIENTATION_ROTATE_270 -> 270
+    else -> 0
 }

@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.data
 import android.util.Log
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.core.model.DefaultTagSeeds
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -24,9 +25,12 @@ import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
 import com.gusanitolabs.robia.data.local.toDedupeTag
+import com.gusanitolabs.robia.media.ClothingImageStore
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 class LocalWardrobeRepository(
     private val wardrobeDao: WardrobeDao,
@@ -67,6 +71,7 @@ class LocalWardrobeRepository(
 
     override suspend fun upsertItem(item: ClothingItem) {
         wardrobeDao.upsertItemWithTags(item.toEntity(), item.tags.map(GarmentTag::id))
+        releaseSavedPhotoFiles(item)
     }
 
     override suspend fun upsertItems(items: List<ClothingItem>) {
@@ -74,6 +79,13 @@ class LocalWardrobeRepository(
             items = items.map(ClothingItem::toEntity),
             tagIdsByItemId = items.associate { item -> item.id to item.tags.map(GarmentTag::id) },
         )
+        items.forEach { item -> releaseSavedPhotoFiles(item) }
+    }
+
+    /** Deletes the raw copy, subject and superseded original that were registered for this photo, now that it is saved. */
+    private suspend fun releaseSavedPhotoFiles(item: ClothingItem) {
+        val photoUri = item.photoUri ?: return
+        withContext(Dispatchers.IO) { ClothingImageStore.releasePhotoFiles(photoUri) }
     }
 
     override suspend fun archiveItem(id: String, updatedAtEpochMillis: Long) {
@@ -339,6 +351,8 @@ internal fun ClothingItemWithTags.toDomain(): ClothingItem = ClothingItem(
         retryAfterEpochMillis = item.retryAfterEpochMillis,
         retryDeadlineEpochMillis = item.photoRestoreRetryDeadlineEpochMillis,
     ),
+    originalUri = item.originalUri,
+    originalRecipe = CutoutRecipe.fromJson(item.originalRecipe),
 )
 
 private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
@@ -372,6 +386,8 @@ private fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     retryAttemptCount = photoRestoreState.retryAttemptCount,
     retryAfterEpochMillis = photoRestoreState.retryAfterEpochMillis,
     photoRestoreRetryDeadlineEpochMillis = photoRestoreState.retryDeadlineEpochMillis,
+    originalUri = originalUri,
+    originalRecipe = originalRecipe?.toJson(),
 )
 
 private fun TagCategoryEntity.toDomain(): TagCategory = TagCategory(id, name, sortOrder, isSystem)

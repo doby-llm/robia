@@ -18,14 +18,24 @@ import java.io.File
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
 object ClothingImageStore {
     private const val IMAGE_DIRECTORY = "robia_clothing_images"
     private const val THUMBNAIL_DIRECTORY = "robia_thumbnails"
 
-    /** Names this store gives to the files of a batch draft: the raw copy, the subject and the cropped cutout. */
-    private val BATCH_DRAFT_FILE_NAME = Regex("(gallery|camera|subject|cropped-subject)-[0-9a-f-]{36}\\.(jpg|png)")
+    /** Names this store gives to the files of a batch draft: the raw copy, the subject, the cropped cutout and the original. */
+    private val BATCH_DRAFT_FILE_NAME = Regex("(gallery|camera|subject|cropped-subject|original)-[0-9a-f-]{36}\\.(jpg|png)")
+
+    /** The files a save may release: raw copies, subjects and originals. A cutout (cropped-subject) is never released. */
+    private val RELEASABLE_FILE_NAME = Regex("(gallery|camera|subject|original)-[0-9a-f-]{36}\\.(jpg|png)")
+
+    /**
+     * Image-folder files a saved photo makes unreferenced (its raw copy, its subject, a replaced original), keyed by the
+     * saved photo's URI. Filled before the save and emptied by [releasePhotoFiles] once the save has committed.
+     */
+    private val filesToReleaseOnSave = ConcurrentHashMap<String, List<File>>()
 
     fun createCaptureUri(context: Context): Uri {
         val imageFile = createImageFile(context, "camera")
@@ -321,10 +331,29 @@ object ClothingImageStore {
             .forEach { name -> File(imageDir, name).delete() }
     }
 
-    private fun imageDirectory(context: Context): File =
+    /**
+     * Registers the files that become unreferenced once the photo at [savedPhotoUri] is saved. Only names this store creates
+     * in the image folder are kept, and the saved photo's own file is never registered, so a crop fallback (the raw copy is
+     * the photo) deletes nothing. [releasePhotoFiles] deletes them after the save commits.
+     */
+    fun registerPhotoFilesForRelease(context: Context, savedPhotoUri: String, uris: List<String>) {
+        val savedName = Uri.parse(savedPhotoUri).lastPathSegment
+        val imageDir = imageDirectory(context)
+        val files = uris.mapNotNull { uri -> Uri.parse(uri).lastPathSegment }
+            .filter { name -> name != savedName && RELEASABLE_FILE_NAME.matches(name) }
+            .map { name -> File(imageDir, name) }
+        if (files.isNotEmpty()) filesToReleaseOnSave[savedPhotoUri] = files
+    }
+
+    /** Deletes the files registered for [savedPhotoUri]. Call only after the garment with that photo has been saved. */
+    fun releasePhotoFiles(savedPhotoUri: String) {
+        filesToReleaseOnSave.remove(savedPhotoUri)?.forEach { file -> file.delete() }
+    }
+
+    internal fun imageDirectory(context: Context): File =
         File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir, IMAGE_DIRECTORY)
 
-    private fun createImageFile(context: Context, prefix: String, extension: String = "jpg"): File {
+    internal fun createImageFile(context: Context, prefix: String, extension: String = "jpg"): File {
         val imageDir = imageDirectory(context).apply { mkdirs() }
         return File(imageDir, "$prefix-${UUID.randomUUID()}.$extension")
     }
