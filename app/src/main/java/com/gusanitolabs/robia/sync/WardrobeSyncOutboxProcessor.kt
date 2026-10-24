@@ -961,7 +961,6 @@ class WardrobeSyncOutboxProcessor(
         val result = restoreThenFlush(localSnapshot, userConfirmed)
         if (result == SyncRunResult.Success) {
             settingsRepository.setSyncConflict(false)
-            pendingMergeSummary.value = null
         }
         return result
     }
@@ -1345,6 +1344,9 @@ class WardrobeSyncOutboxProcessor(
         }
         diagnostics.recordLocalSave(importResult)
         onRestoreImported()
+        // The local merge is applied, so the proposal is answered whatever the upload below ends with (Success, Retry or AuthBlocked).
+        // A kept proposal would otherwise block every later cycle (the guard above) and keep the Browse card on Replace.
+        pendingMergeSummary.value = null
 
         restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,

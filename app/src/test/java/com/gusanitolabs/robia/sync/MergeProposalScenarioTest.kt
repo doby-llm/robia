@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.data.EmbeddingRepository
@@ -285,6 +286,36 @@ class MergeProposalScenarioTest {
 
         assertNull(processor.state.first().pendingMergeSummary)
         assertEquals(1, snapshots.imports.size)
+    }
+
+    @Test
+    fun pendingSummaryClearsOnceTheLocalMergeIsImportedWhateverTheUploadEnds() = runBlocking {
+        // SYNC-BANNER (V-SYNC-BANNER-4): the import applied, so the proposal is answered even when the upload then fails.
+        val uploadEnds: List<Pair<DriveSyncResult<DriveManifest>, SyncRunResult>> = listOf(
+            DriveSyncResult.Blocked(DriveSyncDisabledReason.UserNotConnected, "Drive is not connected.") to SyncRunResult.AuthBlocked,
+            DriveSyncResult.Failure(UnknownHostException("www.googleapis.com")) to SyncRunResult.Retry,
+        )
+        for ((upload, expected) in uploadEnds) {
+            val local = exportedSnapshot(garmentEntity("a"), garmentEntity("c"))
+            val backup = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), writer = OTHER_DEVICE_ID, revision = 50L)
+            val snapshots = FakeWardrobeSnapshotStore(local = local)
+            val drive = FakeDriveWardrobeRepository(snapshot = DriveSyncResult.Success(backup), upsertResult = upload)
+            val processor = newTestProcessor(snapshots = snapshots, drive = drive)
+
+            processor.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 1L))
+            assertNotNull(expected.name, processor.state.first().pendingMergeSummary)
+
+            processor.confirmMerge()
+
+            assertEquals(expected.name, 1, snapshots.imports.size)
+            assertEquals(expected.name, expected, processor.state.first().lastCycle?.result)
+            assertNull(expected.name, processor.state.first().pendingMergeSummary)
+
+            // The upload recovers. A later cycle is not held by a stale proposal, so it finishes Success instead of NeedsUser.
+            drive.upsertResult = null
+            processor.enqueue(WardrobeSyncOperation.UpsertItem("a"))
+            assertEquals(expected.name, SyncRunResult.Success, processor.state.first().lastCycle?.result)
+        }
     }
 
     // Round 3. Each scenario runs through the real export and the Drive JSON codec, and each names its finding.
