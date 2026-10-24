@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

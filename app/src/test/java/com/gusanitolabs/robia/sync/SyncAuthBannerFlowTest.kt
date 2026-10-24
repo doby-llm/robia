@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.sync.fakes.FakeDriveWardrobeRepository
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeRepository
