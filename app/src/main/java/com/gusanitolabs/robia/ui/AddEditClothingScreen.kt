@@ -61,6 +61,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -99,6 +100,7 @@ import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
+import com.gusanitolabs.robia.media.ActivePhotoRefs
 import com.gusanitolabs.robia.media.BackgroundRemovalFailureReason
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.ImagePurpose
@@ -185,6 +187,13 @@ fun AddEditClothingScreen(
     var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
     val coroutineScope = rememberCoroutineScope()
+
+    // Keeps the draft's photos out of the orphan cleanup while shown; leaving the editor (save or cancel) releases them.
+    DisposableEffect(photoUri, originalPhotoUri) {
+        val draftUris = listOfNotNull(photoUri, originalPhotoUri)
+        draftUris.forEach(ActivePhotoRefs::register)
+        onDispose { draftUris.forEach(ActivePhotoRefs::unregister) }
+    }
 
     val primaryPaletteColor = mainColors.colorForId(selectedPrimaryColorId)
     val secondaryPaletteColor = mainColors.colorForId(selectedSecondaryColorId)

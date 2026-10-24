@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.common.api.Scope
@@ -152,6 +153,12 @@ class GoogleDriveWardrobeRepository(
         onPurgeDeferred = { message -> Log.w(PHOTO_LOG_TAG, message) },
         onListed = { files -> recordDriveUsage(files) },
         onUnclaimedPhoto = { garmentId -> Log.w(PHOTO_LOG_TAG, "Photo of garment $garmentId has no blob in Drive; it is not claimed in the backup.") },
+        originalBytesOf = { photo ->
+            photo.localOriginalUri?.let { uri ->
+                runCatching { context.contentResolver.openInputStream(Uri.parse(uri))?.use { input -> input.readBytes() } }.getOrNull()
+            }
+        },
+        onOriginalFailure = { message -> Log.w(PHOTO_LOG_TAG, message) },
     )
 
     /** Keeps the Settings figure current from a listing the sync already made; a failed write must not fail the sync. */
@@ -301,6 +308,8 @@ class GoogleDriveWardrobeRepository(
                 },
                 progress = progress,
                 onListed = { files -> recordDriveUsage(files) },
+                moveOriginalToFinal = { garmentId, hash16, source -> moveRestoredOriginal(context, garmentId, hash16, source) },
+                onOriginalFailure = { message -> Log.w(PHOTO_LOG_TAG, message) },
             )
         ) {
             is DriveApiResult.Success -> DriveSyncResult.Success(snapshot.copy(photos = restored.value).sortedDeterministically())
@@ -309,6 +318,17 @@ class GoogleDriveWardrobeRepository(
             is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(restored.failureCause())
         }
     }
+}
+
+/** Moves a downloaded original to `restored-original-<id>-<hash16>.jpg`; the name depends only on id and hash, so a repeat restore replaces it. */
+private fun moveRestoredOriginal(context: Context, garmentId: String, hash16: String, source: File): String {
+    val target = File(ClothingImageStore.imageDirectory(context), PhotoBlobKeys.restoredOriginalFileName(garmentId, hash16))
+    target.parentFile?.mkdirs()
+    if (!source.renameTo(target)) {
+        source.copyTo(target, overwrite = true)
+        source.delete()
+    }
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target).toString()
 }
 
 private fun ImageBlob.requireDriveReadable(garmentId: String): ImageBlob {
@@ -392,6 +412,33 @@ internal fun planPhotoUploads(
     }
 }
 
+/** An original is reused when Drive lists a blob under its name with the same size (REQ-OR-04). Pure. */
+internal fun originalReusable(index: DriveFileIndex, blobPath: String, byteSize: Long): Boolean =
+    index.idOf(blobPath) != null && index.sizeOf(blobPath) == byteSize
+
+/**
+ * The `originals/` blobs that no uploaded photo record needs any more (REQ-OR-04). A garment without a record (deleted, or never
+ * synced) loses all its originals. A garment whose record names no original keeps them all, so an old app that re-uploads its
+ * snapshot without the fields cannot delete them. A garment whose record names one keeps the others only until that one is verified.
+ * Protected garments keep theirs. Names that are not original keys are never touched. Pure.
+ */
+internal fun unreferencedOriginalBlobs(
+    names: List<String>,
+    snapshotPhotos: List<GarmentPhotoRecord>,
+    verifiedPaths: Set<String>,
+    protectedGarmentIds: Set<String>,
+): List<String> = names.filter { name ->
+    val owner = snapshotPhotos.firstOrNull { photo -> name.startsWith(PhotoBlobKeys.originalPrefix(photo.garmentId)) }
+    val current = owner?.originalBlobPath
+    when {
+        PhotoBlobKeys.originalGarmentId(name) == null -> false
+        protectedGarmentIds.any { garmentId -> name.startsWith(PhotoBlobKeys.originalPrefix(garmentId)) } -> false
+        owner == null -> true
+        current == null -> false
+        else -> name != current && current in verifiedPaths
+    }
+}
+
 /**
  * True when the local bytes are the bytes of this blob. A restored photo is the blob's WebP, so its local hash never
  * equals the original [LastUploadedPhoto.sourceHash]; its first 16 digits do equal the blob's content hash.
@@ -418,6 +465,10 @@ internal class PhotoUploadPipeline(
     private val onListed: (List<DriveFileMetadata>) -> Unit = {},
     /** Receives a garment whose kept record points at a blob Drive does not hold; that record is not claimed in the snapshot. */
     private val onUnclaimedPhoto: (garmentId: String) -> Unit = {},
+    /** The original photo bytes of a record that came from this phone; null when they cannot be read. */
+    private val originalBytesOf: (GarmentPhotoRecord) -> ByteArray? = { null },
+    /** Receives a skipped or failed original upload; an original never fails the cutout's upload. */
+    private val onOriginalFailure: (String) -> Unit = {},
 ) {
     suspend fun upload(
         accessToken: String,
@@ -456,12 +507,13 @@ internal class PhotoUploadPipeline(
             kept?.let { record -> uploaded += record }
         }
 
+        val verifiedOriginalPaths = mutableSetOf<String>()
         val actions = planPhotoUploads(states, previous, index)
         onPhotoProgress(0, actions.size)
         for ((actionIndex, action) in actions.withIndex()) {
             val photo = photosByGarmentId.getValue(action.garmentId)
             when (action) {
-                is PhotoUploadAction.Reuse -> uploaded += photo.withPreviousBlob(action.previous)
+                is PhotoUploadAction.Reuse -> uploaded += attachOriginal(accessToken, photo.withPreviousBlob(action.previous), index, verifiedOriginalPaths)
                 is PhotoUploadAction.CopyRemote -> {
                     protectedGarmentIds += action.garmentId
                     // Same lookup as the restore: the first candidate that resolves to a blob in Drive is the one kept.
@@ -484,7 +536,7 @@ internal class PhotoUploadPipeline(
                 }
                 is PhotoUploadAction.Fail -> keepPreviousRecord(photo)
                 is PhotoUploadAction.Upload -> when (val upload = uploadChanged(accessToken, photo, action.sourceHash, index)) {
-                    is DriveApiResult.Success -> uploaded += upload.value
+                    is DriveApiResult.Success -> uploaded += attachOriginal(accessToken, upload.value, index, verifiedOriginalPaths)
                     is DriveApiResult.Failure, is DriveApiResult.NotFound -> keepPreviousRecord(photo)
                     is DriveApiResult.Unauthorized -> return authBlocked()
                     is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(upload.failureCause())
@@ -496,7 +548,7 @@ internal class PhotoUploadPipeline(
         val uploadSnapshot = snapshot.copy(photos = uploaded).sortedDeterministically()
         return when (val result = api.upsertSnapshot(accessToken, uploadSnapshot)) {
             is DriveApiResult.Success -> {
-                purgeReplacedPhotoBlobs(accessToken, uploadSnapshot, protectedGarmentIds, index)
+                purgeReplacedPhotoBlobs(accessToken, uploadSnapshot, protectedGarmentIds, verifiedOriginalPaths, index)
                 DriveSyncResult.Success(
                     PhotoUploadOutcome(
                         manifest = DriveManifest.fromSnapshot(result.value).copy(photoUploadFailures = failures),
@@ -562,6 +614,44 @@ internal class PhotoUploadPipeline(
     }
 
     /**
+     * Uploads the original of a record that came from this phone (REQ-OR-04), under the hash of its bytes. A listing with the
+     * same name and size is reused. A failure never fails the cutout: the record keeps the reference and the next sync retries.
+     */
+    private suspend fun attachOriginal(
+        accessToken: String,
+        photo: GarmentPhotoRecord,
+        index: DriveFileIndex,
+        verifiedOriginalPaths: MutableSet<String>,
+    ): GarmentPhotoRecord {
+        if (photo.localOriginalUri.isNullOrBlank()) return photo
+        val bytes = originalBytesOf(photo) ?: run {
+            onOriginalFailure("original_upload_skipped garmentId=${photo.garmentId} reason=unreadable_on_phone")
+            return photo.copy(originalBlobPath = null, originalHash = null, originalByteSize = null)
+        }
+        val hash16 = PhotoBlobKeys.hash16(bytes)
+        val size = bytes.size.toLong()
+        val blobPath = PhotoBlobKeys.originalDriveKey(photo.garmentId, hash16)
+        val withOriginal = photo.copy(originalBlobPath = blobPath, originalHash = hash16, originalByteSize = size)
+        if (originalReusable(index, blobPath, size)) {
+            verifiedOriginalPaths += blobPath
+            return withOriginal
+        }
+        when (val upload = api.upsertBlob(accessToken, blobPath, bytes, ORIGINAL_MIME_TYPE, index.idOf(blobPath))) {
+            is DriveApiResult.Success -> {
+                val storedSize = upload.value.size
+                val storedSha256 = upload.value.sha256
+                if ((storedSize == null || storedSize == size) && (storedSha256 == null || storedSha256.take(16).equals(hash16, ignoreCase = true))) {
+                    verifiedOriginalPaths += blobPath
+                } else {
+                    onOriginalFailure("original_upload_failed garmentId=${photo.garmentId} reason=stored_bytes_differ")
+                }
+            }
+            else -> onOriginalFailure("original_upload_failed garmentId=${photo.garmentId} reason=upload_not_completed")
+        }
+        return withOriginal
+    }
+
+    /**
      * Deletes blobs that the uploaded snapshot no longer references, for swept garments only.
      * Guarded and failed garments are protected. Best effort: a failed delete is retried next cycle.
      */
@@ -569,6 +659,7 @@ internal class PhotoUploadPipeline(
         accessToken: String,
         snapshot: WardrobeSyncSnapshot,
         protectedGarmentIds: Set<String>,
+        verifiedOriginalPaths: Set<String>,
         index: DriveFileIndex,
     ) {
         val activeBlobPaths = snapshot.photos.mapNotNull { photo -> photo.blobPath.takeIf(String::isNotBlank) }.toSet()
@@ -585,7 +676,13 @@ internal class PhotoUploadPipeline(
             .filterNot { blobPath ->
                 protectedGarmentIds.any { garmentId -> blobPath.startsWith(DriveFolderNaming.photoBlobPrefix(garmentId)) }
             }
-        candidates.forEach { blobPath ->
+        val originalCandidates = unreferencedOriginalBlobs(
+            names = index.namesWithPrefix(PhotoBlobKeys.ORIGINAL_PREFIX),
+            snapshotPhotos = snapshot.photos,
+            verifiedPaths = verifiedOriginalPaths,
+            protectedGarmentIds = protectedGarmentIds,
+        )
+        (candidates + originalCandidates).forEach { blobPath ->
             val fileId = index.idOf(blobPath) ?: return@forEach
             when (api.deleteBlob(accessToken, blobPath, fileId)) {
                 is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
@@ -627,6 +724,7 @@ private fun Uri.sourceHash16(context: Context): String {
 }
 
 private const val PHOTO_LOG_TAG = "DriveWardrobeRepository"
+private const val ORIGINAL_MIME_TYPE = "image/jpeg"
 
 interface DriveSnapshotApi {
     suspend fun fetchSnapshot(accessToken: String): DriveApiResult<WardrobeSyncSnapshot>
@@ -1161,6 +1259,9 @@ internal suspend fun restorePhotoBlobs(
     moveToFinal: (garmentId: String, hash16: String, source: File) -> String,
     progress: DriveRestoreProgressListener? = null,
     onListed: (List<DriveFileMetadata>) -> Unit = {},
+    /** Moves a verified original into its final file and returns its URI; null skips the originals (REQ-OR-04). */
+    moveOriginalToFinal: ((garmentId: String, hash16: String, source: File) -> String)? = null,
+    onOriginalFailure: (String) -> Unit = {},
 ): DriveApiResult<List<GarmentPhotoRecord>> {
     val index = when (val listed = api.listAll(accessToken)) {
         is DriveApiResult.Success -> DriveFileIndex(listed.value).also { onListed(listed.value) }
@@ -1211,7 +1312,21 @@ internal suspend fun restorePhotoBlobs(
                 }
             }.awaitAll()
         }
-        DriveApiResult.Success(restored)
+        // Originals come after every cutout, and a failed one never blocks or guards the garment (REQ-OR-04).
+        val withOriginals = if (moveOriginalToFinal == null) {
+            restored
+        } else {
+            coroutineScope {
+                restored.map { photo ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            restoreOneOriginal(api, accessToken, photo, index, workDir, moveOriginalToFinal, onOriginalFailure)
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+        DriveApiResult.Success(withOriginals)
     } catch (abort: RestorePhotoAbort) {
         abort.result
     }
@@ -1346,6 +1461,49 @@ private suspend fun restoreOnePhoto(
                 photo.decodeDiagnosticEvent(decoderPath = "BitmapFactory.bounds", width = dimensions.first, height = dimensions.second) +
                 photo.importDiagnosticEvent(persistedPhotoUriPresent = true, placeholderReason = null),
         )
+    } finally {
+        target.delete()
+    }
+}
+
+/**
+ * Downloads and checks the original of a restored photo (REQ-OR-04). It never fails the restore: a missing, damaged or
+ * unwritable original is reported through [onFailure], and the garment keeps its cutout alone.
+ */
+private suspend fun restoreOneOriginal(
+    api: DriveSnapshotApi,
+    accessToken: String,
+    photo: GarmentPhotoRecord,
+    index: DriveFileIndex,
+    workDir: File,
+    moveToFinal: (garmentId: String, hash16: String, source: File) -> String,
+    onFailure: (String) -> Unit,
+): GarmentPhotoRecord {
+    val blobPath = photo.originalBlobPath?.takeIf(String::isNotBlank) ?: return photo
+    val fileId = index.idOf(blobPath)
+    if (fileId == null) {
+        onFailure("original_restore_failed garmentId=${photo.garmentId} reason=not_found")
+        return photo
+    }
+    val target = File(workDir, "original-${photo.garmentId.safeFileStem()}.part")
+    try {
+        val fetched = withTimeoutOrNull(RESTORE_PHOTO_TIMEOUT_MILLIS) {
+            api.fetchBlobToFile(accessToken, fileId, target)
+        }
+        if (fetched !is DriveApiResult.Success) {
+            onFailure("original_restore_failed garmentId=${photo.garmentId} reason=download_failed")
+            return photo
+        }
+        val contentHash = target.streamedSha256Hex().take(16)
+        if (!contentHash.equals(photo.originalHash, ignoreCase = true) || photo.originalByteSize != target.length()) {
+            onFailure("original_restore_failed garmentId=${photo.garmentId} reason=does_not_match_record")
+            return photo
+        }
+        val uri = runCatching { moveToFinal(photo.garmentId, contentHash, target) }.getOrElse { throwable ->
+            onFailure("original_restore_failed garmentId=${photo.garmentId} reason=write_failed:${throwable.diagnosticSummary()}")
+            return photo
+        }
+        return photo.copy(restoredOriginalLocalUri = uri)
     } finally {
         target.delete()
     }
@@ -1748,6 +1906,11 @@ internal object DriveSnapshotJson {
         .put("revision", record.revision)
         .put("updatedAtEpochMillis", record.updatedAtEpochMillis)
         .apply { record.sourceHash?.let { sourceHash -> put("sourceHash", sourceHash) } }
+        // Optional original-photo fields (REQ-OR-04): written only when set, so an unchanged record keeps its schema-2 bytes.
+        .apply { record.originalBlobPath?.let { path -> put("originalBlobPath", path) } }
+        .apply { record.originalHash?.let { hash -> put("originalHash", hash) } }
+        .apply { record.originalByteSize?.let { size -> put("originalByteSize", size) } }
+        .apply { record.recipe?.let { recipe -> put("recipe", recipe) } }
 
     private fun tombstoneToJson(record: SyncTombstoneRecord): JSONObject = JSONObject()
         .put("entityType", record.entityType)
@@ -1850,6 +2013,10 @@ internal object DriveSnapshotJson {
             sourceHash = json.optNullableString("sourceHash")?.takeIf(String::isNotBlank),
             revision = json.optLong("revision"),
             updatedAtEpochMillis = json.optLong("updatedAtEpochMillis"),
+            originalBlobPath = json.optNullableString("originalBlobPath")?.takeIf(String::isNotBlank),
+            originalHash = json.optNullableString("originalHash")?.takeIf(String::isNotBlank),
+            originalByteSize = json.optNullableLong("originalByteSize"),
+            recipe = json.optNullableString("recipe")?.takeIf(String::isNotBlank),
         )
     }
 
