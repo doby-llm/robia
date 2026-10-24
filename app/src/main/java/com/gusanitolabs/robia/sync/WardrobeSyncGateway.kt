@@ -159,6 +159,8 @@ data class RestoreItemProgress(
 data class RestoreUploadProgress(
     val completedPhotos: Int,
     val totalPhotos: Int,
+    /** Completed photos that were instant Reuse; the upload ETA leaves them out of its gaps. */
+    val reusedPhotos: Int = 0,
 )
 
 data class RestoreByteProgress(

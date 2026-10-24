@@ -231,6 +231,7 @@ import com.gusanitolabs.robia.sync.SyncCycleSummary
 import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.PhotoIntegrityReport
+import com.gusanitolabs.robia.sync.RestoreUploadProgress
 import com.gusanitolabs.robia.sync.SyncAttention
 import com.gusanitolabs.robia.sync.SyncAttentionKind
 import com.gusanitolabs.robia.sync.SyncRunResult
@@ -2434,6 +2435,11 @@ private fun MergeProposalCard(
 }
 
 @Composable
+private fun batchEtaText(eta: BatchEta): String = eta.toBatchEtaString().let { (resId, count) ->
+    if (count == null) stringResource(resId) else stringResource(resId, count)
+}
+
+@Composable
 private fun CloudRestoreProgressOverlay(
     progress: CloudRestoreProgress,
     developerModeUnlocked: Boolean,
@@ -2459,6 +2465,25 @@ private fun CloudRestoreProgressOverlay(
         etaState = etaState.updated(progress, SystemClock.elapsedRealtime())
     }
     val eta = etaState.estimate(progress)
+    // The upload ETA starts with the Uploading phase, so its batch-style estimator is created per phase.
+    val uploadEstimator = remember(progress.diagnostics?.correlationId, progress.phase) {
+        BatchEtaEstimator { SystemClock.elapsedRealtime() }
+    }
+    var previousUpload by remember(progress.diagnostics?.correlationId, progress.phase) {
+        mutableStateOf<RestoreUploadProgress?>(null)
+    }
+    var uploadEta by remember(progress.diagnostics?.correlationId, progress.phase) {
+        mutableStateOf<BatchEta?>(null)
+    }
+    LaunchedEffect(progress.uploadProgress) {
+        progress.uploadProgress?.let { upload ->
+            uploadEta = uploadEtaAfter(uploadEstimator, previousUpload, upload)
+            previousUpload = upload
+        }
+    }
+    val shownUploadEta = uploadEta.takeIf {
+        progress.phase == CloudRestorePhase.Uploading && progress.status == CloudRestoreStatus.Running
+    }
     var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
         mutableStateOf(progress.status != CloudRestoreStatus.Running)
     }
@@ -2586,7 +2611,7 @@ private fun CloudRestoreProgressOverlay(
                         }
                         // Always composed, so the line keeps its height when the estimate appears or disappears.
                         Text(
-                            text = eta?.let { estimate ->
+                            text = shownUploadEta?.let { estimate -> batchEtaText(estimate) } ?: eta?.let { estimate ->
                                 when (estimate) {
                                     RestoreEta.LessThanMinute -> stringResource(R.string.cloud_restore_eta_less_than_minute)
                                     is RestoreEta.AboutMinutes -> stringResource(

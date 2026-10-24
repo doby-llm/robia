@@ -26,7 +26,7 @@ class SyncAuthBannerFlowTest {
             override suspend fun upsertSnapshot(
                 snapshot: WardrobeSyncSnapshot,
                 remote: WardrobeSyncSnapshot?,
-                onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+                onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int) -> Unit)?,
             ): DriveSyncResult<DriveManifest> = DriveSyncResult.Blocked(
                 DriveSyncDisabledReason.UserNotConnected,
                 "Google Drive authorization is required before sync can continue.",

@@ -1,9 +1,11 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.sync.CloudRestorePhase
 import com.gusanitolabs.robia.sync.CloudRestoreProgress
 import com.gusanitolabs.robia.sync.CloudRestoreStatus
 import com.gusanitolabs.robia.sync.RestoreByteProgress
+import com.gusanitolabs.robia.sync.RestoreUploadProgress
 import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.roundToLong
@@ -185,4 +187,30 @@ internal fun CloudRestoreProgress.stageBarFraction(): Float? {
         }
         else -> null
     }
+}
+
+/**
+ * ETA for the photo loop of "Updating cloud backup". Each real upload that finished since [previous] is one gap for
+ * [estimator]; a Reuse finishes at once and adds no gap. Null until the first real upload completes, and once nothing
+ * remains. The estimate is a batch estimate: remaining = total - completed.
+ */
+internal fun uploadEtaAfter(
+    estimator: BatchEtaEstimator,
+    previous: RestoreUploadProgress?,
+    current: RestoreUploadProgress,
+): BatchEta? {
+    val realUploadsBefore = (previous?.completedPhotos ?: 0) - (previous?.reusedPhotos ?: 0)
+    val realUploadsNow = current.completedPhotos - current.reusedPhotos
+    repeat((realUploadsNow - realUploadsBefore).coerceAtLeast(0)) { estimator.onTerminal() }
+    val remaining = current.totalPhotos - current.completedPhotos
+    return if (remaining > 0) estimator.estimate(remaining) else null
+}
+
+/** The batch_eta string for an upload ETA and its count argument; null for [BatchEta.AlmostDone], which takes none. */
+internal data class BatchEtaString(val resId: Int, val count: Int?)
+
+internal fun BatchEta.toBatchEtaString(): BatchEtaString = when (this) {
+    BatchEta.AlmostDone -> BatchEtaString(R.string.batch_eta_almost_done, null)
+    is BatchEta.Seconds -> BatchEtaString(R.string.batch_eta_seconds, s)
+    is BatchEta.Minutes -> BatchEtaString(R.string.batch_eta_minutes, m)
 }

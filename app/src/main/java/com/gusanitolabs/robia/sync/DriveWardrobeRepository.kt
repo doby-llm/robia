@@ -17,11 +17,11 @@ interface DriveWardrobeRepository {
     /** The remote snapshot JSON only: photo records without blobs, for keeping a guarded or failed photo's record. */
     suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot>
     suspend fun retryRestoredPhoto(garmentId: String, progress: DriveRestoreProgressListener? = null): DriveSyncResult<GarmentPhotoRecord>
-    /** [onPhotoProgress] reports photos done over total while photos upload; null keeps the upload silent. */
+    /** [onPhotoProgress] reports photos done over total, and how many of them were Reuse, while photos upload; null keeps the upload silent. */
     suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
-        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)? = null,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int) -> Unit)? = null,
     ): DriveSyncResult<DriveManifest>
     /** Deletes only Robia's remote appDataFolder backup; it never changes local clothes. */
     suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult>
@@ -43,7 +43,7 @@ class NotConfiguredDriveWardrobeRepository(
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
-        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> = notConfigured()
     override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = notConfigured()
     override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> = notConfigured()
@@ -72,7 +72,7 @@ class InMemoryDriveWardrobeRepository(
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
-        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> {
         val deterministicSnapshot = snapshot.sortedDeterministically()
         this.snapshot = deterministicSnapshot
