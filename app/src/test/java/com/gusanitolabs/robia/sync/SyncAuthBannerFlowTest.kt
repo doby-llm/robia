@@ -19,7 +19,7 @@ class SyncAuthBannerFlowTest {
     private val signInRequired = SyncAttention(SyncAttentionKind.SignInRequired)
 
     @Test
-    fun aCycleThatEndsEarlyClearsTheSignInBannerOfTheCycleBefore() = runBlocking {
+    fun aCycleThatEndsEarlyClearsTheSignInBannerOfTheCycleBefore() = runBlocking<Unit> {
         val wardrobe = FakeWardrobeRepository().apply { addQueued("garment-1") }
         val settings = FakeSettingsRepository()
         val drive = object : DriveWardrobeRepository by FakeDriveWardrobeRepository() {
