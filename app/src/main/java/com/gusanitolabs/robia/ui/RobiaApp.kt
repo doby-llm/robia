@@ -165,6 +165,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.ExportOptions
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.LanguagePreference
@@ -331,6 +332,10 @@ private sealed interface RobiaRoute {
     data object OutfitLab : RobiaRoute {
         override val titleRes = R.string.outfit_lab_title
     }
+
+    data class Export(val itemId: String) : RobiaRoute {
+        override val titleRes = R.string.export_title
+    }
 }
 
 private data class BottomNavDestination(
@@ -434,6 +439,9 @@ fun RobiaApp(
             },
             onBrowseColumnsChange = { columns ->
                 scope.launch { settingsRepository.setBrowseColumns(columns) }
+            },
+            onExportOptionsChange = { options ->
+                scope.launch { settingsRepository.setExportOptions(options) }
             },
             onDeveloperModeUnlocked = {
                 scope.launch { settingsRepository.setDeveloperModeUnlocked(true) }
@@ -848,6 +856,7 @@ private fun RobiaShell(
     onLanguageSelected: (LanguagePreference) -> Unit,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
     onBrowseColumnsChange: (Int) -> Unit,
+    onExportOptionsChange: (ExportOptions) -> Unit,
     onDeveloperModeUnlocked: () -> Unit,
     onDeveloperModeEnabledChange: (Boolean) -> Unit,
     onCloudSetupPromptInteracted: () -> Unit,
@@ -956,7 +965,7 @@ private fun RobiaShell(
     val browseAttentions = syncState.attention
         .filter { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
         .take(MAX_BROWSE_ATTENTION_CARDS)
-    val needsWardrobeUiModels = currentRoute in WardrobeUiModelRoutes
+    val needsWardrobeUiModels = currentRoute is RobiaRoute.Export || currentRoute in WardrobeUiModelRoutes
     // Keyed on the connection status, the only sync input the items read: other sync emissions keep the list.
     val items = remember(context, clothingItems, syncState.connectionStatus, online, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, online, context) else emptyList()
@@ -1905,7 +1914,8 @@ private fun RobiaShell(
                 currentRoute != RobiaRoute.DuplicateReview &&
                 currentRoute != RobiaRoute.DuplicateCalibration &&
                 currentRoute != RobiaRoute.OutfitLab &&
-                currentRoute != RobiaRoute.Analytics
+                currentRoute != RobiaRoute.Analytics &&
+                currentRoute !is RobiaRoute.Export
             ) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
@@ -1930,6 +1940,7 @@ private fun RobiaShell(
             filters = browseFilters,
             browseLayout = settings.browseLayout,
             browseColumns = settings.browseColumns,
+            exportOptions = settings.exportOptions,
             selectedBrowseItemIds = selectedBrowseItemIds,
             selectedItem = selectedItem,
             selectedDomainItem = selectedDomainItem,
@@ -2053,6 +2064,7 @@ private fun RobiaShell(
             onLanguageSelected = onLanguageSelected,
             onBrowseLayoutChange = onBrowseLayoutChange,
             onBrowseColumnsChange = onBrowseColumnsChange,
+            onExportOptionsChange = onExportOptionsChange,
             onDeveloperModeEnabledChange = onDeveloperModeEnabledChange,
             onCloudSetupClick = ::requestCloudSetup,
             onDeleteBackupClick = { showBackupDeletionConfirmation = true },
@@ -2096,6 +2108,7 @@ private fun RobiaShell(
                 browseFilters = analyticsFilters
                 replaceRoute(RobiaRoute.Browse)
             },
+            onOpenExport = { itemId -> pushRoute(RobiaRoute.Export(itemId)) },
         )
     }
     restoreProgress?.let { progress ->
@@ -2845,6 +2858,9 @@ private fun RobiaNavHost(
     canSeeSimilar: Boolean,
     onSeeSimilarClick: () -> Unit,
     onAnalyticsBarClick: (BrowseFilterState) -> Unit,
+    exportOptions: ExportOptions,
+    onOpenExport: (String) -> Unit,
+    onExportOptionsChange: (ExportOptions) -> Unit,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -3016,6 +3032,16 @@ private fun RobiaNavHost(
                 diagnosticsGarment = domainItems.firstOrNull { garment -> garment.id == item.id },
                 diagnosticsTags = availableTags,
                 suggestionService = suggestionService,
+                onOpenExport = { onOpenExport(item.id) },
+            )
+        } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
+        is RobiaRoute.Export -> selectedItem?.takeIf { item -> item.id == currentRoute.itemId }?.let { item ->
+            ExportScreen(
+                innerPadding = innerPadding,
+                item = item.exportShareItem(),
+                originalUri = selectedDomainItem?.originalUri?.takeIf(String::isNotBlank)?.let(Uri::parse),
+                options = exportOptions,
+                onOptionsChange = onExportOptionsChange,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
         RobiaRoute.LanguageSettings -> LanguagePickerScreen(
@@ -3432,6 +3458,7 @@ private fun RobiaAppPreview() {
             onLanguageSelected = {},
             onBrowseLayoutChange = {},
             onBrowseColumnsChange = {},
+            onExportOptionsChange = {},
             onDeveloperModeUnlocked = {},
             onDeveloperModeEnabledChange = {},
             onCloudSetupPromptInteracted = {},

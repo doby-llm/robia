@@ -60,6 +60,9 @@ interface PdfTextMeasurer {
     fun lineCount(text: String, sizePt: Float, widthPt: Float): Int
 
     fun lineHeight(sizePt: Float): Float
+
+    /** Width of one line of [text]; the image card sizes its chips with it. */
+    fun widthOf(text: String, sizePt: Float): Float = text.length * sizePt * 0.5f
 }
 
 /** Title for the card: trimmed name, else first Category value, else the localized fallback. */
@@ -88,7 +91,7 @@ private const val METADATA_LABEL_SIZE = 8.5f
 private const val METADATA_VALUE_SIZE = 13f
 private const val METADATA_LABEL_GAP = 2f
 private const val DIVIDER_HEIGHT = 1f
-private const val MAX_METADATA_ROWS = 4
+private const val MAX_METADATA_ROWS = 5
 private const val TITLE_NOTES_GAP = 8f
 private const val SWATCH_GAP = 16f
 private const val SWATCH_SIZE = 28f
@@ -98,6 +101,25 @@ private const val SWATCH_ROLE_SIZE = 10f
 private const val SWATCH_NAME_SIZE = 12.5f
 private val TITLE_SIZES = (30 downTo 22).map { it.toFloat() }
 private val NOTES_SIZES = (25 downTo 20).map { it / 2f }
+
+/** Image card (EX1, REQ-EX-02): pixels, 3:4, long edge [CARD_HEIGHT]. */
+const val CARD_WIDTH = 1200f
+const val CARD_HEIGHT = 1600f
+private const val CARD_MARGIN = 72f
+private const val CARD_MARK_HEIGHT = 40f
+private const val CARD_MARK_GAP = 40f
+private const val CARD_PHOTO_MIN_HEIGHT = 640f
+private const val CARD_INFO_GAP = 48f
+private const val CARD_TITLE_SIZE = 56f
+private const val CARD_LABEL_SIZE = 24f
+private const val CARD_LABEL_GAP = 8f
+private const val CARD_VALUE_SIZE = 34f
+private const val CARD_NOTES_SIZE = 30f
+private const val CARD_CHIP_SIZE = 30f
+private const val CARD_CHIP_HEIGHT = 56f
+private const val CARD_CHIP_PAD = 24f
+private const val CARD_CHIP_GAP = 12f
+private const val CARD_ROW_GAP = 28f
 
 /**
  * Places the first page (photo, title, notes, swatches, metadata) and any notes that do not fit
@@ -312,3 +334,120 @@ private fun lineCount(text: String, sizePt: Float, widthPt: Float, measurer: Pdf
 
 private fun blockHeight(text: String, sizePt: Float, widthPt: Float, measurer: PdfTextMeasurer): Float =
     lineCount(text, sizePt, widthPt, measurer) * measurer.lineHeight(sizePt)
+
+/** One labelled group on the card. Chip sections draw one chip per value; text sections join their values. */
+data class CardSection(
+    val label: String,
+    val values: List<String>,
+    val chips: Boolean,
+    /** Chip fills by index for colour chips; null or missing entries use the neutral chip colour. */
+    val swatchHex: List<String?> = emptyList(),
+)
+
+data class CardContent(
+    val title: String,
+    val sections: List<CardSection>,
+    val notes: String,
+)
+
+data class CardSectionLayout(
+    val section: CardSection,
+    val labelBox: PdfBox,
+    /** One box per chip for chip sections, a single box for text sections. */
+    val boxes: List<PdfBox>,
+)
+
+data class CardLayout(
+    val photo: PdfBox,
+    val title: PdfTextBlock?,
+    val sections: List<CardSectionLayout>,
+    val notes: PdfTextBlock?,
+    val mark: PdfBox,
+)
+
+/**
+ * Places the image card in [CARD_WIDTH] x [CARD_HEIGHT] pixels: photo on top, then the title, the chosen sections and the
+ * notes, bottom-anchored above the Robia mark. The photo takes what the text leaves and keeps [CARD_PHOTO_MIN_HEIGHT];
+ * notes that do not fit in the remaining space are cut. Empty sections are omitted, so the text block grows with the
+ * chosen fields only.
+ */
+fun computeCardLayout(content: CardContent, measurer: PdfTextMeasurer): CardLayout {
+    val width = CARD_WIDTH - 2 * CARD_MARGIN
+    val title = content.title.trim()
+    val sections = content.sections.filter { it.values.isNotEmpty() }
+    val notes = content.notes.trim()
+    val contentBottom = CARD_HEIGHT - CARD_MARGIN - CARD_MARK_HEIGHT - CARD_MARK_GAP
+
+    val titleHeight = blockHeight(title, CARD_TITLE_SIZE, width, measurer)
+    val sectionHeights = sections.map { section -> cardSectionHeight(section, width, measurer) }
+    val fixedHeight = (if (title.isEmpty()) 0f else titleHeight + CARD_ROW_GAP) +
+        sectionHeights.fold(0f) { total, height -> total + height + CARD_ROW_GAP }
+    val noteLineHeight = measurer.lineHeight(CARD_NOTES_SIZE)
+    val budget = contentBottom - CARD_MARGIN - CARD_INFO_GAP - CARD_PHOTO_MIN_HEIGHT
+    val noteLines = if (notes.isEmpty()) {
+        0
+    } else {
+        floor((budget - fixedHeight) / noteLineHeight).toInt()
+            .coerceIn(0, measurer.lineCount(notes, CARD_NOTES_SIZE, width))
+    }
+    val notesHeight = noteLines * noteLineHeight
+    val infoTop = contentBottom - fixedHeight - notesHeight
+    val photo = PdfBox(CARD_MARGIN, CARD_MARGIN, width, infoTop - CARD_INFO_GAP - CARD_MARGIN)
+
+    var cursor = infoTop
+    val titleBlock = if (title.isEmpty()) {
+        null
+    } else {
+        PdfTextBlock(
+            title,
+            PdfBox(CARD_MARGIN, cursor, width, titleHeight),
+            CARD_TITLE_SIZE,
+            0,
+            measurer.lineCount(title, CARD_TITLE_SIZE, width),
+        ).also { cursor += titleHeight + CARD_ROW_GAP }
+    }
+    val sectionLayouts = sections.mapIndexed { index, section ->
+        val labelHeight = measurer.lineHeight(CARD_LABEL_SIZE)
+        val labelBox = PdfBox(CARD_MARGIN, cursor, width, labelHeight)
+        val top = cursor + labelHeight + CARD_LABEL_GAP
+        val boxes = if (section.chips) {
+            placeChips(section.values, top, width, measurer)
+        } else {
+            val lines = measurer.lineCount(section.values.joinToString(", "), CARD_VALUE_SIZE, width)
+            listOf(PdfBox(CARD_MARGIN, top, width, lines * measurer.lineHeight(CARD_VALUE_SIZE)))
+        }
+        cursor += sectionHeights[index] + CARD_ROW_GAP
+        CardSectionLayout(section, labelBox, boxes)
+    }
+    val notesBlock = if (noteLines == 0) {
+        null
+    } else {
+        PdfTextBlock(notes, PdfBox(CARD_MARGIN, cursor, width, notesHeight), CARD_NOTES_SIZE, 0, noteLines)
+    }
+    val mark = PdfBox(CARD_MARGIN, contentBottom + CARD_MARK_GAP, width, CARD_MARK_HEIGHT)
+    return CardLayout(photo, titleBlock, sectionLayouts, notesBlock, mark)
+}
+
+private fun cardSectionHeight(section: CardSection, width: Float, measurer: PdfTextMeasurer): Float {
+    val labelHeight = measurer.lineHeight(CARD_LABEL_SIZE)
+    val contentHeight = if (section.chips) {
+        placeChips(section.values, 0f, width, measurer).maxOfOrNull { it.bottom } ?: 0f
+    } else {
+        measurer.lineCount(section.values.joinToString(", "), CARD_VALUE_SIZE, width) * measurer.lineHeight(CARD_VALUE_SIZE)
+    }
+    return labelHeight + CARD_LABEL_GAP + contentHeight
+}
+
+/** Chips wrap to the next row when the next one does not fit; returns their boxes starting at [top]. */
+private fun placeChips(values: List<String>, top: Float, width: Float, measurer: PdfTextMeasurer): List<PdfBox> {
+    var x = CARD_MARGIN
+    var y = top
+    return values.map { value ->
+        val chipWidth = (measurer.widthOf(value, CARD_CHIP_SIZE) + 2 * CARD_CHIP_PAD).coerceAtMost(width)
+        if (x > CARD_MARGIN && x + chipWidth > CARD_MARGIN + width) {
+            x = CARD_MARGIN
+            y += CARD_CHIP_HEIGHT + CARD_CHIP_GAP
+        }
+        PdfBox(x, y, chipWidth, CARD_CHIP_HEIGHT).also { x += chipWidth + CARD_CHIP_GAP }
+    }
+}

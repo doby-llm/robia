@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -47,8 +46,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -92,7 +89,6 @@ import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.GarmentShareColor
-import com.gusanitolabs.robia.media.GarmentShareExporter
 import com.gusanitolabs.robia.media.GarmentShareItem
 import com.gusanitolabs.robia.media.GarmentShareMetadata
 import com.gusanitolabs.robia.media.GarmentShareMetadataIcon
@@ -196,16 +192,12 @@ internal fun ItemDetailScreen(
     diagnosticsGarment: ClothingItem?,
     diagnosticsTags: List<GarmentTag>,
     suggestionService: SuggestionService,
+    onOpenExport: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val chooserTitle = stringResource(R.string.share_garment_chooser_title)
-    val imageShareErrorMessage = stringResource(R.string.image_share_error)
-    val pdfShareErrorMessage = stringResource(R.string.pdf_share_error)
-    val noShareAppMessage = stringResource(R.string.share_no_app_error)
     val retryPhotoContentDescription = stringResource(R.string.content_cloud_restore_retry_photo)
     val untitled = stringResource(R.string.browse_similar_untitled)
-    val pdfShareItem = item.toGarmentShareItem()
     val app = context.applicationContext as RobiaApplication
     val diagnosticsRecomputeDoneMessage = stringResource(R.string.dev_recompute_embedding_done)
     val diagnosticsRecomputeErrorMessage = stringResource(R.string.dev_recompute_embedding_error)
@@ -242,50 +234,7 @@ internal fun ItemDetailScreen(
         item {
             DetailMediaCard(
                 item = item,
-                onShareImageClick = {
-                    item.photoUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)?.let { sourceUri ->
-                        scope.launch {
-                            val shareUri = runCatching {
-                                withContext(Dispatchers.IO) {
-                                    GarmentShareExporter.createShareImage(context, sourceUri, item.name)
-                                }
-                            }.getOrNull()
-                            if (shareUri != null) {
-                                val launched = context.launchShareChooser(
-                                    uri = shareUri,
-                                    mimeType = "image/png",
-                                    chooserTitle = chooserTitle,
-                                )
-                                if (!launched) {
-                                    Toast.makeText(context, noShareAppMessage, Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
-                                Toast.makeText(context, imageShareErrorMessage, Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                },
-                onSharePdfClick = {
-                    scope.launch {
-                        val shareUri = runCatching {
-                            withContext(Dispatchers.IO) {
-                                GarmentShareExporter.createSharePdf(context, pdfShareItem)
-                            }
-                        }.getOrNull()
-                        if (shareUri != null) {
-                            val launched = context.launchShareChooser(
-                                uri = shareUri,
-                                mimeType = "application/pdf",
-                                chooserTitle = chooserTitle,
-                            )
-                            if (!launched) {
-                                Toast.makeText(context, noShareAppMessage, Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            Toast.makeText(context, pdfShareErrorMessage, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
+                onShareClick = onOpenExport,
             )
         }
         if (canSeeSimilar) {
@@ -430,12 +379,10 @@ internal fun ItemDetailScreen(
 @Composable
 private fun DetailMediaCard(
     item: UiWardrobeItem,
-    onShareImageClick: () -> Unit,
-    onSharePdfClick: () -> Unit,
+    onShareClick: () -> Unit,
 ) {
     val hasPhoto = !item.photoUri.isNullOrBlank()
     val shareDescription = stringResource(R.string.content_share_item)
-    var shareMenuExpanded by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         modifier = Modifier.fillMaxWidth(),
@@ -459,31 +406,12 @@ private fun DetailMediaCard(
                 ) {
                     IconButton(
                         modifier = Modifier.semantics { contentDescription = shareDescription },
-                        onClick = { shareMenuExpanded = true },
+                        onClick = onShareClick,
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Share,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = shareMenuExpanded,
-                        onDismissRequest = { shareMenuExpanded = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.share_image)) },
-                            onClick = {
-                                shareMenuExpanded = false
-                                onShareImageClick()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.share_pdf)) },
-                            onClick = {
-                                shareMenuExpanded = false
-                                onSharePdfClick()
-                            },
                         )
                     }
                 }
@@ -647,7 +575,7 @@ private fun DetailFieldRows(item: UiWardrobeItem) {
     }
 }
 
-private fun Context.launchShareChooser(
+internal fun Context.launchShareChooser(
     uri: Uri,
     mimeType: String,
     chooserTitle: String,
@@ -710,7 +638,12 @@ private fun UiWardrobeItem.toGarmentShareItem(): GarmentShareItem = GarmentShare
         hex = secondaryPaletteColorHex?.takeIf { it.isNotBlank() } ?: secondaryRawValue?.normalizedHexOrNull()?.let { "#$it" },
     ),
     noColorLabel = stringResource(R.string.no_color),
+    location = tags.valuesInCategory("location"),
 )
+
+/** The garment as the Export screen shares it; the Export screen chooses the photo and fields. */
+@Composable
+internal fun UiWardrobeItem.exportShareItem(): GarmentShareItem = toGarmentShareItem()
 
 @Composable
 private fun shareColorName(
