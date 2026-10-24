@@ -547,13 +547,13 @@ internal fun restoredClothingItems(
         val localItem = localItemsById[garment.id]
         val remotePhoto = remotePhotoByGarmentId[garment.id]
         // A restored original (REQ-OR-04) replaces the local one only together with its recipe; otherwise the phone keeps its own.
-        val restoredOriginalUri = remotePhoto?.restoredOriginalLocalUri?.takeIf(String::isNotBlank)
+        val restoredOriginal = remotePhoto?.takeIf { photo -> photo.restorableOriginalUri() != null }
         garment.toEntity(
             photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id]),
             photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
             colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
-            originalUri = restoredOriginalUri ?: localItem?.originalUri,
-            originalRecipe = if (restoredOriginalUri != null) remotePhoto?.recipe else localItem?.originalRecipe,
+            originalUri = restoredOriginal?.restorableOriginalUri() ?: localItem?.originalUri,
+            originalRecipe = if (restoredOriginal != null) restoredOriginal.recipe else localItem?.originalRecipe,
         )
     }
 }
@@ -656,6 +656,8 @@ private val tagEntityTypes = setOf("garment_tag", "tag")
 private val mainColorEntityTypes = setOf("main_color", "palette_color", "color")
 
 private fun GarmentPhotoRecord.restorableLocalUri(): String? = restoredLocalUri?.takeIf(String::isNotBlank)
+
+private fun GarmentPhotoRecord.restorableOriginalUri(): String? = restoredOriginalLocalUri?.takeIf(String::isNotBlank)
 
 /**
  * The photo_uri a garment takes on import. A file restored from Drive wins. Without one, the phone keeps the file it already
