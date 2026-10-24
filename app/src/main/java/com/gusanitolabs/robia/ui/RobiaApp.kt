@@ -11,6 +11,7 @@ import android.net.Uri
 import android.content.res.Configuration
 import android.os.LocaleList
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -177,6 +178,7 @@ import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.data.WardrobeZipExporter
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
 import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.data.toDomain
@@ -832,6 +834,23 @@ private fun ColorPaletteChangeSet.colorIdsToDeleteForCommit(): List<String> = wh
 
 private fun ClothingColorMetrics.referencesPaletteColorId(colorId: String): Boolean =
     primaryPaletteColorId == colorId || secondaryPaletteColorId == colorId
+
+/**
+ * "Download all my data (.zip)": streams the phone's local data into [destination], the document the user picked. Local
+ * only, no Drive call. A cancelled or failed export deletes the partial document.
+ */
+private suspend fun writeWardrobeZip(app: RobiaApplication, destination: Uri, onProgress: (done: Int, total: Int) -> Unit) {
+    val resolver = app.contentResolver
+    WardrobeZipExporter(
+        loadSnapshot = { app.syncSnapshotRepository.exportSnapshot() },
+        openLocalFile = { localUri -> resolver.openInputStream(Uri.parse(localUri)) },
+        appVersion = BuildConfig.VERSION_NAME,
+    ).writeArchive(
+        open = { resolver.openOutputStream(destination) ?: error("Unable to open the chosen file") },
+        discard = { DocumentsContract.deleteDocument(resolver, destination) },
+        onProgress = onProgress,
+    )
+}
 
 // Routes that render browse-style wardrobe items; the others skip building them.
 // TagReview joins this set in TASK-E08.
@@ -3051,21 +3070,25 @@ private fun RobiaNavHost(
         )
         RobiaRoute.SmartSuggestionsSettings -> SmartSuggestionsSettingsScreen(innerPadding = innerPadding)
         RobiaRoute.PreciseCutoutSettings -> PreciseCutoutSettingsScreen(innerPadding = innerPadding)
-        RobiaRoute.DriveSettings -> DriveSettingsScreen(
-            innerPadding = innerPadding,
-            driveSyncConnectionStatus = driveSyncConnectionStatus,
-            cloudSetupSummaryRes = cloudSetupSummaryRes,
-            cloudIndicator = cloudSync,
-            driveBackupDeletionState = driveBackupDeletionState,
-            onCloudSetupClick = onCloudSetupClick,
-            onDeleteBackupClick = onDeleteBackupClick,
-            driveUsage = syncState.driveUsage,
-            onRefreshDriveUsageClick = onRefreshDriveUsageClick,
-            // Hidden while the signed-in account is not the one the backup belongs to.
-            onCheckPhotosClick = if (syncState.hasConflictingAccountBinding) null else onCheckPhotosClick,
-            onRestorePhotoClick = onRetryRestoredPhoto,
-            onBackUpNowClick = onBackUpNowClick,
-        )
+        RobiaRoute.DriveSettings -> {
+            val app = LocalContext.current.applicationContext as RobiaApplication
+            DriveSettingsScreen(
+                innerPadding = innerPadding,
+                driveSyncConnectionStatus = driveSyncConnectionStatus,
+                cloudSetupSummaryRes = cloudSetupSummaryRes,
+                cloudIndicator = cloudSync,
+                driveBackupDeletionState = driveBackupDeletionState,
+                onCloudSetupClick = onCloudSetupClick,
+                onDeleteBackupClick = onDeleteBackupClick,
+                driveUsage = syncState.driveUsage,
+                onRefreshDriveUsageClick = onRefreshDriveUsageClick,
+                // Hidden while the signed-in account is not the one the backup belongs to.
+                onCheckPhotosClick = if (syncState.hasConflictingAccountBinding) null else onCheckPhotosClick,
+                onRestorePhotoClick = onRetryRestoredPhoto,
+                onBackUpNowClick = onBackUpNowClick,
+                onExportZipClick = { destination, onProgress -> writeWardrobeZip(app, destination, onProgress) },
+            )
+        }
         RobiaRoute.Settings -> SettingsScreen(
             innerPadding = innerPadding,
             currentLanguage = currentLanguage,

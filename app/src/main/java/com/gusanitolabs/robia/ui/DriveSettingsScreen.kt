@@ -1,7 +1,10 @@
 package com.gusanitolabs.robia.ui
 
+import android.net.Uri
 import android.text.format.DateUtils
 import android.text.format.Formatter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
@@ -45,7 +49,10 @@ import com.gusanitolabs.robia.sync.DriveSyncResult
 import com.gusanitolabs.robia.sync.DriveUsage
 import com.gusanitolabs.robia.sync.PhotoIntegrityReport
 import com.gusanitolabs.robia.sync.PhotoIntegrityStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 /**
  * Google Drive sub-screen: the status card, the space Robia uses, then the Drive actions Settings had under "Data sync",
@@ -66,6 +73,8 @@ internal fun DriveSettingsScreen(
     onCheckPhotosClick: (suspend () -> DriveSyncResult<PhotoIntegrityReport>)? = null,
     onRestorePhotoClick: (garmentId: String) -> Unit = {},
     onBackUpNowClick: () -> Unit = {},
+    /** "Download all my data (.zip)": writes the archive to the document the user picked, reporting (done, total). */
+    onExportZipClick: suspend (destination: Uri, onProgress: (done: Int, total: Int) -> Unit) -> Unit,
 ) {
     val isConnected = driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
         driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
@@ -74,6 +83,25 @@ internal fun DriveSettingsScreen(
     var photoCheckOpen by remember { mutableStateOf(false) }
     var photoCheck by remember { mutableStateOf<PhotoIntegrityReport?>(null) }
     var photoCheckFailed by remember { mutableStateOf(false) }
+    var zipExport by remember { mutableStateOf<ZipExportProgress?>(null) }
+    var zipExportFailed by remember { mutableStateOf(false) }
+    var zipExportJob by remember { mutableStateOf<Job?>(null) }
+    val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
+        if (destination == null) return@rememberLauncherForActivityResult
+        zipExport = ZipExportProgress(done = 0, total = 0)
+        zipExportJob = refreshScope.launch {
+            try {
+                onExportZipClick(destination) { done, total -> zipExport = ZipExportProgress(done, total) }
+                zipExport = null
+            } catch (error: CancellationException) {
+                zipExport = null
+                throw error
+            } catch (error: Exception) {
+                zipExport = null
+                zipExportFailed = true
+            }
+        }
+    }
     val setupTitleRes = if (
         driveBackupDeletionState == DriveBackupDeletionState.Complete ||
         driveBackupDeletionState == DriveBackupDeletionState.NeedsAttention
@@ -207,6 +235,13 @@ internal fun DriveSettingsScreen(
                         title = stringResource(setupTitleRes),
                         onClick = onCloudSetupClick,
                     )
+                    Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Download,
+                        title = stringResource(R.string.zip_export_row),
+                        subtitle = stringResource(R.string.zip_export_hint),
+                        onClick = { zipLauncher.launch("robia-${LocalDate.now()}.zip") },
+                    )
                     if (isConnected) {
                         onCheckPhotosClick?.let { checkPhotos ->
                             Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -251,7 +286,32 @@ internal fun DriveSettingsScreen(
             onDismiss = { photoCheckOpen = false },
         )
     }
+    zipExport?.let { progress ->
+        AlertDialog(
+            // Back and Cancel both stop the export; the partial document is removed by the exporter.
+            onDismissRequest = { zipExportJob?.cancel() },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Text(stringResource(R.string.zip_export_progress, progress.done, progress.total))
+                }
+            },
+            confirmButton = { TextButton(onClick = { zipExportJob?.cancel() }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    if (zipExportFailed) {
+        AlertDialog(
+            onDismissRequest = { zipExportFailed = false },
+            text = { Text(stringResource(R.string.zip_export_failed)) },
+            confirmButton = { TextButton(onClick = { zipExportFailed = false }) { Text(stringResource(R.string.done)) } },
+        )
+    }
 }
+
+private data class ZipExportProgress(val done: Int, val total: Int)
 
 /** Result of "Check photos": a count when all is well, otherwise each problem with the action that fixes it. */
 @Composable

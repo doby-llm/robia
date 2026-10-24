@@ -880,4 +880,9 @@
     <string name="export_preview">Preview</string>
     <string name="export_share">Share</string>
     <string name="export_preview_description">Export preview</string>
+    <!-- ZIP -->
+    <string name="zip_export_row">Download all my data (.zip)</string>
+    <string name="zip_export_hint">Photos, originals and data, saved where you choose</string>
+    <string name="zip_export_progress">Preparing your data… %1$d of %2$d</string>
+    <string name="zip_export_failed">The export didn\'t finish. Try again.</string>
 </resources>

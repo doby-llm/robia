@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Robia wardrobe backup is Google Drive-only and explicit opt-in inside the app.
+         Drive is the automatic backup; "Download all my data (.zip)" is a user-initiated export the user saves where they choose.
          Disable Android Auto Backup and device transfer so local wardrobe data is not
          copied by the platform outside that user-controlled Drive sync path. -->
     <application
