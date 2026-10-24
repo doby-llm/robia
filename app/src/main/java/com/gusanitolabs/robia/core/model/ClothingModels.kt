@@ -242,11 +242,15 @@ data class RobiaSettings(
         get() = cutoutEngine == CutoutEngineChoice.Automatic
 }
 
-/** Export screen choices (REQ-EX-01). [photo] is the Robia photo unless the garment has an original. */
+/**
+ * Export screen choices (REQ-EX-01). [photo] is the Robia photo unless the garment has an original.
+ * [showFrame] is the Robia frame switch (REQ-FB-03); the screen resolves it against [fields].
+ */
 data class ExportOptions(
     val photo: ExportPhoto = ExportPhoto.Robia,
     val format: ExportFormat = ExportFormat.Image,
     val fields: Set<ExportField> = DEFAULT_EXPORT_FIELDS,
+    val showFrame: Boolean = true,
 ) {
     /** The photo an export of a garment uses: the original only when it has one, else the Robia photo. */
     fun photoFor(hasOriginal: Boolean): ExportPhoto =

@@ -817,7 +817,7 @@
     <string name="duplicate_empty">Keine möglichen Duplikate mehr.</string>
     <string name="duplicate_calibration_title">Duplikat-Kalibrierung</string>
     <string name="duplicate_calibration_summary">Markiere die ähnlichsten Paare derselben Kategorie als Gleich oder Verschieden.</string>
-    <string name="duplicate_calibration_empty">Noch keine Paare derselben Kategorie mit Bildvektor.</string>
+    <string name="duplicate_calibration_empty">Noch keine Paare zum Vergleichen. Aktive Kleidungsstücke: %1$d · mit Vektor: %2$d · Foto passt: %3$d · mit Kategorie: %4$d</string>
     <string name="duplicate_mark_same">Gleich</string>
     <string name="duplicate_mark_different">Verschieden</string>
     <string name="duplicate_calibration_progress">%1$d von %2$d markiert</string>
@@ -887,4 +887,10 @@
     <string name="zip_export_failed">Der Export wurde nicht abgeschlossen. Bitte versuche es erneut.</string>
     <!-- BAT3 -->
     <string name="batch_follow">Folgen</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Robia-Rahmen</string>
+    <string name="export_frame_hint">Weißer Rand und Robia-Logo um das Foto</string>
+    <string name="export_frame_locked_hint">Schalte die anderen Anzeigen-Optionen aus, um den Rahmen auszublenden.</string>
+    <!-- UI-CAL -->
+    <string name="duplicate_calibration_loading">Kleidungsfotos werden verglichen…</string>
 </resources>

@@ -283,18 +283,20 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
     )
 }
 
-/** EX1: absent keys fall back to the defaults; unknown values are dropped. */
+/** EX1: absent keys fall back to the defaults; unknown values are dropped. EX2: an absent frame key means frame on. */
 internal fun Preferences.exportOptions(): ExportOptions = ExportOptions(
     photo = this[exportPhotoKey].toEnumOr(ExportPhoto.Robia),
     format = this[exportFormatKey].toEnumOr(ExportFormat.Image),
     fields = this[exportFieldsKey]?.mapNotNull { name -> ExportField.entries.firstOrNull { it.name == name } }?.toSet()
         ?: DEFAULT_EXPORT_FIELDS,
+    showFrame = this[exportFrameKey] ?: true,
 )
 
 internal fun MutablePreferences.writeExportOptions(options: ExportOptions) {
     this[exportPhotoKey] = options.photo.name
     this[exportFormatKey] = options.format.name
     this[exportFieldsKey] = options.fields.map(ExportField::name).toSet()
+    this[exportFrameKey] = options.showFrame
 }
 
 private fun String?.toLanguagePreference(): LanguagePreference =
@@ -365,3 +367,4 @@ private val driveAuthorizedAccountEmailKey = stringPreferencesKey("drive_authori
 private val exportPhotoKey = stringPreferencesKey("export_photo")
 private val exportFormatKey = stringPreferencesKey("export_format")
 private val exportFieldsKey = stringSetPreferencesKey("export_fields")
+private val exportFrameKey = booleanPreferencesKey("export_frame")

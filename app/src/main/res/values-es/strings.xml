@@ -817,7 +817,7 @@
     <string name="duplicate_empty">No quedan posibles duplicados.</string>
     <string name="duplicate_calibration_title">Calibración de duplicados</string>
     <string name="duplicate_calibration_summary">Marca como Igual o Distinto los pares más parecidos de la misma categoría.</string>
-    <string name="duplicate_calibration_empty">Todavía no hay pares de la misma categoría con vector de imagen.</string>
+    <string name="duplicate_calibration_empty">Todavía no hay pares que comparar. Prendas activas: %1$d · con vector: %2$d · foto coincidente: %3$d · con categoría: %4$d</string>
     <string name="duplicate_mark_same">Igual</string>
     <string name="duplicate_mark_different">Distinto</string>
     <string name="duplicate_calibration_progress">%1$d de %2$d marcados</string>
@@ -887,4 +887,10 @@
     <string name="zip_export_failed">La exportación no terminó. Inténtalo de nuevo.</string>
     <!-- BAT3 -->
     <string name="batch_follow">Seguir</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Marco de Robia</string>
+    <string name="export_frame_hint">Borde blanco y logo de Robia alrededor de la foto</string>
+    <string name="export_frame_locked_hint">Desactiva las demás opciones de Mostrar para ocultar el marco.</string>
+    <!-- UI-CAL -->
+    <string name="duplicate_calibration_loading">Comparando fotos de prendas…</string>
 </resources>

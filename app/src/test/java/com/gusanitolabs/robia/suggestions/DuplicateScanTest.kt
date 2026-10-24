@@ -219,4 +219,35 @@ class DuplicateScanTest {
 
         assertEquals(listOf(DuplicateGroup(listOf("a", "c"), DuplicateTier.SamePhoto)), DuplicateSession.groups.value)
     }
+
+    @Test
+    fun calibrationCountsFunnelThroughNoVectorStaleHashAndNoCategory() {
+        val items = listOf(
+            garment("ok1"), garment("ok2"),
+            garment("noVector"),
+            garment("stale"),
+            garment("noCategory", category = null),
+            garment("archived", archived = true),
+        )
+        val vectors = mapOf(
+            entry("ok1", floatArrayOf(1f, 0f), "h1"),
+            entry("ok2", floatArrayOf(1f, 0f), "h1"),
+            "noVector" to GarmentVectors(garmentId = "noVector", image = null, text = null, imageInputHash = null),
+            entry("stale", floatArrayOf(0f, 1f), "h2"),
+            entry("noCategory", floatArrayOf(1f, 0f), "h3"),
+            entry("archived", floatArrayOf(1f, 0f), "h1"),
+        )
+        val currentHashes = mapOf("ok1" to "h1", "ok2" to "h1", "stale" to "h9", "noCategory" to "h3", "archived" to "h1")
+
+        // Five active; four with an IMAGE vector; three match their current photo; two of those have a category.
+        assertEquals(CalibrationCounts(active = 5, withVector = 4, hashMatched = 3, categorised = 2), calibrationCounts(items, vectors, currentHashes))
+        assertEquals(listOf("ok1" to "ok2"), calibrationPairs(items, vectors, currentHashes).map { it.a to it.b })
+    }
+
+    @Test
+    fun calibrationCountsAreZeroBelowTheFirstStepWhenNoVectorsExistYet() {
+        val items = listOf(garment("a"), garment("b"), garment("archived", archived = true))
+
+        assertEquals(CalibrationCounts(active = 2, withVector = 0, hashMatched = 0, categorised = 0), calibrationCounts(items, emptyMap(), emptyMap()))
+    }
 }

@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.ui
 
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
+import com.gusanitolabs.robia.suggestions.CalibrationCounts
 import com.gusanitolabs.robia.suggestions.CalibrationPair
 import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import org.junit.Assert.assertEquals
@@ -80,5 +81,16 @@ class DuplicateCalibrationScreenTest {
         assertEquals(mapOf(key to true), same)
         assertEquals(mapOf(key to false), toggledMark(same, key, false))
         assertEquals(emptyMap<DuplicatePairKey, Boolean>(), toggledMark(same, key, true))
+    }
+
+    @Test
+    fun calibrationStateIsLoadingUntilPairsArrive_thenEmptyWithCountsOrPairs() {
+        val counts = CalibrationCounts(active = 4, withVector = 3, hashMatched = 2, categorised = 1)
+        val pairs = listOf(CalibrationPair("a", "b", 0.9f))
+
+        assertEquals(CalibrationUiState.Loading, calibrationUiState(pairs = null, counts = counts))
+        assertEquals(CalibrationUiState.Loading, calibrationUiState(pairs = null, counts = CalibrationCounts.NONE))
+        assertEquals(CalibrationUiState.Empty(counts), calibrationUiState(pairs = emptyList(), counts = counts))
+        assertEquals(CalibrationUiState.Pairs(pairs), calibrationUiState(pairs, counts))
     }
 }
