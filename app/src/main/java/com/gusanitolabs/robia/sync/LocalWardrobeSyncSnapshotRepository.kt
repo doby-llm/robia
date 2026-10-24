@@ -548,16 +548,17 @@ internal fun restoredClothingItems(
         val remotePhoto = remotePhotoByGarmentId[garment.id]
         // A restored original (REQ-OR-04) replaces the local one only together with its recipe; otherwise the phone keeps its own.
         val restoredOriginal = remotePhoto?.takeIf { photo -> photo.restorableOriginalUri() != null }
-        val photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id])
+        // The cutout is replaced only by a restored file that differs from the local one; the phone's own file never replaces it.
+        val restoredPhotoUri = remotePhoto?.restorableLocalUri()
         val original = importedOriginal(
             restoredUri = restoredOriginal?.restorableOriginalUri(),
             restoredRecipe = restoredOriginal?.recipe,
             localUri = localItem?.originalUri,
             localRecipe = localItem?.originalRecipe,
-            photoChanged = photoUri != localItem?.photoUri,
+            photoChanged = restoredPhotoUri != null && restoredPhotoUri != localItem?.photoUri,
         )
         garment.toEntity(
-            photoUri = photoUri,
+            photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id]),
             photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
             colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
             originalUri = original.uri,
