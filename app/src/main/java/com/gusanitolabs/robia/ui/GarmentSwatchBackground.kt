@@ -13,8 +13,8 @@ private const val GARMENT_SWATCH_ALPHA = 0.26f
 /** Above this luma a swatch would vanish on the white card, so it gets the neutral backdrop instead (R3-02). */
 private const val NEAR_WHITE_LUMA = 0.82f
 
-/** Warm neutral backdrop for near-white garments, top to bottom (current palette values). */
-private val NEAR_WHITE_STOPS = listOf(Color(0xFFE6E0D9), Color(0xFFCFC5BA))
+/** Neutral grey backdrop for near-white garments, top to bottom, like the add flow (REQ-FB-05). */
+private val NEAR_WHITE_STOPS = listOf(Color(0xFFF3F3F4), Color(0xFFD6D5D6))
 
 internal fun DisplayColorLabel.swatchColor(): Color = when (this) {
     DisplayColorLabel.Black -> Color(0xFF1F1F1F)
@@ -53,7 +53,7 @@ private fun hexSwatch(hex: String): Color? {
 
 /**
  * Top stop is the theme surface, bottom stop is the swatch at a fixed alpha.
- * A near-white garment gets the warm neutral stops instead, so it reads against the white card.
+ * A near-white garment gets the neutral grey stops instead, so it reads against the white card.
  */
 internal fun garmentSwatchStops(
     swatch: Color,
