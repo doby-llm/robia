@@ -548,12 +548,20 @@ internal fun restoredClothingItems(
         val remotePhoto = remotePhotoByGarmentId[garment.id]
         // A restored original (REQ-OR-04) replaces the local one only together with its recipe; otherwise the phone keeps its own.
         val restoredOriginal = remotePhoto?.takeIf { photo -> photo.restorableOriginalUri() != null }
+        val photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id])
+        val original = importedOriginal(
+            restoredUri = restoredOriginal?.restorableOriginalUri(),
+            restoredRecipe = restoredOriginal?.recipe,
+            localUri = localItem?.originalUri,
+            localRecipe = localItem?.originalRecipe,
+            photoChanged = photoUri != localItem?.photoUri,
+        )
         garment.toEntity(
-            photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id]),
+            photoUri = photoUri,
             photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
             colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
-            originalUri = restoredOriginal?.restorableOriginalUri() ?: localItem?.originalUri,
-            originalRecipe = if (restoredOriginal != null) restoredOriginal.recipe else localItem?.originalRecipe,
+            originalUri = original.uri,
+            originalRecipe = original.recipe,
         )
     }
 }
@@ -665,6 +673,27 @@ private fun GarmentPhotoRecord.restorableOriginalUri(): String? = restoredOrigin
  */
 internal fun importedPhotoUri(merged: GarmentPhotoRecord?, phoneHeldUri: String?): String? =
     merged?.restorableLocalUri() ?: phoneHeldUri?.takeIf(String::isNotBlank)
+
+/** The original of a garment after an import: [uri] and its [recipe] (REQ-OR-02), written together. */
+internal data class ImportedOriginal(val uri: String?, val recipe: String?)
+
+/**
+ * The original an import gives a garment. A restored original (REQ-OR-04) replaces the local one with its recipe. Without one,
+ * a local recipe is valid only for the cutout it was recorded against: when the import replaces that cutout ([photoChanged]),
+ * the original and recipe are cleared, so the garment falls back to today's behaviour (no Keep from the original, no Cut out
+ * again). When the cutout is unchanged, the local original and recipe are kept (R3-DEC-039).
+ */
+internal fun importedOriginal(
+    restoredUri: String?,
+    restoredRecipe: String?,
+    localUri: String?,
+    localRecipe: String?,
+    photoChanged: Boolean,
+): ImportedOriginal = when {
+    restoredUri != null -> ImportedOriginal(restoredUri, restoredRecipe)
+    photoChanged -> ImportedOriginal(uri = null, recipe = null)
+    else -> ImportedOriginal(localUri, localRecipe)
+}
 
 private fun RestoredPhotoApplyStateEntity?.zeroUpdateReason(
     expectedRevision: Long,

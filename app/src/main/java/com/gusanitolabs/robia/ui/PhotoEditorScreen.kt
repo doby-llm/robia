@@ -141,6 +141,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
@@ -300,8 +301,17 @@ fun PhotoEditorScreen(
             context.contentResolver.openInputStream(Uri.parse(photoUri))?.use(BitmapFactory::decodeStream)
         } ?: return@LaunchedEffect
         val alpha = withContext(Dispatchers.Default) { alphaOf(bitmap) }
+        // A layer that cannot be loaded leaves the editor as it is without an original, so the hint below applies (R3-DEC-039).
         val layer = withContext(Dispatchers.IO) {
-            if (originalUri != null && recipe != null) loadOriginalLayer(context, originalUri, recipe, bitmap.width, bitmap.height) else null
+            if (originalUri != null && recipe != null) {
+                try {
+                    loadOriginalLayer(context, originalUri, recipe, bitmap.width, bitmap.height)
+                } catch (failure: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
         }
         photo = CutoutPhoto(
             bitmap,
@@ -1232,14 +1242,23 @@ private fun writeCutout(context: Context, photo: CutoutPhoto, refine: Boolean = 
     return cropped
 }
 
-/** The original in the canvas of a stored cutout of [canvasW] × [canvasH], or null when it cannot be read. */
+/** The original in the canvas of a stored cutout of [canvasW] × [canvasH], or null when it cannot be read (R3-DEC-039). */
 private fun loadOriginalLayer(context: Context, originalUri: String, recipe: CutoutRecipe, canvasW: Int, canvasH: Int): IntArray? {
-    val original = context.contentResolver.openInputStream(Uri.parse(originalUri))?.use(BitmapFactory::decodeStream) ?: return null
+    val original = decodeOriginal(context, originalUri) ?: return null
     return try {
         originalLayer(argbOf(original), original.width, original.height, canvasW, canvasH, recipe)
     } finally {
         original.recycle()
     }
+}
+
+/** The saved original, or null when it is missing or unreadable (a deleted file, a denied URI, a failed read). */
+private fun decodeOriginal(context: Context, originalUri: String): Bitmap? = try {
+    context.contentResolver.openInputStream(Uri.parse(originalUri))?.use(BitmapFactory::decodeStream)
+} catch (failure: IOException) {
+    null
+} catch (failure: SecurityException) {
+    null
 }
 
 /** The output of one Redo run: the cutout as a bitmap, and the recipe that cut it. */
