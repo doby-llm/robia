@@ -11,6 +11,7 @@ import androidx.core.content.FileProvider
 import com.gusanitolabs.robia.core.color.GarmentColorAnalyzer
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.sync.PhotoBlobKeys
 import java.io.ByteArrayOutputStream
@@ -225,20 +226,26 @@ object ClothingImageStore {
         }
     }
 
+    /**
+     * Crops [imageUri] to its alpha content. The output is the same as before OR3; [TransparentCrop.offset] records where its
+     * top-left pixel sits in [imageUri], so the recipe can map the cutout back to the original (REQ-OR-05).
+     */
     fun cropTransparentPixels(
         context: Context,
         imageUri: Uri,
-    ): Uri {
-        val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream) ?: return imageUri
+    ): TransparentCrop {
+        val bitmap = context.contentResolver.openInputStream(imageUri)?.use(BitmapFactory::decodeStream)
+            ?: return TransparentCrop(imageUri, CanvasOffset(0, 0))
         return bitmap.useForColors { source ->
-            val cropBounds = transparentContentBounds(source) ?: return@useForColors imageUri
-            if (cropBounds.isFullSize(source.width, source.height)) return@useForColors imageUri
+            val cropBounds = transparentContentBounds(source) ?: return@useForColors TransparentCrop(imageUri, CanvasOffset(0, 0))
+            if (cropBounds.isFullSize(source.width, source.height)) return@useForColors TransparentCrop(imageUri, CanvasOffset(0, 0))
             val cropped = Bitmap.createBitmap(source, cropBounds.left, cropBounds.top, cropBounds.width, cropBounds.height)
-            try {
+            val uri = try {
                 writeProcessedBitmap(context, cropped, prefix = "cropped-subject")
             } finally {
                 cropped.recycle()
             }
+            TransparentCrop(uri, CanvasOffset(cropBounds.left, cropBounds.top))
         }
     }
 
@@ -582,6 +589,9 @@ object ClothingImageStore {
     private const val MIN_CROP_PADDING_PX = 8
     private const val CROP_PADDING_RATIO = 0.04f
 }
+
+/** The result of [ClothingImageStore.cropTransparentPixels]: the cropped file, or the input itself when nothing was cropped. */
+data class TransparentCrop(val uri: Uri, val offset: CanvasOffset)
 
 data class ImageBlob(
     val bytes: ByteArray,

@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
 import com.gusanitolabs.robia.sync.fakes.snapshotWithGarments
@@ -70,6 +71,72 @@ class OriginalPhotoImportTest {
     }
 
     @Test
+    fun changedPhotoWithoutRestoredOriginalClearsTheRecipe() {
+        // R3-DEC-039: the local recipe was recorded against the old cutout; the imported cutout must not keep it.
+        val kept = importedOriginal(
+            restoredUri = null,
+            restoredRecipe = null,
+            localUri = "content://original-a",
+            localRecipe = recipeJson,
+            photoChanged = true,
+        )
+
+        assertNull(kept.uri)
+        assertNull(kept.recipe)
+    }
+
+    @Test
+    fun unchangedPhotoKeepsTheLocalRecipe() {
+        val kept = importedOriginal(
+            restoredUri = null,
+            restoredRecipe = null,
+            localUri = "content://original-a",
+            localRecipe = recipeJson,
+            photoChanged = false,
+        )
+
+        assertEquals("content://original-a", kept.uri)
+        assertEquals(recipeJson, kept.recipe)
+    }
+
+    @Test
+    fun anImportThatReplacesTheCutoutClearsTheLocalRecipeAndKeepsItWhenTheCutoutIsUnchanged() {
+        val local = mapOf("a" to localItem("a", originalUri = "content://original-a", originalRecipe = recipeJson))
+        fun importing(restoredPhotoUri: String) = restoredClothingItems(
+            snapshotWithGarments("a").copy(
+                photos = listOf(GarmentPhotoRecord(garmentId = "a", localUri = restoredPhotoUri, restoredLocalUri = restoredPhotoUri)),
+            ),
+            emptyMap(),
+            local,
+        ).single { it.id == "a" }
+
+        val replaced = importing("content://cutout-new-a")
+        assertNull(replaced.originalUri)
+        assertNull(replaced.originalRecipe)
+
+        val unchanged = importing("content://cutout-a")
+        assertEquals("content://original-a", unchanged.originalUri)
+        assertEquals(recipeJson, unchanged.originalRecipe)
+    }
+
+    @Test
+    fun restoredOriginalReplacesTheLocalOneWithItsRecipeWhetherOrNotThePhotoChanged() {
+        val restoredRecipe = "{\"steps\":[\"mlkit\"]}"
+        for (photoChanged in listOf(true, false)) {
+            val taken = importedOriginal(
+                restoredUri = "content://restored-original-a",
+                restoredRecipe = restoredRecipe,
+                localUri = "content://original-a",
+                localRecipe = recipeJson,
+                photoChanged = photoChanged,
+            )
+
+            assertEquals("content://restored-original-a", taken.uri)
+            assertEquals(restoredRecipe, taken.recipe)
+        }
+    }
+
+    @Test
     fun replaceReadsTheLocalOriginalsBeforeTheWardrobeIsCleared() {
         // The Room transaction cannot run on the JVM, so the order is pinned in the source: the read precedes the delete.
         val source = File("src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt").readText()
@@ -77,5 +144,30 @@ class OriginalPhotoImportTest {
             .substringBefore("data class ImportSnapshotResult")
 
         assertTrue(replace.indexOf("localItemsFor(snapshot)") in 0 until replace.indexOf("wardrobeDao.deleteAllItems()"))
+    }
+
+    @Test
+    fun targetedRetryReadsWhetherTheCutoutChangesBeforeItWritesIt() {
+        // (a) The Room transaction cannot run on the JVM. The retry must know the photo the row held before the update, and pass
+        // whether the restored cutout replaces it to applyRestoredOriginal.
+        val source = File("src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt").readText()
+        val retry = source.substringAfter("override suspend fun applyRestoredPhoto(")
+            .substringBefore("private suspend fun applyRestoredOriginal(")
+
+        val read = retry.indexOf("val photoChanged = rowBefore?.photoUri != restoredUri")
+        assertTrue(read in 0 until retry.indexOf("wardrobeDao.applyRestoredPhoto("))
+        assertTrue(retry.contains("applyRestoredOriginal(photo, photoChanged)"))
+    }
+
+    @Test
+    fun targetedRetryDecidesTheOriginalWithTheBulkRuleAndWritesOnlyAChange() {
+        // (b) applyRestoredOriginal goes through importedOriginal, the rule the bulk import uses, and skips the write when nothing differs.
+        val source = File("src/main/java/com/gusanitolabs/robia/sync/LocalWardrobeSyncSnapshotRepository.kt").readText()
+        val apply = source.substringAfter("private suspend fun applyRestoredOriginal(")
+            .substringBefore("override suspend fun hasGuardedPhotoRestoreIssues")
+
+        assertTrue(apply.contains("importedOriginal("))
+        assertTrue(apply.contains("photoChanged = photoChanged"))
+        assertTrue(apply.contains("if (original.uri == item.originalUri && original.recipe == item.originalRecipe) return"))
     }
 }

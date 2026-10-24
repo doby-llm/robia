@@ -181,13 +181,15 @@ class LocalWardrobeSyncSnapshotRepository(
                 )
             }
 
+            // Read before the update: a cutout that differs from the one the row held replaces it (R3-DEC-039, as in the bulk import).
+            val photoChanged = rowBefore?.photoUri != restoredUri
             val rowsUpdated = wardrobeDao.applyRestoredPhoto(
                 itemId = photo.garmentId,
                 photoUri = restoredUri,
                 revision = expectedRevision,
                 syncedAtEpochMillis = System.currentTimeMillis(),
             )
-            if (rowsUpdated == 1) applyRestoredOriginal(photo)
+            if (rowsUpdated == 1) applyRestoredOriginal(photo, photoChanged)
             val rowAfter = wardrobeDao.restoredPhotoApplyState(photo.garmentId)
             val persisted = rowAfter?.let { row ->
                 row.photoUri == restoredUri &&
@@ -222,12 +224,20 @@ class LocalWardrobeSyncSnapshotRepository(
 
     /**
      * The original a targeted retry downloaded (REQ-OR-04). The photo row was just written in this transaction; this writes the
-     * original columns of that same row, so a retried garment gets its original as a bulk restore gives it.
+     * original columns of that same row, so a retried garment gets its original as a bulk restore gives it. The decision is the
+     * bulk import's ([importedOriginal]): a local original whose cutout was replaced is cleared, not kept.
      */
-    private suspend fun applyRestoredOriginal(photo: GarmentPhotoRecord) {
-        val originalUri = photo.restoredOriginalLocalUri?.takeIf(String::isNotBlank) ?: return
+    private suspend fun applyRestoredOriginal(photo: GarmentPhotoRecord, photoChanged: Boolean) {
         val item = tagDao.clothingItemsByIds(listOf(photo.garmentId)).singleOrNull() ?: return
-        tagDao.upsertClothingItems(listOf(item.copy(originalUri = originalUri, originalRecipe = photo.recipe)))
+        val original = importedOriginal(
+            restoredUri = photo.restoredOriginalLocalUri?.takeIf(String::isNotBlank),
+            restoredRecipe = photo.recipe,
+            localUri = item.originalUri,
+            localRecipe = item.originalRecipe,
+            photoChanged = photoChanged,
+        )
+        if (original.uri == item.originalUri && original.recipe == item.originalRecipe) return
+        tagDao.upsertClothingItems(listOf(item.copy(originalUri = original.uri, originalRecipe = original.recipe)))
     }
 
     override suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
@@ -548,12 +558,21 @@ internal fun restoredClothingItems(
         val remotePhoto = remotePhotoByGarmentId[garment.id]
         // A restored original (REQ-OR-04) replaces the local one only together with its recipe; otherwise the phone keeps its own.
         val restoredOriginal = remotePhoto?.takeIf { photo -> photo.restorableOriginalUri() != null }
+        // The cutout is replaced only by a restored file that differs from the local one; the phone's own file never replaces it.
+        val restoredPhotoUri = remotePhoto?.restorableLocalUri()
+        val original = importedOriginal(
+            restoredUri = restoredOriginal?.restorableOriginalUri(),
+            restoredRecipe = restoredOriginal?.recipe,
+            localUri = localItem?.originalUri,
+            localRecipe = localItem?.originalRecipe,
+            photoChanged = restoredPhotoUri != null && restoredPhotoUri != localItem?.photoUri,
+        )
         garment.toEntity(
             photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id]),
             photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
             colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
-            originalUri = restoredOriginal?.restorableOriginalUri() ?: localItem?.originalUri,
-            originalRecipe = if (restoredOriginal != null) restoredOriginal.recipe else localItem?.originalRecipe,
+            originalUri = original.uri,
+            originalRecipe = original.recipe,
         )
     }
 }
@@ -665,6 +684,27 @@ private fun GarmentPhotoRecord.restorableOriginalUri(): String? = restoredOrigin
  */
 internal fun importedPhotoUri(merged: GarmentPhotoRecord?, phoneHeldUri: String?): String? =
     merged?.restorableLocalUri() ?: phoneHeldUri?.takeIf(String::isNotBlank)
+
+/** The original of a garment after an import: [uri] and its [recipe] (REQ-OR-02), written together. */
+internal data class ImportedOriginal(val uri: String?, val recipe: String?)
+
+/**
+ * The original an import gives a garment. A restored original (REQ-OR-04) replaces the local one with its recipe. Without one,
+ * a local recipe is valid only for the cutout it was recorded against: when the import replaces that cutout ([photoChanged]),
+ * the original and recipe are cleared, so the garment falls back to today's behaviour (no Keep from the original, no Cut out
+ * again). When the cutout is unchanged, the local original and recipe are kept (R3-DEC-039).
+ */
+internal fun importedOriginal(
+    restoredUri: String?,
+    restoredRecipe: String?,
+    localUri: String?,
+    localRecipe: String?,
+    photoChanged: Boolean,
+): ImportedOriginal = when {
+    restoredUri != null -> ImportedOriginal(restoredUri, restoredRecipe)
+    photoChanged -> ImportedOriginal(uri = null, recipe = null)
+    else -> ImportedOriginal(localUri, localRecipe)
+}
 
 private fun RestoredPhotoApplyStateEntity?.zeroUpdateReason(
     expectedRevision: Long,

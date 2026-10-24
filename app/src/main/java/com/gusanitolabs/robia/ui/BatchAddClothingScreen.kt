@@ -64,6 +64,7 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.CutoutRecipe
@@ -74,6 +75,8 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.media.OriginalPhotoStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.SegmentationModuleGates
+import com.gusanitolabs.robia.media.TransparentCrop
+import com.gusanitolabs.robia.media.cutout.atEngineCanvas
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -569,9 +572,10 @@ internal suspend fun cutoutStage(
         keptOriginal = withContext(NonCancellable + Dispatchers.IO) { OriginalPhotoStore.saveAndRecycle(context, backgroundResult.inputFrame) }
         subjectFile = backgroundResult.outputUri.takeUnless { backgroundResult.usedFallback }
         // Not cancellable: the crop writes its file once. A cancel after this point is seen by the inner catch, which deletes it.
-        val croppedUri = fallbackUnlessCancelled(backgroundResult.outputUri) {
+        val crop = fallbackUnlessCancelled(TransparentCrop(backgroundResult.outputUri, CanvasOffset(0, 0))) {
             withContext(NonCancellable + Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, backgroundResult.outputUri) }
         }
+        val croppedUri = crop.uri
         try {
             val displayAspectRatio = withContext(Dispatchers.IO) {
                 ClothingImageStore.readImageAspectRatio(context, croppedUri)
@@ -599,7 +603,8 @@ internal suspend fun cutoutStage(
                 usedFallback = backgroundResult.usedFallback,
                 needsOriginalFallbackReview = backgroundResult.usedFallback || croppedUri == sourceUri,
                 originalUri = keptOriginal?.toString(),
-                originalRecipe = backgroundResult.recipe.takeIf { keptOriginal != null },
+                // The recipe maps the stored cutout back to the kept frame: the engine's crop, then the crop just made (REQ-OR-05).
+                originalRecipe = backgroundResult.recipe?.takeIf { keptOriginal != null }?.atEngineCanvas(crop.offset),
                 subjectUri = subjectFile?.toString(),
             )
         } catch (cancellation: CancellationException) {

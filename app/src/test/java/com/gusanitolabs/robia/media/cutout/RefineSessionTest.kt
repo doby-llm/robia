@@ -216,4 +216,58 @@ class RefineSessionTest {
         }
         assertFalse(session.canUndo)
     }
+
+    /** An original that covers the left half of the canvas, opaque there and with a colour of its own. */
+    private val coveredLeft = IntArray(w * h) { i -> if (i % w < w / 2) (0xFF shl 24) or 0x3366CC else 0 }
+
+    @Test
+    fun keep_withOriginal_raisesAlphaFromZero_whereTheOriginalCovers() {
+        val session = RefineSession(w, h, filled(0f), originalLayer = coveredLeft)
+
+        session.apply(RefineSession.Mode.Keep, pointMask(2, 6), hard = false)
+        session.apply(RefineSession.Mode.Keep, pointMask(9, 6), hard = false)
+
+        assertEquals(1f, session.alphaAt(2, 6), 0f)
+        assertEquals(0f, session.alphaAt(9, 6), 0f)
+    }
+
+    @Test
+    fun keep_withOriginal_takesTheOriginalColour_underTheTransparentPixels() {
+        val stored = IntArray(w * h) { 0 }
+
+        val colour = RefineSession(w, h, filled(0f), originalLayer = coveredLeft).restoredColour(stored)
+
+        assertEquals(0x3366CC, colour[6 * w + 2] and 0xFFFFFF)
+        assertEquals(0, colour[6 * w + 9] and 0xFFFFFF)
+    }
+
+    @Test
+    fun restoredColour_keepsTheStoredColour_wherever_the_stored_cutout_is_opaque() {
+        val storedOpaque = IntArray(w * h) { (0xFF shl 24) or 0x112233 }
+
+        val colour = RefineSession(w, h, filled(1f), originalLayer = coveredLeft).restoredColour(storedOpaque)
+
+        assertArrayEquals(storedOpaque, colour)
+    }
+
+    @Test
+    fun withoutOriginal_restoredColour_isTheStoredColour_and_keepStillLeavesTransparentPixels() {
+        val stored = IntArray(w * h) { 0x445566 }
+        val session = RefineSession(w, h, filled(0f))
+
+        assertArrayEquals(stored, session.restoredColour(stored))
+        session.apply(RefineSession.Mode.Keep, pointMask(2, 6), hard = false)
+        assertEquals(0f, session.alphaAt(2, 6), 0f)
+    }
+
+    @Test
+    fun keep_withOriginal_isUndoneAndRedone_likeAnyOtherEdit() {
+        val session = RefineSession(w, h, filled(0f), originalLayer = coveredLeft)
+        session.apply(RefineSession.Mode.Keep, pointMask(2, 6), hard = false)
+
+        session.undo()
+        assertEquals(0f, session.alphaAt(2, 6), 0f)
+        session.redo()
+        assertEquals(1f, session.alphaAt(2, 6), 0f)
+    }
 }

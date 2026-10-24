@@ -93,8 +93,10 @@ import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.PopIn
 import com.gusanitolabs.robia.core.designsystem.SparkleBurst
 import com.gusanitolabs.robia.core.designsystem.sparkleBurstAfterProcessing
+import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
@@ -108,6 +110,9 @@ import com.gusanitolabs.robia.media.OriginalPhotoStore
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.QuickEditImageProcessor
 import com.gusanitolabs.robia.media.SegmentationModuleGates
+import com.gusanitolabs.robia.media.TransparentCrop
+import com.gusanitolabs.robia.media.cutout.atEngineCanvas
+import com.gusanitolabs.robia.media.cutout.trimmedBy
 import com.gusanitolabs.robia.suggestions.SuggestionCapture
 import com.gusanitolabs.robia.suggestions.SuggestionOutcome
 import com.gusanitolabs.robia.suggestions.SuggestionService
@@ -397,7 +402,7 @@ fun AddEditClothingScreen(
                     processingEventId = inputId,
                     processingToken = token,
                     originalUri = keptOriginal?.toString(),
-                    originalRecipe = result.recipe.takeIf { keptOriginal != null },
+                    originalRecipe = result.recipe?.takeIf { keptOriginal != null }?.atEngineCanvas(CanvasOffset(0, 0)),
                 )
                 result.failure?.let { failure ->
                     addLine("Background failure: reason=${failure.reason}, cause=${failure.causeClass ?: "n/a"}, message=${failure.message ?: "n/a"}")
@@ -412,7 +417,8 @@ fun AddEditClothingScreen(
                         ClothingImageStore.cropTransparentPixels(context, result.outputUri)
                     }
                 }
-                val croppedUri = croppedResult.getOrDefault(result.outputUri)
+                val crop = croppedResult.getOrDefault(TransparentCrop(result.outputUri, CanvasOffset(0, 0)))
+                val croppedUri = crop.uri
                 addLine("Crop: success=${croppedResult.isSuccess}, uri=$croppedUri, duration=${SystemClock.elapsedRealtime() - cropStart}ms")
                 croppedResult.exceptionOrNull()?.let { throwable ->
                     addLine("Crop failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
@@ -443,6 +449,7 @@ fun AddEditClothingScreen(
                     },
                     processingEventId = inputId,
                     processingToken = token,
+                    originalRecipe = editorPhotoState.originalRecipe?.trimmedBy(crop.offset),
                 )
                 addLine("Final photo status: $finalStatus")
                 if (finalStatus != PhotoStatus.BackgroundFallback) {
@@ -516,7 +523,7 @@ fun AddEditClothingScreen(
         }
     }
 
-    suspend fun reprocessEditedPhoto(editedUri: Uri) {
+    suspend fun reprocessEditedPhoto(editedUri: Uri, recipe: CutoutRecipe?) {
         val token = ++photoProcessingToken
         val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
         val startedAt = SystemClock.elapsedRealtime()
@@ -547,13 +554,15 @@ fun AddEditClothingScreen(
             val croppedResult = runCatching {
                 withContext(Dispatchers.IO) { ClothingImageStore.cropTransparentPixels(context, editedUri) }
             }
-            val croppedUri = croppedResult.getOrDefault(editedUri)
+            val crop = croppedResult.getOrDefault(TransparentCrop(editedUri, CanvasOffset(0, 0)))
+            val croppedUri = crop.uri
             photoUri = croppedUri.toString()
             editorPhotoState = editorPhotoState.copy(
                 croppedForegroundUri = croppedUri.toString(),
                 currentEditedUri = croppedUri.toString(),
                 backgroundRemovalStatus = EditorBackgroundRemovalStatus.QuickEdited,
                 processingToken = token,
+                originalRecipe = recipe?.trimmedBy(crop.offset),
             )
             addLine("Quick Edit crop: success=${croppedResult.isSuccess}, uri=$croppedUri")
             if (token != photoProcessingToken) return
@@ -713,13 +722,21 @@ fun AddEditClothingScreen(
 
     BackHandler { requestClose() }
 
+    // Keep from the original and Cut out again need the recipe's stored-canvas offset (REQ-OR-05); without it, today's behaviour.
+    val keepableOriginalUri = editorPhotoState.originalUri.takeIf { editorPhotoState.originalRecipe?.storedCanvasOffset != null }
     if (showQuickEdit && !canonicalPhotoUri.isNullOrBlank()) {
         PhotoEditorScreen(
             photoUri = canonicalPhotoUri.orEmpty(),
-            rawSourceUri = redoSourceUri(editorPhotoState.rawSourceUri, existingItem?.photoUri),
+            rawSourceUri = redoSourceUri(
+                editorPhotoState.rawSourceUri,
+                existingItem?.photoUri,
+                originalUri = keepableOriginalUri.takeIf { isEditing },
+            ),
+            originalUri = keepableOriginalUri,
+            recipe = editorPhotoState.originalRecipe.takeIf { keepableOriginalUri != null },
             onCancel = { showQuickEdit = false },
             onDiagnostic = { line -> developerDiagnostics = developerDiagnostics + line },
-            onDone = { cutoutUri, adjustments ->
+            onDone = { cutoutUri, adjustments, cutoutRecipe ->
                 coroutineScope.launch {
                     showQuickEdit = false
                     isPhotoProcessing = true
@@ -734,7 +751,7 @@ fun AddEditClothingScreen(
                         }
                     }
                     editedResult.fold(
-                        onSuccess = { editedUri -> reprocessEditedPhoto(editedUri) },
+                        onSuccess = { editedUri -> reprocessEditedPhoto(editedUri, cutoutRecipe) },
                         onFailure = { throwable ->
                             quickEditStatus = context.getString(R.string.quick_edit_save_failed)
                             developerDiagnostics = developerDiagnostics + "Quick Edit apply failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}"

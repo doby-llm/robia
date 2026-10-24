@@ -138,6 +138,8 @@ internal class EditHistory(
     private val w: Int,
     private val h: Int,
     private val budget: EditBudget = EditBudget(),
+    /** The pixels an original covers (REQ-OR-05): Keep may raise their alpha from 0. Null without an original. */
+    private val inOriginal: BooleanArray? = null,
 ) {
     /** The alpha and the automatic alpha after [applied] ops. */
     private class Checkpoint(val alpha: RunLengthAlpha, val automatic: RunLengthAlpha) {
@@ -243,12 +245,12 @@ internal class EditHistory(
     }
 
     private fun applyOp(op: EditOp, state: Alphas): Alphas = when (op) {
-        is EditOp.Hard -> Alphas(refineAlpha(op.mode, op.selected.decode(size), state.alpha, state.automatic), state.automatic)
+        is EditOp.Hard -> Alphas(refineAlpha(op.mode, op.selected.decode(size), state.alpha, state.automatic, inOriginal), state.automatic)
         is EditOp.Brush -> {
             val mask = brushMask(op.pairs(), op.radiusPx, op.featherPx, w, h)
-            Alphas(refineAlpha(op.mode, mask, state.alpha, state.automatic), state.automatic)
+            Alphas(refineAlpha(op.mode, mask, state.alpha, state.automatic, inOriginal), state.automatic)
         }
-        is EditOp.Soft -> Alphas(refineAlpha(op.mode, op.mask.decode(size), state.alpha, state.automatic), state.automatic)
+        is EditOp.Soft -> Alphas(refineAlpha(op.mode, op.mask.decode(size), state.alpha, state.automatic, inOriginal), state.automatic)
         EditOp.Reset -> Alphas(state.automatic.copyOf(), state.automatic)
         is EditOp.Base -> op.alpha.decode(size).let { Alphas(it, it.copyOf()) }
     }

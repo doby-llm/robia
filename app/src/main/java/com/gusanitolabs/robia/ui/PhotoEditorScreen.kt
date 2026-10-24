@@ -104,6 +104,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
+import com.gusanitolabs.robia.core.model.CanvasOffset
+import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.media.AlphaRefiner
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
@@ -111,6 +113,7 @@ import com.gusanitolabs.robia.media.BackgroundRemovalStatus
 import com.gusanitolabs.robia.media.ClothingImageStore
 import com.gusanitolabs.robia.media.MlKitSubjectSegmentationBackgroundRemovalEngine
 import com.gusanitolabs.robia.media.QuickEditAdjustments
+import com.gusanitolabs.robia.media.TransparentCrop
 import com.gusanitolabs.robia.media.cutout.CutoutEngineRegistry
 import com.gusanitolabs.robia.media.cutout.CutoutOptions
 import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
@@ -120,12 +123,15 @@ import com.gusanitolabs.robia.media.cutout.PhotoHistory
 import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
 import com.gusanitolabs.robia.media.cutout.RedoCutoutChoice
 import com.gusanitolabs.robia.media.cutout.RefineSession
+import com.gusanitolabs.robia.media.cutout.atEngineCanvas
 import com.gusanitolabs.robia.media.cutout.brushRadiusPx
 import com.gusanitolabs.robia.media.cutout.clipToTouched
+import com.gusanitolabs.robia.media.cutout.originalLayer
 import com.gusanitolabs.robia.media.cutout.redoCutoutChoices
 import com.gusanitolabs.robia.media.cutout.redoCutoutOptions
 import com.gusanitolabs.robia.media.cutout.releaseOnFailure
 import com.gusanitolabs.robia.media.cutout.removesMostOfGarment
+import com.gusanitolabs.robia.media.cutout.trimmedBy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -135,6 +141,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
@@ -171,7 +178,10 @@ private enum class EditorTab { Cutout, Light }
  * The working photo: its RGB stays fixed, its alpha is changed through [session]. [fromRedo] is true for a cutout made by
  * Redo cutout, which Done must write even when nothing else was edited.
  */
-private class CutoutPhoto(val source: Bitmap, val session: RefineSession, val fromRedo: Boolean = false)
+private class CutoutPhoto(val source: Bitmap, val session: RefineSession, val fromRedo: Boolean = false) {
+    /** The colour of the photo: the stored RGB, with the original's RGB under the pixels the stored cutout made transparent. */
+    fun colour(): IntArray = session.restoredColour(argbOf(source))
+}
 
 /** A tap or drag that must be pulsed for [PULSE_MS]; a new instance per touch so repeated touches restart the pulse. */
 private class PulseMark(val at: Offset)
@@ -181,10 +191,11 @@ private class SelectionOverlay(val mask: ImageBitmap)
 
 /**
  * The original photo that Redo cutout runs on, or null when Redo is hidden (SG4). Only a photo picked in this editing session
- * has one: for a saved garment the stored photo is the only copy (answer 3A), so [savedPhotoUri] hides it.
+ * has one: for a saved garment the stored photo is the only copy (answer 3A), so [savedPhotoUri] hides it. [originalUri] is the
+ * kept original of the photo being edited (REQ-OR-05): when there is one, Redo runs on it instead.
  */
-internal fun redoSourceUri(editorRawUri: String?, savedPhotoUri: String?): String? =
-    editorRawUri?.takeIf { it.isNotBlank() && it != savedPhotoUri }
+internal fun redoSourceUri(editorRawUri: String?, savedPhotoUri: String?, originalUri: String? = null): String? =
+    originalUri?.takeIf { it.isNotBlank() } ?: editorRawUri?.takeIf { it.isNotBlank() && it != savedPhotoUri }
 
 /**
  * Full-screen photo editor (SG3, UX-DEC-011): Cutout (smart tap/swipe selection and a brush) and Light (brightness and
@@ -193,6 +204,8 @@ internal fun redoSourceUri(editorRawUri: String?, savedPhotoUri: String?): Strin
  * With [rawSourceUri], Redo cutout re-runs one engine on the original photo (SG4); the stored photo changes only on Done.
  * [keepsHistory] is true only while a new garment's photo is added (REQ-ED-03, R3-DEC-027): a Cut out again of a saved garment
  * then keeps no photo before it, so nothing can be undone across it.
+ * With [originalUri] and [recipe] (REQ-OR-05), Keep restores the removed background from the original, and Done passes back the
+ * recipe of the cutout it wrote, so the caller can store it with the original. Without them, the photo is edited as before.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -201,8 +214,10 @@ fun PhotoEditorScreen(
     rawSourceUri: String?,
     onCancel: () -> Unit,
     onDiagnostic: (String) -> Unit,
-    onDone: (cutoutUri: Uri?, adjustments: QuickEditAdjustments) -> Unit,
+    onDone: (cutoutUri: Uri?, adjustments: QuickEditAdjustments, recipe: CutoutRecipe?) -> Unit,
     keepsHistory: Boolean = true,
+    originalUri: String? = null,
+    recipe: CutoutRecipe? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -286,9 +301,24 @@ fun PhotoEditorScreen(
             context.contentResolver.openInputStream(Uri.parse(photoUri))?.use(BitmapFactory::decodeStream)
         } ?: return@LaunchedEffect
         val alpha = withContext(Dispatchers.Default) { alphaOf(bitmap) }
-        photo = CutoutPhoto(bitmap, RefineSession(bitmap.width, bitmap.height, alpha, editBudget))
-        // The processed PNG is the only source here: the original photo is not kept with the garment (see receipt).
-        snackbarHostState.showSnackbar(noSourceHint)
+        // A layer that cannot be loaded leaves the editor as it is without an original, so the hint below applies (R3-DEC-039).
+        val layer = withContext(Dispatchers.IO) {
+            if (originalUri != null && recipe != null) {
+                try {
+                    loadOriginalLayer(context, originalUri, recipe, bitmap.width, bitmap.height)
+                } catch (failure: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+        }
+        photo = CutoutPhoto(
+            bitmap,
+            RefineSession(bitmap.width, bitmap.height, alpha, editBudget, layer, recipe.takeIf { layer != null }),
+        )
+        // Without the original the removed parts cannot come back: the hint says so.
+        if (layer == null) snackbarHostState.showSnackbar(noSourceHint)
     }
 
     LaunchedEffect(photo, revision) {
@@ -298,7 +328,7 @@ fun PhotoEditorScreen(
                 // Queued before an Undo or Redo replaced this photo; its bitmap is already recycled.
                 if (current.source.isRecycled) return@withLock null
                 val alphaBytes = toAlphaBytes(current.session.currentAlpha())
-                composeWithAlpha(argbOf(current.source), alphaBytes, current.source.width, current.source.height).asImageBitmap()
+                composeWithAlpha(current.colour(), alphaBytes, current.source.width, current.source.height).asImageBitmap()
             }
         }
         rendered?.let { preview = it }
@@ -367,7 +397,7 @@ fun PhotoEditorScreen(
                         val instance = selector.value
                         // Segmenter input only: photo.source keeps its transparent pixels, and this copy is recycled below.
                         val selectionBitmap = Bitmap.createBitmap(
-                            compositeOverGrey(argbOf(current.source), current.session.currentAlpha()),
+                            compositeOverGrey(current.colour(), current.session.currentAlpha()),
                             w,
                             h,
                             Bitmap.Config.ARGB_8888,
@@ -399,7 +429,7 @@ fun PhotoEditorScreen(
                     debugSelectionDirectory(context)?.let { directory ->
                         runCatching {
                             withContext(Dispatchers.IO) {
-                                val input = compositeOverGrey(argbOf(current.source), current.session.currentAlpha())
+                                val input = compositeOverGrey(current.colour(), current.session.currentAlpha())
                                 writeSelectionDump(directory, input, points, touched, union, clipped, w, h)
                             }
                         }.onFailure { throwable ->
@@ -514,14 +544,20 @@ fun PhotoEditorScreen(
                 // The new photo and its alpha are ready before the current photo is written away, so a failure changes nothing.
                 // For a moment two bitmaps exist: the current photo and the new one (at most 2048 px on the long edge from ML Kit,
                 // 1024 px from the precise engine).
-                val bitmap = runRedoCutout(context, rawUri, options, File(app.filesDir, CutoutPackManifest.DIRECTORY))
+                val cutout = runRedoCutout(context, rawUri, options, File(app.filesDir, CutoutPackManifest.DIRECTORY))
+                val bitmap = cutout.bitmap
                 // Until the new photo is on screen, any failure or cancellation recycles it.
                 releaseOnFailure(release = { bitmap.recycle() }) {
                     val alpha = withContext(Dispatchers.Default) { alphaOf(bitmap) }
+                    // The new cutout's recipe is kept only when the photo has an original: its canvas maps back through it.
+                    val redoRecipe = if (originalUri != null) cutout.recipe?.atEngineCanvas(CanvasOffset(0, 0)) else null
+                    val layer = withContext(Dispatchers.IO) {
+                        if (originalUri != null && redoRecipe != null) loadOriginalLayer(context, originalUri, redoRecipe, bitmap.width, bitmap.height) else null
+                    }
                     sourceMutex.withLock {
                         val previous = checkNotNull(photo)
                         // The session is built before the photo is written away, so a failed Cut out closes it.
-                        val next = RefineSession(bitmap.width, bitmap.height, alpha, editBudget)
+                        val next = RefineSession(bitmap.width, bitmap.height, alpha, editBudget, layer, redoRecipe.takeIf { layer != null })
                         try {
                             withContext(Dispatchers.IO) {
                                 if (keepsHistory) {
@@ -559,7 +595,7 @@ fun PhotoEditorScreen(
         val current = photo ?: return
         saving = true
         scope.launch {
-            val cutoutUri = try {
+            val written = try {
                 Result.success(
                     if (current.session.isChanged || current.fromRedo) {
                         // A Redo result that was not edited is written as it is: its edges were refined when it was made.
@@ -575,8 +611,12 @@ fun PhotoEditorScreen(
             } catch (throwable: Throwable) {
                 Result.failure(throwable)
             }
-            cutoutUri.fold(
-                onSuccess = { uri -> onDone(uri, adjustments) },
+            written.fold(
+                onSuccess = { crop ->
+                    // The recipe follows the canvas: the cutout written here is cropped further than the editor's canvas.
+                    val recipe = crop?.let { current.session.recipe?.trimmedBy(it.offset) } ?: current.session.recipe
+                    onDone(crop?.uri, adjustments, recipe)
+                },
                 onFailure = { throwable ->
                     saving = false
                     onDiagnostic("refine_save_failure: ${throwable::class.java.name}: ${throwable.message ?: "n/a"}")
@@ -1178,9 +1218,9 @@ private fun lightColorFilter(adjustments: QuickEditAdjustments): ColorFilter {
  * alpha crop as the garment import. The only write of the editor; the uncropped intermediate is removed.
  * [refine] is false for an unedited Redo result, whose edges were refined when it was made.
  */
-private fun writeCutout(context: Context, photo: CutoutPhoto, refine: Boolean = true): Uri {
+private fun writeCutout(context: Context, photo: CutoutPhoto, refine: Boolean = true): TransparentCrop {
     val source = photo.source
-    val argb = argbOf(source)
+    val argb = photo.colour()
     val alpha = if (refine) {
         AlphaRefiner.refine(argb, photo.session.currentAlpha(), source.width, source.height, CutoutEngineRegistry.options().edges)
     } else {
@@ -1198,16 +1238,38 @@ private fun writeCutout(context: Context, photo: CutoutPhoto, refine: Boolean = 
         context.contentResolver.delete(intermediate, null, null)
         throw throwable
     }
-    if (cropped != intermediate) context.contentResolver.delete(intermediate, null, null)
+    if (cropped.uri != intermediate) context.contentResolver.delete(intermediate, null, null)
     return cropped
 }
+
+/** The original in the canvas of a stored cutout of [canvasW] × [canvasH], or null when it cannot be read (R3-DEC-039). */
+private fun loadOriginalLayer(context: Context, originalUri: String, recipe: CutoutRecipe, canvasW: Int, canvasH: Int): IntArray? {
+    val original = decodeOriginal(context, originalUri) ?: return null
+    return try {
+        originalLayer(argbOf(original), original.width, original.height, canvasW, canvasH, recipe)
+    } finally {
+        original.recycle()
+    }
+}
+
+/** The saved original, or null when it is missing or unreadable (a deleted file, a denied URI, a failed read). */
+private fun decodeOriginal(context: Context, originalUri: String): Bitmap? = try {
+    context.contentResolver.openInputStream(Uri.parse(originalUri))?.use(BitmapFactory::decodeStream)
+} catch (failure: IOException) {
+    null
+} catch (failure: SecurityException) {
+    null
+}
+
+/** The output of one Redo run: the cutout as a bitmap, and the recipe that cut it. */
+private class RedoCutout(val bitmap: Bitmap, val recipe: CutoutRecipe?)
 
 /**
  * One Redo run: [options] on the raw photo, decoded to a bitmap. The engine's output is copied to a temp PNG in the app
  * cache, decoded and deleted, and the engine's copy in the pictures folder is removed too. The temp file therefore never
  * outlives this call (nothing is left behind by a failure or a cancellation). File and resolver work runs on IO.
  */
-private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: CutoutOptions, packDir: File): Bitmap {
+private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: CutoutOptions, packDir: File): RedoCutout {
     val engine: BackgroundRemovalEngine = if (options.usePrecise) {
         PreciseCutoutEngine(packDir = packDir, options = { options })
     } else {
@@ -1221,7 +1283,7 @@ private suspend fun runRedoCutout(context: Context, rawUri: Uri, options: Cutout
             try {
                 val input = context.contentResolver.openInputStream(result.outputUri) ?: error("Unable to read the new cutout")
                 input.use { source -> temp.outputStream().use { target -> source.copyTo(target) } }
-                BitmapFactory.decodeFile(temp.path) ?: error("Unable to decode the new cutout")
+                RedoCutout(BitmapFactory.decodeFile(temp.path) ?: error("Unable to decode the new cutout"), result.recipe)
             } finally {
                 temp.delete()
             }
