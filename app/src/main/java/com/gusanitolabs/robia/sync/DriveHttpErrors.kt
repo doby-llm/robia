@@ -91,19 +91,23 @@ private fun errorObject(body: String): JSONObject? = try {
     null
 }
 
+/** Attempts of one Drive call, the first included. */
+internal const val DRIVE_MAX_ATTEMPTS = 5
+
 /**
  * Retries only [DriveApiResult.Transient] results: up to [maxAttempts] attempts, waiting
  * 1 s, 2 s, 4 s, 8 s (each ±20 % jitter) between them. A server Retry-After is a floor for that wait.
+ * [block] is told its 1-based attempt number.
  */
 internal suspend fun <T> withRetry(
-    maxAttempts: Int = 5,
+    maxAttempts: Int = DRIVE_MAX_ATTEMPTS,
     sleeper: suspend (Long) -> Unit = { delay(it) },
     random: () -> Double = Math::random,
-    block: suspend () -> DriveApiResult<T>,
+    block: suspend (attempt: Int) -> DriveApiResult<T>,
 ): DriveApiResult<T> {
     var attempt = 1
     while (true) {
-        val result = block()
+        val result = block(attempt)
         result.reportRateLimit()
         if (result !is DriveApiResult.Transient || attempt >= maxAttempts) return result
         val baseMillis = 1_000L shl (attempt - 1)
@@ -111,6 +115,48 @@ internal suspend fun <T> withRetry(
         sleeper(maxOf(backoffMillis, result.retryAfterMillis ?: 0L))
         attempt++
     }
+}
+
+/**
+ * Whether an attempt of a blob upsert reads the name back before it writes. Only the first attempt of a caller that knows
+ * the name is absent skips the read. Every later attempt reads it, so a create whose response was lost is updated, not
+ * created a second time. A known [fileId] is updated without a read.
+ */
+internal fun blobAttemptNeedsLookup(attempt: Int, fileId: String?, knownAbsent: Boolean): Boolean =
+    fileId == null && (attempt > 1 || !knownAbsent)
+
+/**
+ * One blob upsert with its retries. Each attempt resolves the id ([lookup] when [blobAttemptNeedsLookup] asks for it), then
+ * makes one [write]: a create when no id is found, an update of the found id otherwise. [write] is a single request, so
+ * every retry goes through the lookup. A failed lookup is returned as it is, never read as "absent".
+ */
+internal suspend fun upsertBlobWithRetry(
+    fileId: String?,
+    knownAbsent: Boolean,
+    lookup: suspend () -> DriveApiResult<String?>,
+    write: suspend (existingFileId: String?) -> DriveApiResult<UploadedBlobInfo>,
+    sleeper: suspend (Long) -> Unit = { delay(it) },
+    random: () -> Double = Math::random,
+): DriveApiResult<UploadedBlobInfo> = withRetry<UploadedBlobInfo>(sleeper = sleeper, random = random) { attempt ->
+    val existingFileId = when {
+        fileId != null -> fileId
+        !blobAttemptNeedsLookup(attempt, fileId, knownAbsent) -> null
+        else -> when (val found = lookup()) {
+            is DriveApiResult.Success -> found.value
+            else -> return@withRetry found.failedAs<UploadedBlobInfo>()
+        }
+    }
+    write(existingFileId)
+}
+
+/** Passes a failed result on unchanged, typed for the caller. A successful result is not a failure. */
+internal fun <R> DriveApiResult<*>.failedAs(): DriveApiResult<R> = when (this) {
+    is DriveApiResult.Failure -> this
+    is DriveApiResult.Transient -> this
+    DriveApiResult.StorageFull -> DriveApiResult.StorageFull
+    DriveApiResult.NotFound -> DriveApiResult.NotFound
+    DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
+    is DriveApiResult.Success -> error("A successful Drive result is not a failure.")
 }
 
 /**

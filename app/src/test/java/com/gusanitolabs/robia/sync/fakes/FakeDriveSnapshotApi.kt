@@ -44,6 +44,8 @@ class FakeDriveSnapshotApi(
     val blobFailures = ConcurrentHashMap<String, DriveApiResult<Nothing>>()
     /** The lookup for that name fails with this result (the HTTP layer returns it, never a create). */
     val findFailures = ConcurrentHashMap<String, DriveApiResult<Nothing>>()
+    /** The next write of that name stores the bytes, then answers with this result, once: Drive kept the file but the response was lost. */
+    val storeThenFail = ConcurrentHashMap<String, DriveApiResult<Nothing>>()
     val maxUploadInFlight = AtomicInteger(0)
     private val uploadsInFlight = AtomicInteger(0)
     /** When set, the first blob write reports a rate limit to the cycle, as a 429 retried inside the HTTP layer would. */
@@ -143,10 +145,18 @@ class FakeDriveSnapshotApi(
             blobUploads.incrementAndGet()
             if (fileId == null) creates.getOrPut(blobPath) { AtomicInteger(0) }.incrementAndGet()
             files[blobPath] = bytes
+            storeThenFail.remove(blobPath)?.let { failure -> return failure }
             return DriveApiResult.Success(UploadedBlobInfo(size = bytes.size.toLong(), sha256 = sha256Hex(bytes)))
         } finally {
             uploadsInFlight.decrementAndGet()
         }
+    }
+
+    /** The lookup by name that the HTTP layer makes before a create: the id of the stored blob, null when absent, or [findFailures]. */
+    fun lookupId(blobPath: String): DriveApiResult<String?> {
+        findLookups.incrementAndGet()
+        findFailures[blobPath]?.let { failure -> return failure }
+        return DriveApiResult.Success(if (files.containsKey(blobPath)) idOf(blobPath) else null)
     }
 
     override suspend fun deleteBlob(accessToken: String, blobPath: String, fileId: String?): DriveApiResult<Unit> {

@@ -665,8 +665,11 @@ internal class PhotoUploadPipeline(
         if (index.idOf(blobPath) != null && index.sizeOf(blobPath) == blob.byteSize) {
             return DriveApiResult.Success(photo.withUploadedBlob(blob, blobPath, sourceHash))
         }
+        // Only the first call may skip the lookup. A 401 re-runs the call after one that may have stored the blob.
+        var knownAbsent = index.knownAbsent(blobPath)
         val upload = auth.call { token ->
-            api.upsertBlob(token, blobPath, blob.bytes, blob.mimeType, index.idOf(blobPath), index.knownAbsent(blobPath))
+            val absent = knownAbsent.also { knownAbsent = false }
+            api.upsertBlob(token, blobPath, blob.bytes, blob.mimeType, index.idOf(blobPath), absent)
         }
         return when (upload) {
             is DriveApiResult.Success -> {
@@ -727,7 +730,13 @@ internal class PhotoUploadPipeline(
             verifiedOriginalPaths += blobPath
             return withOriginal
         }
-        when (val upload = auth.call { token -> api.upsertBlob(token, blobPath, bytes, ORIGINAL_MIME_TYPE, index.idOf(blobPath), index.knownAbsent(blobPath)) }) {
+        // Only the first call may skip the lookup. A 401 re-runs the call after one that may have stored the original.
+        var knownAbsent = index.knownAbsent(blobPath)
+        val upload = auth.call { token ->
+            val absent = knownAbsent.also { knownAbsent = false }
+            api.upsertBlob(token, blobPath, bytes, ORIGINAL_MIME_TYPE, index.idOf(blobPath), absent)
+        }
+        when (upload) {
             is DriveApiResult.Success -> {
                 val storedSize = upload.value.size
                 val storedSha256 = upload.value.sha256
@@ -1032,16 +1041,31 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         mimeType: String?,
         fileId: String?,
         knownAbsent: Boolean,
-    ): DriveApiResult<UploadedBlobInfo> {
-        val existingFileId = when {
-            fileId != null -> fileId
-            knownAbsent -> null
-            // A failed lookup is returned as it is: reading it as "no file" would create a second blob under the same name.
-            else -> when (val found = findFileByNameResult(accessToken, blobPath)) {
-                is DriveApiResult.Success -> found.value?.id
-                else -> return found.failedAs()
+    ): DriveApiResult<UploadedBlobInfo> = upsertBlobWithRetry(
+        fileId = fileId,
+        knownAbsent = knownAbsent,
+        lookup = {
+            when (val found = findFileByNameResult(accessToken, blobPath, maxAttempts = 1)) {
+                is DriveApiResult.Success -> DriveApiResult.Success(found.value?.id)
+                else -> found.failedAs<String?>()
             }
-        }
+        },
+        write = { existingFileId ->
+            writeBlob(accessToken, blobPath, bytes, mimeType ?: PHOTO_BLOB_MIME_TYPE, existingFileId)
+        },
+    )
+
+    /**
+     * One multipart create (no [existingFileId]) or update of a blob, with no retry: [upsertBlobWithRetry] decides whether a
+     * lost response is retried, and only after it has looked the name up again.
+     */
+    private suspend fun writeBlob(
+        accessToken: String,
+        blobPath: String,
+        bytes: ByteArray,
+        mimeType: String,
+        existingFileId: String?,
+    ): DriveApiResult<UploadedBlobInfo> {
         val method = if (existingFileId == null) "POST" else "PATCH"
         val url = if (existingFileId == null) {
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,size,sha256Checksum"
@@ -1050,12 +1074,12 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         }
         val metadata = JSONObject()
             .put("name", blobPath)
-            .put("mimeType", mimeType ?: PHOTO_BLOB_MIME_TYPE)
+            .put("mimeType", mimeType)
             .apply {
                 if (existingFileId == null) put("parents", JSONArray().put("appDataFolder"))
             }
             .toString()
-        return multipartRequest(method, url, accessToken, metadata, bytes, mimeType ?: PHOTO_BLOB_MIME_TYPE) { body ->
+        return multipartOnce(method, url, accessToken, metadata, bytes, mimeType) { body ->
             // A response that is not JSON fails the upload, which keeps the previous record.
             DriveApiResult.Success(parseUploadedBlobInfo(body))
         }
@@ -1114,7 +1138,11 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
     private suspend fun findFileByName(accessToken: String, name: String): DriveFileMetadata? =
         (findFileByNameResult(accessToken, name) as? DriveApiResult.Success)?.value
 
-    private suspend fun findFileByNameResult(accessToken: String, name: String): DriveApiResult<DriveFileMetadata?> {
+    private suspend fun findFileByNameResult(
+        accessToken: String,
+        name: String,
+        maxAttempts: Int = DRIVE_MAX_ATTEMPTS,
+    ): DriveApiResult<DriveFileMetadata?> {
         val escapedName = name.toDriveQueryLiteral()
         val query = "name='$escapedName' and trashed=false"
         val url = "https://www.googleapis.com/drive/v3/files" +
@@ -1124,6 +1152,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             method = "GET",
             url = url,
             accessToken = accessToken,
+            maxAttempts = maxAttempts,
         ) { body ->
             val files = JSONObject(body).optJSONArray("files") ?: JSONArray()
             val file = files.optJSONObject(0)
@@ -1148,8 +1177,9 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         method: String,
         url: String,
         accessToken: String,
+        maxAttempts: Int = DRIVE_MAX_ATTEMPTS,
         parse: (body: String) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = withRetry {
+    ): DriveApiResult<T> = withRetry(maxAttempts) {
         try {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = method
@@ -1233,33 +1263,42 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         body: ByteArray,
         bodyMimeType: String,
         parse: (body: String) -> DriveApiResult<T>,
-    ): DriveApiResult<T> = withRetry {
-        try {
-            val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
-            val header = buildString {
-                append("--$boundary\r\n")
-                append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-                append(metadata)
-                append("\r\n--$boundary\r\n")
-                append("Content-Type: $bodyMimeType\r\n\r\n")
-            }.toByteArray(Charsets.UTF_8)
-            val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-            val payload = header + body + footer
+    ): DriveApiResult<T> = withRetry { multipartOnce(method, url, accessToken, metadata, body, bodyMimeType, parse) }
 
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
-                doOutput = true
-                setRequestProperty("Authorization", "Bearer $accessToken")
-                setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
-                setRequestProperty("Content-Length", payload.size.toString())
-                connectTimeout = CONNECT_TIMEOUT_MILLIS
-                readTimeout = READ_TIMEOUT_MILLIS
-            }
-            connection.outputStream.use { output -> output.write(payload) }
-            connection.toDriveResult(parse)
-        } catch (throwable: Throwable) {
-            throwable.toFailedDriveResult()
+    /** One multipart request, no retry. A create must not be re-sent on its own: a lost response may hide a stored blob. */
+    private suspend fun <T> multipartOnce(
+        method: String,
+        url: String,
+        accessToken: String,
+        metadata: String,
+        body: ByteArray,
+        bodyMimeType: String,
+        parse: (body: String) -> DriveApiResult<T>,
+    ): DriveApiResult<T> = try {
+        val boundary = "robia_drive_snapshot_${System.currentTimeMillis()}"
+        val header = buildString {
+            append("--$boundary\r\n")
+            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+            append(metadata)
+            append("\r\n--$boundary\r\n")
+            append("Content-Type: $bodyMimeType\r\n\r\n")
+        }.toByteArray(Charsets.UTF_8)
+        val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+        val payload = header + body + footer
+
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+            setRequestProperty("Content-Length", payload.size.toString())
+            connectTimeout = CONNECT_TIMEOUT_MILLIS
+            readTimeout = READ_TIMEOUT_MILLIS
         }
+        connection.outputStream.use { output -> output.write(payload) }
+        connection.toDriveResult(parse)
+    } catch (throwable: Throwable) {
+        throwable.toFailedDriveResult()
     }
 
     private fun <T> HttpURLConnection.toDriveResult(parse: (body: String) -> DriveApiResult<T>): DriveApiResult<T> {
@@ -1323,15 +1362,6 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
         is DriveErrorClass.Transient -> DriveApiResult.Transient(this)
         // A cancelled caller is not a Drive failure: the cancellation keeps propagating to the parallel uploads.
         else -> if (this is CancellationException) throw this else DriveApiResult.Failure(this)
-    }
-
-    private fun <R> DriveApiResult<*>.failedAs(): DriveApiResult<R> = when (this) {
-        is DriveApiResult.Failure -> this
-        is DriveApiResult.Transient -> this
-        DriveApiResult.StorageFull -> DriveApiResult.StorageFull
-        DriveApiResult.NotFound -> DriveApiResult.NotFound
-        DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
-        is DriveApiResult.Success -> error("A successful Drive result is not a failure.")
     }
 
     private fun parseFilesPage(body: String): DriveFilesPage {
