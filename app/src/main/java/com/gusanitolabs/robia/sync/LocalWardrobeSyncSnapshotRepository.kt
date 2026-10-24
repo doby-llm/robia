@@ -187,6 +187,7 @@ class LocalWardrobeSyncSnapshotRepository(
                 revision = expectedRevision,
                 syncedAtEpochMillis = System.currentTimeMillis(),
             )
+            if (rowsUpdated == 1) applyRestoredOriginal(photo)
             val rowAfter = wardrobeDao.restoredPhotoApplyState(photo.garmentId)
             val persisted = rowAfter?.let { row ->
                 row.photoUri == restoredUri &&
@@ -218,6 +219,16 @@ class LocalWardrobeSyncSnapshotRepository(
                 )
             }
         }
+
+    /**
+     * The original a targeted retry downloaded (REQ-OR-04). The photo row was just written in this transaction; this writes the
+     * original columns of that same row, so a retried garment gets its original as a bulk restore gives it.
+     */
+    private suspend fun applyRestoredOriginal(photo: GarmentPhotoRecord) {
+        val originalUri = photo.restoredOriginalLocalUri?.takeIf(String::isNotBlank) ?: return
+        val item = tagDao.clothingItemsByIds(listOf(photo.garmentId)).singleOrNull() ?: return
+        tagDao.upsertClothingItems(listOf(item.copy(originalUri = originalUri, originalRecipe = photo.recipe)))
+    }
 
     override suspend fun hasGuardedPhotoRestoreIssues(): Boolean = wardrobeDao.observeGuardedPhotoRestoreCount().first() > 0
 
@@ -455,6 +466,9 @@ internal fun ClothingItemEntity.toPhotoRecord(): GarmentPhotoRecord? = photoUri?
         blobPath = DriveFolderNaming.photoBlobPath(id, uri),
         revision = syncRevision,
         updatedAtEpochMillis = updatedAtEpochMillis,
+        // The upload hashes and stores the original; export reads no file (REQ-OR-04).
+        localOriginalUri = originalUri?.takeIf(String::isNotBlank),
+        recipe = originalRecipe?.takeIf { originalUri?.isNotBlank() == true },
     )
 } ?: if (photoRestoreGuarded) {
     // Guarded garment without a local photo: upload copies the remote record for it and never purges that blob.
@@ -531,12 +545,15 @@ internal fun restoredClothingItems(
     val remoteColorsByGarmentId = snapshot.garmentColors.groupBy(GarmentColorMappingRecord::garmentId)
     return snapshot.garments.map { garment ->
         val localItem = localItemsById[garment.id]
+        val remotePhoto = remotePhotoByGarmentId[garment.id]
+        // A restored original (REQ-OR-04) replaces the local one only together with its recipe; otherwise the phone keeps its own.
+        val restoredOriginalUri = remotePhoto?.restoredOriginalLocalUri?.takeIf(String::isNotBlank)
         garment.toEntity(
-            photoUri = importedPhotoUri(remotePhotoByGarmentId[garment.id], phoneHeldPhotoUris[garment.id]),
+            photoUri = importedPhotoUri(remotePhoto, phoneHeldPhotoUris[garment.id]),
             photoRestoreIssue = guardedPhotoByGarmentId[garment.id],
             colorRecords = remoteColorsByGarmentId[garment.id].orEmpty(),
-            originalUri = localItem?.originalUri,
-            originalRecipe = localItem?.originalRecipe,
+            originalUri = restoredOriginalUri ?: localItem?.originalUri,
+            originalRecipe = if (restoredOriginalUri != null) remotePhoto?.recipe else localItem?.originalRecipe,
         )
     }
 }

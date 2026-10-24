@@ -82,6 +82,18 @@ class PhotoIntegrityCheckTest {
         assertEquals(2, report.orphanBlobCount)
     }
 
+    /** V-OR2-3: originals are backup data, never a photo that a record is missing (REQ-OR-04). */
+    @Test
+    fun originalBlobsAreNeverCountedAsOrphanPhotos() {
+        val listing = files + DriveFileMetadata(id = "4", name = "originals/a/0123456789abcdef.jpg", size = 900L)
+        val snapshot = WardrobeSyncSnapshot(photos = listOf(photo("a", blobA, size = 10L)))
+
+        val report = checkPhotoIntegrity(listOf(LocalPhotoRef("a", fileLength = 10L)), listing, snapshot)
+
+        assertEquals(2, report.orphanBlobCount)
+        assertEquals(PhotoIntegrityStatus.Ok, report.entries.single().status)
+    }
+
     @Test
     fun withoutASnapshotEveryLocalPhotoIsNotYetUploaded() {
         val report = checkPhotoIntegrity(listOf(LocalPhotoRef("a", fileLength = 10L)), emptyList(), snapshot = null)
