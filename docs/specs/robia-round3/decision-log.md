@@ -238,3 +238,8 @@ When Drive was configured and is now disconnected, Browse shows one sign-in bann
 - Rules: the one-time run waits 60 s after the first ON_START (on IO) so a restored draft has registered before the planner runs; the run-once flag is still set only after a completed run. A planner test covers that a registered file older than 24 h is kept.
 - Deferred, not CLN: no JVM test of `deleteOrphans` / the run-once path; `File.delete()` failures are not retried; V-CLN-D label wording (use Android Settings > Apps > Robia > Storage).
 - Rationale: a file in use by a restorable draft must never be deleted, and the smallest change that guarantees it is to register the draft's URIs where they are set and to give restoration time to run before the planner does.
+
+## R3-DEC-038 — CI: Kotlin daemon heap raised to 3 GB (coordinator decision 2026-10-24) · D
+
+- Symptom: CI (`gradle --no-daemon testDebugUnitTest assembleDebug assembleStaging`) intermittently fails in `:app:compileDebugKotlin` with `java.lang.OutOfMemoryError` / "Not enough memory to run compilation. Try to increase it via gradle.properties: kotlin.daemon.jvmargs=-Xmx<size>". Seen on main and on PRs CLN, OR2, OR3; it is intermittent and often passes on rerun.
+- Change: `gradle.properties` only, no code: `kotlin.daemon.jvmargs` raised from `-Xmx1g` to `-Xmx3g`. `org.gradle.jvmargs` is unchanged.
