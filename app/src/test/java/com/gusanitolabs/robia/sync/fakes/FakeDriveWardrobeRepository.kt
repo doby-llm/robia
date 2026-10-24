@@ -57,7 +57,7 @@ internal class FakeDriveWardrobeRepository(
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
-        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> {
         upserts += snapshot
         upsertRemotes += remote

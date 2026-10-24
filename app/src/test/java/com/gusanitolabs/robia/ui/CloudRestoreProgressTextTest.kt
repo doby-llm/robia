@@ -209,6 +209,29 @@ class CloudRestoreProgressTextTest {
     }
 
     @Test
+    fun uploadEta_waitsForARealUploadAndReuseCompletionsAddNoGap() {
+        var nowMillis = 0L
+        val estimator = BatchEtaEstimator { nowMillis }
+        var previous: RestoreUploadProgress? = null
+        fun step(progress: RestoreUploadProgress, atMillis: Long): BatchEta? {
+            nowMillis = atMillis
+            return uploadEtaAfter(estimator, previous, progress).also { previous = progress }
+        }
+
+        // Instant Reuse completions at the start: no real upload yet, so no ETA.
+        assertNull(step(RestoreUploadProgress(0, 6, 0), 0L))
+        assertNull(step(RestoreUploadProgress(2, 6, 2), 0L))
+        // The first real upload at 10 s: 3 photos left at 10 s each.
+        assertEquals(BatchEta.Seconds(30), step(RestoreUploadProgress(3, 6, 2), 10_000L))
+        // A Reuse at 15 s leaves the gap list alone; 2 photos left at 10 s each.
+        assertEquals(BatchEta.Seconds(20), step(RestoreUploadProgress(4, 6, 3), 15_000L))
+        // One more real upload at 20 s: 1 photo left, two gaps of 10 s.
+        assertEquals(BatchEta.Seconds(10), step(RestoreUploadProgress(5, 6, 3), 20_000L))
+        // Nothing remains: no ETA.
+        assertNull(step(RestoreUploadProgress(6, 6, 3), 25_000L))
+    }
+
+    @Test
     fun etaEstimator_resetsWhenRetryProgressRestartsOrTotalChanges() {
         val previousRestore = RestoreEtaState()
             .updated(restoreProgress(completedBytes = 0L, totalBytes = 20_971_520L), 0L)

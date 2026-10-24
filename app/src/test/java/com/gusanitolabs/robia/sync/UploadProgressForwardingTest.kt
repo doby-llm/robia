@@ -29,18 +29,41 @@ class UploadProgressForwardingTest {
         val photos = (1..3).map { index ->
             localPhoto("g$index").also { photo -> phone.sources[photo.localUri] = "photo $index" }
         }
-        val reported = mutableListOf<Pair<Int, Int>>()
+        val reported = mutableListOf<Triple<Int, Int, Int>>()
 
         val result = phone.pipeline(api).upload(
             accessToken = "token",
             snapshot = WardrobeSyncSnapshot(photos = photos),
             remote = null,
             previous = emptyMap(),
-            onPhotoProgress = { done, total -> reported += done to total },
+            onPhotoProgress = { done, total, reused -> reported += Triple(done, total, reused) },
         )
 
         assertTrue(result is DriveSyncResult.Success)
-        assertEquals(listOf(0 to 3, 1 to 3, 2 to 3, 3 to 3), reported)
+        assertEquals(listOf(Triple(0, 3, 0), Triple(1, 3, 0), Triple(2, 3, 0), Triple(3, 3, 0)), reported)
+    }
+
+    @Test
+    fun reuseCompletionsAreReportedAsReusedNotAsUploads() = runBlocking {
+        val photos = (1..2).map { index ->
+            localPhoto("g$index").also { photo -> phone.sources[photo.localUri] = "photo $index" }
+        }
+        val first = phone.pipeline(api).upload("token", WardrobeSyncSnapshot(photos = photos), remote = null, previous = emptyMap())
+        val previous = (first as DriveSyncResult.Success).value.uploadedPhotos.associate { photo ->
+            photo.garmentId to photo.toLastUploadedPhoto()
+        }
+        val reported = mutableListOf<Triple<Int, Int, Int>>()
+
+        val result = phone.pipeline(api).upload(
+            accessToken = "token",
+            snapshot = WardrobeSyncSnapshot(photos = photos),
+            remote = null,
+            previous = previous,
+            onPhotoProgress = { done, total, reused -> reported += Triple(done, total, reused) },
+        )
+
+        assertTrue(result is DriveSyncResult.Success)
+        assertEquals(listOf(Triple(0, 2, 0), Triple(1, 2, 1), Triple(2, 2, 2)), reported)
     }
 
     @Test
@@ -57,7 +80,7 @@ class UploadProgressForwardingTest {
             processor.state.first { it.restoreProgress?.uploadProgress != null }.restoreProgress
         }
         assertEquals(CloudRestorePhase.Uploading, during?.phase)
-        assertEquals(RestoreUploadProgress(completedPhotos = 1, totalPhotos = 2), during?.uploadProgress)
+        assertEquals(RestoreUploadProgress(completedPhotos = 1, totalPhotos = 2, reusedPhotos = 1), during?.uploadProgress)
 
         gate.complete(Unit)
         confirm.join()
@@ -65,7 +88,7 @@ class UploadProgressForwardingTest {
     }
 }
 
-/** Reports one photo of two, then holds the upload until the test releases it, so the overlay can be observed mid-upload. */
+/** Reports one photo of two, a Reuse, then holds the upload until the test releases it, so the overlay can be observed mid-upload. */
 private class GatedUploadDrive(
     private val base: FakeDriveWardrobeRepository,
     private val gate: CompletableDeferred<Unit>,
@@ -73,9 +96,9 @@ private class GatedUploadDrive(
     override suspend fun upsertSnapshot(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
-        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
+        onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int) -> Unit)?,
     ): DriveSyncResult<DriveManifest> {
-        onPhotoProgress?.invoke(1, 2)
+        onPhotoProgress?.invoke(1, 2, 1)
         gate.await()
         return base.upsertSnapshot(snapshot, remote, onPhotoProgress)
     }
