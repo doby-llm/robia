@@ -66,8 +66,8 @@ class GoogleDriveWardrobeRepository(
     private val api: DriveSnapshotApi = HttpDriveSnapshotApi(),
     override val target: DriveSyncTarget = DriveSyncTarget(),
 ) : DriveWardrobeRepository {
-    override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = withAccessToken { accessToken ->
-        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
+    override suspend fun fetchManifest(): DriveSyncResult<DriveManifest> = withAccessToken { auth ->
+        when (val snapshotResult = auth.call { token -> api.fetchSnapshot(token) }) {
             is DriveApiResult.Success -> DriveSyncResult.Success(
                 DriveManifest.fromSnapshot(snapshotResult.value.sortedDeterministically()),
             )
@@ -77,17 +77,17 @@ class GoogleDriveWardrobeRepository(
         }
     }
 
-    override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { accessToken ->
-        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
-            is DriveApiResult.Success -> hydratePhotoBlobs(accessToken, snapshotResult.value.sortedDeterministically(), progress)
+    override suspend fun fetchSnapshot(progress: DriveRestoreProgressListener?): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { auth ->
+        when (val snapshotResult = auth.call { token -> api.fetchSnapshot(token) }) {
+            is DriveApiResult.Success -> hydratePhotoBlobs(auth, snapshotResult.value.sortedDeterministically(), progress)
             is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
             is DriveApiResult.Unauthorized -> authBlocked()
             is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> DriveSyncResult.Failure(snapshotResult.failureCause())
         }
     }
 
-    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { accessToken ->
-        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
+    override suspend fun fetchSnapshotRecords(): DriveSyncResult<WardrobeSyncSnapshot> = withAccessToken { auth ->
+        when (val snapshotResult = auth.call { token -> api.fetchSnapshot(token) }) {
             is DriveApiResult.Success -> DriveSyncResult.Success(snapshotResult.value.sortedDeterministically())
             is DriveApiResult.NotFound -> DriveSyncResult.Success(WardrobeSyncSnapshot())
             is DriveApiResult.Unauthorized -> authBlocked()
@@ -98,15 +98,15 @@ class GoogleDriveWardrobeRepository(
     override suspend fun retryRestoredPhoto(
         garmentId: String,
         progress: DriveRestoreProgressListener?,
-    ): DriveSyncResult<GarmentPhotoRecord> = withAccessToken { accessToken ->
-        when (val snapshotResult = api.fetchSnapshot(accessToken)) {
+    ): DriveSyncResult<GarmentPhotoRecord> = withAccessToken { auth ->
+        when (val snapshotResult = auth.call { token -> api.fetchSnapshot(token) }) {
             is DriveApiResult.Success -> {
                 val snapshot = snapshotResult.value.sortedDeterministically()
                 val photo = snapshot.photos.singleOrNull { it.garmentId == garmentId }
                     ?: return@withAccessToken DriveSyncResult.Failure(
                         IllegalStateException("No remote photo exists for garment $garmentId."),
                     )
-                when (val hydrated = hydratePhotoBlobs(accessToken, snapshot.copy(photos = listOf(photo)), progress)) {
+                when (val hydrated = hydratePhotoBlobs(auth, snapshot.copy(photos = listOf(photo)), progress)) {
                     is DriveSyncResult.Success -> DriveSyncResult.Success(hydrated.value.photos.single())
                     is DriveSyncResult.Blocked -> hydrated
                     is DriveSyncResult.Failure -> hydrated
@@ -128,12 +128,12 @@ class GoogleDriveWardrobeRepository(
         snapshot: WardrobeSyncSnapshot,
         remote: WardrobeSyncSnapshot?,
         onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
-    ): DriveSyncResult<DriveManifest> = withAccessToken { accessToken ->
+    ): DriveSyncResult<DriveManifest> = withAccessToken { auth ->
         // Previous photo records: the local cache first, the remote snapshot covers a fresh install.
         val previous = remote?.photos.orEmpty().associate { photo -> photo.garmentId to photo.toLastUploadedPhoto() } +
             lastUploadedPhotos.read()
         val photoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = onPhotoProgress ?: { _, _ -> }
-        when (val result = photoUploadPipeline().upload(accessToken, snapshot.sortedDeterministically(), remote, previous, photoProgress)) {
+        when (val result = photoUploadPipeline(auth.refresh).upload(auth.accessToken, snapshot.sortedDeterministically(), remote, previous, photoProgress)) {
             is DriveSyncResult.Success -> {
                 // The cache only saves re-uploads in the next cycle, so a failed write must not fail this sync.
                 runCatching {
@@ -146,8 +146,9 @@ class GoogleDriveWardrobeRepository(
         }
     }
 
-    private fun photoUploadPipeline(): PhotoUploadPipeline = PhotoUploadPipeline(
+    private fun photoUploadPipeline(refreshAccessToken: suspend () -> String?): PhotoUploadPipeline = PhotoUploadPipeline(
         api = api,
+        refreshAccessToken = refreshAccessToken,
         sourceHashOf = { photo -> photo.localSourceUri().sourceHash16(context) },
         encode = { photo -> ClothingImageStore.encodeDriveWebp(context, photo.localSourceUri()) },
         onPurgeDeferred = { message -> Log.w(PHOTO_LOG_TAG, message) },
@@ -166,8 +167,8 @@ class GoogleDriveWardrobeRepository(
         runCatching { driveUsageStore.write(driveUsageOf(files, now = System.currentTimeMillis())) }
     }
 
-    override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> = withAccessToken { accessToken ->
-        when (val listed = api.listAll(accessToken)) {
+    override suspend fun refreshDriveUsage(): DriveSyncResult<DriveUsage> = withAccessToken { auth ->
+        when (val listed = auth.call { token -> api.listAll(token) }) {
             is DriveApiResult.Success -> measuredUsage(listed.value)
             is DriveApiResult.NotFound -> measuredUsage(emptyList())
             is DriveApiResult.Unauthorized -> authBlocked()
@@ -181,15 +182,15 @@ class GoogleDriveWardrobeRepository(
         return DriveSyncResult.Success(usage)
     }
 
-    override suspend fun checkPhotos(snapshot: WardrobeSyncSnapshot): DriveSyncResult<PhotoIntegrityReport> = withAccessToken { accessToken ->
-        val files = when (val listed = api.listAll(accessToken)) {
+    override suspend fun checkPhotos(snapshot: WardrobeSyncSnapshot): DriveSyncResult<PhotoIntegrityReport> = withAccessToken { auth ->
+        val files = when (val listed = auth.call { token -> api.listAll(token) }) {
             is DriveApiResult.Success -> listed.value
             DriveApiResult.NotFound -> emptyList()
             DriveApiResult.Unauthorized -> return@withAccessToken authBlocked()
             is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull ->
                 return@withAccessToken DriveSyncResult.Failure(listed.failureCause())
         }
-        val remote = when (val fetched = api.fetchSnapshot(accessToken)) {
+        val remote = when (val fetched = auth.call { token -> api.fetchSnapshot(token) }) {
             is DriveApiResult.Success -> fetched.value.sortedDeterministically()
             DriveApiResult.NotFound -> null
             DriveApiResult.Unauthorized -> return@withAccessToken authBlocked()
@@ -219,8 +220,8 @@ class GoogleDriveWardrobeRepository(
         }.getOrNull()
     }
 
-    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = withAccessToken { accessToken ->
-        when (val listed = api.listBackupFiles(accessToken)) {
+    override suspend fun deleteBackup(): DriveSyncResult<DriveBackupDeletionResult> = withAccessToken { auth ->
+        when (val listed = auth.call { token -> api.listBackupFiles(token) }) {
             is DriveApiResult.Success -> {
                 if (listed.value.size >= MAX_BACKUP_DELETE_FILES) {
                     return@withAccessToken DriveSyncResult.Failure(
@@ -228,14 +229,14 @@ class GoogleDriveWardrobeRepository(
                     )
                 }
                 listed.value.forEach { file ->
-                    when (val deleted = api.deleteFile(accessToken, file.id)) {
+                    when (val deleted = auth.call { token -> api.deleteFile(token, file.id) }) {
                         is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
                         is DriveApiResult.Unauthorized -> return@withAccessToken authBlocked()
                         is DriveApiResult.Failure, is DriveApiResult.Transient, DriveApiResult.StorageFull -> return@withAccessToken DriveSyncResult.Failure(deleted.failureCause())
                     }
                 }
                 // Relist after idempotent DELETEs; a backup is deleted only once inventory is empty.
-                when (val relist = api.listBackupFiles(accessToken)) {
+                when (val relist = auth.call { token -> api.listBackupFiles(token) }) {
                     is DriveApiResult.Success -> DriveSyncResult.Success(
                         DriveBackupDeletionResult(listed.value.size, relist.value.size),
                     )
@@ -251,8 +252,20 @@ class GoogleDriveWardrobeRepository(
     }
 
     private suspend fun <T> withAccessToken(
-        operation: suspend (accessToken: String) -> DriveSyncResult<T>,
+        operation: suspend (auth: DriveCallAuth) -> DriveSyncResult<T>,
     ): DriveSyncResult<T> {
+        val accessToken = when (val authorized = authorizeDrive()) {
+            is DriveSyncResult.Success -> authorized.value
+            is DriveSyncResult.Blocked -> return authorized
+            is DriveSyncResult.Failure -> return authorized
+        }
+        return operation(DriveCallAuth(accessToken, refresh = ::freshAccessToken))
+    }
+
+    /** The token [DriveCallAuth] asks for after a 401: the same authorization as a cycle start. Null when the user must act. */
+    private suspend fun freshAccessToken(): String? = (authorizeDrive() as? DriveSyncResult.Success<String>)?.value
+
+    private suspend fun authorizeDrive(): DriveSyncResult<String> {
         val authorizationResult = try {
             withTimeout(AUTHORIZATION_TIMEOUT_MILLIS) {
                 authorizationClient.authorize(
@@ -282,7 +295,7 @@ class GoogleDriveWardrobeRepository(
             return authBlocked()
         }
 
-        return operation(accessToken)
+        return DriveSyncResult.Success(accessToken)
     }
 
     private companion object {
@@ -290,7 +303,7 @@ class GoogleDriveWardrobeRepository(
     }
 
     private suspend fun hydratePhotoBlobs(
-        accessToken: String,
+        auth: DriveCallAuth,
         snapshot: WardrobeSyncSnapshot,
         progress: DriveRestoreProgressListener?,
     ): DriveSyncResult<WardrobeSyncSnapshot> {
@@ -298,7 +311,8 @@ class GoogleDriveWardrobeRepository(
         return when (
             val restored = restorePhotoBlobs(
                 api = api,
-                accessToken = accessToken,
+                accessToken = auth.accessToken,
+                refreshAccessToken = auth.refresh,
                 photos = snapshot.photos,
                 garmentNameById = garmentNameById,
                 workDir = File(context.cacheDir, RESTORE_WORK_DIRECTORY),
@@ -469,6 +483,8 @@ internal class PhotoUploadPipeline(
     private val originalBytesOf: (GarmentPhotoRecord) -> ByteArray? = { null },
     /** Receives a skipped or failed original upload; an original never fails the cutout's upload. */
     private val onOriginalFailure: (String) -> Unit = {},
+    /** Asked for a fresh token when a Drive call answers 401; the upload then retries that call once. */
+    private val refreshAccessToken: suspend () -> String? = { null },
 ) {
     suspend fun upload(
         accessToken: String,
@@ -477,7 +493,8 @@ internal class PhotoUploadPipeline(
         previous: Map<String, LastUploadedPhoto>,
         onPhotoProgress: (completedPhotos: Int, totalPhotos: Int) -> Unit = { _, _ -> },
     ): DriveSyncResult<PhotoUploadOutcome> {
-        val index = when (val listing = api.listAll(accessToken)) {
+        val auth = DriveCallAuth(accessToken, refreshAccessToken)
+        val index = when (val listing = auth.call { token -> api.listAll(token) }) {
             is DriveApiResult.Success -> DriveFileIndex(listing.value).also { onListed(listing.value) }
             is DriveApiResult.NotFound -> DriveFileIndex(emptyList())
             is DriveApiResult.Unauthorized -> return authBlocked()
@@ -513,7 +530,7 @@ internal class PhotoUploadPipeline(
         for ((actionIndex, action) in actions.withIndex()) {
             val photo = photosByGarmentId.getValue(action.garmentId)
             when (action) {
-                is PhotoUploadAction.Reuse -> uploaded += attachOriginal(accessToken, photo.withPreviousBlob(action.previous), index, verifiedOriginalPaths)
+                is PhotoUploadAction.Reuse -> uploaded += attachOriginal(auth, photo.withPreviousBlob(action.previous), index, verifiedOriginalPaths)
                 is PhotoUploadAction.CopyRemote -> {
                     protectedGarmentIds += action.garmentId
                     // Same lookup as the restore: the first candidate that resolves to a blob in Drive is the one kept.
@@ -535,8 +552,8 @@ internal class PhotoUploadPipeline(
                     }
                 }
                 is PhotoUploadAction.Fail -> keepPreviousRecord(photo)
-                is PhotoUploadAction.Upload -> when (val upload = uploadChanged(accessToken, photo, action.sourceHash, index)) {
-                    is DriveApiResult.Success -> uploaded += attachOriginal(accessToken, upload.value, index, verifiedOriginalPaths)
+                is PhotoUploadAction.Upload -> when (val upload = uploadChanged(auth, photo, action.sourceHash, index)) {
+                    is DriveApiResult.Success -> uploaded += attachOriginal(auth, upload.value, index, verifiedOriginalPaths)
                     is DriveApiResult.Failure, is DriveApiResult.NotFound -> keepPreviousRecord(photo)
                     is DriveApiResult.Unauthorized -> return authBlocked()
                     is DriveApiResult.Transient, DriveApiResult.StorageFull -> return DriveSyncResult.Failure(upload.failureCause())
@@ -546,9 +563,9 @@ internal class PhotoUploadPipeline(
         }
 
         val uploadSnapshot = snapshot.copy(photos = uploaded).sortedDeterministically()
-        return when (val result = api.upsertSnapshot(accessToken, uploadSnapshot)) {
+        return when (val result = auth.call { token -> api.upsertSnapshot(token, uploadSnapshot) }) {
             is DriveApiResult.Success -> {
-                purgeReplacedPhotoBlobs(accessToken, uploadSnapshot, protectedGarmentIds, verifiedOriginalPaths, index)
+                purgeReplacedPhotoBlobs(auth, uploadSnapshot, protectedGarmentIds, verifiedOriginalPaths, index)
                 DriveSyncResult.Success(
                     PhotoUploadOutcome(
                         manifest = DriveManifest.fromSnapshot(result.value).copy(photoUploadFailures = failures),
@@ -566,7 +583,7 @@ internal class PhotoUploadPipeline(
 
     /** Encodes and uploads one changed photo. A [DriveApiResult.Failure] is per-photo; Transient and StorageFull stop the cycle. */
     private suspend fun uploadChanged(
-        accessToken: String,
+        auth: DriveCallAuth,
         photo: GarmentPhotoRecord,
         sourceHash: String,
         index: DriveFileIndex,
@@ -577,7 +594,7 @@ internal class PhotoUploadPipeline(
             return DriveApiResult.Failure(error)
         }
         val blobPath = PhotoBlobKeys.driveKey(photo.garmentId, PhotoBlobKeys.hash16(blob.bytes))
-        return when (val upload = api.upsertBlob(accessToken, blobPath, blob.bytes, blob.mimeType, index.idOf(blobPath))) {
+        return when (val upload = auth.call { token -> api.upsertBlob(token, blobPath, blob.bytes, blob.mimeType, index.idOf(blobPath)) }) {
             is DriveApiResult.Success -> {
                 // Drive must store exactly the bytes sent; otherwise the previous record stays and its blob is never purged.
                 val storedSize = upload.value.size
@@ -618,7 +635,7 @@ internal class PhotoUploadPipeline(
      * same name and size is reused. A failure never fails the cutout: the record keeps the reference and the next sync retries.
      */
     private suspend fun attachOriginal(
-        accessToken: String,
+        auth: DriveCallAuth,
         photo: GarmentPhotoRecord,
         index: DriveFileIndex,
         verifiedOriginalPaths: MutableSet<String>,
@@ -636,7 +653,7 @@ internal class PhotoUploadPipeline(
             verifiedOriginalPaths += blobPath
             return withOriginal
         }
-        when (val upload = api.upsertBlob(accessToken, blobPath, bytes, ORIGINAL_MIME_TYPE, index.idOf(blobPath))) {
+        when (val upload = auth.call { token -> api.upsertBlob(token, blobPath, bytes, ORIGINAL_MIME_TYPE, index.idOf(blobPath)) }) {
             is DriveApiResult.Success -> {
                 val storedSize = upload.value.size
                 val storedSha256 = upload.value.sha256
@@ -656,7 +673,7 @@ internal class PhotoUploadPipeline(
      * Guarded and failed garments are protected. Best effort: a failed delete is retried next cycle.
      */
     private suspend fun purgeReplacedPhotoBlobs(
-        accessToken: String,
+        auth: DriveCallAuth,
         snapshot: WardrobeSyncSnapshot,
         protectedGarmentIds: Set<String>,
         verifiedOriginalPaths: Set<String>,
@@ -684,7 +701,7 @@ internal class PhotoUploadPipeline(
         )
         (candidates + originalCandidates).forEach { blobPath ->
             val fileId = index.idOf(blobPath) ?: return@forEach
-            when (api.deleteBlob(accessToken, blobPath, fileId)) {
+            when (auth.call { token -> api.deleteBlob(token, blobPath, fileId) }) {
                 is DriveApiResult.Success, DriveApiResult.NotFound -> Unit
                 else -> onPurgeDeferred("An old photo blob could not be deleted; the next sync retries it.")
             }
@@ -790,8 +807,25 @@ sealed interface DriveApiResult<out T> {
     data object NotFound : DriveApiResult<Nothing>
     data object Unauthorized : DriveApiResult<Nothing>
     data class Failure(val throwable: Throwable) : DriveApiResult<Nothing>
-    data class Transient(val cause: Throwable?) : DriveApiResult<Nothing>
+    data class Transient(val cause: Throwable?, val retryAfterMillis: Long? = null) : DriveApiResult<Nothing>
     data object StorageFull : DriveApiResult<Nothing>
+}
+
+private const val RETRY_AFTER_HEADER = "Retry-After"
+
+/**
+ * The HTTP code and Google reason of the last failed Drive call, for the developer sync log. Written by the HTTP layer and read
+ * by the processor when a cycle ends without success. It never holds a token or a response body.
+ */
+internal object DriveHttpDiagnostics {
+    @Volatile
+    var lastFailure: String? = null
+}
+
+/** `http=<code> reason=<reason>`; the reason is kept only when it is a plain Google reason word. */
+internal fun driveHttpDetail(code: Int, body: String): String {
+    val reason = driveErrorReason(body)?.takeIf { value -> value.length <= 64 && value.all { char -> char in 'a'..'z' || char in 'A'..'Z' || char == '_' } }
+    return "http=$code reason=${reason ?: "none"}"
 }
 
 // A full 1,000-item page is treated as overflow, so deletion never traverses unbounded inventory.
@@ -1077,7 +1111,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
                 DriveApiResult.Success(copiedBytes)
             } else {
                 val errorBody = connection.errorStream?.bufferedReader()?.use { reader -> reader.readText() }.orEmpty()
-                driveHttpError(connection.responseCode, errorBody)
+                driveHttpError(connection.responseCode, errorBody, retryAfterMillisOf(connection))
             }
         } finally {
             connection.disconnect()
@@ -1149,7 +1183,7 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             when (responseCode) {
                 in 200..299 -> parse(body)
-                else -> driveHttpError(responseCode, body)
+                else -> driveHttpError(responseCode, body, retryAfterMillisOf(this))
             }
         } finally {
             disconnect()
@@ -1169,25 +1203,29 @@ private class HttpDriveSnapshotApi : DriveSnapshotApi {
             }
             when (responseCode) {
                 in 200..299 -> parse(bytes, this)
-                else -> driveHttpError(responseCode, bytes.toString(Charsets.UTF_8))
+                else -> driveHttpError(responseCode, bytes.toString(Charsets.UTF_8), retryAfterMillisOf(this))
             }
         } finally {
             disconnect()
         }
 
-    private fun driveHttpError(code: Int, body: String): DriveApiResult<Nothing> {
+    private fun retryAfterMillisOf(connection: HttpURLConnection): Long? =
+        parseRetryAfterMillis(connection.getHeaderField(RETRY_AFTER_HEADER))
+
+    private fun driveHttpError(code: Int, body: String, retryAfterMillis: Long? = null): DriveApiResult<Nothing> {
         val failure = IOException("Drive API returned HTTP $code: $body")
-        return when (classify(code, body)) {
+        DriveHttpDiagnostics.lastFailure = driveHttpDetail(code, body)
+        return when (val errorClass = classify(code, body, retryAfterMillis)) {
             DriveErrorClass.AuthRequired -> DriveApiResult.Unauthorized
             DriveErrorClass.NotFound -> DriveApiResult.NotFound
             DriveErrorClass.StorageFull -> DriveApiResult.StorageFull
-            DriveErrorClass.Transient -> DriveApiResult.Transient(failure)
+            is DriveErrorClass.Transient -> DriveApiResult.Transient(failure, errorClass.retryAfterMillis)
             is DriveErrorClass.Permanent -> DriveApiResult.Failure(failure)
         }
     }
 
     private fun Throwable.toFailedDriveResult(): DriveApiResult<Nothing> = when (classify(this)) {
-        DriveErrorClass.Transient -> DriveApiResult.Transient(this)
+        is DriveErrorClass.Transient -> DriveApiResult.Transient(this)
         else -> DriveApiResult.Failure(this)
     }
 
@@ -1262,8 +1300,10 @@ internal suspend fun restorePhotoBlobs(
     /** Moves a verified original into its final file and returns its URI; null skips the originals (REQ-OR-04). */
     moveOriginalToFinal: ((garmentId: String, hash16: String, source: File) -> String)? = null,
     onOriginalFailure: (String) -> Unit = {},
+    refreshAccessToken: suspend () -> String? = { null },
 ): DriveApiResult<List<GarmentPhotoRecord>> {
-    val index = when (val listed = api.listAll(accessToken)) {
+    val auth = DriveCallAuth(accessToken, refreshAccessToken)
+    val index = when (val listed = auth.call { token -> api.listAll(token) }) {
         is DriveApiResult.Success -> DriveFileIndex(listed.value).also { onListed(listed.value) }
         DriveApiResult.NotFound -> DriveFileIndex(emptyList())
         DriveApiResult.Unauthorized -> return DriveApiResult.Unauthorized
@@ -1285,7 +1325,7 @@ internal suspend fun restorePhotoBlobs(
                     semaphore.withPermit {
                         val record = restoreOnePhoto(
                             api = api,
-                            accessToken = accessToken,
+                            auth = auth,
                             photo = photo,
                             index = index,
                             workDir = workDir,
@@ -1320,7 +1360,7 @@ internal suspend fun restorePhotoBlobs(
                 restored.map { photo ->
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
-                            restoreOneOriginal(api, accessToken, photo, index, workDir, moveOriginalToFinal, onOriginalFailure)
+                            restoreOneOriginal(api, auth, photo, index, workDir, moveOriginalToFinal, onOriginalFailure)
                         }
                     }
                 }.awaitAll()
@@ -1334,7 +1374,7 @@ internal suspend fun restorePhotoBlobs(
 
 private suspend fun restoreOnePhoto(
     api: DriveSnapshotApi,
-    accessToken: String,
+    auth: DriveCallAuth,
     photo: GarmentPhotoRecord,
     index: DriveFileIndex,
     workDir: File,
@@ -1364,7 +1404,7 @@ private suspend fun restoreOnePhoto(
     val target = File(workDir, "${photo.garmentId.safeFileStem()}.part")
     try {
         val fetched = withTimeoutOrNull(RESTORE_PHOTO_TIMEOUT_MILLIS) {
-            api.fetchBlobToFile(accessToken, fileId, target)
+            auth.call { token -> api.fetchBlobToFile(token, fileId, target) }
         } ?: return photo.guardedRestore(
             category = REMOTE_PHOTO_TRANSIENT,
             message = "Drive photo blob $blobPath for garment ${photo.garmentId} timed out.",
@@ -1472,7 +1512,7 @@ private suspend fun restoreOnePhoto(
  */
 private suspend fun restoreOneOriginal(
     api: DriveSnapshotApi,
-    accessToken: String,
+    auth: DriveCallAuth,
     photo: GarmentPhotoRecord,
     index: DriveFileIndex,
     workDir: File,
@@ -1488,7 +1528,7 @@ private suspend fun restoreOneOriginal(
     val target = File(workDir, "original-${photo.garmentId.safeFileStem()}.part")
     try {
         val fetched = withTimeoutOrNull(RESTORE_PHOTO_TIMEOUT_MILLIS) {
-            api.fetchBlobToFile(accessToken, fileId, target)
+            auth.call { token -> api.fetchBlobToFile(token, fileId, target) }
         }
         if (fetched !is DriveApiResult.Success) {
             onFailure("original_restore_failed garmentId=${photo.garmentId} reason=download_failed")

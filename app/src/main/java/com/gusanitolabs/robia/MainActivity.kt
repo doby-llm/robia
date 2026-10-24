@@ -122,7 +122,16 @@ class MainActivity : ComponentActivity() {
                     )
                     showCloudSetupLaunchFailure()
                 } else {
-                    persistDriveAuthorizationResult(result)
+                    lifecycleScope.launch {
+                        if (settingsRepository.settings.first().driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected) {
+                            // Drive is still connected: nothing to sign in to. Say so and sync, instead of rewriting the status silently.
+                            setCloudAuthorizationInFlight(false)
+                            Toast.makeText(this@MainActivity, R.string.sync_auth_checking_connection, Toast.LENGTH_SHORT).show()
+                            syncGateway.requestSyncInBackground("sign_in_tap_connected")
+                        } else {
+                            persistDriveAuthorizationResult(result)
+                        }
+                    }
                 }
             }
             .addOnFailureListener { showCloudSetupLaunchFailure() }
