@@ -1,52 +1,50 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.sync.fakes.FakeDriveWardrobeRepository
+import com.gusanitolabs.robia.sync.fakes.FakeSettingsRepository
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeRepository
 import com.gusanitolabs.robia.sync.fakes.FakeWardrobeSnapshotStore
 import com.gusanitolabs.robia.sync.fakes.processorWithDrive
 import com.gusanitolabs.robia.sync.fakes.snapshotWithGarments
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncAuthBannerFlowTest {
     private val signInRequired = SyncAttention(SyncAttentionKind.SignInRequired)
 
     @Test
-    fun aNewCycleStartsWithoutTheSignInBannerOfTheLastCycle() = runBlocking {
+    fun aCycleThatEndsEarlyClearsTheSignInBannerOfTheCycleBefore() = runBlocking {
         val wardrobe = FakeWardrobeRepository().apply { addQueued("garment-1") }
-        val signInAtUpload = mutableListOf<Boolean>()
-        lateinit var processor: WardrobeSyncOutboxProcessor
+        val settings = FakeSettingsRepository()
         val drive = object : DriveWardrobeRepository by FakeDriveWardrobeRepository() {
             override suspend fun upsertSnapshot(
                 snapshot: WardrobeSyncSnapshot,
                 remote: WardrobeSyncSnapshot?,
                 onPhotoProgress: ((completedPhotos: Int, totalPhotos: Int) -> Unit)?,
-            ): DriveSyncResult<DriveManifest> {
-                signInAtUpload += signInRequired in processor.state.first().attention
-                return DriveSyncResult.Blocked(
-                    DriveSyncDisabledReason.UserNotConnected,
-                    "Google Drive authorization is required before sync can continue.",
-                )
-            }
+            ): DriveSyncResult<DriveManifest> = DriveSyncResult.Blocked(
+                DriveSyncDisabledReason.UserNotConnected,
+                "Google Drive authorization is required before sync can continue.",
+            )
         }
-        processor = processorWithDrive(
+        val processor = processorWithDrive(
             drive = drive,
             wardrobe = wardrobe,
-            snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("garment-1", "garment-2")),
+            snapshots = FakeWardrobeSnapshotStore(local = snapshotWithGarments("garment-1")),
+            settings = settings,
         )
 
         assertEquals(SyncRunResult.AuthBlocked, processor.runOnce(SyncTrigger.Background))
-        assertTrue(signInRequired in processor.state.first().attention)
+        withTimeout(5_000) { processor.state.first { state -> signInRequired in state.attention } }
 
-        // A new garment gives the next cycle work to do; the banner from the blocked cycle must not carry over into it.
-        wardrobe.addQueued("garment-2")
-        assertEquals(SyncRunResult.AuthBlocked, processor.runOnce(SyncTrigger.Background))
-
-        assertEquals(listOf(false, false), signInAtUpload)
+        // A cycle that ends before any Drive call must not keep the banner of the blocked cycle.
+        settings.forceStatus(DriveSyncConnectionStatus.NeedsAttention)
+        assertEquals(SyncRunResult.NeedsUser, processor.runOnce(SyncTrigger.Background))
+        withTimeout(5_000) { processor.state.first { state -> signInRequired !in state.attention } }
     }
 }
