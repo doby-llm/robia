@@ -193,11 +193,11 @@ internal fun BatchAddClothingScreen(
     var follow by remember { mutableStateOf(BatchFollowState()) }
     val following = follow.following
     val target = follow.targetIndex(drafts)
-    // Only a finger drag reports Drag; the list's own animated scroll to the target does not.
+    // Only user input reports UserInput; the list's own animated scroll to the target does not.
     val followConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.Drag && available.y != 0f) follow = follow.onUserScroll()
+                if (source == NestedScrollSource.UserInput && available.y != 0f) follow = follow.onUserScroll()
                 return Offset.Zero
             }
         }
