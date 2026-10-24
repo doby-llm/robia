@@ -885,6 +885,10 @@
     <string name="zip_export_hint">Fotos, originales y datos, guardados donde elijas</string>
     <string name="zip_export_progress">Preparando tus datos… %1$d de %2$d</string>
     <string name="zip_export_failed">La exportación no terminó. Inténtalo de nuevo.</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Marco de Robia</string>
+    <string name="export_frame_hint">Borde blanco y logo de Robia alrededor de la foto</string>
+    <string name="export_frame_locked_hint">Desactiva las demás opciones de Mostrar para ocultar el marco.</string>
     <!-- UI-CAL -->
     <string name="duplicate_calibration_loading">Comparando fotos de prendas…</string>
 </resources>

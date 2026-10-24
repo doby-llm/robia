@@ -885,6 +885,10 @@
     <string name="zip_export_hint">Fotos, Originale und Daten, gespeichert, wo du sie wählst</string>
     <string name="zip_export_progress">Deine Daten werden vorbereitet… %1$d von %2$d</string>
     <string name="zip_export_failed">Der Export wurde nicht abgeschlossen. Bitte versuche es erneut.</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Robia-Rahmen</string>
+    <string name="export_frame_hint">Weißer Rand und Robia-Logo um das Foto</string>
+    <string name="export_frame_locked_hint">Schalte die anderen Anzeigen-Optionen aus, um den Rahmen auszublenden.</string>
     <!-- UI-CAL -->
     <string name="duplicate_calibration_loading">Kleidungsfotos werden verglichen…</string>
 </resources>

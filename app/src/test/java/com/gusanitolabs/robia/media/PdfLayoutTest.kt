@@ -1,6 +1,8 @@
 package com.gusanitolabs.robia.media
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -228,6 +230,44 @@ class PdfLayoutTest {
         assertEquals(12, chips.size)
         assertTrue("chips should take more than one row", chips.map { it.y }.distinct().size > 1)
         chips.forEach { assertTrue(it.x + it.w <= 1128f) }
+    }
+
+    /** V-EX2-2: frame off with no fields → the page holds only the photo: no title, notes, swatches, rows, header or footer. */
+    @Test
+    fun frameOff_withNoFields_pageHoldsOnlyThePhoto() {
+        val content = typical.copy(title = "Robia garment", notes = "", metadata = emptyList(), colors = emptyList())
+        val layout = computePdfLayout(content, measurer, showFrame = false)
+        val page = layout.pages.single()
+
+        assertNotNull(page.photo)
+        val photo = page.photo!!
+        assertFalse(page.framed)
+        assertEquals(44f, photo.x, 0f)
+        assertEquals(507f, photo.w, 0f)
+        assertNull(page.title)
+        assertNull(page.notes)
+        assertTrue(page.swatches.isEmpty())
+        assertTrue(page.metadata.isEmpty())
+    }
+
+    /** V-EX2-2: frame on → the same layout as the default call; the page stays framed. */
+    @Test
+    fun frameOn_leavesTheLayoutUnchanged() {
+        val framed = computePdfLayout(typical, measurer, showFrame = true)
+
+        assertEquals(computePdfLayout(typical, measurer), framed)
+        assertTrue(framed.pages.single().framed)
+    }
+
+    /** V-EX2-3: frame off → the image card is the photo alone, long edge 1600 px, aspect kept. */
+    @Test
+    fun photoOnlyCard_scalesTheLongEdgeTo1600AndKeepsTheAspect() {
+        assertEquals(1600 to 800, photoOnlyCardSize(800, 400))
+        assertEquals(1600 to 1200, photoOnlyCardSize(1200, 900))
+        assertEquals(1200 to 1600, photoOnlyCardSize(1200, 1600))
+        assertEquals(1200 to 1600, photoOnlyCardSize(300, 400))
+        assertEquals(1600 to 1600, photoOnlyCardSize(1600, 1600))
+        assertEquals(1 to 1600, photoOnlyCardSize(1, 1600))
     }
 
     private fun cardSections(count: Int): List<CardSection> = listOf(
