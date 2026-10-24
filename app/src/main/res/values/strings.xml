@@ -885,4 +885,6 @@
     <string name="zip_export_hint">Photos, originals and data, saved where you choose</string>
     <string name="zip_export_progress">Preparing your data… %1$d of %2$d</string>
     <string name="zip_export_failed">The export didn\'t finish. Try again.</string>
+    <!-- SYNC-AUTH -->
+    <string name="sync_auth_checking_connection">Checking your Google Drive connection…</string>
 </resources>
