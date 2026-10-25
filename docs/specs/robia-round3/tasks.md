@@ -136,11 +136,12 @@
 - **PLAN-CHANGE 2026-10-23 (R3-DEC-032):** a review returns SAFE when it has no BLOCKING finding (data loss or wrong deletion, crash or unbounded main-thread work, a violated V-DUP1-1..3 row or REQ-DU-01/03/04, a file outside Files, a weakened existing test); everything else is a DEFERRED follow-up, listed in the PR receipt and in R3-DEC-032, never a reason for another worker round. The round-7 review is the last before merge unless it finds a BLOCKING item, which gets one closed-list worker round checked only against that list; merge also needs CI green on the head and a merge of origin/main.
 
 ## DUP2 — Duplicates: "very similar" tier and remembered dismissals
-- **Reqs:** REQ-DU-01 (tier 2), REQ-DU-02 · **Predecessors:** DUP1, G-DUP, OR2, ZIP · **Successors:** — · **Independent review: yes**
+- **Reqs:** REQ-DU-01 (tier 2), REQ-DU-02, REQ-FB-18(c) · **Predecessors:** DUP1, OR2, ZIP, DUP-FAST, DUP-TRIGGER (file order: after DARK3 on `ui/DuplicateReviewScreen.kt`, after SYNC-SPEED on `sync/GoogleDriveWardrobeRepository.kt`) · **Successors:** — · **Independent review: yes** (+ E2)
 - **Files:** `suggestions/DuplicateScan.kt`; `ui/DuplicateReviewScreen.kt`; new `data/local/DismissedDuplicateEntities.kt`; `data/local/RobiaDatabase.kt`; `data/local/Dao.kt`; `core/model/SyncModels.kt`; `sync/GoogleDriveWardrobeRepository.kt`; `sync/LocalWardrobeSyncSnapshotRepository.kt`; `ui/RobiaApp.kt`; `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`; new `app/src/test/java/com/gusanitolabs/robia/data/local/Migration14To15Test.kt`; `app/src/test/java/com/gusanitolabs/robia/sync/SnapshotJsonCompatTest.kt`.
-- **In scope:** Tier 2 with `T_DUP` from the G-DUP PLAN-CHANGE + same category + same primary colour; Room v15 `dismissed_duplicate_pairs`; optional snapshot list.
-- **Out of scope:** Changing the threshold rule; UI beyond the "Very similar" label.
-- **Acceptance:** V-DUP2-1, V-DUP2-2, V-DUP2-3, V-DUP2-D.
+- **In scope:** Tier 2 with **`T_DUP = 0.96`** (fixed by Manu, R3-DEC-047; no G-DUP marking) + same category + same primary colour (when both have one), built on DUP-FAST's blocked pass (collect cosine ≥ `T_DUP` inside a category block; no all-pairs list); Room v15 `dismissed_duplicate_pairs`; optional snapshot list; "Not duplicates" writes all pairs of the group and the dismissals are loaded into `DuplicateSession` at start, so a dismissed pair never returns after a restart (0.96 yields false positives for similar black dresses, so dismissals ship with the tier); "Very similar" label.
+- **Out of scope:** Changing `T_DUP`; the calibration marking (G-DUP closed); the scan trigger and speed (DUP-TRIGGER, DUP-FAST); UI beyond the "Very similar" label.
+- **Acceptance:** V-DUP2-1, V-DUP2-2, V-DUP2-3, V-DUP2-4, V-DUP2-D.
+- **PLAN-CHANGE 2026-10-25 (R3-DEC-047, R3-DEC-051):** G-DUP removed from the predecessors; `T_DUP = 0.96` is a constant of the task, not a PLAN-CHANGE value from a gate; DUP-FAST and DUP-TRIGGER added as predecessors; `ui/RobiaApp.kt` is written after NAV-BACK and DUP-TRIGGER.
 
 ## BAT1 — Batch add: close button, clean cancel, early pinned ETA, one module wait per batch
 - **Reqs:** REQ-BA3-01, REQ-BA3-02, REQ-BA3-03, REQ-PD-02(a) · **Predecessors:** W0 · **Successors:** OR1, VIS · **Independent review: yes**
@@ -216,6 +217,7 @@
 
 - **PLAN-CHANGE 2026-10-24 (R3-DEC-041):** CHK also lists the DEV rows of the Round 3b tasks below; its predecessors include them.
 - **PLAN-CHANGE 2026-10-24 (R3-DEC-046):** CHK also lists the DEV rows of the Round 3c tasks (OUT-DROP, UI-SMART, DARK1 to DARK4) and REV when it exists; its predecessors include them. V-OUT-D is not listed (dropped).
+- **PLAN-CHANGE 2026-10-25 (R3-DEC-051):** CHK also lists the DEV rows of the Round 3d tasks (NAV-BACK, ADD-UX, PICKER-FIX, REV-PROGRESS, DUP-FAST, DUP-TRIGGER; V-DUP2-D as before) and REV when it exists; its predecessors include them. G-DUP and V-DUP1-D are not listed (closed by R3-DEC-047).
 
 ---
 
@@ -229,7 +231,7 @@ SYNC-AUTH   <- (none)
 SYNC-BANNER <- SYNC-AUTH
 SYNC-ETA    <- SYNC-BANNER
 SYNC-SPEED  <- SYNC-AUTH, SYNC-ETA
-UI-CAL      <- (none)        (then G-DUP is redone by Manu on a build containing UI-CAL)
+UI-CAL      <- (none)        (G-DUP is closed by R3-DEC-047: T_DUP = 0.96, no re-marking)
 UI-WHITE    <- (none)
 EX2         <- (none)
 BAT3        <- (none)
@@ -237,24 +239,24 @@ CHK         <- ALL (round 3 and 3b)
 ```
 Shared files (writers in order): `sync/GoogleDriveWardrobeRepository.kt` SYNC-AUTH → SYNC-ETA → SYNC-SPEED; `sync/WardrobeSyncOutboxProcessor.kt` SYNC-AUTH → SYNC-BANNER → SYNC-ETA; `ui/RobiaApp.kt` SYNC-BANNER → SYNC-ETA; `sync/DriveHttpErrors.kt` SYNC-AUTH → SYNC-SPEED; `sync/fakes/FakeDriveSnapshotApi.kt` SYNC-AUTH → SYNC-SPEED.
 
-### Open decisions (D-F10 and D-F13 decided by Manu on 2026-10-24; D-F12 still open)
+### Open decisions (D-F10 and D-F13 decided by Manu on 2026-10-24; D-F12 direction decided 2026-10-25, design round 3 open)
 - **D-F10 (smart background remove, ED1): decided 2026-10-24 (R3-DEC-043, Manu).** Option C: a deterministic pure-Kotlin tap that removes the tapped connected component of the current alpha; the gesture, trail, 60 % guard, history and hint stay. Task UI-SMART (Round 3c below). If V-UI-SMART-D still fails on the device, the next step is removal of the smart tool (option B), not another fix. V-ED1-D is replaced by V-UI-SMART-D.
 - **D-F13 (Outfit lab, OUT): decided 2026-10-24 (R3-DEC-042, Manu).** The Outfit lab is removed. Task OUT-DROP (Round 3c below). V-OUT-D and G-OUT are closed as dropped.
-- **D-F12 (garment review redesign, colour + tag review):** design round 2 in progress (mockups, `mockups/review-redesign/`); the REV task is written after Manu picks a design. REV will have DARK1 as a predecessor so it is built on the theme tokens (REQ-FB-12; R3-DEC-046).
+- **D-F12 (garment review redesign, colour + tag review): direction A "Pick, then decide" chosen by Manu on 2026-10-25 (R3-DEC-050); decided now: design round 3 for the red "−" language of removed tags (F21, REQ-FB-21).** Mockups: `mockups/review-redesign/`. The REV task is still unwritten and is written after design round 3 (DARK1 is merged, so REV builds on the theme tokens; REQ-FB-12; R3-DEC-046). Semantics fixed by R3-DEC-050: leaving halfway keeps every garment already decided, one tag group per review.
+- **F15–F21 (Manu, 2026-10-25, R3-DEC-047 to R3-DEC-051):** F15 → NAV-BACK; F16 + F20 → ADD-UX; F17 → PICKER-FIX; F18 → DUP-FAST, DUP-TRIGGER and DUP2 (T_DUP = 0.96, G-DUP closed); F19 → REV-PROGRESS; F21 → REV (design round 3). Round 3d below.
 
-### Remaining execution order (2026-10-24, R3-DEC-046)
-Merged already: UI-CAL, UI-WHITE, EX2, BAT3. Remaining, in the order the coordinator starts them; "after" is a file conflict, not a logical dependency.
-1. **SYNC-AUTH** (none). Files it shares: `MainActivity.kt` (then DARK1), `sync/GoogleDriveWardrobeRepository.kt`, `sync/WardrobeSyncOutboxProcessor.kt`, `sync/DriveHttpErrors.kt`, the fake API.
-2. **SYNC-BANNER** (after SYNC-AUTH): `ui/RobiaApp.kt`, `sync/WardrobeSyncOutboxProcessor.kt`.
-3. **SYNC-ETA** (after SYNC-BANNER): `ui/RobiaApp.kt`, `sync/GoogleDriveWardrobeRepository.kt`, `sync/WardrobeSyncOutboxProcessor.kt`.
-4. **SYNC-SPEED** (after SYNC-AUTH and SYNC-ETA): `sync/GoogleDriveWardrobeRepository.kt`, `sync/DriveHttpErrors.kt`, the fake API. It shares no file with anything below, so 5 to 7 may run beside it.
-5. **OUT-DROP** (after SYNC-ETA: `ui/RobiaApp.kt`; before DARK1: `ui/RobiaApp.kt`, `ui/SettingsScreen.kt`). Independent review: yes.
-6. **UI-SMART** (no conflicts with the sync chain; may start at any time, even first). Shares `ui/PhotoEditorScreen.kt` with DARK4, so it merges before DARK4.
-7. **DARK1** (after SYNC-AUTH: `MainActivity.kt`; after OUT-DROP: `ui/RobiaApp.kt`, `ui/SettingsScreen.kt`). The base of all dark work and of REV.
-8. **DARK2, DARK3, DARK4** (after DARK1; mutually parallel, disjoint Files). DARK3 follows DARK1 on `ui/SettingsScreen.kt`; DARK4 follows UI-SMART on `ui/PhotoEditorScreen.kt`.
-9. **REV** (after DARK1 and Manu's pick of a design, D-F12; not yet written). Its screens (`ui/ColorReviewScreen.kt`, `ui/TagReviewScreen.kt`, `ui/ReviewScaffold.kt`) are not in DARK2 to DARK4, so there is no conflict with them.
-10. **CHK** (all).
-Lanes: sync chain 1 → 2 → 3 → 4; UI chain 5 → 7 → 8 → 9 (5 waits for 3); 6 anywhere before 8's DARK4. At most one worker per shared file at a time.
+### Remaining execution order (updated 2026-10-25, R3-DEC-051; first written 2026-10-24, R3-DEC-046)
+Merged already: UI-CAL, UI-WHITE, EX2, BAT3, SYNC-AUTH, SYNC-BANNER, SYNC-ETA, OUT-DROP, UI-SMART, DARK1. Remaining, in the order the coordinator starts them; "after" is a file conflict, not a logical dependency, and a task starts as soon as its file predecessors are merged.
+1. **SYNC-SPEED** (in independent review round 2). Files: `sync/GoogleDriveWardrobeRepository.kt`, `sync/DriveFileIndex.kt`, `sync/DriveHttpErrors.kt`, the fake API. DUP2 follows it on `sync/GoogleDriveWardrobeRepository.kt`.
+2. **DARK2, DARK3, DARK4** (pending; mutually parallel, disjoint Files). DARK2 comes before ADD-UX (`ui/AddEditClothingScreen.kt`) and PICKER-FIX (`ui/GarmentFieldRows.kt`); DARK3 comes before DUP-FAST (`ui/DuplicateCalibrationScreen.kt`) and DUP2 (`ui/DuplicateReviewScreen.kt`); DARK4 shares nothing with Round 3d.
+3. **NAV-BACK ∥ DUP-FAST** (disjoint: `ui/RobiaApp.kt` + `ui/BackExitPolicy.kt` against `suggestions/DuplicateScan.kt` + `data/EmbeddingRepository.kt` + `ui/DuplicateCalibrationScreen.kt`). NAV-BACK conflicts with nothing pending and may start at once; DUP-FAST starts after DARK3.
+4. **DUP-TRIGGER** (after DUP-FAST on `suggestions/DuplicateScan.kt`, after NAV-BACK on `ui/RobiaApp.kt`).
+5. **ADD-UX ∥ PICKER-FIX** (both after DARK2; disjoint: `ui/AddEditClothingScreen.kt` against `ui/ReviewScaffold.kt` + `ui/GarmentFieldRows.kt`).
+6. **REV-PROGRESS** (after PICKER-FIX on `ui/ReviewScaffold.kt`; `ui/TagReviewScreen.kt` and `ui/ColorReviewScreen.kt` have no other writer before REV).
+7. **DUP2** (after DUP-FAST and DUP-TRIGGER; after DARK3 on `ui/DuplicateReviewScreen.kt`; after NAV-BACK and DUP-TRIGGER on `ui/RobiaApp.kt`; after SYNC-SPEED on `sync/GoogleDriveWardrobeRepository.kt`). Independent review: yes + E2.
+8. **REV** (after design round 3 and Manu's confirmation, D-F12; after PICKER-FIX and REV-PROGRESS on `ui/ReviewScaffold.kt`, `ui/TagReviewScreen.kt`, `ui/ColorReviewScreen.kt`). Not yet written.
+9. **CHK** (all; last).
+Lanes: sync 1 → (DUP2); dark 2 → ADD-UX ∥ PICKER-FIX → REV-PROGRESS → REV; duplicates DUP-FAST → DUP-TRIGGER → DUP2; NAV-BACK ahead of DUP-TRIGGER. At most one worker per shared file at a time.
 
 ## SYNC-AUTH — Drive sign-in errors: refresh and retry, correct classification, honest banner (F8)
 - **Reqs:** REQ-FB-08 · **Predecessors:** — · **Successors:** SYNC-BANNER, SYNC-SPEED · **Independent review: yes**
@@ -287,11 +289,12 @@ Lanes: sync chain 1 → 2 → 3 → 4; UI chain 5 → 7 → 8 → 9 (5 waits for
 - **Device gate:** the 100-garment upload time is measured after the build and compared with the before number from Manu's report (about 3 s per photo, about 160 s for 114 garments); record the number, no hard target.
 
 ## UI-CAL — Duplicate calibration screen: loading and empty states (F9)
-- **Reqs:** REQ-FB-09 · **Predecessors:** — · **Successors:** G-DUP (redone)
+- **Reqs:** REQ-FB-09 · **Predecessors:** — · **Successors:** — (G-DUP closed by R3-DEC-047; the screen stays a developer tool)
 - **Files:** `ui/DuplicateCalibrationScreen.kt`; `suggestions/DuplicateScan.kt`; `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/DuplicateCalibrationScreenTest.kt`.
 - **In scope:** A progress indicator while the pairs are not ready; an empty state that shows the counts (active garments, with vector, hash matched, categorised); scan failures logged outside DEBUG; a pure Loading/Empty/Pairs state function with a JVM test.
 - **Out of scope:** The pair selection (top 30), thresholds, the Browse duplicate scan behaviour, DUP2.
 - **Acceptance:** V-UI-CAL-1, V-UI-CAL-2, V-UI-CAL-D.
+- **PLAN-CHANGE 2026-10-25 (R3-DEC-047):** the 30-pair re-marking is no longer asked of Manu; V-UI-CAL-D checks only the loading and empty states.
 
 ## UI-WHITE — Neutral grey gradient for white garments (F5)
 - **Reqs:** REQ-FB-05 (updates REQ-BR3-02) · **Predecessors:** — · **Successors:** —
@@ -377,3 +380,65 @@ CHK      <- ALL
 - **In scope:** The editor keeps its transparency checkerboard, Light-tab backdrop, temperature preset swatches and over-photo chips as they are (each literal marked `// theme-fixed: <reason>`); the editor chrome (top bar, mode chips, tool row, sheets, snackbar) follows the theme; analytics bars, axis, legend and empty state have contrast in dark; the Export screen's chrome follows the theme while the preview bitmap and the exported file are unchanged, with the preview separated from the dark page by an outline.
 - **Out of scope:** `media/GarmentShareExporter.kt`, `media/PdfLayout.kt` and every export output; editor behaviour; the smart tap (UI-SMART); colour and tag review screens (look-only check in V-DARK4-D).
 - **Acceptance:** V-DARK4-1, V-DARK4-2, V-DARK4-D.
+
+---
+
+## Round 3d — Manu's feedback of 2026-10-25 (F15–F21)
+
+Source: R3-DEC-047 to R3-DEC-051 and the planner investigation `ux2.md` (file:line leads, verified against main `ebd6467` for the ones the briefs rely on; F18 and F19 timings are estimates). Same worker rules 0–13; all tasks start from latest `origin/main`; line numbers in the briefs may be a few lines off after DARK2. Rule 2 applies: `strings.xml` in three locales and new tests are always allowed.
+
+**Dependency summary.** Conflict-driven (full order under "Remaining execution order").
+```
+NAV-BACK     <- (none)           (first writer of ui/RobiaApp.kt)
+ADD-UX       <- DARK2            (ui/AddEditClothingScreen.kt)
+PICKER-FIX   <- DARK2            (ui/GarmentFieldRows.kt)
+REV-PROGRESS <- PICKER-FIX       (ui/ReviewScaffold.kt)
+DUP-FAST     <- (none)           (file order: after DARK3 on ui/DuplicateCalibrationScreen.kt)
+DUP-TRIGGER  <- DUP-FAST, NAV-BACK
+DUP2         <- DUP1, OR2, ZIP, DUP-FAST, DUP-TRIGGER   (file order: after DARK3, SYNC-SPEED)
+REV          <- DARK1, design round 3, PICKER-FIX, REV-PROGRESS   (not yet written)
+CHK          <- ALL
+```
+
+## NAV-BACK — Back peels one layer, then asks twice to exit (F15)
+- **Reqs:** REQ-FB-15 · **Predecessors:** — · **Successors:** DUP-TRIGGER (file order on `ui/RobiaApp.kt`) · **Independent review: no**
+- **Files:** `ui/RobiaApp.kt` (the new root `BackHandler` and its state only); new `ui/BackExitPolicy.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/BackExitPolicyTest.kt`.
+- **In scope:** A pure `decideBack(state, nowMs)` in `BackExitPolicy.kt` (state: route is Browse or Manage, selection count, search query, similar-to garment, active filters, time of the last exit hint) returning one of ClearSelection, ClearSearchAndFilters, GoToBrowse, ShowExitHint, Exit. One new `BackHandler` in `RobiaApp.kt` after the existing one, enabled when `routeStack.size == 1`, no restore is in progress and the route is Browse or Manage; it applies the action: selection cleared alone; query, similar-to and filters cleared together; Manage → `replaceRoute(Browse)`; the hint is a `Toast` "Press back again to exit" (`Toast.LENGTH_SHORT`, about 2 s) and a second press inside 2000 ms calls `finish()` on the host activity (`findActivity()` exists in the file). The exit window resets when the route, query, filters or selection change. Strings `back_exit_hint` x3.
+- **Out of scope:** The existing handler at `routeStack.size > 1`; Add's own `BackHandler` (discard dialog, then Browse); the review and batch handlers; dialogs and sheets (they keep priority); predictive back; any other `RobiaApp.kt` code.
+- **Acceptance:** V-NAV-BACK-1, V-NAV-BACK-2, V-NAV-BACK-3, V-NAV-BACK-D.
+
+## ADD-UX — Add screen: auto-scroll to the photo and the batch hint (F16 + F20)
+- **Reqs:** REQ-FB-16, REQ-FB-20 · **Predecessors:** DARK2 · **Successors:** — · **Independent review: no**
+- **Files:** `ui/AddEditClothingScreen.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/AddPhotoScrollTest.kt`.
+- **In scope:** (F16) `rememberLazyListState()` on the screen's `LazyColumn`, a non-saveable `scrollRequest` counter incremented only in `queuePhotoForProcessing`, and a `LaunchedEffect(scrollRequest)` that skips 0, waits (bounded) until the photo card item is in `visibleItemsInfo`, then scrolls so the photo's top edge sits at the viewport's top edge: smooth (`animateScrollBy`, about 350 ms) or instant under `LocalReducedMotion`; no scroll when the photo is already at or above the target (a user who scrolled further is left alone, threshold about 8 dp); a user drag preempts it; rotation does not re-trigger. Pure `internal fun photoScrollDelta(...)` in this file. (F20, R3-DEC-049) the Add-mode gallery button reads "Gallery · pick several" (`gallery_multi`; ES "Galería · elige varias", DE "Galerie · mehrere") and a hint line under the photo buttons "Tip: pick several photos at once to add them as a batch." (`add_batch_hint`) shows while a new garment has no photo; pure `internal fun batchHintVisible(isEditing, hasPhoto)`. Neither change in edit mode (label stays "Gallery", no hint).
+- **Out of scope:** The batch screen and its helper text; the picker sheets (PICKER-FIX); processing, photo pipeline, the editor; any other scroll behaviour of the screen; a persistent one-time tip (option C).
+- **Acceptance:** V-ADD-UX-1, V-ADD-UX-2, V-ADD-UX-3, V-ADD-UX-D.
+
+## PICKER-FIX — Pickers do not jump or lose the option count (F17)
+- **Reqs:** REQ-FB-17 · **Predecessors:** DARK2 · **Successors:** REV-PROGRESS (file order on `ui/ReviewScaffold.kt`), REV · **Independent review: no**
+- **Files:** `ui/ReviewScaffold.kt` (`ReviewPickerList` only); `ui/GarmentFieldRows.kt` (`TagPickerSheet` only); new `app/src/test/java/com/gusanitolabs/robia/ui/PickerStabilityTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/GarmentFieldRowsTest.kt` and `ReviewScrollHintTest.kt` (only if a helper they cover changes; existing assertions stay).
+- **In scope:** The three causes of `ux2.md` F17. (1) The "N options" caption is composed from a pure `pickerCaptionVisible(optionCount, maxValue)` that does not depend on the scroll position (true when the list is long enough to scroll, decided from the option count at first composition and from `maxValue > 0` afterwards); only the bottom fade follows `scrollHintVisible(value, max)` and it is an overlay, so it never changes the height. (2) The suggested-hint row in `TagPickerSheet` is reserved (composed with alpha 0 and no semantics) whenever any suggested tag belongs to the sheet's category, instead of appearing and disappearing with the selection; a pure `sheetReservesSuggestedHint(suggestedIds, categoryTagIds)`. (3) `rememberModalBottomSheetState(skipPartiallyExpanded = true)` for `TagPickerSheet`.
+- **Out of scope:** Row design, sorting, the review dialogs' own layout, strings, other sheets; REV's redesign of the review screens.
+- **Acceptance:** V-PICKER-FIX-1, V-PICKER-FIX-2, V-PICKER-FIX-3, V-PICKER-FIX-D.
+
+## REV-PROGRESS — Review progress bar follows the count (F19)
+- **Reqs:** REQ-FB-19 · **Predecessors:** PICKER-FIX (file order on `ui/ReviewScaffold.kt`) · **Successors:** REV · **Independent review: no**
+- **Files:** `ui/TagReviewScreen.kt` (the progress state only); `ui/ColorReviewScreen.kt` (the progress state only); `ui/ReviewScaffold.kt` (the pure function and, if needed, the progress bar only); new `app/src/test/java/com/gusanitolabs/robia/ui/ReviewProgressTest.kt`.
+- **In scope:** A pure `reviewScanProgress(done, total, scanning)` (while scanning: `done / max(total, 1)` clamped to 0..1; not scanning: 1); both screens feed `ReviewProgressHeader` that value directly and the `animateFloatAsState(tween(300))` is removed (it restarted at every step, about 20-40 ms apart, and lagged far behind). `SCAN_STEP_MILLIS` (`suggestions/ReviewPlanner.kt`) is not changed: one step is 0.45 % at 222 garments, so the raw fraction already looks continuous, and the file is outside Files.
+- **Out of scope:** The counts and their texts (correct already), `ReviewPlanner`, the review layout and semantics (REV), any easing or spring.
+- **Acceptance:** V-REV-PROGRESS-1, V-REV-PROGRESS-2, V-REV-PROGRESS-D.
+
+## DUP-FAST — Duplicate scan and calibration: skip fresh hashes, block by category (F18 speed)
+- **Reqs:** REQ-FB-18(a), REQ-DU-04 · **Predecessors:** — (file order: after DARK3 on `ui/DuplicateCalibrationScreen.kt`) · **Successors:** DUP-TRIGGER, DUP2 · **Independent review: no**
+- **Files:** `suggestions/DuplicateScan.kt`; `data/EmbeddingRepository.kt`; `ui/DuplicateCalibrationScreen.kt`; `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`.
+- **In scope:** (1) `GarmentVectors` gains `computedAtEpochMillis: Long? = null`, filled from the IMAGE row (in-memory only; no Room change); a garment whose vector is provably fresh (`computedAt != null` and `item.updatedAtEpochMillis <= computedAt`) is not re-hashed: its stored `imageInputHash` is used as the current hash; unknown or newer → hashed as today. (2) The remaining hashes run with bounded parallelism (`async` with `Semaphore(3)`; the hasher is injected so the logic is JVM-testable). (3) `calibrationPairs` groups the eligible garments by category, packs the normalised vectors into one `FloatArray` per block, compares with float dots and keeps the best `top` pairs in a bounded heap, with no list of all pairs; the pass is an internal `scanBlocks`-style function that DUP2 reuses for "cosine ≥ T_DUP". The result (pairs, order, tie-break by id) equals the old algorithm. (4) A progress callback `(done, total)` from the hashing phase and `yield()` in chunks; the calibration screen shows it (determinate bar and a short label, `duplicate_calibration_progress` x3) in place of the bare spinner.
+- **Out of scope:** Any threshold or tier (DUP2), the trigger (DUP-TRIGGER), Room and sync, the exact-tier rules, the Browse banner, the pair selection (top 30), the UI-CAL state function.
+- **Acceptance:** V-DUP-FAST-1, V-DUP-FAST-2, V-DUP-FAST-3, V-DUP-FAST-4, V-DUP-FAST-5, V-DUP-FAST-6, V-DUP-FAST-D.
+
+## DUP-TRIGGER — Scan whenever the garments change, record only success (F18 trigger)
+- **Reqs:** REQ-FB-18(b) · **Predecessors:** DUP-FAST, NAV-BACK · **Successors:** DUP2 · **Independent review: no**
+- **Files:** `suggestions/DuplicateScan.kt`; `ui/RobiaApp.kt` (the duplicate-scan `LaunchedEffect` block only); `app/src/test/java/com/gusanitolabs/robia/suggestions/DuplicateScanTest.kt`.
+- **In scope:** A pure order-insensitive `duplicateScanSignature(items)` over the active garments (id and `photoUri`); `duplicateScanDue(lastSignature, signature)` replaces the first-run / 5-new / 24 h rule, which is deleted with `DUPLICATE_RESCAN_NEW_GARMENTS` if unused; `scanDuplicates` returns an outcome (Success with groups, or Failed) instead of swallowing an exception into an empty list; the history stores the signature only on Success, and a Failed scan neither records nor replaces the current groups; the effect keys on the signature so a change during a scan restarts it. Unchanged: Browse only, backfill settled, wardrobe loaded.
+- **Out of scope:** Scan cost (DUP-FAST), the cosine tier and dismissals (DUP2), the banner, persisting the history to disk, any other `RobiaApp.kt` code.
+- **Acceptance:** V-DUP-TRIGGER-1, V-DUP-TRIGGER-2, V-DUP-TRIGGER-3, V-DUP-TRIGGER-D.
+- **Test replaced by this design:** the `duplicateScanDue` assertions in `DuplicateScanTest` (about lines 149-153) pin the 5-new / 24 h rule. Rewrite them with equal strength for the signature rule (see V-DUP-TRIGGER-1). V-DUP1-3's "once per 24 hours, 5 new garments" text is superseded.
