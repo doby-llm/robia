@@ -885,4 +885,6 @@
     <string name="settings_theme_system">Follow system</string>
     <!-- NAV-BACK -->
     <string name="back_exit_hint">Press back again to exit</string>
+    <!-- DUP-FAST -->
+    <string name="duplicate_calibration_preparing">Preparing photos… %1$d of %2$d</string>
 </resources>

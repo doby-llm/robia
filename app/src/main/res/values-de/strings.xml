@@ -885,4 +885,6 @@
     <string name="settings_theme_system">Wie das System</string>
     <!-- NAV-BACK -->
     <string name="back_exit_hint">Zum Beenden erneut Zurück drücken</string>
+    <!-- DUP-FAST -->
+    <string name="duplicate_calibration_preparing">Fotos werden vorbereitet… %1$d von %2$d</string>
 </resources>

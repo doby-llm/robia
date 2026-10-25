@@ -3,11 +3,16 @@ package com.gusanitolabs.robia.suggestions
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
 class DuplicateScanTest {
@@ -249,5 +254,146 @@ class DuplicateScanTest {
         val items = listOf(garment("a"), garment("b"), garment("archived", archived = true))
 
         assertEquals(CalibrationCounts(active = 2, withVector = 0, hashMatched = 0, categorised = 0), calibrationCounts(items, emptyMap(), emptyMap()))
+    }
+
+    /** The all-pairs algorithm as it was before DUP-FAST: the reference the blocked top-k pass must reproduce (V-DUP-FAST-3). */
+    private fun referenceCalibrationPairs(
+        items: List<ClothingItem>,
+        vectors: Map<String, GarmentVectors>,
+        currentHashes: Map<String, String>,
+        top: Int,
+    ): List<CalibrationPair> {
+        val garments = eligibleGarments(items, vectors, currentHashes).filter { it.category != null }
+        val unit = garments.map { it.vector.normalized() }
+        return garments.indices
+            .flatMap { i -> (i + 1 until garments.size).map { j -> i to j } }
+            .filter { (i, j) -> garments[i].category == garments[j].category }
+            .map { (i, j) -> CalibrationPair(garments[i].id, garments[j].id, dot(unit[i], unit[j])) }
+            .sortedWith(compareByDescending<CalibrationPair> { it.cosine }.thenBy { it.a }.thenBy { it.b })
+            .take(top)
+    }
+
+    /** Synthetic wardrobe over four categories (one without), with repeated and near-repeated vectors so cosines tie. */
+    private fun syntheticWardrobe(seed: Int, count: Int): Triple<List<ClothingItem>, Map<String, GarmentVectors>, Map<String, String>> {
+        val random = Random(seed)
+        val pool = List(24) { FloatArray(EmbeddingRecipe.DIMENSION) { random.nextFloat() - 0.5f } }
+        val categories = listOf("category-dresses", "category-shirts", "category-pants", null)
+        val items = (1..count).map { n -> garment("g%03d".format(n), category = categories[random.nextInt(categories.size)]) }
+        val vectors = items.associate { item ->
+            val base = pool[random.nextInt(pool.size)]
+            val image = if (random.nextInt(4) == 0) FloatArray(base.size) { k -> base[k] * 0.999f } else base.copyOf()
+            item.id to GarmentVectors(item.id, image, null, imageInputHash = "h-${item.id}")
+        }
+        // About one garment in ten has a photo that changed since its vector: it is not eligible, like a stale vector in the scan.
+        val hashes = items.associate { item -> item.id to if (random.nextInt(10) == 0) "stale-${item.id}" else "h-${item.id}" }
+        return Triple(items, vectors, hashes)
+    }
+
+    @Test
+    fun blockedTopPairsEqualTheOldAllPairsAlgorithm() {
+        val (items, vectors, hashes) = syntheticWardrobe(seed = 7, count = 240)
+
+        for (top in listOf(1, 30, 100_000)) {
+            val blocked = calibrationPairs(items, vectors, hashes, top = top)
+            val reference = referenceCalibrationPairs(items, vectors, hashes, top = top)
+
+            assertEquals(reference.map { it.a to it.b }, blocked.map { it.a to it.b })
+            blocked.zip(reference).forEach { (got, expected) -> assertEquals(expected.cosine, got.cosine, 1e-5f) }
+        }
+    }
+
+    @Test
+    fun pairPassVisitsOnlySameCategoryPairsAndTheTopHeapStaysBounded() {
+        val (items, vectors, hashes) = syntheticWardrobe(seed = 11, count = 500)
+        val garments = eligibleGarments(items, vectors, hashes)
+        val perCategory = garments.filter { it.category != null }.groupingBy { it.category }.eachCount().values
+        val expectedPairs = perCategory.sumOf { n -> n.toLong() * (n - 1) / 2 }
+        val allPairs = garments.size.toLong() * (garments.size - 1) / 2
+        var rows = 0
+
+        val visited = scanBlocks(garments, onRow = { rows++ }) { _, _, _ -> }
+
+        assertEquals(expectedPairs, visited)
+        assertTrue("same-category pairs must be fewer than all pairs", visited < allPairs)
+        assertEquals(perCategory.sum(), rows)
+        val best = CalibrationTop(limit = 30)
+        scanBlocks(garments, onRow = {}) { a, b, cosine -> best.offer(a, b, cosine) }
+        assertEquals(30, best.size)
+    }
+
+    @Test
+    fun resolverHashesEveryPhotoWithAtMostThreeInFlight() = runTest {
+        val items = (1..10).map { n -> garment("g$n").copy(photoUri = "content://photos/g$n") }
+        val calls = AtomicInteger(0)
+        val inFlight = AtomicInteger(0)
+        val maxInFlight = AtomicInteger(0)
+
+        val hashes = resolvePhotoHashes(items.map(ClothingItem::id).toSet(), items, hash = { uri ->
+            calls.incrementAndGet()
+            maxInFlight.accumulateAndGet(inFlight.incrementAndGet()) { a, b -> maxOf(a, b) }
+            delay(10)
+            inFlight.decrementAndGet()
+            "h-$uri"
+        })
+
+        assertEquals(10, calls.get())
+        assertEquals(3, maxInFlight.get())
+        assertEquals(items.associate { it.id to "h-${it.photoUri}" }, hashes)
+    }
+
+    @Test
+    fun aPhotoThatCannotBeHashedLeavesItsGarmentOutAndGarmentsWithoutAPhotoAreSkipped() = runTest {
+        val items = listOf(
+            garment("a").copy(photoUri = "content://photos/a"),
+            garment("b").copy(photoUri = "content://photos/b"),
+            garment("c").copy(photoUri = "content://photos/c"),
+            garment("noPhoto"),
+            garment("blankPhoto").copy(photoUri = " "),
+        )
+
+        val hashes = resolvePhotoHashes(items.map(ClothingItem::id).toSet(), items, hash = { uri ->
+            when (uri.substringAfterLast('/')) {
+                "b" -> null
+                "c" -> error("unreadable")
+                else -> "h"
+            }
+        })
+
+        assertEquals(mapOf("a" to "h"), hashes)
+    }
+
+    @Test
+    fun cancellationStopsThePhotosNotYetStarted() = runTest {
+        val items = (1..10).map { n -> garment("g$n").copy(photoUri = "content://photos/g$n") }
+        val calls = AtomicInteger(0)
+        val job = launch {
+            resolvePhotoHashes(items.map(ClothingItem::id).toSet(), items, hash = {
+                calls.incrementAndGet()
+                delay(100)
+                "h"
+            })
+        }
+
+        advanceTimeBy(50)
+        job.cancelAndJoin()
+
+        assertEquals(3, calls.get())
+    }
+
+    @Test
+    fun progressNeverGoesBackwardsAndEndsAtTheNumberOfPhotosHashed() = runTest {
+        val items = (1..7).map { n -> garment("g$n").copy(photoUri = "content://photos/g$n") } + garment("noPhoto")
+        val calls = AtomicInteger(0)
+        val reported = mutableListOf<Pair<Int, Int>>()
+
+        resolvePhotoHashes(items.map(ClothingItem::id).toSet(), items, hash = { uri ->
+            calls.incrementAndGet()
+            delay(5)
+            if (uri.endsWith("g3")) null else "h"
+        }, onProgress = { done, total -> reported.add(done to total) })
+
+        assertEquals(0 to 7, reported.first())
+        assertTrue(reported.zipWithNext().all { (before, after) -> before.first <= after.first })
+        assertEquals(calls.get() to calls.get(), reported.last())
     }
 }
