@@ -59,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.media.ClothingImageStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -84,8 +85,8 @@ private const val SEGMENT_SPACING_DP = 6f
 private const val SWATCH_SIZE_DP = 26f
 private const val SWATCH_SPACING_DP = 6f
 private const val SWATCH_BORDER_ALPHA = 0.15f
-private val GlowColor = Color(0xFFFFD2AE)
-private val ShimmerPeach = Color(0xFFFFE2C4)
+private val GlowColor = Color(0xFFFFD2AE) // theme-fixed: glow over the photo well, which stays light (R3-DEC-045)
+private val ShimmerPeach = Color(0xFFFFE2C4) // theme-fixed: shimmer over the photo well, which stays light (R3-DEC-045)
 
 /** Step 1-3 of the processing sequence shown to the user (TS§7). */
 internal fun processingStep(stage: PhotoProcessingStage): Int = when (stage) {
@@ -143,9 +144,9 @@ internal fun SweepOverlay(modifier: Modifier = Modifier) {
             drawRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0f),
-                        Color.White.copy(alpha = SWEEP_ALPHA),
-                        Color.White.copy(alpha = 0f),
+                        Color.White.copy(alpha = 0f), // theme-fixed: light band over photos (R3-DEC-045)
+                        Color.White.copy(alpha = SWEEP_ALPHA), // theme-fixed: light band over photos (R3-DEC-045)
+                        Color.White.copy(alpha = 0f), // theme-fixed: light band over photos (R3-DEC-045)
                     ),
                     startX = left,
                     endX = left + bandWidth,
@@ -196,7 +197,7 @@ internal fun MaskedShimmer(foregroundUri: String, modifier: Modifier = Modifier)
                     drawRect(
                         brush = Brush.linearGradient(
                             0f to Color.Transparent,
-                            0.44f to Color.White.copy(alpha = SHIMMER_ALPHA_WHITE),
+                            0.44f to Color.White.copy(alpha = SHIMMER_ALPHA_WHITE), // theme-fixed: shimmer over photos (R3-DEC-045)
                             0.5f to ShimmerPeach.copy(alpha = SHIMMER_ALPHA_PEACH),
                             0.56f to Color.Transparent,
                             1f to Color.Transparent,
@@ -213,6 +214,12 @@ internal fun MaskedShimmer(foregroundUri: String, modifier: Modifier = Modifier)
 /** Colour swatches over the photo, one circle per colour (mockup step 3). */
 @Composable
 internal fun PhotoColorSwatches(colors: List<Color>, modifier: Modifier = Modifier) {
+    // Light keeps the 15 % black ring; dark uses a light ring so the dots still outline on dark photos.
+    val swatchBorder = if (MaterialTheme.extras.isDark) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = .24f)
+    } else {
+        Color.Black.copy(alpha = SWATCH_BORDER_ALPHA) // theme-fixed: the Light ring, unchanged
+    }
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(SWATCH_SPACING_DP.dp)) {
         colors.forEach { color ->
             Box(
@@ -220,7 +227,7 @@ internal fun PhotoColorSwatches(colors: List<Color>, modifier: Modifier = Modifi
                     .size(SWATCH_SIZE_DP.dp)
                     .clip(CircleShape)
                     .background(color)
-                    .border(width = 1.dp, color = Color.Black.copy(alpha = SWATCH_BORDER_ALPHA), shape = CircleShape),
+                    .border(width = 1.dp, color = swatchBorder, shape = CircleShape),
             )
         }
     }

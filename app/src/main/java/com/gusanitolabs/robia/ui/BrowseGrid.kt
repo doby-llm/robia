@@ -109,6 +109,8 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
+import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.designsystem.pressScale
 import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -739,13 +741,19 @@ private fun GarmentColorDots(item: UiWardrobeItem) {
     val swatches = listOf(item.primaryColor, item.secondaryColor)
         .filter { it != DisplayColorLabel.Unknown }
         .take(2)
+    // Light keeps the 12 % black ring on the white card; dark needs a light ring to outline the dots on the dark card.
+    val ringColor = if (MaterialTheme.extras.isDark) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = .24f)
+    } else {
+        Color.Black.copy(alpha = .12f) // theme-fixed: the Light ring, unchanged
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         swatches.forEach { color ->
             Box(
                 modifier = Modifier
                     .size(9.dp)
                     .background(color.swatchColor(), CircleShape)
-                    .border(1.dp, Color.Black.copy(alpha = .12f), CircleShape),
+                    .border(1.dp, ringColor, CircleShape),
             )
         }
     }
@@ -800,6 +808,7 @@ internal fun GarmentPhotoPlaceholder(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
+            // The swatch backdrop stays light in both themes (R3-DEC-045), so its ink comes from the light scheme.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -809,8 +818,8 @@ internal fun GarmentPhotoPlaceholder(
                     modifier = Modifier
                         .size(96.dp)
                         .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large),
+                        .background(RobiaLightColorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
+                        .border(1.dp, RobiaLightColorScheme.outlineVariant, MaterialTheme.shapes.large),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -824,7 +833,7 @@ internal fun GarmentPhotoPlaceholder(
                     Text(
                         text = stringResource(R.string.cloud_restore_photo_missing_message),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = RobiaLightColorScheme.error,
                         textAlign = TextAlign.Center,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
