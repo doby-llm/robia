@@ -883,4 +883,6 @@
     <string name="settings_theme_light">Claro</string>
     <string name="settings_theme_dark">Oscuro</string>
     <string name="settings_theme_system">Seguir al sistema</string>
+    <!-- NAV-BACK -->
+    <string name="back_exit_hint">Pulsa atrás otra vez para salir</string>
 </resources>
