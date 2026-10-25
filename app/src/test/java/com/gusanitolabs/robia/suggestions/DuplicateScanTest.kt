@@ -374,7 +374,7 @@ class DuplicateScanTest {
             })
         }
 
-        advanceTimeBy(50)
+        testScheduler.advanceTimeBy(50)
         job.cancelAndJoin()
 
         assertEquals(3, calls.get())
