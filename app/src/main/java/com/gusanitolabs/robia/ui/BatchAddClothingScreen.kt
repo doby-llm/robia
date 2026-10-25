@@ -74,6 +74,8 @@ import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.PopIn
+import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -503,8 +505,8 @@ private fun BatchPhotoPreview(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        MaterialTheme.colorScheme.surfaceContainerLow,
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        MaterialTheme.extras.photoWellTop,
+                        MaterialTheme.extras.photoWellBottom,
                     ),
                 ),
             ),
@@ -519,10 +521,11 @@ private fun BatchPhotoPreview(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
+            // The photo well stays light in both themes (R3-DEC-045), so its ink comes from the light scheme.
             Icon(
                 imageVector = Icons.Rounded.Style,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
+                tint = RobiaLightColorScheme.secondary,
                 modifier = Modifier.size(56.dp),
             )
         }
