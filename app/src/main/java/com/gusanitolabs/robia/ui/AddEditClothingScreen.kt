@@ -91,7 +91,9 @@ import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.PopIn
+import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.SparkleBurst
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.designsystem.sparkleBurstAfterProcessing
 import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
@@ -1556,7 +1558,7 @@ private fun PhotoPreview(
                 .fillMaxWidth()
                 .aspectRatio(aspectRatio)
                 .clip(MaterialTheme.shapes.extraLarge)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .background(MaterialTheme.extras.photoWellTop)
                 .then(
                     if (uri == null && onEmptyPhotoClick != null) {
                         Modifier
@@ -1610,16 +1612,17 @@ private fun PhotoPreview(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(24.dp),
                 ) {
+                    // The photo well stays light in both themes (R3-DEC-045), so its ink comes from the light scheme.
                     Icon(
                         imageVector = Icons.Rounded.Style,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
+                        tint = RobiaLightColorScheme.secondary,
                         modifier = Modifier.size(56.dp),
                     )
                     Text(
                         text = stringResource(R.string.photo_placeholder),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = RobiaLightColorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1627,7 +1630,7 @@ private fun PhotoPreview(
                         Text(
                             text = stringResource(R.string.photo_placeholder_tap_camera),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = RobiaLightColorScheme.onSurfaceVariant,
                         )
                     }
                 }
