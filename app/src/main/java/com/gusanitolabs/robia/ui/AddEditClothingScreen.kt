@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -65,18 +67,21 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -90,6 +95,7 @@ import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorClassifier
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.PopIn
 import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.SparkleBurst
@@ -122,14 +128,25 @@ import com.gusanitolabs.robia.suggestions.diagnosticLines
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
 private const val EDITOR_PREVIEW_MAX_EDGE_PX = 512
+/** The photo card is the second item of the screen's list (the title is the first). */
+private const val PHOTO_ITEM_INDEX = 1
+private const val PHOTO_SCROLL_WAIT_MS = 1_500L
+private const val PHOTO_SCROLL_DURATION_MS = 350
+/** Gap left above the photo once it scrolls into place; 0 puts its top edge at the top of the list. */
+private val PHOTO_SCROLL_TOP_MARGIN = 0.dp
+/** A photo within this distance of the target is left where it is. */
+private val PHOTO_SCROLL_THRESHOLD = 8.dp
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -187,6 +204,9 @@ fun AddEditClothingScreen(
     var photoProcessingToken by remember { mutableStateOf(0) }
     var nextPhotoInputId by remember { mutableStateOf(0L) }
     var pendingPhotoInput by remember { mutableStateOf<PendingPhotoInput?>(null) }
+    val listState = rememberLazyListState()
+    // Not saveable on purpose: a rotation starts it again at 0, so a picked photo scrolls into place only once.
+    var scrollRequest by remember { mutableIntStateOf(0) }
     val activityResultRegistryOwner = LocalActivityResultRegistryOwner.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -300,6 +320,7 @@ fun AddEditClothingScreen(
     fun queuePhotoForProcessing(uriString: String, sourceStatus: String) {
         deleteSessionOriginal()
         val inputId = ++nextPhotoInputId
+        scrollRequest += 1 // Only a freshly queued photo scrolls into place (LaunchedEffect(scrollRequest) below).
         photoProcessingToken += 1 // Immediately invalidate any older in-flight pipeline.
         val generation = beginPhotoAnalysisGeneration(latestAvailableTags)
         originalPhotoUri = uriString
@@ -627,6 +648,31 @@ fun AddEditClothingScreen(
         processSelectedPhoto(input.id, input.uriString, input.sourceStatus)
     }
 
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    val photoScrollMarginPx = with(density) { PHOTO_SCROLL_TOP_MARGIN.roundToPx() }
+    val photoScrollThresholdPx = with(density) { PHOTO_SCROLL_THRESHOLD.roundToPx() }
+    LaunchedEffect(scrollRequest) {
+        if (scrollRequest == 0) return@LaunchedEffect
+        // The photo card may not be composed yet; wait a bounded time for it, then move its top edge to the top of the list.
+        val photo = withTimeoutOrNull(PHOTO_SCROLL_WAIT_MS) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == PHOTO_ITEM_INDEX } }
+                .filterNotNull()
+                .first()
+        }
+        val delta = photoScrollDelta(
+            // LazyListItemInfo.offset leaves out beforeContentPadding, so it is added back to measure from the list's top edge.
+            itemTopPx = photo?.let { it.offset + listState.layoutInfo.beforeContentPadding - photoScrollMarginPx },
+            thresholdPx = photoScrollThresholdPx,
+        )
+        if (delta == 0) return@LaunchedEffect
+        if (reducedMotion) {
+            listState.scrollBy(delta.toFloat())
+        } else {
+            listState.animateScrollBy(delta.toFloat(), tween(PHOTO_SCROLL_DURATION_MS))
+        }
+    }
+
     LaunchedEffect(existingItem?.id, initialPhotoReviewState) {
         name = existingItem?.name.orEmpty()
         notes = existingItem?.notes.orEmpty()
@@ -831,6 +877,7 @@ fun AddEditClothingScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
+        state = listState,
         contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -870,6 +917,7 @@ fun AddEditClothingScreen(
                     onQuickEditClick = if (hasUsablePhoto && !isPhotoProcessing) ({ showQuickEdit = true }) else null,
                     quickEditStatus = quickEditStatus,
                     onBatchPhotosSelected = onBatchPhotosSelected,
+                    isEditing = isEditing,
                 )
             } else {
                 PhotoCaptureCard(
@@ -1307,6 +1355,7 @@ private fun PhotoCaptureCardWithLaunchers(
     onQuickEditClick: (() -> Unit)?,
     quickEditStatus: String?,
     onBatchPhotosSelected: ((List<String>) -> Unit)? = null,
+    isEditing: Boolean,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1369,11 +1418,20 @@ private fun PhotoCaptureCardWithLaunchers(
                 onCaptureStatusChange(PhotoStatus.MediaUnavailable)
             }
         },
+        galleryLabelRes = if (isEditing) R.string.gallery else R.string.gallery_multi,
+        showBatchHint = batchHintVisible(isEditing, hasPhoto = !photoUri.isNullOrBlank()),
     )
 }
 
 /** Edit photo exists only once a usable photo does; while one is processing it stays shown, disabled by the caller. */
 internal fun quickEditButtonVisible(hasUsablePhoto: Boolean): Boolean = hasUsablePhoto
+
+/** Scroll distance that puts the photo's top edge at the top of the list; 0 when it is unmeasured, already there, or within the threshold. */
+internal fun photoScrollDelta(itemTopPx: Int?, thresholdPx: Int): Int =
+    if (itemTopPx == null || itemTopPx <= thresholdPx) 0 else itemTopPx
+
+/** The batch hint helps only while a new garment has no photo; editing keeps its photo, so a multi-pick adds nothing. */
+internal fun batchHintVisible(isEditing: Boolean, hasPhoto: Boolean): Boolean = !isEditing && !hasPhoto
 
 @Composable
 private fun PhotoCaptureCard(
@@ -1392,6 +1450,8 @@ private fun PhotoCaptureCard(
     quickEditStatus: String?,
     onGalleryClick: (() -> Unit)?,
     onCameraClick: (() -> Unit)?,
+    galleryLabelRes: Int = R.string.gallery,
+    showBatchHint: Boolean = false,
 ) {
     val quickEditVisible = quickEditButtonVisible(hasUsablePhoto = !photoUri.isNullOrBlank())
     var sparkleBurstPending by remember { mutableStateOf(false) }
@@ -1441,7 +1501,7 @@ private fun PhotoCaptureCard(
                             contentDescription = stringResource(R.string.content_open_gallery),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.gallery))
+                        Text(stringResource(galleryLabelRes))
                     }
                     if (quickEditVisible) {
                         Box {
@@ -1477,6 +1537,14 @@ private fun PhotoCaptureCard(
                         contentDescription = stringResource(R.string.content_open_camera),
                     )
                 }
+            }
+            if (showBatchHint) {
+                Text(
+                    text = stringResource(R.string.add_batch_hint),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             val statusText = when (captureStatus) {
                 PhotoStatus.Gallery -> R.string.gallery_selected_status

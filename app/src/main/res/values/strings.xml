@@ -883,4 +883,7 @@
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_system">Follow system</string>
+    <!-- ADD-UX -->
+    <string name="gallery_multi">Gallery · pick several</string>
+    <string name="add_batch_hint">Tip: pick several photos at once to add them as a batch.</string>
 </resources>
