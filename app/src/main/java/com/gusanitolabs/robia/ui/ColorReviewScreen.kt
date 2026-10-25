@@ -2,8 +2,6 @@ package com.gusanitolabs.robia.ui
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -244,13 +242,7 @@ internal fun ColorReviewScreen(
             onCommit(changeSet, commitItems())
         }
     }
-    val totalCount = reviewItems.size.coerceAtLeast(1)
-    val progress = processedCount.toFloat() / totalCount.toFloat()
-    val animatedProgress by animateFloatAsState(
-        targetValue = if (isScanning) progress else 1f,
-        animationSpec = tween(durationMillis = 300),
-        label = "colorReviewProgress",
-    )
+    val scanProgress = reviewScanProgress(processedCount, reviewItems.size, isScanning)
 
     BackHandler { onRequestDiscard() }
 
@@ -270,7 +262,7 @@ internal fun ColorReviewScreen(
                 ReviewProgressHeader(
                     title = stringResource(R.string.color_review_batch_progress),
                     countText = stringResource(R.string.color_review_scanning_count, processedCount, reviewItems.size),
-                    progress = animatedProgress,
+                    progress = scanProgress,
                 )
             }
 
