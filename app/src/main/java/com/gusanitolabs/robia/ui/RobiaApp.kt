@@ -1681,6 +1681,42 @@ private fun RobiaShell(
         }
     }
 
+    val backExitHintMessage = stringResource(R.string.back_exit_hint)
+    var lastExitHintMs by remember { mutableStateOf<Long?>(null) }
+    // A new route, search, filter or selection starts the exit window over.
+    LaunchedEffect(currentRoute, browseQuery, similarToGarmentId, browseFilters, selectedBrowseItemIds) {
+        lastExitHintMs = null
+    }
+    // Tabs use replaceRoute, so Browse and Manage sit alone on the stack; this root handler peels them one layer per press.
+    BackHandler(
+        enabled = routeStack.size == 1 && restoreProgress == null &&
+            (currentRoute == RobiaRoute.Browse || currentRoute == RobiaRoute.ManageTags),
+    ) {
+        val nowMs = SystemClock.elapsedRealtime()
+        val state = BackState(
+            onManage = currentRoute == RobiaRoute.ManageTags,
+            selectionCount = selectedBrowseItemIds.size,
+            hasQuery = searchActive,
+            hasSimilarTo = similarToGarmentId != null,
+            hasFilters = browseFilters.hasActiveFilters,
+            lastExitHintMs = lastExitHintMs,
+        )
+        when (decideBack(state, nowMs)) {
+            BackAction.ClearSelection -> selectedBrowseItemIds = emptySet()
+            BackAction.ClearSearchAndFilters -> {
+                browseQuery = ""
+                similarToGarmentId = null
+                browseFilters = BrowseFilterState()
+            }
+            BackAction.GoToBrowse -> replaceRoute(RobiaRoute.Browse)
+            BackAction.ShowExitHint -> {
+                Toast.makeText(context, backExitHintMessage, Toast.LENGTH_SHORT).show()
+                lastExitHintMs = nowMs
+            }
+            BackAction.Exit -> context.findActivity()?.finish()
+        }
+    }
+
     if (showBackupDeletionConfirmation) {
         AlertDialog(
             onDismissRequest = { showBackupDeletionConfirmation = false },
