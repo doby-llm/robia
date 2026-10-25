@@ -6,6 +6,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ExportField
 import com.gusanitolabs.robia.core.model.ExportFormat
 import com.gusanitolabs.robia.core.model.ExportOptions
@@ -265,6 +267,14 @@ internal fun ExportScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(bitmap.width.toFloat() / bitmap.height)
+                    // The white paper needs an edge on the dark page; Light keeps its look (the paper already reads on the light page).
+                    .then(
+                        if (MaterialTheme.extras.isDark) {
+                            Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        } else {
+                            Modifier
+                        },
+                    )
                     .onGloballyPositioned { previewTop = it.positionInParent().y },
                 contentScale = ContentScale.Fit,
             )
