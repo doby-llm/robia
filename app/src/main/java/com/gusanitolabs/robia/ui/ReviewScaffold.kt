@@ -251,6 +251,15 @@ internal fun ReviewPickerList(
     }
 }
 
+/**
+ * The bar is the raw count while scanning, so it never lags behind the "N of M" text (a tween restarted at every step did).
+ * It reaches 1 only when the scan has ended.
+ */
+internal fun reviewScanProgress(done: Int, total: Int, scanning: Boolean): Float {
+    if (!scanning) return 1f
+    return done.coerceIn(0, total.coerceAtLeast(0)).toFloat() / total.coerceAtLeast(1)
+}
+
 @Composable
 internal fun ReviewProgressHeader(
     title: String,
