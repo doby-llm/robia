@@ -36,6 +36,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
 
@@ -197,10 +199,12 @@ private fun DuplicateGarmentRow(item: ClothingItem, deleting: Boolean, onToggle:
 /** A garment photo for the duplicate screens; a garment without a photo shows the Browse placeholder icon. */
 @Composable
 internal fun DuplicatePhoto(item: ClothingItem, modifier: Modifier = Modifier) {
+    val extras = MaterialTheme.extras
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            // Dark gets the light photo well so a black garment stays visible; Light keeps its grey (R3-DEC-045).
+            .background(if (extras.isDark) extras.photoWellTop else MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
         val photoUri = item.photoUri?.takeIf(String::isNotBlank)
@@ -215,7 +219,8 @@ internal fun DuplicatePhoto(item: ClothingItem, modifier: Modifier = Modifier) {
             Icon(
                 imageVector = Icons.Rounded.Style,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline,
+                // The well is light in both themes, so its ink comes from the light scheme (R3-DEC-045).
+                tint = RobiaLightColorScheme.outline,
                 modifier = Modifier.size(32.dp),
             )
         }
