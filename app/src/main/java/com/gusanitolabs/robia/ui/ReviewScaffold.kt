@@ -84,6 +84,16 @@ internal enum class ExitDirection { Accept, Discard }
 /** The picker list has a bottom fade and an option count only while more options are below the visible part. */
 internal fun scrollHintVisible(value: Int, max: Int): Boolean = max > 0 && value < max
 
+/** Rows are about 48 dp against the 360 dp list cap, so a list this long always scrolls. */
+internal const val PICKER_CAPTION_MIN_OPTIONS = 8
+
+/**
+ * Whether the "N options" caption is composed. It depends on the option count and on whether the list scrolls at all, never
+ * on the scroll position, so the caption and its padding keep the same height while the list is scrolled.
+ */
+internal fun pickerCaptionVisible(optionCount: Int, maxValue: Int): Boolean =
+    optionCount > PICKER_CAPTION_MIN_OPTIONS || maxValue > 0
+
 /**
  * What Discard undoes, as a pure plan built from the change that was saved. Applied through the normal save and delete
  * paths, in this order: tombstones cleared, tags and colours restored or removed, then garments put back.
@@ -194,8 +204,9 @@ internal fun ReviewAcceptedCard(
 }
 
 /**
- * Scrollable option list for the review pickers. While options are below the visible part, a bottom fade and an
- * "N options" caption say so, because a scroll area looks like the whole list otherwise.
+ * Scrollable option list for the review pickers. While options are below the visible part, a bottom fade says so, because
+ * a scroll area looks like the whole list otherwise. The "N options" caption is composed by [pickerCaptionVisible] and does
+ * not come and go with the scroll position; the fade is an overlay and does not change the height.
  */
 @Composable
 internal fun ReviewPickerList(
@@ -205,6 +216,7 @@ internal fun ReviewPickerList(
 ) {
     val scrollState = rememberScrollState()
     val showHint = scrollHintVisible(scrollState.value, scrollState.maxValue)
+    val showCaption = pickerCaptionVisible(optionCount, scrollState.maxValue)
     Column {
         Box {
             Column(
@@ -228,7 +240,7 @@ internal fun ReviewPickerList(
                 )
             }
         }
-        if (showHint) {
+        if (showCaption) {
             Text(
                 text = pluralStringResource(R.plurals.review_picker_option_count, optionCount, optionCount),
                 style = MaterialTheme.typography.bodySmall,
