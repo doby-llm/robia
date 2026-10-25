@@ -20,15 +20,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -72,6 +75,12 @@ internal fun sheetShowsSuggestedHint(
     suggestedIds: Set<String>,
     categoryTagIds: Collection<String>,
 ): Boolean = selectedIds.any { id -> id in suggestedIds && id in categoryTagIds }
+
+/** The sheet reserves the suggested-hint row while any suggestion belongs to its category, so selecting never resizes it. */
+internal fun sheetReservesSuggestedHint(
+    suggestedIds: Collection<String>,
+    categoryTagIds: Collection<String>,
+): Boolean = suggestedIds.any { id -> id in categoryTagIds }
 
 /** Same selection rule the metadata chips always used: multi toggles the tag, single replaces the category's tags. */
 internal fun List<String>.toggleTag(
@@ -190,7 +199,8 @@ fun TagPickerSheet(
     val none = stringResource(R.string.none)
     val categoryTagIds = remember(tags) { tags.map(GarmentTag::id) }
     val sortedTags = remember(tags) { tags.sortedAlphabetically(label = { tag -> tag.localizedTagLabel(context) }) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -209,11 +219,15 @@ fun TagPickerSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                if (sheetShowsSuggestedHint(selectedIds, suggestedIds, categoryTagIds)) {
+                if (sheetReservesSuggestedHint(suggestedIds, categoryTagIds)) {
+                    val hintShown = sheetShowsSuggestedHint(selectedIds, suggestedIds, categoryTagIds)
                     Text(
                         text = stringResource(R.string.field_suggested_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .alpha(if (hintShown) 1f else 0f)
+                            .then(if (hintShown) Modifier else Modifier.clearAndSetSemantics {}),
                     )
                 }
                 ReviewPickerList(optionCount = sortedTags.size + (if (multi) 0 else 1)) {
