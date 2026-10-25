@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -15,6 +16,7 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DuplicateScanTest {
     private fun garment(id: String, category: String? = "category-dresses", archived: Boolean = false) = ClothingItem(
         id = id,
