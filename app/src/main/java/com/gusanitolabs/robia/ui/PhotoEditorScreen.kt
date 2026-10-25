@@ -104,6 +104,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
+import com.gusanitolabs.robia.core.designsystem.RobiaError
+import com.gusanitolabs.robia.core.designsystem.RobiaPrimary
+import com.gusanitolabs.robia.core.designsystem.RobiaSurfaceContainerHigh
 import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.CutoutRecipe
 import com.gusanitolabs.robia.media.AlphaRefiner
@@ -600,7 +603,7 @@ fun PhotoEditorScreen(
                         .onSizeChanged { containerSize = it }
                         .then(
                             if (tab == EditorTab.Light) {
-                                Modifier.background(Brush.verticalGradient(listOf(Color(0xFFE9E4DC), Color(0xFFCFC3B4))))
+                                Modifier.background(Brush.verticalGradient(listOf(Color(0xFFE9E4DC), Color(0xFFCFC3B4)))) // theme-fixed: Light tab backdrop, neutral light in both themes (R3-DEC-045)
                             } else {
                                 Modifier
                             },
@@ -692,7 +695,8 @@ fun PhotoEditorScreen(
                                 },
                             )
                         }
-                        val overlayColor = (if (mode == RefineSession.Mode.Keep) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error).copy(alpha = 0.35f)
+                        // The stroke and pulse sit on the light checkerboard in both themes, so they use the light roles and stay visible.
+                        val overlayColor = (if (mode == RefineSession.Mode.Keep) RobiaPrimary else RobiaError).copy(alpha = 0.35f)
                         if (strokeScreen.size > 1) {
                             Canvas(Modifier.fillMaxSize()) {
                                 val strokePath = Path().apply {
@@ -716,7 +720,7 @@ fun PhotoEditorScreen(
                                 )
                             }
                         }
-                        val pulseColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                        val pulseColor = RobiaPrimary.copy(alpha = 0.35f)
                         pulse?.let { mark ->
                             Canvas(Modifier.fillMaxSize()) {
                                 drawCircle(
@@ -978,11 +982,11 @@ private fun PreviewChip(text: String, modifier: Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
-        color = Color.White,
+        color = Color.White, // theme-fixed: text on the over-photo chip, which is dark in both themes
         modifier = modifier
             .padding(12.dp)
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.46f))
+            .background(Color.Black.copy(alpha = 0.46f)) // theme-fixed: over-photo chip scrim, dark in both themes
             .padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }
@@ -993,7 +997,7 @@ private fun DrawScope.drawCheckerboard() {
     val rows = ceil(size.height / cell).toInt()
     for (row in 0 until rows) {
         for (column in 0 until columns) {
-            val color = if ((row + column) % 2 == 0) Color(0xFFEEEEEE) else Color.White
+            val color = if ((row + column) % 2 == 0) Color(0xFFEEEEEE) else Color.White // theme-fixed: transparency checkerboard, light in both themes (R3-DEC-045)
             drawRect(color = color, topLeft = Offset(column * cell, row * cell), size = Size(cell, cell))
         }
     }
@@ -1298,12 +1302,13 @@ private fun QuickEditTemperaturePreset(
         label,
         selectedStatus,
     )
+    // The swatches stand for photo colour temperature, so they stay the same in both themes (R3-DEC-045).
     val swatchColor = when (value) {
-        -1f -> Color(0xFF0B4FB3)
-        -0.5f -> Color(0xFF5FA8FF)
-        0f -> MaterialTheme.colorScheme.surfaceContainerHigh
-        0.5f -> Color(0xFFFFB36B)
-        else -> Color(0xFFE56A1F)
+        -1f -> Color(0xFF0B4FB3) // theme-fixed: temperature preset swatch (cool end), same in both themes
+        -0.5f -> Color(0xFF5FA8FF) // theme-fixed: temperature preset swatch (cool), same in both themes
+        0f -> RobiaSurfaceContainerHigh
+        0.5f -> Color(0xFFFFB36B) // theme-fixed: temperature preset swatch (warm), same in both themes
+        else -> Color(0xFFE56A1F) // theme-fixed: temperature preset swatch (warm end), same in both themes
     }
     Box(
         modifier = modifier
