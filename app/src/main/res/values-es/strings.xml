@@ -883,6 +883,9 @@
     <string name="settings_theme_light">Claro</string>
     <string name="settings_theme_dark">Oscuro</string>
     <string name="settings_theme_system">Seguir al sistema</string>
+    <!-- ADD-UX -->
+    <string name="gallery_multi">Galería · elige varias</string>
+    <string name="add_batch_hint">Consejo: elige varias fotos a la vez para añadirlas como lote.</string>
     <!-- NAV-BACK -->
     <string name="back_exit_hint">Pulsa atrás otra vez para salir</string>
     <!-- DUP-FAST -->
