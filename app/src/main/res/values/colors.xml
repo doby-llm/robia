@@ -4,4 +4,5 @@
     <color name="robia_background">#F9F9F9</color>
     <color name="robia_blue">#08519C</color>
   <color name="robia_red">#FA003F</color>
+  <color name="robia_background_dark">#171312</color>
 </resources>

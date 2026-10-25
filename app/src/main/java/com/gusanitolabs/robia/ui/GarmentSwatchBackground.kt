@@ -6,7 +6,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
+
+// theme-fixed-file: garment colour data and photo backdrop stops
 
 private const val GARMENT_SWATCH_ALPHA = 0.26f
 
@@ -74,6 +77,6 @@ internal fun garmentSwatchBrush(
  */
 @Composable
 internal fun rememberGarmentSwatchBrush(swatch: Color, nearWhite: Boolean = isNearWhiteSwatch(swatch)): Brush {
-    val surfaceTop = MaterialTheme.colorScheme.surfaceContainerLow
+    val surfaceTop = MaterialTheme.extras.photoWellTop
     return remember(swatch, surfaceTop, nearWhite) { garmentSwatchBrush(swatch, surfaceTop, nearWhite) }
 }

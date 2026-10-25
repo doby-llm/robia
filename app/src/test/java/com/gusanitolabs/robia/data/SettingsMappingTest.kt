@@ -1,16 +1,27 @@
 package com.gusanitolabs.robia.data
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.CutoutEngineChoice
+import com.gusanitolabs.robia.core.model.ThemeMode
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class SettingsMappingTest {
     private val browseLayoutKey = stringPreferencesKey("browse_layout")
     private val browseColumnsKey = intPreferencesKey("browse_columns")
+    private val themeModeKey = stringPreferencesKey("theme_mode")
+
+    @get:Rule
+    val folder = TemporaryFolder()
 
     /** V-K00-1: absent cutout_engine → Standard; the one-time migration sets Standard and writes the flag; an applied flag keeps the stored choice. */
     @Test
@@ -83,5 +94,38 @@ class SettingsMappingTest {
     @Test
     fun storedBrowseColumnsInRange_isRead() {
         assertEquals(3, mutablePreferencesOf(browseColumnsKey to 3).toRobiaSettings().browseColumns)
+    }
+
+    /** V-DARK1-1: absent theme_mode reads as Light. */
+    @Test
+    fun absentThemeMode_defaultsToLight() {
+        assertEquals(ThemeMode.Light, mutablePreferencesOf().toRobiaSettings().themeMode)
+    }
+
+    @Test
+    fun storedThemeModes_areRead() {
+        assertEquals(ThemeMode.Light, mutablePreferencesOf(themeModeKey to "light").toRobiaSettings().themeMode)
+        assertEquals(ThemeMode.Dark, mutablePreferencesOf(themeModeKey to "dark").toRobiaSettings().themeMode)
+        assertEquals(ThemeMode.System, mutablePreferencesOf(themeModeKey to "system").toRobiaSettings().themeMode)
+    }
+
+    @Test
+    fun unknownThemeMode_fallsBackToLight() {
+        assertEquals(ThemeMode.Light, mutablePreferencesOf(themeModeKey to "Garbage").toRobiaSettings().themeMode)
+    }
+
+    /** V-DARK1-1: each choice is written through setThemeMode and read back from the store. */
+    @Test
+    fun themeModeRoundTripsThroughTheStore() {
+        runBlocking {
+            val store = PreferenceDataStoreFactory.create(produceFile = { File(folder.root, "theme.preferences_pb") })
+            val repository = DataStoreSettingsRepository(store)
+
+            assertEquals(ThemeMode.Light, repository.themeMode.first())
+            ThemeMode.entries.forEach { mode ->
+                repository.setThemeMode(mode)
+                assertEquals(mode, repository.themeMode.first())
+            }
+        }
     }
 }

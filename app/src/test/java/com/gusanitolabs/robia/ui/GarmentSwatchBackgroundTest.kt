@@ -1,6 +1,8 @@
 package com.gusanitolabs.robia.ui
 
 import androidx.compose.ui.graphics.Color
+import com.gusanitolabs.robia.core.designsystem.RobiaDarkExtras
+import com.gusanitolabs.robia.core.designsystem.RobiaLightExtras
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +39,18 @@ class GarmentSwatchBackgroundTest {
         val stops = garmentSwatchStops(swatch, surfaceTop)
 
         assertEquals(listOf(surfaceTop, swatch.copy(alpha = 0.26f)), stops)
+    }
+
+    /** V-DARK1-4: the photo-well token is #F3F3F4 (today's surfaceContainerLow) in both themes. */
+    @Test
+    fun brushTopStopComesFromThePhotoWellTokenInBothThemes() {
+        assertEquals(Color(0xFFF3F3F4), RobiaLightExtras.photoWellTop)
+        assertEquals(RobiaLightExtras.photoWellTop, RobiaDarkExtras.photoWellTop)
+        assertEquals(RobiaLightExtras.photoWellBottom, RobiaDarkExtras.photoWellBottom)
+        assertEquals(
+            RobiaDarkExtras.photoWellTop,
+            garmentSwatchStops(DisplayColorLabel.Red.swatchColor(), RobiaDarkExtras.photoWellTop)[0],
+        )
     }
 
     @Test

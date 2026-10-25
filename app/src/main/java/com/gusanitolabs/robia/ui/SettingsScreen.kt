@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
@@ -97,6 +98,7 @@ import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
+import com.gusanitolabs.robia.core.model.ThemeMode
 import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
 import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
@@ -150,6 +152,7 @@ internal fun SettingsScreen(
     var benchmarkGpuText by remember { mutableStateOf<String?>(null) }
     var benchmarkGpuRunning by remember { mutableStateOf(false) }
     var showBrowseLayoutDialog by rememberSaveable { mutableStateOf(false) }
+    var showThemeDialog by rememberSaveable { mutableStateOf(false) }
     val cutoutSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val cutoutPackState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
     var cutoutBenchmarkText by remember { mutableStateOf<String?>(null) }
@@ -190,6 +193,16 @@ internal fun SettingsScreen(
                     title = stringResource(R.string.settings_google_drive),
                     value = stringResource(driveStatusValueRes(driveSyncConnectionStatus)),
                     onClick = onDriveClick,
+                )
+            }
+        }
+        item {
+            SettingsGroup(label = stringResource(R.string.settings_group_appearance)) {
+                SettingsNavRow(
+                    icon = Icons.Rounded.Palette,
+                    title = stringResource(R.string.settings_theme),
+                    value = stringResource(cutoutSettings.themeMode.labelRes),
+                    onClick = { showThemeDialog = true },
                 )
             }
         }
@@ -464,6 +477,16 @@ internal fun SettingsScreen(
             onDismiss = { showBrowseLayoutDialog = false },
         )
     }
+    if (showThemeDialog) {
+        ThemeModeDialog(
+            current = cutoutSettings.themeMode,
+            onSelected = { mode ->
+                showThemeDialog = false
+                scope.launch { app.settingsRepository.setThemeMode(mode) }
+            },
+            onDismiss = { showThemeDialog = false },
+        )
+    }
 }
 
 private const val CUTOUT_BENCHMARK_PHOTOS = 5
@@ -673,6 +696,13 @@ private val BrowseLayout.labelRes: Int
         BrowseLayout.PhotosWithDetails -> R.string.settings_browse_layout_photos_with_details
     }
 
+private val ThemeMode.labelRes: Int
+    get() = when (this) {
+        ThemeMode.Light -> R.string.settings_theme_light
+        ThemeMode.Dark -> R.string.settings_theme_dark
+        ThemeMode.System -> R.string.settings_theme_system
+    }
+
 /** Sub-screen behind Settings > Smart suggestions: the existing model section, moved here without changes. */
 @Composable
 internal fun SmartSuggestionsSettingsScreen(innerPadding: PaddingValues) {
@@ -747,6 +777,46 @@ private fun BrowseLayoutDialog(
                         RadioButton(selected = layout == current, onClick = null)
                         Text(
                             text = stringResource(layout.labelRes),
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+/** Single choice like [BrowseLayoutDialog]: tapping a row stores it; Cancel, outside tap and back leave the stored choice. */
+@Composable
+private fun ThemeModeDialog(
+    current: ThemeMode,
+    onSelected: (ThemeMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_theme)) },
+        text = {
+            Column {
+                ThemeMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = mode == current,
+                                onClick = { onSelected(mode) },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = mode == current, onClick = null)
+                        Text(
+                            text = stringResource(mode.labelRes),
                             modifier = Modifier.padding(start = 8.dp),
                         )
                     }
