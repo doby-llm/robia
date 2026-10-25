@@ -886,4 +886,6 @@
     <!-- ADD-UX -->
     <string name="gallery_multi">Galerie · mehrere</string>
     <string name="add_batch_hint">Tipp: Wähle mehrere Fotos auf einmal, um sie als Stapel hinzuzufügen.</string>
+    <!-- NAV-BACK -->
+    <string name="back_exit_hint">Zum Beenden erneut Zurück drücken</string>
 </resources>

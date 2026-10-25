@@ -886,4 +886,6 @@
     <!-- ADD-UX -->
     <string name="gallery_multi">Gallery · pick several</string>
     <string name="add_batch_hint">Tip: pick several photos at once to add them as a batch.</string>
+    <!-- NAV-BACK -->
+    <string name="back_exit_hint">Press back again to exit</string>
 </resources>

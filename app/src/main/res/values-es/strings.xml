@@ -886,4 +886,6 @@
     <!-- ADD-UX -->
     <string name="gallery_multi">Galería · elige varias</string>
     <string name="add_batch_hint">Consejo: elige varias fotos a la vez para añadirlas como lote.</string>
+    <!-- NAV-BACK -->
+    <string name="back_exit_hint">Pulsa atrás otra vez para salir</string>
 </resources>
