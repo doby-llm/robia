@@ -15,6 +15,8 @@ data class GarmentVectors(
     val text: FloatArray?,
     /** `input_hash` stored with the IMAGE vector; a duplicate scan compares it with the current photo. */
     val imageInputHash: String? = null,
+    /** `computed_at_epoch_millis` of the IMAGE row; in memory only, a scan reads it to skip a fresh photo hash. */
+    val computedAtEpochMillis: Long? = null,
 )
 
 /**
@@ -85,6 +87,7 @@ private fun List<GarmentEmbeddingEntity>.toGarmentVectors(modelId: String, recip
                 image = garmentRows.vectorOf(EmbeddingKind.IMAGE),
                 text = garmentRows.vectorOf(EmbeddingKind.TEXT),
                 imageInputHash = garmentRows.firstOrNull { row -> row.kind == EmbeddingKind.IMAGE }?.inputHash,
+                computedAtEpochMillis = garmentRows.firstOrNull { row -> row.kind == EmbeddingKind.IMAGE }?.computedAtEpochMillis,
             )
         }
 

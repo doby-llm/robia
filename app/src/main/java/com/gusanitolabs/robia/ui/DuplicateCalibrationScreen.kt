@@ -9,18 +9,18 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +39,7 @@ import com.gusanitolabs.robia.suggestions.CalibrationPair
 import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.calibrationMarksJson
 import com.gusanitolabs.robia.suggestions.scanCalibrationPairs
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Developer › Duplicate calibration (G-DUP): the 30 most similar same-category pairs with their IMAGE cosine. Manu marks
@@ -55,11 +56,20 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
     var counts by remember { mutableStateOf(CalibrationCounts.NONE) }
     // Keyed by the pair's garment ids, not by row, so a rescan cannot move a mark onto another pair.
     var marks by remember { mutableStateOf(emptyMap<DuplicatePairKey, Boolean>()) }
+    // The scan reports from its IO thread; a StateFlow carries (done, total) to the composition safely.
+    val preparing = remember { MutableStateFlow(0 to 0) }
+    val preparingProgress by preparing.collectAsState()
     // Keyed on the signatures: a wardrobe emission that changes no photo, category or archive state keeps the scan and the marks.
     LaunchedEffect(signatures) {
         pairs = null
         marks = emptyMap()
-        val scan = scanCalibrationPairs(context, items, EmbeddingRepository(app.database.embeddingDao()))
+        preparing.value = 0 to 0
+        val scan = scanCalibrationPairs(
+            context,
+            items,
+            EmbeddingRepository(app.database.embeddingDao()),
+            onProgress = { done, total -> preparing.value = done to total },
+        )
         counts = scan.counts
         pairs = scan.pairs
     }
@@ -151,15 +161,25 @@ internal fun DuplicateCalibrationScreen(innerPadding: PaddingValues, items: List
             }
         } else {
             item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                val (done, total) = preparingProgress
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = stringResource(R.string.duplicate_calibration_loading),
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    if (total > 0) {
+                        LinearProgressIndicator(
+                            progress = { done.toFloat() / total },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = stringResource(R.string.duplicate_calibration_preparing, done, total),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
                 }
             }
         }
