@@ -1,8 +1,11 @@
 package com.gusanitolabs.robia.sync
 
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.IOException
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.math.roundToLong
 
 /** How a failed Drive call should be handled. 403 is split by Google's error reason. */
@@ -28,6 +31,7 @@ private val TRANSIENT_FORBIDDEN_REASONS = setOf(
 )
 private val AUTH_FORBIDDEN_REASONS = setOf("forbidden", "insufficientPermissions")
 private const val RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
+private val RATE_LIMIT_REASONS = setOf("rateLimitExceeded", "userRateLimitExceeded")
 
 internal fun classify(code: Int, body: String, retryAfterMillis: Long? = null): DriveErrorClass = when (code) {
     401 -> DriveErrorClass.AuthRequired
@@ -52,6 +56,10 @@ private fun classifyForbidden(body: String, retryAfterMillis: Long?): DriveError
         else -> DriveErrorClass.Permanent(403)
     }
 }
+
+/** A 429, a Retry-After or a Google rate-limit reason: the upload sends fewer calls at once for the rest of the cycle. */
+internal fun isRateLimited(code: Int, body: String, retryAfterMillis: Long?): Boolean =
+    code == 429 || retryAfterMillis != null || driveErrorReason(body) in RATE_LIMIT_REASONS
 
 /** Network-level IOExceptions (timeout, DNS, connect, reset) are transient; other throwables are not. */
 internal fun classify(t: Throwable): DriveErrorClass = when (t) {
@@ -83,25 +91,93 @@ private fun errorObject(body: String): JSONObject? = try {
     null
 }
 
+/** Attempts of one Drive call, the first included. */
+internal const val DRIVE_MAX_ATTEMPTS = 5
+
 /**
  * Retries only [DriveApiResult.Transient] results: up to [maxAttempts] attempts, waiting
  * 1 s, 2 s, 4 s, 8 s (each ±20 % jitter) between them. A server Retry-After is a floor for that wait.
+ * [block] is told its 1-based attempt number.
  */
 internal suspend fun <T> withRetry(
-    maxAttempts: Int = 5,
+    maxAttempts: Int = DRIVE_MAX_ATTEMPTS,
     sleeper: suspend (Long) -> Unit = { delay(it) },
     random: () -> Double = Math::random,
-    block: suspend () -> DriveApiResult<T>,
+    block: suspend (attempt: Int) -> DriveApiResult<T>,
 ): DriveApiResult<T> {
     var attempt = 1
     while (true) {
-        val result = block()
+        val result = block(attempt)
+        result.reportRateLimit()
         if (result !is DriveApiResult.Transient || attempt >= maxAttempts) return result
         val baseMillis = 1_000L shl (attempt - 1)
         val backoffMillis = (baseMillis * (0.8 + 0.4 * random())).roundToLong()
         sleeper(maxOf(backoffMillis, result.retryAfterMillis ?: 0L))
         attempt++
     }
+}
+
+/**
+ * Whether an attempt of a blob upsert reads the name back before it writes. Only the first attempt of a caller that knows
+ * the name is absent skips the read. Every later attempt reads it, so a create whose response was lost is updated, not
+ * created a second time. A known [fileId] is updated without a read.
+ */
+internal fun blobAttemptNeedsLookup(attempt: Int, fileId: String?, knownAbsent: Boolean): Boolean =
+    fileId == null && (attempt > 1 || !knownAbsent)
+
+/**
+ * One blob upsert with its retries. Each attempt resolves the id ([lookup] when [blobAttemptNeedsLookup] asks for it), then
+ * makes one [write]: a create when no id is found, an update of the found id otherwise. [write] is a single request, so
+ * every retry goes through the lookup. A failed lookup is returned as it is, never read as "absent".
+ */
+internal suspend fun upsertBlobWithRetry(
+    fileId: String?,
+    knownAbsent: Boolean,
+    lookup: suspend () -> DriveApiResult<String?>,
+    write: suspend (existingFileId: String?) -> DriveApiResult<UploadedBlobInfo>,
+    sleeper: suspend (Long) -> Unit = { delay(it) },
+    random: () -> Double = Math::random,
+): DriveApiResult<UploadedBlobInfo> = withRetry<UploadedBlobInfo>(sleeper = sleeper, random = random) { attempt ->
+    val existingFileId = when {
+        fileId != null -> fileId
+        !blobAttemptNeedsLookup(attempt, fileId, knownAbsent) -> null
+        else -> when (val found = lookup()) {
+            is DriveApiResult.Success -> found.value
+            else -> return@withRetry found.failedAs<UploadedBlobInfo>()
+        }
+    }
+    write(existingFileId)
+}
+
+/** Passes a failed result on unchanged, typed for the caller. A successful result is not a failure. */
+internal fun <R> DriveApiResult<*>.failedAs(): DriveApiResult<R> = when (this) {
+    is DriveApiResult.Failure -> this
+    is DriveApiResult.Transient -> this
+    DriveApiResult.StorageFull -> DriveApiResult.StorageFull
+    DriveApiResult.NotFound -> DriveApiResult.NotFound
+    DriveApiResult.Unauthorized -> DriveApiResult.Unauthorized
+    is DriveApiResult.Success -> error("A successful Drive result is not a failure.")
+}
+
+/**
+ * The upload concurrency of one cycle: [maxConcurrency] workers until a Drive call is rate-limited, then one. It travels in
+ * the coroutine context so the retry loop, which retries 429s before returning them, can report each one.
+ */
+internal class DriveRateLimitGate(maxConcurrency: Int) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<DriveRateLimitGate>
+
+    @Volatile
+    var concurrency: Int = maxConcurrency
+        private set
+
+    fun onRateLimited() {
+        concurrency = 1
+    }
+}
+
+/** Tells the cycle's [DriveRateLimitGate], when there is one, that this result was rate-limited. */
+internal suspend fun DriveApiResult<*>.reportRateLimit() {
+    if (this is DriveApiResult.Transient && rateLimited) currentCoroutineContext()[DriveRateLimitGate]?.onRateLimited()
 }
 
 /**
@@ -118,9 +194,14 @@ internal class DriveCallAuth(
 
     suspend fun <T> call(block: suspend (accessToken: String) -> DriveApiResult<T>): DriveApiResult<T> {
         val first = block(accessToken)
-        if (first !is DriveApiResult.Unauthorized) return first
-        val fresh = refresh() ?: return first
-        accessToken = fresh
-        return block(fresh)
+        val result = if (first !is DriveApiResult.Unauthorized) {
+            first
+        } else {
+            val fresh = refresh() ?: return first
+            accessToken = fresh
+            block(fresh)
+        }
+        result.reportRateLimit()
+        return result
     }
 }

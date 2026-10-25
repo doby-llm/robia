@@ -84,8 +84,9 @@ class PhotoUploadVerifyTest {
             bytes: ByteArray,
             mimeType: String?,
             fileId: String?,
+            knownAbsent: Boolean,
         ): DriveApiResult<UploadedBlobInfo> {
-            val stored = api.upsertBlob(accessToken, blobPath, bytes, mimeType, fileId) as DriveApiResult.Success
+            val stored = api.upsertBlob(accessToken, blobPath, bytes, mimeType, fileId, knownAbsent) as DriveApiResult.Success
             return DriveApiResult.Success(answer(stored.value))
         }
     }
