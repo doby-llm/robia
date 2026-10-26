@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DefaultTags
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
@@ -27,6 +28,7 @@ import com.gusanitolabs.robia.data.PendingGarmentSyncWork
 import com.gusanitolabs.robia.data.PendingMetadataSyncWork
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
+import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -1922,6 +1924,10 @@ internal fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSna
         revision = maxOf(local.metadata.revision, remote.metadata.revision, System.currentTimeMillis()),
         wardrobeId = local.metadata.wardrobeId ?: remote.metadata.wardrobeId,
     )
+    // A pair of a garment whose tombstone wins is dropped; a pair is kept whenever its garments are still active.
+    val deletedGarmentIds = tombstoneByGarmentId.keys - activeGarmentIds
+    val mergedDismissedDuplicates = mergeDismissedDuplicates(local.dismissedDuplicates + remote.dismissedDuplicates)
+        .filterNot { pair -> pair.garmentA in deletedGarmentIds || pair.garmentB in deletedGarmentIds }
 
     return WardrobeSyncSnapshot(
         metadata = mergedMetadata,
@@ -1947,8 +1953,17 @@ internal fun mergeSnapshots(local: WardrobeSyncSnapshot, remote: WardrobeSyncSna
         photos = mergePhotos(local.photos, remote.photos)
             .filter { record -> record.garmentId in activeGarmentIds },
         tombstones = tombstones,
+        dismissedDuplicates = mergedDismissedDuplicates,
     ).sortedDeterministically()
 }
+
+/**
+ * The union of both sides' "Not duplicates" pairs, one entry per pair: [DuplicatePairKey] orders the ids, so a pair held as
+ * (a, b) on one side and (b, a) on the other is one pair, and the earliest dismissal time is kept (REQ-DU-02).
+ */
+private fun mergeDismissedDuplicates(pairs: List<DismissedPair>): List<DismissedPair> =
+    pairs.groupBy { pair -> DuplicatePairKey.of(pair.garmentA, pair.garmentB) }
+        .map { (key, samePair) -> DismissedPair(key.first, key.second, samePair.minOf(DismissedPair::dismissedAtEpochMillis)) }
 
 private fun mergePhotos(
     localPhotos: List<GarmentPhotoRecord>,

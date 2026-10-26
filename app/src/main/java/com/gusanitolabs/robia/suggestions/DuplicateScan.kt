@@ -26,6 +26,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import java.util.PriorityQueue
+import java.util.concurrent.ConcurrentHashMap
 
 /** Largest group the review shows; a bigger connected component is split by its strongest pairs (REQ-DU-02). */
 const val DUPLICATE_GROUP_MAX_SIZE = 6
@@ -112,6 +113,9 @@ object DuplicateSession {
     private val _dismissals = MutableStateFlow(emptySet<DuplicatePairKey>())
     val dismissals: StateFlow<Set<DuplicatePairKey>> = _dismissals.asStateFlow()
 
+    /** The photo hashes the background scans of this process have read; see [PhotoHashCache]. */
+    internal val photoHashes = PhotoHashCache()
+
     fun replaceGroups(scanned: List<DuplicateGroup>) {
         _groups.value = scanned
     }
@@ -136,6 +140,30 @@ object DuplicateSession {
     internal fun clear() {
         _groups.value = emptyList()
         _dismissals.value = emptySet()
+        photoHashes.clear()
+    }
+}
+
+/**
+ * The current photo hash of each (garment, photo URI) of this process. A photo that is replaced gets a new URI (see
+ * [duplicateScanSignature]), so its old entry is never read again. Never persisted: a restart hashes every photo once more.
+ * [retainOnly] drops the entries of garments that left the active set and of photos that were replaced.
+ */
+internal class PhotoHashCache {
+    private val hashes = ConcurrentHashMap<Pair<String, String>, String>()
+
+    fun get(garmentId: String, photoUri: String): String? = hashes[garmentId to photoUri]
+
+    fun put(garmentId: String, photoUri: String, hash: String) {
+        hashes[garmentId to photoUri] = hash
+    }
+
+    fun retainOnly(active: Set<Pair<String, String>>) {
+        hashes.keys.retainAll(active)
+    }
+
+    fun clear() {
+        hashes.clear()
     }
 }
 
@@ -327,9 +355,9 @@ fun DuplicateScanOutcome.groupsAfter(current: List<DuplicateGroup>): List<Duplic
 }
 
 /**
- * The background scan (REQ-DU-04): a one-shot vector snapshot, then the current photo hash of the candidates only. A
- * garment whose stored hash is unique cannot pair, so its photo is not re-encoded. [dismissed] is read after the
- * snapshot and the hashes, so a dismissal made while they were read is still honoured.
+ * The background scan (REQ-DU-04): a one-shot vector snapshot, then the current photo hash of every garment that can pair
+ * (see [scanHashCandidates]). A photo hashed by an earlier scan of this process is not read again ([DuplicateSession]'s cache).
+ * [dismissed] is read after the snapshot and the hashes, so a dismissal made while they were read is still honoured.
  */
 suspend fun scanDuplicates(
     context: Context,
@@ -345,12 +373,13 @@ suspend fun scanDuplicates(
         onFailure = { failure ->
             Log.w(DUPLICATE_LOG_TAG, "Duplicate scan failed: ${failure::class.java.simpleName}: ${failure.message}")
         },
+        cache = DuplicateSession.photoHashes,
     )
 }
 
 /**
  * The body of [scanDuplicates] with its inputs injected, so it runs on the JVM. Any failure except cancellation is passed
- * to [onFailure] and gives [DuplicateScanOutcome.Failed]; cancellation propagates.
+ * to [onFailure] and gives [DuplicateScanOutcome.Failed]; cancellation propagates. [cache] holds the hashes of earlier scans.
  */
 internal suspend fun collectDuplicateScan(
     items: List<ClothingItem>,
@@ -358,9 +387,11 @@ internal suspend fun collectDuplicateScan(
     hash: suspend (uri: String) -> String?,
     dismissed: () -> Set<DuplicatePairKey>,
     onFailure: (Exception) -> Unit,
+    cache: PhotoHashCache = PhotoHashCache(),
 ): DuplicateScanOutcome = try {
     val vectors = snapshot()
-    val currentHashes = resolvePhotoHashes(sharedHashCandidates(items, vectors), items, hash = hash)
+    val currentHashes = resolvePhotoHashes(scanHashCandidates(items, vectors), items, hash = hash, cache = cache)
+    cache.retainOnly(activePhotos(items))
     DuplicateScanOutcome.Success(scan(items, vectors, currentHashes, dismissed()))
 } catch (cancelled: CancellationException) {
     throw cancelled
@@ -430,23 +461,47 @@ internal fun sharedHashCandidates(items: List<ClothingItem>, vectors: Map<String
         .toSet()
 
 /**
+ * The active garments a background scan hashes: every garment with a category and a stored IMAGE hash, since a Very similar
+ * pair is always inside one category and its photos differ; plus the [sharedHashCandidates], which keeps SamePhoto for a
+ * garment without a category. A garment with no stored hash can never be eligible, so its photo is not read.
+ */
+internal fun scanHashCandidates(items: List<ClothingItem>, vectors: Map<String, GarmentVectors>): Set<String> =
+    sharedHashCandidates(items, vectors) + items
+        .filterNot(ClothingItem::isArchived)
+        .filter { item -> categoryOf(item) != null && vectors[item.id]?.let { it.image != null && it.imageInputHash != null } == true }
+        .map(ClothingItem::id)
+
+/** The (garment id, photo URI) of every active garment with a photo: the keys [PhotoHashCache] keeps. */
+private fun activePhotos(items: List<ClothingItem>): Set<Pair<String, String>> = items
+    .filterNot(ClothingItem::isArchived)
+    .mapNotNull { item -> item.photoUri?.takeIf(String::isNotBlank)?.let { uri -> item.id to uri } }
+    .toSet()
+
+/** The category of a garment: the id of its tag in the category tag category, null when it has none. */
+private fun categoryOf(item: ClothingItem): String? = item.tags.firstOrNull { it.categoryId == CATEGORY_CATEGORY_ID }?.id
+
+/**
  * The current photo hash of each garment in [ids] that has a photo. At most [HASH_PARALLELISM] photos are read at once.
  * A photo that cannot be hashed leaves its garment out; cancellation propagates and stops the photos not yet started.
- * [onProgress] reports (done, total) before the first photo and after each one, never going backwards.
+ * [onProgress] reports (done, total) before the first photo and after each one, never going backwards. A hash found in
+ * [cache] counts as done at once and is not read again; a new hash is put into [cache].
  */
 internal suspend fun resolvePhotoHashes(
     ids: Set<String>,
     items: List<ClothingItem>,
     hash: suspend (uri: String) -> String?,
     onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    cache: PhotoHashCache? = null,
 ): Map<String, String> = coroutineScope {
     val photos = items.associateBy(ClothingItem::id)
     val work = ids.mapNotNull { id -> photos[id]?.photoUri?.takeIf(String::isNotBlank)?.let { uri -> id to uri } }
+    val cached = work.mapNotNull { (id, uri) -> cache?.get(id, uri)?.let { id to it } }.toMap()
+    val toHash = work.filterNot { (id, _) -> id in cached }
     val gate = Semaphore(HASH_PARALLELISM)
     val progressLock = Mutex()
-    var done = 0
-    onProgress(0, work.size)
-    work.map { (id, uri) ->
+    var done = cached.size
+    onProgress(done, work.size)
+    val fresh = toHash.map { (id, uri) ->
         async {
             val hashed = gate.withPermit {
                 try {
@@ -458,9 +513,10 @@ internal suspend fun resolvePhotoHashes(
                 }
             }
             progressLock.withLock { onProgress(++done, work.size) }
-            hashed?.let { id to it }
+            hashed?.also { cache?.put(id, uri, it) }?.let { id to it }
         }
     }.awaitAll().filterNotNull().toMap()
+    cached + fresh
 }
 
 /** SHA-256 of the encoded input, the same value the IMAGE vector stored as `input_hash`. Null when the photo cannot be read. */
@@ -502,7 +558,7 @@ internal fun eligibleGarments(
             id = item.id,
             vector = vector,
             inputHash = storedHash,
-            category = item.tags.firstOrNull { it.categoryId == CATEGORY_CATEGORY_ID }?.id,
+            category = categoryOf(item),
             primaryColour = item.colorMetrics.primaryPaletteColorId,
         )
     }
