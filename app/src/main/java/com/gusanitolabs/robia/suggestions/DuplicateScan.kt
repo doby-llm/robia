@@ -51,8 +51,17 @@ data class DuplicatePairKey(val first: String, val second: String) {
     }
 }
 
-/** DUP1 produces [SamePhoto] only; the cosine tier arrives with DUP2 after calibration (G-DUP). */
-enum class DuplicateTier { SamePhoto }
+/**
+ * [SamePhoto]: the group holds two garments with the same stored photo hash. [VerySimilar]: the cosine tier (REQ-DU-01 tier 2),
+ * for a group with no such pair.
+ */
+enum class DuplicateTier { SamePhoto, VerySimilar }
+
+/**
+ * Cosine from which two same-category garments of the same primary colour are "Very similar" (R3-DEC-047). Fixed by Manu:
+ * different black dresses reach 0.955-0.977, so the persisted dismissals ship with this tier. Do not change it here.
+ */
+const val T_DUP = 0.96f
 
 /** Garments that may be the same item. [garmentIds] are sorted and hold 2..[DUPLICATE_GROUP_MAX_SIZE] ids. */
 data class DuplicateGroup(val garmentIds: List<String>, val tier: DuplicateTier) {
@@ -94,7 +103,8 @@ object DuplicateScanHistory {
 
 /**
  * The duplicate groups and "Not duplicates" dismissals of this process. Activity recreation (rotation, theme change)
- * keeps them; nothing is written to disk. Persisted dismissals arrive with DUP2 (REQ-DU-02).
+ * keeps them. The dismissals are also stored in Room (REQ-DU-02): [dismiss] does not write them, the caller does, and
+ * [loadDismissals] reads the stored ones back before a scan.
  */
 object DuplicateSession {
     private val _groups = MutableStateFlow<List<DuplicateGroup>>(emptyList())
@@ -112,6 +122,11 @@ object DuplicateSession {
         _groups.update { it - group }
     }
 
+    /** The dismissals stored on this phone, read before a scan so that a dismissed pair stays out after a restart. */
+    fun loadDismissals(stored: Set<DuplicatePairKey>) {
+        _dismissals.update { it + stored }
+    }
+
     /** Garments that left the active wardrobe (archived or deleted, on any route) leave their groups. */
     fun keepActive(activeIds: Set<String>) {
         _groups.update { it.keepingActive(activeIds) }
@@ -125,8 +140,10 @@ object DuplicateSession {
 }
 
 /**
- * Exact tier (REQ-DU-01 "Same photo"): active garments whose stored IMAGE `input_hash` equals the hash of the current
- * photo and that share that hash. Garments with a stale or missing vector are left out. [dismissed] pairs are ignored.
+ * Two tiers (REQ-DU-01). "Same photo": active garments whose stored IMAGE `input_hash` equals the hash of the current photo
+ * and that share that hash. "Very similar" (tier 2): a same-category pair with cosine ≥ [T_DUP] and the same primary colour
+ * when both have one. A group is [DuplicateTier.SamePhoto] when two of its garments share a hash, else [VerySimilar].
+ * Garments with a stale or missing vector are left out. [dismissed] pairs are never in one group.
  */
 fun scan(
     items: List<ClothingItem>,
@@ -134,15 +151,31 @@ fun scan(
     currentPhotoHashes: Map<String, String>,
     dismissed: Set<DuplicatePairKey> = emptySet(),
 ): List<DuplicateGroup> {
-    val edges = eligibleGarments(items, vectors, currentPhotoHashes)
+    val garments = eligibleGarments(items, vectors, currentPhotoHashes)
+    val samePhotoEdges = garments
         .groupBy(Eligible::inputHash)
         .values
         .filter { sameHash -> sameHash.size > 1 }
         .flatMap { sameHash -> sameHash.map(Eligible::id).unorderedPairs() }
         .map { (a, b) -> Edge(a, b, strength = 1f) }
-        .filterNot { edge -> DuplicatePairKey.of(edge.a, edge.b) in dismissed }
-    return groupsFromEdges(edges, DuplicateTier.SamePhoto, dismissed)
+    val garmentsById = garments.associateBy(Eligible::id)
+    val verySimilarEdges = mutableListOf<Edge>()
+    scanBlocks(garments, onRow = {}) { a, b, cosine ->
+        if (cosine >= T_DUP && sameColourIfKnown(garmentsById.getValue(a), garmentsById.getValue(b))) {
+            verySimilarEdges += Edge(a, b, strength = cosine)
+        }
+    }
+    val hashById = garments.associate { garment -> garment.id to garment.inputHash }
+    return groupsFromEdges(
+        edges = (samePhotoEdges + verySimilarEdges).filterNot { edge -> DuplicatePairKey.of(edge.a, edge.b) in dismissed },
+        hashById = hashById,
+        dismissed = dismissed,
+    )
 }
+
+/** Same primary colour when both garments have one; a garment without a primary colour does not block the pair (R3-DEC-047). */
+private fun sameColourIfKnown(a: Eligible, b: Eligible): Boolean =
+    a.primaryColour == null || b.primaryColour == null || a.primaryColour == b.primaryColour
 
 /**
  * Same-category pairs with their IMAGE cosine, most similar first, for the developer calibration screen. Only
@@ -439,8 +472,17 @@ private suspend fun currentPhotoHash(context: Context, uri: String): String? = t
     null
 }
 
-/** An active garment whose stored IMAGE vector still matches its current photo (REQ-DU-01). */
-internal class Eligible(val id: String, val vector: FloatArray, val inputHash: String, val category: String?)
+/**
+ * An active garment whose stored IMAGE vector still matches its current photo (REQ-DU-01). [primaryColour] is the palette
+ * colour id of the primary colour, null when the garment has none.
+ */
+internal class Eligible(
+    val id: String,
+    val vector: FloatArray,
+    val inputHash: String,
+    val category: String?,
+    val primaryColour: String? = null,
+)
 
 private class Edge(val a: String, val b: String, val strength: Float)
 
@@ -456,7 +498,13 @@ internal fun eligibleGarments(
         val vector = garment.image ?: return@mapNotNull null
         val storedHash = garment.imageInputHash ?: return@mapNotNull null
         if (currentPhotoHashes[item.id] != storedHash) return@mapNotNull null
-        Eligible(item.id, vector, storedHash, item.tags.firstOrNull { it.categoryId == CATEGORY_CATEGORY_ID }?.id)
+        Eligible(
+            id = item.id,
+            vector = vector,
+            inputHash = storedHash,
+            category = item.tags.firstOrNull { it.categoryId == CATEGORY_CATEGORY_ID }?.id,
+            primaryColour = item.colorMetrics.primaryPaletteColorId,
+        )
     }
 
 /**
@@ -466,7 +514,7 @@ internal fun eligibleGarments(
  */
 private fun groupsFromEdges(
     edges: List<Edge>,
-    tier: DuplicateTier,
+    hashById: Map<String, String>,
     dismissed: Set<DuplicatePairKey>,
 ): List<DuplicateGroup> {
     val parent = HashMap<String, String>()
@@ -491,9 +539,17 @@ private fun groupsFromEdges(
         }
     return members.values
         .filter { it.size >= 2 }
-        .map { DuplicateGroup(it.sorted(), tier) }
+        .map { ids -> DuplicateGroup(ids.sorted(), tierOf(ids, hashById)) }
         .sortedBy { it.garmentIds.first() }
 }
+
+/** [DuplicateTier.SamePhoto] when two garments of the group share a stored photo hash, else [DuplicateTier.VerySimilar]. */
+private fun tierOf(ids: List<String>, hashById: Map<String, String>): DuplicateTier =
+    if (ids.groupBy { id -> hashById.getValue(id) }.values.any { sameHash -> sameHash.size > 1 }) {
+        DuplicateTier.SamePhoto
+    } else {
+        DuplicateTier.VerySimilar
+    }
 
 private fun <T> List<T>.unorderedPairs(): List<Pair<T, T>> =
     indices.flatMap { i -> (i + 1 until size).map { j -> this[i] to this[j] } }

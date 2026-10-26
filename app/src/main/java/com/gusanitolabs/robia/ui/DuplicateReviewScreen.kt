@@ -40,12 +40,13 @@ import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
+import com.gusanitolabs.robia.suggestions.DuplicateTier
 
 private const val DUPLICATE_PHOTO_EDGE_PX = 256
 
 /**
  * REQ-DU-03: one card per group. Every garment starts as Keep, so nothing is deleted until it is marked and the delete is
- * confirmed. "Not duplicates" drops the group for this session only; persisted dismissals come with DUP2.
+ * confirmed. "Not duplicates" drops the group and keeps its pairs out of later scans, also after a restart (REQ-DU-02).
  */
 @Composable
 internal fun DuplicateReviewScreen(
@@ -146,7 +147,12 @@ private fun DuplicateGroupCard(
                 style = MaterialTheme.typography.titleSmall,
             )
             Text(
-                text = stringResource(R.string.duplicate_tier_same_photo),
+                text = stringResource(
+                    when (group.tier) {
+                        DuplicateTier.SamePhoto -> R.string.duplicate_tier_same_photo
+                        DuplicateTier.VerySimilar -> R.string.duplicate_tier_very_similar
+                    },
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

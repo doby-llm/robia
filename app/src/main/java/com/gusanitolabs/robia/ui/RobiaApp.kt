@@ -184,6 +184,7 @@ import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
 import com.gusanitolabs.robia.data.WardrobeZipExporter
 import com.gusanitolabs.robia.data.local.ClothingItemWithTags
+import com.gusanitolabs.robia.data.local.DismissedDuplicatePairEntity
 import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.ClothingImageStore
@@ -201,6 +202,7 @@ import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
+import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.DuplicateScanHistory
 import com.gusanitolabs.robia.suggestions.DuplicateSession
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
@@ -968,10 +970,11 @@ private fun RobiaShell(
     val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
-    // Process-scoped: survives activity recreation. Session only: "Not duplicates" is not persisted until DUP2 adds the table (REQ-DU-02).
+    // Process-scoped: survives activity recreation. "Not duplicates" is also stored in Room, so the pairs stay out after a restart (REQ-DU-02).
     val duplicateGroups by DuplicateSession.groups.collectAsState()
     val duplicateBackfill by app.embeddingBackfill.progress.collectAsState()
     val duplicateRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
+    val duplicateDismissalDao = remember(app) { app.database.dismissedDuplicateDao() }
     var reviewComplete by remember { mutableStateOf<ReviewCompleteText?>(null) }
     // One first-run prompt at a time; the order lives in nextFirstRunPrompt. Answered cloud/model prompts stay answered in memory until settings catch up.
     var activeFirstRunPrompt by remember { mutableStateOf<FirstRunPrompt?>(null) }
@@ -1127,6 +1130,14 @@ private fun RobiaShell(
         if (wardrobeItemsLoading || currentRoute != RobiaRoute.Browse) return@LaunchedEffect
         if (!duplicateBackfill.settled || duplicateBackfill.remaining > 0) return@LaunchedEffect
         if (!duplicateScanDue(DuplicateScanHistory.lastSignature, duplicateSignature)) return@LaunchedEffect
+        // The stored dismissals go in before the scan, so a pair dismissed in an earlier run does not come back. A failed read
+        // skips this scan: the signature is not recorded, so the next Browse visit retries it.
+        val stored = try {
+            duplicateDismissalDao.getAll()
+        } catch (failure: Exception) {
+            return@LaunchedEffect
+        }
+        DuplicateSession.loadDismissals(stored.mapTo(HashSet()) { pair -> DuplicatePairKey.of(pair.garmentA, pair.garmentB) })
         val outcome = scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value }
         DuplicateSession.replaceGroups(outcome.groupsAfter(DuplicateSession.groups.value))
         DuplicateScanHistory.lastSignature = nextDuplicateScanSignature(DuplicateScanHistory.lastSignature, duplicateSignature, outcome)
@@ -1137,7 +1148,16 @@ private fun RobiaShell(
         if (wardrobeItemsLoading) return@LaunchedEffect
         DuplicateSession.keepActive(clothingItems.mapTo(HashSet(), ClothingItem::id))
     }
-    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group -> DuplicateSession.dismiss(group) }
+    val dismissDuplicateGroup: (DuplicateGroup) -> Unit = { group ->
+        DuplicateSession.dismiss(group)
+        // Every pair of the group in one write, so none of them can come back after a restart (REQ-DU-02).
+        val dismissedAtEpochMillis = System.currentTimeMillis()
+        reviewScope.launch(Dispatchers.IO) {
+            duplicateDismissalDao.insertAll(
+                group.pairKeys().map { key -> DismissedDuplicatePairEntity(key.first, key.second, dismissedAtEpochMillis) },
+            )
+        }
+    }
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,
         cloudAuthorizationInFlight = cloudAuthorizationInFlight,

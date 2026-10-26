@@ -1,8 +1,11 @@
 package com.gusanitolabs.robia.suggestions
 
+import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
+import com.gusanitolabs.robia.data.local.DismissedDuplicateDao
+import com.gusanitolabs.robia.data.local.DismissedDuplicatePairEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,14 +21,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DuplicateScanTest {
-    private fun garment(id: String, category: String? = "category-dresses", archived: Boolean = false) = ClothingItem(
+    private fun garment(
+        id: String,
+        category: String? = "category-dresses",
+        archived: Boolean = false,
+        colour: String? = null,
+    ) = ClothingItem(
         id = id,
         name = id,
         tags = listOfNotNull(category?.let { GarmentTag(id = it, categoryId = "category", name = it, sortOrder = 0) }),
+        colorMetrics = ClothingColorMetrics(primaryPaletteColorId = colour),
         isArchived = archived,
         createdAtEpochMillis = 0L,
         updatedAtEpochMillis = 0L,
@@ -480,5 +490,133 @@ class DuplicateScanTest {
         assertEquals(0 to 7, reported.first())
         assertTrue(reported.zipWithNext().all { (before, after) -> before.first <= after.first })
         assertEquals(calls.get() to calls.get(), reported.last())
+    }
+
+    /** A unit vector whose cosine with (1, 0) is [cosine]: the pair (1, 0) and this one scores exactly [cosine]. */
+    private fun at(cosine: Float): FloatArray = floatArrayOf(cosine, sqrt(1f - cosine * cosine))
+
+    private val onlyDress = listOf(garment("a", colour = "red"), garment("b", colour = "red"))
+
+    @Test
+    fun theVerySimilarThresholdIsFixedAt096() {
+        assertEquals(0.96f, T_DUP, 0f)
+        assertEquals(listOf(DuplicateTier.SamePhoto, DuplicateTier.VerySimilar), DuplicateTier.entries)
+    }
+
+    @Test
+    fun aPairAtOrAboveTheThresholdWithTheSameCategoryAndColourIsVerySimilar() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9605f), "h2"))
+
+        val groups = scan(onlyDress, vectors, mapOf("a" to "h1", "b" to "h2"))
+
+        assertEquals(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.VerySimilar)), groups)
+    }
+
+    @Test
+    fun aPairBelowTheThresholdIsNotAPair() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9595f), "h2"))
+
+        assertTrue(scan(onlyDress, vectors, mapOf("a" to "h1", "b" to "h2")).isEmpty())
+    }
+
+    @Test
+    fun aPairOfDifferentPrimaryColoursIsNotAPair_andAGarmentWithoutAColourDoesNotBlockIt() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9605f), "h2"))
+        val hashes = mapOf("a" to "h1", "b" to "h2")
+        val otherColour = listOf(garment("a", colour = "red"), garment("b", colour = "blue"))
+        val noColour = listOf(garment("a", colour = "red"), garment("b"))
+
+        assertTrue(scan(otherColour, vectors, hashes).isEmpty())
+        assertEquals(listOf(listOf("a", "b")), scan(noColour, vectors, hashes).map { it.garmentIds })
+    }
+
+    @Test
+    fun aPairOfDifferentCategoriesIsNotAPair() {
+        val items = listOf(garment("a", category = "category-dresses"), garment("b", category = "category-shirts"))
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", floatArrayOf(1f, 0f), "h2"))
+
+        assertTrue(scan(items, vectors, mapOf("a" to "h1", "b" to "h2")).isEmpty())
+    }
+
+    @Test
+    fun aGroupWithAStoredHashPairIsSamePhotoAndAGroupWithoutOneIsVerySimilar() {
+        val items = listOf(garment("a", colour = "red"), garment("b", colour = "red"), garment("c", colour = "red"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", floatArrayOf(1f, 0f), "h1"),
+            entry("c", at(0.9605f), "h2"),
+        )
+
+        val groups = scan(items, vectors, mapOf("a" to "h1", "b" to "h1", "c" to "h2"))
+
+        assertEquals(listOf(DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto)), groups)
+    }
+
+    @Test
+    fun dismissedVerySimilarPairIsNeverReturned() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9605f), "h2"))
+        val hashes = mapOf("a" to "h1", "b" to "h2")
+
+        assertTrue(scan(onlyDress, vectors, hashes, dismissed = setOf(DuplicatePairKey.of("b", "a"))).isEmpty())
+    }
+
+    @Test
+    fun pairKeysDoNotDependOnTheOrderOfTheIds() {
+        assertEquals(DuplicatePairKey.of("a", "b"), DuplicatePairKey.of("b", "a"))
+    }
+
+    /** The DAO of DismissedDuplicateDao, in memory: the same "first dismissal wins" rule as the IGNORE insert. */
+    private class FakeDismissalDao : DismissedDuplicateDao {
+        val rows = linkedMapOf<Pair<String, String>, DismissedDuplicatePairEntity>()
+
+        override suspend fun getAll(): List<DismissedDuplicatePairEntity> = rows.values.toList()
+
+        override suspend fun insertAll(pairs: List<DismissedDuplicatePairEntity>) {
+            pairs.forEach { pair -> rows.putIfAbsent(pair.garmentA to pair.garmentB, pair) }
+        }
+    }
+
+    @Test
+    fun notDuplicatesStoresEveryPairOfTheGroupAndTheyStayOutInANewProcess() = runTest {
+        val items = listOf(garment("a", colour = "red"), garment("b", colour = "red"), garment("c", colour = "red"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", at(0.9705f), "h2"),
+            entry("c", at(0.9705f), "h3"),
+        )
+        val hashes = mapOf("a" to "h1", "b" to "h2", "c" to "h3")
+        val dao = FakeDismissalDao()
+        DuplicateSession.clear()
+        val group = scan(items, vectors, hashes).single()
+        DuplicateSession.replaceGroups(listOf(group))
+
+        // What "Not duplicates" does in RobiaApp: the session first, then every pair of the group in one write.
+        DuplicateSession.dismiss(group)
+        dao.insertAll(group.pairKeys().map { key -> DismissedDuplicatePairEntity(key.first, key.second, dismissedAtEpochMillis = 1L) })
+
+        assertEquals(3, dao.rows.size)
+        // A new process: the session is empty, the stored pairs are loaded, then the scan runs.
+        DuplicateSession.clear()
+        DuplicateSession.loadDismissals(dao.getAll().mapTo(HashSet()) { DuplicatePairKey.of(it.garmentA, it.garmentB) })
+        assertEquals(group.pairKeys(), DuplicateSession.dismissals.value)
+        assertTrue(scan(items, vectors, hashes, dismissed = DuplicateSession.dismissals.value).isEmpty())
+        DuplicateSession.clear()
+    }
+
+    @Test
+    fun aDismissedPairDoesNotJoinGarmentsThatAreEachSimilarToIt() {
+        val items = listOf(garment("a", colour = "red"), garment("b", colour = "red"), garment("c", colour = "red"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", at(0.9705f), "h2"),
+            entry("c", at(0.9705f), "h3"),
+        )
+        val hashes = mapOf("a" to "h1", "b" to "h2", "c" to "h3")
+
+        val groups = scan(items, vectors, hashes, dismissed = setOf(DuplicatePairKey.of("a", "b")))
+
+        assertTrue(groups.none { group -> group.pairKeys().contains(DuplicatePairKey.of("a", "b")) })
+        // b and c are identical, so they group first; a would join them only through the dismissed a-b pair.
+        assertEquals(listOf(listOf("b", "c")), groups.map { it.garmentIds })
     }
 }

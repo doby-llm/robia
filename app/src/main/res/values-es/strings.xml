@@ -890,4 +890,6 @@
     <string name="back_exit_hint">Pulsa atrás otra vez para salir</string>
     <!-- DUP-FAST -->
     <string name="duplicate_calibration_preparing">Preparando fotos… %1$d de %2$d</string>
+    <!-- DUP2 -->
+    <string name="duplicate_tier_very_similar">Muy similar</string>
 </resources>
