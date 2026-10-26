@@ -73,6 +73,8 @@ private val ReviewedTagKinds = setOf(TAG_KIND_CATEGORY, TAG_KIND_OCCASION)
 internal data class TagReviewCandidate(
     val item: ClothingItem,
     val proposal: ReviewProposal,
+    /** [item] as the database holds it after the change (see [liveViewOf]): the tags the card reads and the commit writes onto. */
+    val live: ClothingItem,
 )
 
 /**
@@ -393,11 +395,12 @@ internal fun TagReviewScreen(
         skippedCount = scan.skippedCount
         scan.scanEach(garments) { garment, proposal ->
             if (proposal != null) {
-                candidates += TagReviewCandidate(garment, proposal)
+                val live = liveViewOf(garment, changeSet)
+                candidates += TagReviewCandidate(garment, proposal, live)
                 session = session.withCard(
                     reviewCardStateFor(
                         proposal = proposal,
-                        liveGroupTagIds = garment.tags.filter { tag -> tag.categoryId == changeSet.categoryId }.mapTo(mutableSetOf(), GarmentTag::id),
+                        liveGroupTagIds = live.tags.filter { tag -> tag.categoryId == changeSet.categoryId }.mapTo(mutableSetOf(), GarmentTag::id),
                         groupTagIds = kindIds,
                         isCategoryGroup = changeSet.categoryId == TAG_KIND_CATEGORY,
                         existingTagIds = afterTagIds,
@@ -406,7 +409,7 @@ internal fun TagReviewScreen(
                     ),
                 )
                 // A garment with nothing to toggle (only locked changes) is not offered: it is closed here, and nothing is written.
-                if (session.pending.none { card -> card.garmentId == garment.id }) hiddenIds += garment.id
+                if (isHiddenOnScan(session, garment.id)) hiddenIds += garment.id
             }
             scannedCount += 1
         }
@@ -425,7 +428,7 @@ internal fun TagReviewScreen(
             val card = session.cards.firstOrNull { cardState -> cardState.garmentId == candidate.item.id }
             val delta = commitDeltaFor(card, afterTagIds) ?: return@mapNotNull null
             applyDelta(
-                live = candidate.item,
+                live = candidate.live,
                 delta = delta,
                 existingTags = changeSet.afterTags,
                 categoryId = changeSet.categoryId,
@@ -562,13 +565,13 @@ internal fun TagReviewScreen(
                         direction = if (discarded) ExitDirection.Discard else ExitDirection.Accept,
                     ) {
                         if (card != null) {
-                            val groupLabels = candidate.item.tags
+                            val groupLabels = candidate.live.tags
                                 .filter { tag -> tag.categoryId == changeSet.categoryId }
                                 .map { tag -> tag.localizedTagLabel(context) }
                                 .sortedAlphabetically(label = { label -> label })
                             TagReviewCard(
                                 card = card,
-                                identity = tagReviewIdentityLine(candidate.item),
+                                identity = tagReviewIdentityLine(candidate.live),
                                 nowLine = if (changeSet.categoryId == TAG_KIND_OCCASION) {
                                     stringResource(
                                         R.string.review_now,

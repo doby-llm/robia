@@ -1,9 +1,12 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.suggestions.ReviewButton
 import com.gusanitolabs.robia.suggestions.ReviewChange
 import com.gusanitolabs.robia.suggestions.ReviewProposal
+import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagDelta
+import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.deltaFor
 import com.gusanitolabs.robia.suggestions.primaryButtonFor
 import com.gusanitolabs.robia.suggestions.reviewChangesFor
@@ -123,6 +126,21 @@ internal fun reviewCardStateFor(
     liveGroupTagIds = liveGroupTagIds,
     offeredTagIds = (groupTagIds intersect existingTagIds) - liveGroupTagIds,
 )
+
+/**
+ * The garment as the database holds it after the tag change is saved. A deletion takes the deleted tags off every garment, so
+ * the card and the commit read this view, never the snapshot taken before the write. Any other change leaves the garment as it is.
+ */
+internal fun liveViewOf(garment: ClothingItem, changeSet: TagChangeSet): ClothingItem =
+    if (changeSet.operation == TagOperation.Deleted) {
+        garment.copy(tags = garment.tags.filterNot { tag -> tag.id in changeSet.touchedTagIds })
+    } else {
+        garment
+    }
+
+/** A garment whose card is not pending has nothing to toggle (only locked changes): it is closed at scan time, with no write. */
+internal fun isHiddenOnScan(session: TagReviewSession, garmentId: String): Boolean =
+    session.pending.none { card -> card.garmentId == garmentId }
 
 /** The chosen tag, only while it still exists: a deleted tag is no choice and shows no chip. */
 internal fun chosenTagOf(card: ReviewCardState, existingTagIds: Set<String>): String? =

@@ -5,7 +5,9 @@ import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.suggestions.ProposalKind
 import com.gusanitolabs.robia.suggestions.ReviewChange
 import com.gusanitolabs.robia.suggestions.ReviewProposal
+import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagDelta
+import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.applyDelta
 import java.nio.file.Files
 import java.nio.file.Path
@@ -191,6 +193,110 @@ class TagReviewCardModelTest {
     }
 
     @Test
+    fun aDeletedCategoryIsReplacedOnTheLiveGarmentAndTheReplacementIsWritten() {
+        val changeSet = deletionOf("category-deleted", "category", categories)
+        val live = liveViewOf(garment("g2", "category-deleted"), changeSet)
+        val proposal = ReviewProposal("g2", before = setOf("category-deleted"), proposed = setOf("category-coats"), kind = ProposalKind.Suggested)
+        val session = TagReviewSession().withCard(cardFor(live, proposal, changeSet))
+        val card = session.cards.single()
+
+        // The "+" half is shown: a swap whose "−" half is locked, read as "Set" rather than a removal.
+        assertEquals(listOf("g2"), session.pending.map(ReviewCardState::garmentId))
+        assertEquals(listOf(ReviewChange.Swap("category-deleted", "category-coats", fromLocked = true)), card.changes.changes)
+        assertEquals(ChipDescription.Replace, chipDescription(card.changes.changes.single(), skipped = false))
+
+        val delta = commitDeltaFor(card, setOf("category-coats"))
+        assertEquals(TagDelta("g2", remove = emptySet(), add = setOf("category-coats")), delta)
+        val written = applyDelta(live = live, delta = delta!!, existingTags = changeSet.afterTags, categoryId = "category", now = 1L).item!!
+        assertEquals(listOf("category-coats"), written.tags.map(GarmentTag::id))
+        assertEquals(1, written.tags.count { tag -> tag.categoryId == "category" })
+    }
+
+    @Test
+    fun aDeletedCategoryWithNoReplacementShowsTheChooserAndWritesTheChosenTag() {
+        val changeSet = deletionOf("category-deleted", "category", categories)
+        val live = liveViewOf(garment("g2", "category-deleted"), changeSet)
+        val proposal = ReviewProposal("g2", before = setOf("category-deleted"), proposed = emptySet(), kind = ProposalKind.ChooseManually)
+        val session = TagReviewSession().withCard(cardFor(live, proposal, changeSet))
+        val card = session.cards.single()
+
+        assertEquals(listOf("g2"), session.pending.map(ReviewCardState::garmentId))
+        assertTrue(card.changes.needsChoice)
+        assertEquals(setOf("category-coats"), card.offeredTagIds)
+        assertNull(commitDeltaFor(card, setOf("category-coats")))
+
+        val chosen = session.choose("g2", "category-coats")
+        val delta = commitDeltaFor(chosen.cards.single(), setOf("category-coats"))
+        assertEquals(TagDelta("g2", remove = emptySet(), add = setOf("category-coats")), delta)
+        val written = applyDelta(live = live, delta = delta!!, existingTags = changeSet.afterTags, categoryId = "category", now = 1L).item!!
+        assertEquals(listOf("category-coats"), written.tags.map(GarmentTag::id))
+        assertEquals(1, written.tags.count { tag -> tag.categoryId == "category" })
+    }
+
+    @Test
+    fun aDeletedOccasionIsGoneFromTheLiveGarmentAndNothingIsWritten() {
+        val changeSet = deletionOf("occ-old", "occasion", occasions)
+        val live = liveViewOf(garment("g3", "occ-everyday", "occ-old"), changeSet)
+        val proposal = ReviewProposal("g3", before = setOf("occ-everyday", "occ-old"), proposed = setOf("occ-everyday"), kind = ProposalKind.Suggested)
+        val session = TagReviewSession().withCard(cardFor(live, proposal, changeSet))
+        val card = session.cards.single()
+
+        assertEquals(setOf("occ-everyday"), live.tags.mapTo(mutableSetOf(), GarmentTag::id))
+        assertEquals(setOf("occ-everyday"), card.liveGroupTagIds)
+        assertTrue(isHiddenOnScan(session, "g3"))
+        val delta = commitDeltaFor(card, occasionIds - "occ-old")
+        assertTrue(delta!!.isEmpty)
+        assertNull(applyDelta(live = live, delta = delta, existingTags = changeSet.afterTags, categoryId = "occasion", now = 1L).item)
+    }
+
+    @Test
+    fun aNonDeleteChangeLeavesTheGarmentAsItIs() {
+        val item = garment("g1", "occ-everyday", "occ-old")
+        val renamed = TagChangeSet(
+            id = "rename-occ-old",
+            operation = TagOperation.Renamed,
+            categoryId = "occasion",
+            touchedTagIds = setOf("occ-old"),
+            beforeTags = occasions,
+            afterTags = occasions,
+        )
+
+        assertEquals(item, liveViewOf(item, renamed))
+        val session = TagReviewSession().withCard(occasionCard(liveViewOf(item, renamed), occasionProposal()))
+        assertEquals(setOf("occ-everyday", "occ-old"), session.cards.single().liveGroupTagIds)
+    }
+
+    @Test
+    fun aChooserWritesOnlyAValidatedChoiceAndNothingWithoutOne() {
+        val changeSet = deletionOf("category-deleted", "category", categories)
+        val live = liveViewOf(garment("g2", "category-deleted"), changeSet)
+        val proposal = ReviewProposal("g2", before = setOf("category-deleted"), proposed = emptySet(), kind = ProposalKind.ChooseManually)
+        val card = cardFor(live, proposal, changeSet)
+        val existing = setOf("category-coats")
+
+        // A chooser with no choice writes nothing.
+        assertTrue(card.changes.needsChoice)
+        assertNull(commitDeltaFor(card, existing))
+        // A choice that no longer exists is not written.
+        assertNull(commitDeltaFor(card.copy(chosenTagId = "category-gone"), existing))
+        assertEquals(
+            TagDelta("g2", remove = emptySet(), add = setOf("category-coats")),
+            commitDeltaFor(card.copy(chosenTagId = "category-coats"), existing),
+        )
+    }
+
+    @Test
+    fun aGarmentWithOnlyLockedChangesIsHiddenOnScanAndAnUnlockedOneIsNot() {
+        val changeSet = deletionOf("occ-old", "occasion", occasions)
+        val locked = liveViewOf(garment("g3", "occ-everyday", "occ-old"), changeSet)
+        val lockedProposal = ReviewProposal("g3", before = setOf("occ-everyday", "occ-old"), proposed = setOf("occ-everyday"), kind = ProposalKind.Suggested)
+        val lockedSession = TagReviewSession().withCard(cardFor(locked, lockedProposal, changeSet))
+
+        assertTrue(isHiddenOnScan(lockedSession, "g3"))
+        assertFalse(isHiddenOnScan(TagReviewSession().withCard(occasionCard(garment("g1", "occ-everyday", "occ-old"), occasionProposal())), "g1"))
+    }
+
+    @Test
     fun allChangesSkippedNeedsSomethingToLeaveOut() {
         val card = occasionCard(garment("g1", "occ-everyday", "occ-old"), occasionProposal())
         val allLeftOut = card.copy(skipped = setOf("rem:occ-old", "add:occ-formal", "add:occ-new"))
@@ -228,6 +334,29 @@ class TagReviewCardModelTest {
             }
         }
     }
+
+    /** A Deleted change set for [deletedId]: the tags before the deletion, and the same tags without it. */
+    private fun deletionOf(deletedId: String, categoryId: String, before: List<GarmentTag>) = TagChangeSet(
+        id = "delete-$deletedId",
+        operation = TagOperation.Deleted,
+        categoryId = categoryId,
+        touchedTagIds = setOf(deletedId),
+        beforeTags = before,
+        afterTags = before.filterNot { tag -> tag.id == deletedId },
+    )
+
+    /** A card built the way the screen builds it: from the garment's live view and the change set's tags of its kind. */
+    private fun cardFor(live: ClothingItem, proposal: ReviewProposal, changeSet: TagChangeSet): ReviewCardState = reviewCardStateFor(
+        proposal = proposal,
+        liveGroupTagIds = live.tags.filter { tag -> tag.categoryId == changeSet.categoryId }.mapTo(mutableSetOf(), GarmentTag::id),
+        groupTagIds = (changeSet.beforeTags + changeSet.afterTags)
+            .filter { tag -> tag.categoryId == changeSet.categoryId }
+            .mapTo(mutableSetOf(), GarmentTag::id),
+        isCategoryGroup = changeSet.categoryId == "category",
+        existingTagIds = changeSet.afterTags.mapTo(mutableSetOf(), GarmentTag::id),
+        label = { tagId -> tagId },
+        collator = collator,
+    )
 
     private fun tag(id: String, categoryId: String) = GarmentTag(id = id, categoryId = categoryId, name = id, sortOrder = 0)
 
