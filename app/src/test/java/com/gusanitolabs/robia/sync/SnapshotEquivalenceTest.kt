@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import org.junit.Assert.assertFalse
@@ -37,6 +38,44 @@ class SnapshotEquivalenceTest {
         val remote = snapshot(photo(contentHash = "content-1", sourceHash = "source-1"))
 
         assertTrue(local.equivalentForUpload(remote))
+    }
+
+    @Test
+    fun snapshotsDifferingOnlyInDismissedDuplicatesAreNotEquivalent() {
+        val local = WardrobeSyncSnapshot(dismissedDuplicates = listOf(DismissedPair("a", "b", dismissedAtEpochMillis = 1L)))
+        val remote = WardrobeSyncSnapshot()
+
+        assertFalse(local.equivalentForUpload(remote))
+        assertFalse(local.unchangedSince(remote))
+        assertFalse(local.remoteAlreadyHolds(remote, hasPendingEmbeddings = false, hasPendingCloudDeletion = false))
+    }
+
+    @Test
+    fun dismissedDuplicatesInDifferentOrderAreEquivalent() {
+        val local = WardrobeSyncSnapshot(
+            dismissedDuplicates = listOf(
+                DismissedPair("a", "b", dismissedAtEpochMillis = 1L),
+                DismissedPair("c", "d", dismissedAtEpochMillis = 2L),
+            ),
+        )
+        val remote = WardrobeSyncSnapshot(
+            dismissedDuplicates = listOf(
+                DismissedPair("d", "c", dismissedAtEpochMillis = 2L),
+                DismissedPair("b", "a", dismissedAtEpochMillis = 1L),
+            ),
+        )
+
+        assertTrue(local.equivalentForUpload(remote))
+        assertTrue(local.unchangedSince(remote))
+    }
+
+    @Test
+    fun absentAndEmptyDismissedDuplicatesAreEquivalent() {
+        val absent = WardrobeSyncSnapshot()
+        val empty = WardrobeSyncSnapshot(dismissedDuplicates = emptyList())
+
+        assertTrue(absent.equivalentForUpload(empty))
+        assertTrue(empty.equivalentForUpload(absent))
     }
 
     private fun snapshot(photo: GarmentPhotoRecord): WardrobeSyncSnapshot = WardrobeSyncSnapshot(photos = listOf(photo))

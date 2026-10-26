@@ -17,8 +17,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncTombstoneEntity::class,
         ClothingItemTagCrossRef::class,
         GarmentEmbeddingEntity::class,
+        DismissedDuplicatePairEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 @TypeConverters(RobiaConverters::class)
@@ -27,6 +28,7 @@ abstract class RobiaDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun syncTombstoneDao(): SyncTombstoneDao
     abstract fun embeddingDao(): EmbeddingDao
+    abstract fun dismissedDuplicateDao(): DismissedDuplicateDao
 
     companion object {
         @Volatile private var instance: RobiaDatabase? = null
@@ -52,6 +54,7 @@ abstract class RobiaDatabase : RoomDatabase() {
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
+                        MIGRATION_14_15,
                     )
                     .build()
                     .also { instance = it }
@@ -246,6 +249,12 @@ abstract class RobiaDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                MIGRATION_14_15_SQL.forEach { sql -> database.execSQL(sql) }
+            }
+        }
+
         private fun addMetadataSyncColumns(database: SupportSQLiteDatabase, tableName: String) {
             database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced'")
             database.execSQL("ALTER TABLE $tableName ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0")
@@ -297,4 +306,20 @@ internal val MIGRATION_12_13_SQL: List<String> = listOf(
 internal val MIGRATION_13_14_SQL: List<String> = listOf(
     "ALTER TABLE clothing_items ADD COLUMN original_uri TEXT",
     "ALTER TABLE clothing_items ADD COLUMN original_recipe TEXT",
+)
+
+/**
+ * DB v15: the "Not duplicates" pairs (REQ-DU-02). The columns are NOT NULL because Room validates the table against the entity
+ * on open, and Room's own schema for a non-null property is NOT NULL. Kept as plain SQL so the migration test runs the exact
+ * statements the app executes.
+ */
+internal val MIGRATION_14_15_SQL: List<String> = listOf(
+    """
+    CREATE TABLE IF NOT EXISTS dismissed_duplicate_pairs (
+        garment_a TEXT NOT NULL,
+        garment_b TEXT NOT NULL,
+        dismissed_at INTEGER NOT NULL,
+        PRIMARY KEY(garment_a, garment_b)
+    )
+    """.trimIndent(),
 )

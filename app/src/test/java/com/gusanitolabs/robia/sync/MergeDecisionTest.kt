@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.sync
 
 import com.gusanitolabs.robia.core.model.DefaultTags
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
@@ -313,6 +314,56 @@ class MergeDecisionTest {
         val remote = driveBackup(exportedSnapshot(garmentEntity("a", photoUri = "file:///photos/a.jpg")), OTHER_DEVICE_ID, 50L)
             .let { backup -> backup.copy(photos = backup.photos.map { it.copy(contentHash = "hash-a") }) }
         assertNotEquals(MergeDecision.RecordBase, decide(local, remote))
+    }
+
+    private fun pair(a: String, b: String, dismissedAt: Long) = DismissedPair(a, b, dismissedAtEpochMillis = dismissedAt)
+
+    @Test
+    fun mergeKeepsTheUnionOfBothSidesPairs_eachOnceWithTheEarliestDismissal() {
+        val garments = arrayOf(garmentEntity("a"), garmentEntity("b"), garmentEntity("c"))
+        val local = exportedSnapshot(*garments).copy(dismissedDuplicates = listOf(pair("a", "b", 10L), pair("b", "c", 30L)))
+        val remote = exportedSnapshot(*garments).copy(dismissedDuplicates = listOf(pair("c", "b", 20L), pair("a", "c", 5L)))
+
+        // a-b is local only, a-c is remote only, and b-c is on both sides in reverse order with the earlier time (20) kept.
+        assertEquals(
+            listOf(pair("a", "b", 10L), pair("a", "c", 5L), pair("b", "c", 20L)),
+            mergeSnapshots(local, remote).dismissedDuplicates,
+        )
+    }
+
+    @Test
+    fun mergeDropsThePairsOfAGarmentWhoseTombstoneWins() {
+        val garments = arrayOf(garmentEntity("a"), garmentEntity("b"), garmentEntity("c"))
+        val local = exportedSnapshot(*garments, tombstones = listOf(tombstoneEntity("garment", "a")))
+            .copy(dismissedDuplicates = listOf(pair("a", "b", 10L), pair("b", "c", 20L)))
+
+        assertEquals(listOf(pair("b", "c", 20L)), mergeSnapshots(local, exportedSnapshot(*garments)).dismissedDuplicates)
+    }
+
+    @Test
+    fun mergedSnapshotIsEquivalentToTheRemoteWhenTheirPairsAreTheSameInAnyOrder() {
+        val local = exportedSnapshot(garmentEntity("a")).copy(dismissedDuplicates = listOf(pair("b", "a", 10L)))
+        val remote = exportedSnapshot(garmentEntity("a")).copy(dismissedDuplicates = listOf(pair("a", "b", 10L)))
+
+        assertTrue(mergeSnapshots(local, remote).equivalentForUpload(remote))
+    }
+
+    @Test
+    fun rule5_aRemoteHoldingPairsFastForwardsWhenThePhoneHasNone() {
+        val garments = arrayOf(garmentEntity("a"), garmentEntity("b"))
+        val local = exportedSnapshot(*garments)
+        val remote = driveBackup(exportedSnapshot(*garments).copy(dismissedDuplicates = listOf(pair("a", "b", 10L))), OTHER_DEVICE_ID, 60L)
+
+        assertEquals(MergeDecision.FastForward, decide(local, remote, lastKnown = 50L))
+    }
+
+    @Test
+    fun rule4_aRemoteWithTheSamePairsInAnotherOrderRecordsTheBaseWithoutAPrompt() {
+        val garments = arrayOf(garmentEntity("a"), garmentEntity("b"))
+        val local = exportedSnapshot(*garments).copy(dismissedDuplicates = listOf(pair("b", "a", 10L)))
+        val remote = driveBackup(exportedSnapshot(*garments).copy(dismissedDuplicates = listOf(pair("a", "b", 10L))), OTHER_DEVICE_ID, 60L)
+
+        assertEquals(MergeDecision.RecordBase, decide(local, remote, lastKnown = 50L))
     }
 
     private fun archivedDefaultTag(): WardrobeTaxonomySnapshot {
