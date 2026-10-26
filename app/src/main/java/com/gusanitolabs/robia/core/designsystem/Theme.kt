@@ -94,16 +94,65 @@ internal val RobiaDarkColorScheme = darkColorScheme(
     surfaceContainerLowest = RobiaDarkSurfaceContainerLowest,
 )
 
+/** One signed review chip family: the sign, its glyph, the chip fill and text, and the chip outline (REQ-FB-21). */
+class RobiaChangeColors(
+    val sign: Color,
+    val onSign: Color,
+    val container: Color,
+    val onContainer: Color,
+    val border: Color,
+)
+
 /** Robia tokens that Material's colour scheme has no role for. Read with `MaterialTheme.extras`. */
 data class RobiaExtras(
     val isDark: Boolean,
     /** Top and bottom of the photo well behind a garment cutout; the same in both themes (R3-DEC-045). */
     val photoWellTop: Color,
     val photoWellBottom: Color,
+    /** Green "+" chips of the review: added tags (REQ-FB-21). */
+    val addColors: RobiaChangeColors,
+    /** Red "−" chips of the review: removed tags (REQ-FB-21). */
+    val removeColors: RobiaChangeColors,
 )
 
-internal val RobiaLightExtras = RobiaExtras(isDark = false, photoWellTop = RobiaPhotoWellTop, photoWellBottom = RobiaPhotoWellBottom)
-internal val RobiaDarkExtras = RobiaExtras(isDark = true, photoWellTop = RobiaPhotoWellTop, photoWellBottom = RobiaPhotoWellBottom)
+internal val RobiaLightExtras = RobiaExtras(
+    isDark = false,
+    photoWellTop = RobiaPhotoWellTop,
+    photoWellBottom = RobiaPhotoWellBottom,
+    addColors = RobiaChangeColors(
+        sign = RobiaAddSign,
+        onSign = RobiaOnAddSign,
+        container = RobiaAddContainer,
+        onContainer = RobiaOnAddContainer,
+        border = RobiaAddBorder,
+    ),
+    removeColors = RobiaChangeColors(
+        sign = RobiaRemoveSign,
+        onSign = RobiaOnRemoveSign,
+        container = RobiaRemoveContainer,
+        onContainer = RobiaOnRemoveContainer,
+        border = RobiaRemoveBorder,
+    ),
+)
+internal val RobiaDarkExtras = RobiaExtras(
+    isDark = true,
+    photoWellTop = RobiaPhotoWellTop,
+    photoWellBottom = RobiaPhotoWellBottom,
+    addColors = RobiaChangeColors(
+        sign = RobiaDarkAddSign,
+        onSign = RobiaDarkOnAddSign,
+        container = RobiaDarkAddContainer,
+        onContainer = RobiaDarkOnAddContainer,
+        border = RobiaDarkAddBorder,
+    ),
+    removeColors = RobiaChangeColors(
+        sign = RobiaDarkRemoveSign,
+        onSign = RobiaDarkOnRemoveSign,
+        container = RobiaDarkRemoveContainer,
+        onContainer = RobiaDarkOnRemoveContainer,
+        border = RobiaDarkRemoveBorder,
+    ),
+)
 
 val LocalRobiaExtras = staticCompositionLocalOf { RobiaLightExtras }
 
