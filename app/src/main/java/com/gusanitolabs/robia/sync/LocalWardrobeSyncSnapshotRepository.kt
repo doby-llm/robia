@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.first
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentColorRole
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
@@ -19,6 +20,7 @@ import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 import com.gusanitolabs.robia.data.local.ClothingItemEntity
 import com.gusanitolabs.robia.data.local.ClothingItemTagCrossRef
 import com.gusanitolabs.robia.data.local.ColorMetricsEntity
+import com.gusanitolabs.robia.data.local.DismissedDuplicatePairEntity
 import com.gusanitolabs.robia.data.local.EmbeddingKind
 import com.gusanitolabs.robia.data.local.GarmentEmbeddingEntity
 import com.gusanitolabs.robia.data.local.GarmentTagEntity
@@ -30,6 +32,7 @@ import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.data.local.TagDao
 import com.gusanitolabs.robia.data.local.WardrobeDao
+import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import java.util.Base64
 
@@ -78,6 +81,7 @@ class LocalWardrobeSyncSnapshotRepository(
             tombstones = tombstones,
             embeddingsByGarmentId = embeddingsByGarmentId,
             generatedAtEpochMillis = generatedAtEpochMillis,
+            dismissedPairs = database.dismissedDuplicateDao().getAll(),
         )
     }
 
@@ -129,6 +133,10 @@ class LocalWardrobeSyncSnapshotRepository(
                 tagDao.insertItemTagRefs(tagRefs)
             }
             if (tombstones.isNotEmpty()) tagDao.upsertSyncTombstones(tombstones)
+            // Union: a pair this phone holds stays, a pair only the snapshot holds is added (REQ-DU-02).
+            if (deterministicSnapshot.dismissedDuplicates.isNotEmpty()) {
+                database.dismissedDuplicateDao().insertAll(deterministicSnapshot.dismissedDuplicates.map(DismissedPair::toEntity))
+            }
             // A vector re-computed while the download ran is newer than the imported one: keep it, still pending.
             val embeddingDao = database.embeddingDao()
             val localEmbeddings = embeddings.mapNotNull { imported -> embeddingDao.get(imported.garmentId, imported.kind) }
@@ -317,6 +325,7 @@ internal fun buildWardrobeSyncSnapshot(
     tombstones: List<SyncTombstoneEntity>,
     embeddingsByGarmentId: Map<String, List<GarmentEmbeddingEntity>>,
     generatedAtEpochMillis: Long,
+    dismissedPairs: List<DismissedDuplicatePairEntity> = emptyList(),
 ): WardrobeSyncSnapshot {
     val itemUpdatedAtById = items.associate { item -> item.id to item.syncRevision }
     val taxonomyRevisions = categories.map(TagCategoryEntity::syncRevision) +
@@ -348,7 +357,21 @@ internal fun buildWardrobeSyncSnapshot(
         garmentColors = items.flatMap(ClothingItemEntity::toColorRecords),
         photos = items.mapNotNull(ClothingItemEntity::toPhotoRecord),
         tombstones = tombstones.map(SyncTombstoneEntity::toSyncRecord),
+        dismissedDuplicates = dismissedPairs.withoutTombstonedGarments(tombstones).map { pair ->
+            DismissedPair(pair.garmentA, pair.garmentB, pair.dismissedAtEpochMillis)
+        },
     ).sortedDeterministically()
+}
+
+/** A pair that names a deleted garment is not exported: the garment is gone, so the pair cannot match anything (REQ-DU-02). */
+private fun List<DismissedDuplicatePairEntity>.withoutTombstonedGarments(tombstones: List<SyncTombstoneEntity>): List<DismissedDuplicatePairEntity> {
+    val deletedGarmentIds = tombstones.filter { tombstone -> tombstone.entityType == "garment" }.mapTo(HashSet(), SyncTombstoneEntity::entityId)
+    return filterNot { pair -> pair.garmentA in deletedGarmentIds || pair.garmentB in deletedGarmentIds }
+}
+
+private fun DismissedPair.toEntity(): DismissedDuplicatePairEntity {
+    val key = DuplicatePairKey.of(garmentA, garmentB)
+    return DismissedDuplicatePairEntity(key.first, key.second, dismissedAtEpochMillis)
 }
 
 private fun TagCategoryEntity.toSyncRecord(): TagCategorySyncRecord = TagCategorySyncRecord(

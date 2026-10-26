@@ -11,6 +11,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Task
 import com.gusanitolabs.robia.core.model.DefaultTags
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.DriveSyncDisabledReason
 import com.gusanitolabs.robia.core.model.DriveSyncTarget
 import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
@@ -1962,6 +1963,12 @@ internal object DriveSnapshotJson {
             .put("garmentColors", sorted.garmentColors.toJsonArray(::garmentColorToJson))
             .put("photos", sorted.photos.toJsonArray(::photoToJson))
             .put("tombstones", sorted.tombstones.toJsonArray(::tombstoneToJson))
+            // Written only when there are pairs, so a snapshot without dismissals keeps its old bytes (REQ-DU-02).
+            .also { json ->
+                if (sorted.dismissedDuplicates.isNotEmpty()) {
+                    json.put("dismissedDuplicates", sorted.dismissedDuplicates.toJsonArray(::dismissedPairToJson))
+                }
+            }
             .toString()
     }
 
@@ -1988,6 +1995,7 @@ internal object DriveSnapshotJson {
             garmentColors = json.optArray("garmentColors", ::jsonToGarmentColor),
             photos = json.optArray("photos", ::jsonToPhoto),
             tombstones = json.optArray("tombstones", ::jsonToTombstone),
+            dismissedDuplicates = json.optArray("dismissedDuplicates", ::jsonToDismissedPair),
         ).sortedDeterministically()
     }
 
@@ -2083,6 +2091,17 @@ internal object DriveSnapshotJson {
         .put("entityId", record.entityId)
         .put("deletedAtEpochMillis", record.deletedAtEpochMillis)
         .put("revision", record.revision)
+
+    private fun dismissedPairToJson(pair: DismissedPair): JSONObject = JSONObject()
+        .put("garmentA", pair.garmentA)
+        .put("garmentB", pair.garmentB)
+        .put("dismissedAtEpochMillis", pair.dismissedAtEpochMillis)
+
+    private fun jsonToDismissedPair(json: JSONObject): DismissedPair = DismissedPair(
+        garmentA = json.getString("garmentA"),
+        garmentB = json.getString("garmentB"),
+        dismissedAtEpochMillis = json.optLong("dismissedAtEpochMillis"),
+    )
 
     private fun jsonToTagCategory(json: JSONObject): TagCategorySyncRecord = TagCategorySyncRecord(
         id = json.getString("id"),

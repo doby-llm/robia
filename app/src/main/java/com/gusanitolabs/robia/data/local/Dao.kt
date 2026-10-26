@@ -587,6 +587,16 @@ internal fun GarmentTagEntity.toDedupeTag(): DedupeTag = DedupeTag(
 )
 
 @Dao
+interface DismissedDuplicateDao {
+    @Query("SELECT * FROM dismissed_duplicate_pairs")
+    suspend fun getAll(): List<DismissedDuplicatePairEntity>
+
+    /** A pair this phone already holds is kept as it is: the first dismissal time wins, and an import only adds pairs. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(pairs: List<DismissedDuplicatePairEntity>)
+}
+
+@Dao
 interface SyncTombstoneDao {
     @Query("SELECT * FROM sync_tombstones ORDER BY entity_type, entity_id")
     suspend fun getAllForSync(): List<SyncTombstoneEntity>

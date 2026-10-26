@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
@@ -54,6 +55,7 @@ private data class SnapshotEquivalenceKey(
     val garmentTags: List<GarmentTagMappingRecord>,
     val garmentColors: List<GarmentColorMappingRecord>,
     val tombstones: List<SyncTombstoneRecord>,
+    val dismissedDuplicates: List<DismissedPair>,
 )
 
 private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
@@ -64,8 +66,15 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
         garmentTags = sorted.garmentTags,
         garmentColors = sorted.garmentColors,
         tombstones = sorted.tombstones,
+        dismissedDuplicates = sorted.dismissedDuplicates.map(DismissedPair::withOrderedIds).sortedWith(
+            compareBy(DismissedPair::garmentA, DismissedPair::garmentB),
+        ),
     )
 }
+
+/** A pair is the same pair whichever id comes first: the key orders the two ids, so a reversed pair compares equal. */
+private fun DismissedPair.withOrderedIds(): DismissedPair =
+    if (garmentA <= garmentB) this else copy(garmentA = garmentB, garmentB = garmentA)
 
 /**
  * Local photos carry only [GarmentPhotoRecord.contentHash] until they are uploaded, while remote photos also carry

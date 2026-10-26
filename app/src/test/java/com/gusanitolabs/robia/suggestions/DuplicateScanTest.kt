@@ -1,8 +1,11 @@
 package com.gusanitolabs.robia.suggestions
 
+import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
+import com.gusanitolabs.robia.data.local.DismissedDuplicateDao
+import com.gusanitolabs.robia.data.local.DismissedDuplicatePairEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,14 +21,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DuplicateScanTest {
-    private fun garment(id: String, category: String? = "category-dresses", archived: Boolean = false) = ClothingItem(
+    private fun garment(
+        id: String,
+        category: String? = "category-dresses",
+        archived: Boolean = false,
+        colour: String? = null,
+    ) = ClothingItem(
         id = id,
         name = id,
         tags = listOfNotNull(category?.let { GarmentTag(id = it, categoryId = "category", name = it, sortOrder = 0) }),
+        colorMetrics = ClothingColorMetrics(primaryPaletteColorId = colour),
         isArchived = archived,
         createdAtEpochMillis = 0L,
         updatedAtEpochMillis = 0L,
@@ -480,5 +490,253 @@ class DuplicateScanTest {
         assertEquals(0 to 7, reported.first())
         assertTrue(reported.zipWithNext().all { (before, after) -> before.first <= after.first })
         assertEquals(calls.get() to calls.get(), reported.last())
+    }
+
+    /** A unit vector whose cosine with (1, 0) is [cosine]: the pair (1, 0) and this one scores exactly [cosine]. */
+    private fun at(cosine: Float): FloatArray = floatArrayOf(cosine, sqrt(1f - cosine * cosine))
+
+    private val onlyDress = listOf(garment("a", colour = "red"), garment("b", colour = "red"))
+
+    @Test
+    fun theVerySimilarThresholdIsFixedAt096() {
+        assertEquals(0.96f, T_DUP, 0f)
+        assertEquals(listOf(DuplicateTier.SamePhoto, DuplicateTier.VerySimilar), DuplicateTier.entries)
+    }
+
+    @Test
+    fun aPairAtOrAboveTheThresholdWithTheSameCategoryAndColourIsVerySimilar() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9605f), "h2"))
+
+        val groups = scan(onlyDress, vectors, mapOf("a" to "h1", "b" to "h2"))
+
+        assertEquals(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.VerySimilar)), groups)
+    }
+
+    @Test
+    fun aPairBelowTheThresholdIsNotAPair() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9595f), "h2"))
+
+        assertTrue(scan(onlyDress, vectors, mapOf("a" to "h1", "b" to "h2")).isEmpty())
+    }
+
+    @Test
+    fun aCosineOfExactlyTheThresholdQualifiesAndAHairBelowDoesNot() {
+        // (24, 7) normalises to exactly (0.96f, 0.28f), so the dot with (1, 0) is T_DUP itself: >= must keep it.
+        val exact = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", floatArrayOf(24f, 7f), "h2"))
+        val hashes = mapOf("a" to "h1", "b" to "h2")
+
+        assertEquals(T_DUP, calibrationPairs(onlyDress, exact, hashes, top = 1).single().cosine, 0f)
+        assertEquals(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.VerySimilar)), scan(onlyDress, exact, hashes))
+        val below = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9599f), "h2"))
+        assertTrue(scan(onlyDress, below, hashes).isEmpty())
+    }
+
+    @Test
+    fun aPairOfDifferentPrimaryColoursIsNotAPair_andAGarmentWithoutAColourDoesNotBlockIt() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9605f), "h2"))
+        val hashes = mapOf("a" to "h1", "b" to "h2")
+        val otherColour = listOf(garment("a", colour = "red"), garment("b", colour = "blue"))
+        val noColour = listOf(garment("a", colour = "red"), garment("b"))
+
+        assertTrue(scan(otherColour, vectors, hashes).isEmpty())
+        assertEquals(listOf(listOf("a", "b")), scan(noColour, vectors, hashes).map { it.garmentIds })
+    }
+
+    @Test
+    fun aPairOfDifferentCategoriesIsNotAPair() {
+        val items = listOf(garment("a", category = "category-dresses"), garment("b", category = "category-shirts"))
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", floatArrayOf(1f, 0f), "h2"))
+
+        assertTrue(scan(items, vectors, mapOf("a" to "h1", "b" to "h2")).isEmpty())
+    }
+
+    @Test
+    fun aGroupWithAStoredHashPairIsSamePhotoAndAGroupWithoutOneIsVerySimilar() {
+        val items = listOf(garment("a", colour = "red"), garment("b", colour = "red"), garment("c", colour = "red"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", floatArrayOf(1f, 0f), "h1"),
+            entry("c", at(0.9605f), "h2"),
+        )
+
+        val groups = scan(items, vectors, mapOf("a" to "h1", "b" to "h1", "c" to "h2"))
+
+        assertEquals(listOf(DuplicateGroup(listOf("a", "b", "c"), DuplicateTier.SamePhoto)), groups)
+    }
+
+    @Test
+    fun dismissedVerySimilarPairIsNeverReturned() {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9605f), "h2"))
+        val hashes = mapOf("a" to "h1", "b" to "h2")
+
+        assertTrue(scan(onlyDress, vectors, hashes, dismissed = setOf(DuplicatePairKey.of("b", "a"))).isEmpty())
+    }
+
+    @Test
+    fun pairKeysDoNotDependOnTheOrderOfTheIds() {
+        assertEquals(DuplicatePairKey.of("a", "b"), DuplicatePairKey.of("b", "a"))
+    }
+
+    /** The DAO of DismissedDuplicateDao, in memory: the same "first dismissal wins" rule as the IGNORE insert. */
+    private class FakeDismissalDao : DismissedDuplicateDao {
+        val rows = linkedMapOf<Pair<String, String>, DismissedDuplicatePairEntity>()
+
+        override suspend fun getAll(): List<DismissedDuplicatePairEntity> = rows.values.toList()
+
+        override suspend fun insertAll(pairs: List<DismissedDuplicatePairEntity>) {
+            pairs.forEach { pair -> rows.putIfAbsent(pair.garmentA to pair.garmentB, pair) }
+        }
+    }
+
+    @Test
+    fun notDuplicatesStoresEveryPairOfTheGroupAndTheyStayOutInANewProcess() = runTest {
+        val items = listOf(garment("a", colour = "red"), garment("b", colour = "red"), garment("c", colour = "red"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", at(0.9705f), "h2"),
+            entry("c", at(0.9705f), "h3"),
+        )
+        val hashes = mapOf("a" to "h1", "b" to "h2", "c" to "h3")
+        val dao = FakeDismissalDao()
+        DuplicateSession.clear()
+        val group = scan(items, vectors, hashes).single()
+        DuplicateSession.replaceGroups(listOf(group))
+
+        // What "Not duplicates" does in RobiaApp: the session first, then every pair of the group in one write.
+        DuplicateSession.dismiss(group)
+        dao.insertAll(group.pairKeys().map { key -> DismissedDuplicatePairEntity(key.first, key.second, dismissedAtEpochMillis = 1L) })
+
+        assertEquals(3, dao.rows.size)
+        // A new process: the session is empty, the stored pairs are loaded, then the scan runs.
+        DuplicateSession.clear()
+        DuplicateSession.loadDismissals(dao.getAll().mapTo(HashSet()) { DuplicatePairKey.of(it.garmentA, it.garmentB) })
+        assertEquals(group.pairKeys(), DuplicateSession.dismissals.value)
+        assertTrue(scan(items, vectors, hashes, dismissed = DuplicateSession.dismissals.value).isEmpty())
+        DuplicateSession.clear()
+    }
+
+    @Test
+    fun aDismissedPairDoesNotJoinGarmentsThatAreEachSimilarToIt() {
+        val items = listOf(garment("a", colour = "red"), garment("b", colour = "red"), garment("c", colour = "red"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", at(0.9705f), "h2"),
+            entry("c", at(0.9705f), "h3"),
+        )
+        val hashes = mapOf("a" to "h1", "b" to "h2", "c" to "h3")
+
+        val groups = scan(items, vectors, hashes, dismissed = setOf(DuplicatePairKey.of("a", "b")))
+
+        assertTrue(groups.none { group -> group.pairKeys().contains(DuplicatePairKey.of("a", "b")) })
+        // b and c are identical, so they group first; a would join them only through the dismissed a-b pair.
+        assertEquals(listOf(listOf("b", "c")), groups.map { it.garmentIds })
+    }
+
+    /** A dress with its own photo: the scan reads the URI, so the test hash can tell two photos apart. */
+    private fun photo(id: String, category: String? = "category-dresses") =
+        garment(id, category = category, colour = "red").copy(photoUri = "content://photos/$id")
+
+    @Test
+    fun differentPhotosOfTheSameCategoryAreComparedThroughTheScan() = runTest {
+        val items = listOf(photo("a"), photo("b"))
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.97f), "h2"))
+
+        val outcome = collectDuplicateScan(
+            items,
+            snapshot = { vectors },
+            hash = { uri -> if (uri.endsWith("/a")) "h1" else "h2" },
+            dismissed = { emptySet() },
+            onFailure = { throw AssertionError("unexpected failure", it) },
+        )
+
+        assertEquals(DuplicateScanOutcome.Success(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.VerySimilar))), outcome)
+    }
+
+    @Test
+    fun aPairBelowTheThresholdOrOfDifferentCategoriesOrDismissedGivesNoGroupThroughTheScan() = runTest {
+        val hash: suspend (String) -> String? = { uri -> if (uri.endsWith("/a")) "h1" else "h2" }
+        val atThreshold = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.97f), "h2"))
+        val belowThreshold = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.9599f), "h2"))
+        suspend fun outcomeOf(
+            items: List<ClothingItem>,
+            vectors: Map<String, GarmentVectors>,
+            dismissed: Set<DuplicatePairKey> = emptySet(),
+        ) = collectDuplicateScan(
+            items,
+            snapshot = { vectors },
+            hash = hash,
+            dismissed = { dismissed },
+            onFailure = { throw AssertionError("unexpected failure", it) },
+        )
+
+        val none = DuplicateScanOutcome.Success(emptyList())
+        assertEquals(none, outcomeOf(listOf(photo("a"), photo("b")), belowThreshold))
+        assertEquals(none, outcomeOf(listOf(photo("a"), photo("b", category = "category-shirts")), atThreshold))
+        assertEquals(none, outcomeOf(listOf(photo("a"), photo("b")), atThreshold, setOf(DuplicatePairKey.of("b", "a"))))
+        // The same pair with nothing against it is a group, so each case above is empty for its own reason.
+        assertEquals(
+            DuplicateScanOutcome.Success(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.VerySimilar))),
+            outcomeOf(listOf(photo("a"), photo("b")), atThreshold),
+        )
+    }
+
+    @Test
+    fun aSecondScanReadsNoPhotoAndAReplacedPhotoIsReadAgain() = runTest {
+        val cache = PhotoHashCache()
+        val reads = mutableListOf<String>()
+        val hash: suspend (String) -> String? = { uri -> reads += uri; "h-" + uri.substringAfterLast('/') }
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h-a"), entry("b", at(0.97f), "h-b"))
+        suspend fun scanNow(items: List<ClothingItem>) = collectDuplicateScan(
+            items,
+            snapshot = { vectors },
+            hash = hash,
+            dismissed = { emptySet() },
+            onFailure = { throw AssertionError("unexpected failure", it) },
+            cache = cache,
+        )
+
+        val first = scanNow(listOf(photo("a"), photo("b")))
+        assertEquals(listOf("content://photos/a", "content://photos/b"), reads.sorted())
+        reads.clear()
+
+        assertEquals(first, scanNow(listOf(photo("a"), photo("b"))))
+        assertTrue(reads.isEmpty())
+
+        // b's photo is replaced: the new photo has a new URI, so only b is read again.
+        scanNow(listOf(photo("a"), photo("b").copy(photoUri = "content://photos/b2")))
+        assertEquals(listOf("content://photos/b2"), reads)
+    }
+
+    @Test
+    fun aPhotoThatFailsToHashLeavesItsGarmentOutWithoutFailingTheScan() = runTest {
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", at(0.97f), "h2"))
+        val failures = mutableListOf<Exception>()
+
+        val outcome = collectDuplicateScan(
+            listOf(photo("a"), photo("b")),
+            snapshot = { vectors },
+            hash = { uri -> if (uri.endsWith("/a")) "h1" else error("unreadable") },
+            dismissed = { emptySet() },
+            onFailure = { failures += it },
+        )
+
+        assertEquals(DuplicateScanOutcome.Success(emptyList()), outcome)
+        assertTrue(failures.isEmpty())
+    }
+
+    @Test
+    fun garmentsWithoutACategoryStillShareAPhotoGroup() = runTest {
+        val items = listOf(photo("a", category = null), photo("b", category = null))
+        val vectors = mapOf(entry("a", floatArrayOf(1f, 0f), "h1"), entry("b", floatArrayOf(1f, 0f), "h1"))
+
+        val outcome = collectDuplicateScan(
+            items,
+            snapshot = { vectors },
+            hash = { "h1" },
+            dismissed = { emptySet() },
+            onFailure = { throw AssertionError("unexpected failure", it) },
+        )
+
+        assertEquals(DuplicateScanOutcome.Success(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.SamePhoto))), outcome)
     }
 }

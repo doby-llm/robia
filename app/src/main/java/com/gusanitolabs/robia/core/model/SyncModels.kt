@@ -69,6 +69,8 @@ data class WardrobeSyncSnapshot(
     val garmentColors: List<GarmentColorMappingRecord> = emptyList(),
     val photos: List<GarmentPhotoRecord> = emptyList(),
     val tombstones: List<SyncTombstoneRecord> = emptyList(),
+    /** REQ-DU-02: "Not duplicates" pairs. Optional in the JSON (schemaVersion stays 2): absent means none. */
+    val dismissedDuplicates: List<DismissedPair> = emptyList(),
 ) {
     fun sortedDeterministically(): WardrobeSyncSnapshot = copy(
         taxonomies = taxonomies.sortedDeterministically(),
@@ -77,8 +79,16 @@ data class WardrobeSyncSnapshot(
         garmentColors = garmentColors.sortedWith(compareBy(GarmentColorMappingRecord::garmentId, GarmentColorMappingRecord::role)),
         photos = photos.sortedWith(compareBy(GarmentPhotoRecord::garmentId, GarmentPhotoRecord::localUri)),
         tombstones = tombstones.sortedWith(compareBy(SyncTombstoneRecord::entityType, SyncTombstoneRecord::entityId)),
+        dismissedDuplicates = dismissedDuplicates.sortedWith(compareBy(DismissedPair::garmentA, DismissedPair::garmentB)),
     )
 }
+
+/** A "Not duplicates" pair with its ids sorted (garmentA < garmentB), as in the local table. */
+data class DismissedPair(
+    val garmentA: String,
+    val garmentB: String,
+    val dismissedAtEpochMillis: Long,
+)
 
 data class WardrobeSnapshotMetadata(
     val schemaVersion: Int = WARDROBE_SYNC_SCHEMA_VERSION,

@@ -1,13 +1,17 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.EmbeddingSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
 import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
 import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WardrobeSnapshotMetadata
+import com.gusanitolabs.robia.core.model.WARDROBE_SYNC_SCHEMA_VERSION
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
+import com.gusanitolabs.robia.data.local.DismissedDuplicatePairEntity
+import com.gusanitolabs.robia.data.local.SyncTombstoneEntity
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.toBase64
 import org.junit.Assert.assertEquals
@@ -194,5 +198,60 @@ class SnapshotJsonCompatTest {
         assertNull(decoded.restoredOriginalLocalUri)
         assertFalse(json.contains("original-garment-1"))
     }
-}
 
+    /** REQ-DU-02: the pairs are optional in the JSON, the schema stays 2, and a round trip keeps them in sorted order. */
+    @Test
+    fun dismissedDuplicatesRoundTripWithoutBumpingTheSchema() {
+        assertEquals(2, WARDROBE_SYNC_SCHEMA_VERSION)
+        val snapshot = WardrobeSyncSnapshot(
+            dismissedDuplicates = listOf(
+                DismissedPair("garment-b", "garment-c", dismissedAtEpochMillis = 20L),
+                DismissedPair("garment-a", "garment-b", dismissedAtEpochMillis = 10L),
+            ),
+        )
+
+        val json = DriveSnapshotJson.encode(snapshot)
+        val decoded = DriveSnapshotJson.decode(json)
+
+        assertEquals(2, decoded.metadata.schemaVersion)
+        assertEquals(
+            listOf(
+                DismissedPair("garment-a", "garment-b", dismissedAtEpochMillis = 10L),
+                DismissedPair("garment-b", "garment-c", dismissedAtEpochMillis = 20L),
+            ),
+            decoded.dismissedDuplicates,
+        )
+    }
+
+    /** REQ-DU-02: no pairs means no key, so a snapshot without dismissals is written as before and a legacy one decodes empty. */
+    @Test
+    fun absentDismissedDuplicatesDecodeToNoneAndAreNotWritten() {
+        val json = DriveSnapshotJson.encode(WardrobeSyncSnapshot())
+
+        assertFalse(json.contains("dismissedDuplicates"))
+        assertEquals(emptyList<DismissedPair>(), DriveSnapshotJson.decode(json).dismissedDuplicates)
+    }
+
+    /** REQ-DU-02: the export drops the pairs that name a deleted garment, and keeps the others with their ids sorted. */
+    @Test
+    fun exportDropsPairsOfTombstonedGarmentsOnly() {
+        val snapshot = buildWardrobeSyncSnapshot(
+            items = emptyList(),
+            itemTagRefs = emptyList(),
+            categories = emptyList(),
+            tags = emptyList(),
+            colors = emptyList(),
+            tombstones = listOf(
+                SyncTombstoneEntity(id = "garment:gone", entityType = "garment", entityId = "gone", deletedAtEpochMillis = 5L),
+            ),
+            embeddingsByGarmentId = emptyMap(),
+            generatedAtEpochMillis = 1L,
+            dismissedPairs = listOf(
+                DismissedDuplicatePairEntity("gone", "kept-1", dismissedAtEpochMillis = 1L),
+                DismissedDuplicatePairEntity("kept-1", "kept-2", dismissedAtEpochMillis = 2L),
+            ),
+        )
+
+        assertEquals(listOf(DismissedPair("kept-1", "kept-2", dismissedAtEpochMillis = 2L)), snapshot.dismissedDuplicates)
+    }
+}
