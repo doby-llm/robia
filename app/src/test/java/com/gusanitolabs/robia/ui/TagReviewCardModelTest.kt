@@ -172,7 +172,8 @@ class TagReviewCardModelTest {
     @Test
     fun aGarmentWhoseOnlyChangesAreLockedIsNotOffered() {
         val item = garment("g3", "occ-everyday")
-        val proposal = ReviewProposal("g3", before = setOf("occ-old"), proposed = setOf("occ-everyday"), kind = ProposalKind.Suggested)
+        // The only change is the removal of a deleted occasion: occ-old is no longer an existing tag, so the removal is locked.
+        val proposal = ReviewProposal("g3", before = setOf("occ-everyday", "occ-old"), proposed = setOf("occ-everyday"), kind = ProposalKind.Suggested)
         val session = TagReviewSession().withCard(
             reviewCardStateFor(
                 proposal = proposal,
