@@ -890,4 +890,6 @@
     <string name="back_exit_hint">Zum Beenden erneut Zurück drücken</string>
     <!-- DUP-FAST -->
     <string name="duplicate_calibration_preparing">Fotos werden vorbereitet… %1$d von %2$d</string>
+    <!-- REV-COLOR -->
+    <string name="color_review_tap_hint">Robia schlägt die Farben rechts vor. Tippe auf eine, um sie vor dem Akzeptieren zu ändern.</string>
 </resources>
