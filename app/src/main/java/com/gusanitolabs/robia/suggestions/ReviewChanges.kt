@@ -6,7 +6,8 @@ import java.text.Collator
 
 /**
  * One change a review card shows for a garment, inside one tag group. A locked removal is a tag that was deleted before the
- * review opened: it is shown but can never be left out or written. An unlocked removal or add is a switch.
+ * review opened: it is shown but can never be left out or written. An unlocked removal or add is a switch. In a category
+ * group an unlocked removal is shown only as the `from` half of a [Swap].
  */
 sealed interface ReviewChange {
     val key: String
@@ -65,15 +66,20 @@ private const val CATEGORY_GROUP = "category"
 
 /**
  * Derives the changes of one proposal inside one tag group. removed = before − proposed, added = proposed − before, both
- * limited to [groupTagIds]. Adds of tags that do not exist now are dropped before the category swap is decided. A category
- * group with one removed and one added tag is one [ReviewChange.Swap]. Order: swaps, removals, additions; each by [label]
- * with [collator], ties by id.
+ * limited to [groupTagIds]. Adds of tags that do not exist now are dropped before the category rules are decided. Order:
+ * swaps, removals, additions; each by [label] with [collator], ties by id.
+ *
+ * Category group: one removed and one added tag is one [ReviewChange.Swap]. In any other shape an unlocked removal is not
+ * shown at all, because it could only apply together with its add, and a removal alone would strip the garment's category.
+ * Its adds go with it. Locked removals stay as locked chips. A lone add stays a switch only when it can apply, that is when
+ * the garment has no category in the group now ([liveGroupTagIds] is empty).
  */
 fun reviewChangesFor(
     proposal: ReviewProposal,
     groupTagIds: Set<String>,
     isCategoryGroup: Boolean,
     existingTagIds: Set<String>,
+    liveGroupTagIds: Set<String>,
     label: (String) -> String,
     collator: Collator,
 ): ReviewChanges {
@@ -83,6 +89,12 @@ fun reviewChangesFor(
     val changes: List<ReviewChange> = if (isCategoryGroup && removedIds.size == 1 && addedIds.size == 1) {
         val from = removedIds.single()
         listOf(ReviewChange.Swap(from, addedIds.single(), fromLocked = from !in existingTagIds))
+    } else if (isCategoryGroup) {
+        val lockedIds = removedIds.filterTo(mutableSetOf()) { it !in existingTagIds }
+        val hasUnlockedRemoval = removedIds.any { it in existingTagIds }
+        val lone = !hasUnlockedRemoval && addedIds.size == 1 && liveGroupTagIds.isEmpty()
+        ordered(lockedIds).map { ReviewChange.Remove(it, locked = true) } +
+            if (lone) ordered(addedIds).map { ReviewChange.Add(it) } else emptyList<ReviewChange.Add>()
     } else {
         ordered(removedIds).map { ReviewChange.Remove(it, locked = it !in existingTagIds) } +
             ordered(addedIds).map { ReviewChange.Add(it) }
@@ -159,7 +171,7 @@ fun deltaFor(garmentId: String, changes: ReviewChanges, skipped: Set<String>, ch
  * still has; effective adds are the delta's adds that exist now in this group and are not on the garment. A category group
  * never ends with two categories: its removals apply only when every one is still live, and its add applies only when no
  * category is left after the removals and it is the only add; a removal with an add in the delta applies only together with
- * that add. An archived or missing garment, and a delta with nothing effective, give a null item.
+ * that add. An archived or missing garment, a delta for another garment, and a delta with nothing effective, give a null item.
  */
 fun applyDelta(
     live: ClothingItem?,
@@ -169,7 +181,7 @@ fun applyDelta(
     now: Long,
 ): ApplyResult {
     val unchanged = ApplyResult(null, AppliedDelta(delta.garmentId, emptySet(), emptySet()))
-    if (live == null || live.isArchived) return unchanged
+    if (live == null || live.isArchived || live.id != delta.garmentId) return unchanged
     val liveGroupIds = live.tags.filter { it.categoryId == categoryId }.mapTo(mutableSetOf(), GarmentTag::id)
     val liveIds = live.tags.mapTo(mutableSetOf(), GarmentTag::id)
     val existingById = existingTags.associateBy(GarmentTag::id)

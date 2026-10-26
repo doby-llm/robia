@@ -102,14 +102,72 @@ class ReviewChangesTest {
     fun addOfTagThatDoesNotExistIsDropped() {
         val occasion = changesOf(before = setOf(everyday.id), proposed = setOf(everyday.id, ghostOccasion), group = occasionIds + ghostOccasion)
         assertEquals(emptyList<ReviewChange>(), occasion.changes)
-        // The dropped add is decided before the swap: a category change to a missing tag is a plain removal.
+        // The dropped add is decided before the category rules: the removal of dresses has no add left, so it is not shown.
         val category = changesOf(
             before = setOf(dresses.id),
             proposed = setOf(ghostCategory),
             group = categoryIds + ghostCategory,
             isCategory = true,
         )
-        assertEquals(listOf(ReviewChange.Remove(dresses.id, locked = false)), category.changes)
+        assertEquals(emptyList<ReviewChange>(), category.changes)
+    }
+
+    // ---- category shapes that cannot apply as a whole are not switchable (B1)
+
+    @Test
+    fun unlockedCategoryRemovalWithoutAddIsNotShown() {
+        val changes = changesOf(before = setOf(dresses.id), proposed = emptySet(), group = categoryIds, isCategory = true)
+        assertEquals(emptyList<ReviewChange>(), changes.changes)
+    }
+
+    @Test
+    fun garmentWithTwoCategoriesGetsNoSwitchForItsCategoryChange() {
+        val changes = changesOf(
+            before = setOf(dresses.id, skirts.id),
+            proposed = setOf(knitwear.id),
+            group = categoryIds,
+            isCategory = true,
+            liveGroupIds = setOf(dresses.id, skirts.id),
+        )
+        assertEquals(emptyList<ReviewChange>(), changes.changes)
+    }
+
+    @Test
+    fun unlockedCategoryRemovalDropsItsAddButKeepsTheLockedChip() {
+        val changes = changesOf(
+            before = setOf(dresses.id, skirts.id),
+            proposed = setOf(knitwear.id),
+            group = categoryIds,
+            isCategory = true,
+            existingIds = existing - skirts.id,
+            liveGroupIds = setOf(dresses.id, skirts.id),
+        )
+        assertEquals(listOf(ReviewChange.Remove(skirts.id, locked = true)), changes.changes)
+    }
+
+    @Test
+    fun twoCategoryAddsWithoutRemovalAreNotShown() {
+        val changes = changesOf(before = emptySet(), proposed = setOf(skirts.id, knitwear.id), group = categoryIds, isCategory = true)
+        assertEquals(emptyList<ReviewChange>(), changes.changes)
+    }
+
+    @Test
+    fun loneCategoryAddIsShownOnlyWhileTheGarmentHasNoCategory() {
+        val hasOne = changesOf(
+            before = setOf(dresses.id),
+            proposed = setOf(dresses.id, skirts.id),
+            group = categoryIds,
+            isCategory = true,
+        )
+        assertEquals(emptyList<ReviewChange>(), hasOne.changes)
+        val hasNone = changesOf(
+            before = setOf(dresses.id),
+            proposed = setOf(dresses.id, skirts.id),
+            group = categoryIds,
+            isCategory = true,
+            liveGroupIds = emptySet(),
+        )
+        assertEquals(listOf(ReviewChange.Add(skirts.id)), hasNone.changes)
     }
 
     // ---- order and labels (V-REV-MODEL-2)
@@ -204,6 +262,34 @@ class ReviewChangesTest {
     }
 
     @Test
+    fun swapWithLockedFromCountsAsOneUnit() {
+        val changes = ReviewChanges(listOf(ReviewChange.Swap(dresses.id, skirts.id, fromLocked = true)), needsChoice = false)
+        assertEquals(ReviewButton.Apply(1), primaryButtonFor(changes, emptySet(), null))
+    }
+
+    @Test
+    fun leftOutAddCountsInTheButtonAndInTheQuietNote() {
+        val changes = ReviewChanges(
+            listOf(ReviewChange.Remove(everyday.id, locked = false), ReviewChange.Add(formal.id)),
+            needsChoice = false,
+        )
+        val skipped = setOf("add:${formal.id}")
+        assertEquals(ReviewButton.ApplyPartial(1, 2), primaryButtonFor(changes, skipped, null))
+        // The occasion goes and the add is left out, so the garment ends with no occasion.
+        assertTrue(noTagsLeft(true, setOf(everyday.id), changes, skipped, null))
+        assertFalse(noTagsLeft(true, setOf(everyday.id), changes, emptySet(), null))
+    }
+
+    @Test
+    fun lockedChipCannotBeLeftOutEvenWhenItsKeyIsSkipped() {
+        val changes = ReviewChanges(listOf(ReviewChange.Remove(formal.id, locked = true)), needsChoice = false)
+        val skipped = setOf("rem:${formal.id}")
+        assertTrue(deltaFor("g", changes, skipped, null).isEmpty)
+        assertEquals(ReviewButton.GotIt, primaryButtonFor(changes, skipped, null))
+        assertTrue(noTagsLeft(true, setOf(formal.id), changes, skipped, null))
+    }
+
+    @Test
     fun rejectIsOfferedOnlyWithApplyButtons() {
         assertTrue(ReviewButton.Apply(2).showsReject)
         assertTrue(ReviewButton.ApplyPartial(1, 2).showsReject)
@@ -270,6 +356,15 @@ class ReviewChangesTest {
     }
 
     @Test
+    fun skippedSwapGivesAnEmptyDeltaSoTheSwapDoesNotHappen() {
+        val changes = ReviewChanges(listOf(ReviewChange.Swap(dresses.id, skirts.id, fromLocked = false)), needsChoice = false)
+        val skipped = setOf("swap:${dresses.id}:${skirts.id}")
+        assertTrue(deltaFor("g", changes, skipped, null).isEmpty)
+        assertEquals(ReviewButton.KeepAsIs, primaryButtonFor(changes, skipped, null))
+        assertNull(applyDelta(garment(dresses), deltaFor("g", changes, skipped, null), allTags, "category", now).item)
+    }
+
+    @Test
     fun deltaOfDeletedOccasionCardIsEmpty() {
         val changes = ReviewChanges(listOf(ReviewChange.Remove(formal.id, locked = true)), needsChoice = false)
         assertTrue(deltaFor("g", changes, emptySet(), null).isEmpty)
@@ -293,6 +388,96 @@ class ReviewChangesTest {
         assertEquals(now, item.updatedAtEpochMillis)
         assertEquals(live.copy(tags = item.tags, updatedAtEpochMillis = now), item)
         assertEquals(AppliedDelta("g", setOf(everyday.id), setOf(formal.id)), result.applied)
+    }
+
+    @Test
+    fun aDeltaForAnotherGarmentChangesNothing() {
+        val result = applyDelta(garment(everyday), TagDelta("other", setOf(everyday.id), setOf(formal.id)), allTags, "occasion", now)
+        assertNull(result.item)
+        assertEquals(AppliedDelta("other", emptySet(), emptySet()), result.applied)
+    }
+
+    @Test
+    fun aLiveTagOfAnotherGroupInTheRemoveSetStaysOnTheGarment() {
+        val occasion = applyDelta(garment(red, everyday), TagDelta("g", setOf(red.id, everyday.id), emptySet()), allTags, "occasion", now)
+        assertEquals(idsOf(red), tagIds(occasion.item!!))
+        assertEquals(AppliedDelta("g", setOf(everyday.id), emptySet()), occasion.applied)
+        // In the category group the foreign removal makes the whole delta unusable: nothing is written.
+        val category = applyDelta(garment(dresses, red), TagDelta("g", setOf(dresses.id, red.id), setOf(skirts.id)), allTags, "category", now)
+        assertNull(category.item)
+    }
+
+    @Test
+    fun categoryDeltaWithTwoAddsAppliesNothing() {
+        val result = applyDelta(garment(dresses), TagDelta("g", setOf(dresses.id), setOf(skirts.id, knitwear.id)), allTags, "category", now)
+        assertNull(result.item)
+        assertEquals(AppliedDelta("g", emptySet(), emptySet()), result.applied)
+        val noCategory = applyDelta(garment(), TagDelta("g", emptySet(), setOf(skirts.id, knitwear.id)), allTags, "category", now)
+        assertNull(noCategory.item)
+    }
+
+    @Test
+    fun applyRevertApplyAgainGivesTheSameAsTheFirstApply() {
+        val delta = TagDelta("g", setOf(dresses.id), setOf(skirts.id))
+        val first = applyDelta(garment(dresses, everyday), delta, allTags, "category", now)
+        val reverted = revertDelta(first.item, first.applied, allTags, "category", now + 1)
+        val again = applyDelta(reverted.item, delta, allTags, "category", now + 2)
+        assertEquals(tagIds(first.item!!), tagIds(again.item!!))
+        assertEquals(first.applied, again.applied)
+    }
+
+    @Test
+    fun droppedCategoryChangeWritesNothingAndKeepsTheCategory() {
+        // before={dresses}, proposed={ghost}: the add is not a tag now, so the card shows no switch.
+        val changes = changesOf(
+            before = setOf(dresses.id),
+            proposed = setOf(ghostCategory),
+            group = categoryIds + ghostCategory,
+            isCategory = true,
+        )
+        assertEquals(ReviewButton.GotIt, primaryButtonFor(changes, emptySet(), null))
+        assertNull(applyDelta(garment(dresses), deltaFor("g", changes, emptySet(), null), allTags, "category", now).item)
+    }
+
+    @Test
+    fun twoCategoriesAreKeptWhenTheirChangeIsNotShown() {
+        val changes = changesOf(
+            before = setOf(dresses.id, skirts.id),
+            proposed = setOf(knitwear.id),
+            group = categoryIds,
+            isCategory = true,
+            liveGroupIds = setOf(dresses.id, skirts.id),
+        )
+        assertEquals(ReviewButton.GotIt, primaryButtonFor(changes, emptySet(), null))
+        assertNull(applyDelta(garment(dresses, skirts), deltaFor("g", changes, emptySet(), null), allTags, "category", now).item)
+    }
+
+    @Test
+    fun categoryButtonCountMatchesWhatApplyWrites() {
+        // Every category shape the card can meet, with the garment's category tags now. A swap is one unit.
+        val shapes = listOf(
+            Triple(setOf(dresses.id), setOf(skirts.id), setOf(dresses.id)),
+            Triple(setOf(dresses.id), emptySet<String>(), setOf(dresses.id)),
+            Triple(setOf(dresses.id), setOf(ghostCategory), setOf(dresses.id)),
+            Triple(setOf(dresses.id, skirts.id), setOf(knitwear.id), setOf(dresses.id, skirts.id)),
+            Triple(emptySet<String>(), setOf(skirts.id, knitwear.id), emptySet<String>()),
+            Triple(emptySet<String>(), setOf(skirts.id), emptySet<String>()),
+            Triple(setOf(dresses.id), setOf(dresses.id, skirts.id), setOf(dresses.id)),
+        )
+        for ((before, proposed, live) in shapes) {
+            val label = "$before -> $proposed"
+            val changes = changesOf(before, proposed, group = categoryIds + ghostCategory, isCategory = true, liveGroupIds = live)
+            val button = primaryButtonFor(changes, emptySet(), null)
+            val live0 = garment(*live.map { id -> allTags.single { it.id == id } }.toTypedArray())
+            val result = applyDelta(live0, deltaFor("g", changes, emptySet(), null), allTags, "category", now)
+            if (button == ReviewButton.Apply(1)) {
+                val item = result.item ?: error("$label: the card offers one switch but nothing is written")
+                assertEquals("$label: a category group ends with one category", 1, tagIds(item).count { it in categoryIds })
+            } else {
+                assertEquals("$label: nothing to switch", ReviewButton.GotIt, button)
+                assertNull("$label: nothing is shown, nothing is written", result.item)
+            }
+        }
     }
 
     @Test
@@ -447,11 +632,13 @@ class ReviewChangesTest {
         group: Set<String> = occasionIds,
         isCategory: Boolean = false,
         existingIds: Set<String> = existing,
+        liveGroupIds: Set<String> = before.intersect(group),
     ): ReviewChanges = reviewChangesFor(
         proposal = ReviewProposal("g", before, proposed, kind),
         groupTagIds = group,
         isCategoryGroup = isCategory,
         existingTagIds = existingIds,
+        liveGroupTagIds = liveGroupIds,
         label = { labels[it] ?: it },
         collator = collator,
     )
