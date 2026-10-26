@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.suggestions
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.data.GarmentVectors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -11,7 +12,10 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
@@ -149,15 +153,94 @@ class DuplicateScanTest {
     }
 
     @Test
-    fun rescanIsDueBeforeFirstRunAfterFiveNewGarmentsOrADayWithAChange() {
-        val day = 24L * 60 * 60 * 1000
-        val last = DuplicateScanRecord(atEpochMillis = 1_000L, garmentCount = 100)
+    fun signatureIgnoresOrderNameTagsNotesAndArchivedGarments() {
+        val a = garment("a").copy(photoUri = "file:a.jpg")
+        val b = garment("b").copy(photoUri = "file:b.jpg")
+        val signature = duplicateScanSignature(listOf(a, b))
 
-        assertTrue(duplicateScanDue(null, garmentCount = 100, nowEpochMillis = 1_000L))
-        assertFalse(duplicateScanDue(last, garmentCount = 104, nowEpochMillis = 1_000L + 1_000L))
-        assertTrue(duplicateScanDue(last, garmentCount = 105, nowEpochMillis = 1_000L + 1_000L))
-        assertTrue(duplicateScanDue(last, garmentCount = 103, nowEpochMillis = 1_000L + day))
-        assertFalse(duplicateScanDue(last, garmentCount = 100, nowEpochMillis = 1_000L + day))
+        assertEquals(signature, duplicateScanSignature(listOf(b, a)))
+        assertEquals(signature, duplicateScanSignature(listOf(a, b.copy(name = "other", notes = "note", tags = emptyList()))))
+        assertEquals(signature, duplicateScanSignature(listOf(a, b, garment("gone", archived = true))))
+    }
+
+    @Test
+    fun signatureChangesWhenAGarmentIsAddedArchivedOrItsPhotoChanges() {
+        val a = garment("a").copy(photoUri = "file:a.jpg")
+        val b = garment("b").copy(photoUri = "file:b.jpg")
+        val signature = duplicateScanSignature(listOf(a, b))
+
+        // The same gallery photo added twice: the second garment has its own id.
+        assertNotEquals(signature, duplicateScanSignature(listOf(a, b, garment("c").copy(photoUri = "file:a.jpg"))))
+        assertNotEquals(signature, duplicateScanSignature(listOf(a)))
+        assertNotEquals(signature, duplicateScanSignature(listOf(a, b.copy(isArchived = true))))
+        assertNotEquals(signature, duplicateScanSignature(listOf(a, b.copy(photoUri = "file:b-replaced.jpg"))))
+    }
+
+    @Test
+    fun scanIsDueUnlessTheLastSuccessfulScanSawTheSameSignature() {
+        assertTrue(duplicateScanDue(null, "s"))
+        assertFalse(duplicateScanDue("s", "s"))
+        assertTrue(duplicateScanDue("s", "t"))
+    }
+
+    @Test
+    fun aFailedScanIsNotRecordedAndKeepsTheGroups() = runTest {
+        val items = listOf(garment("a").copy(photoUri = "file:a.jpg"), garment("b").copy(photoUri = "file:b.jpg"))
+        val failures = mutableListOf<Exception>()
+
+        val outcome = collectDuplicateScan(
+            items,
+            snapshot = { error("database closed") },
+            hash = { null },
+            dismissed = { emptySet() },
+            onFailure = { failures += it },
+        )
+
+        val previous = listOf(DuplicateGroup(listOf("x", "y"), DuplicateTier.SamePhoto))
+        assertEquals(DuplicateScanOutcome.Failed, outcome)
+        assertEquals(listOf("IllegalStateException"), failures.map { it::class.simpleName })
+        assertEquals(previous, outcome.groupsAfter(previous))
+        assertEquals("old", nextDuplicateScanSignature("old", "new", outcome))
+        assertNull(nextDuplicateScanSignature(null, "new", outcome))
+    }
+
+    @Test
+    fun aSuccessfulScanReplacesTheGroupsAndRecordsTheSignature() = runTest {
+        val items = listOf(garment("a").copy(photoUri = "file:a.jpg"), garment("b").copy(photoUri = "file:b.jpg"))
+        val vectors = mapOf(
+            entry("a", floatArrayOf(1f, 0f), "h1"),
+            entry("b", floatArrayOf(1f, 0f), "h1"),
+        )
+
+        val outcome = collectDuplicateScan(
+            items,
+            snapshot = { vectors },
+            hash = { "h1" },
+            dismissed = { emptySet() },
+            onFailure = { throw AssertionError("unexpected failure", it) },
+        )
+
+        val previous = listOf(DuplicateGroup(listOf("x", "y"), DuplicateTier.SamePhoto))
+        assertEquals(listOf(DuplicateGroup(listOf("a", "b"), DuplicateTier.SamePhoto)), outcome.groupsAfter(previous))
+        assertEquals("new", nextDuplicateScanSignature("old", "new", outcome))
+    }
+
+    @Test
+    fun cancellationOfTheScanPropagatesAndIsNotReportedAsAFailure() = runTest {
+        var reported = false
+
+        try {
+            collectDuplicateScan(
+                listOf(garment("a")),
+                snapshot = { throw CancellationException("cancelled") },
+                hash = { null },
+                dismissed = { emptySet() },
+                onFailure = { reported = true },
+            )
+            fail("cancellation was swallowed")
+        } catch (expected: CancellationException) {
+            assertFalse(reported)
+        }
     }
 
     @Test
