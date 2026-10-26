@@ -921,4 +921,12 @@
     <string name="review_cd_removed">%1$s ya se quitó.</string>
     <string name="review_cd_replace">Poner %1$s. Toca dos veces para dejarla fuera.</string>
     <string name="review_cd_replace_off">%1$s no se pondrá. Toca dos veces para ponerla.</string>
+    <!-- REV-SAVE -->
+    <string name="review_leave_title">¿Salir de la revisión?</string>
+    <plurals name="review_leave_body">
+        <item quantity="one">1 prenda ya está actualizada. El resto se queda como está.</item>
+        <item quantity="other">%1$d prendas ya están actualizadas. El resto se queda como está.</item>
+    </plurals>
+    <string name="review_leave">Salir</string>
+    <string name="review_apply_failed">No se pudo guardar. La prenda vuelve a la lista.</string>
 </resources>

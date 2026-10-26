@@ -28,6 +28,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,8 +37,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,17 +53,19 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.media.ImagePurpose
+import com.gusanitolabs.robia.suggestions.AppliedDelta
+import com.gusanitolabs.robia.suggestions.ApplyResult
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
-import com.gusanitolabs.robia.suggestions.ProposalKind
 import com.gusanitolabs.robia.suggestions.ReviewPlanner
 import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
+import com.gusanitolabs.robia.suggestions.TagDelta
 import com.gusanitolabs.robia.suggestions.TagOperation
-import com.gusanitolabs.robia.suggestions.applyDelta
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
 import com.gusanitolabs.robia.suggestions.noTagsLeft
 import com.gusanitolabs.robia.suggestions.labelTextFor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
@@ -106,21 +112,55 @@ internal fun tagReviewPickerTitle(noun: String, garmentName: String, namedTitle:
     if (garmentName.isBlank()) noun.replaceFirstChar { char -> char.titlecase(Locale.getDefault()) } else namedTitle
 
 /**
- * What the commit saves. Accept all takes every proposal with a concrete target; a manual-choice proposal joins only when the
- * user accepts it. A discarded card is never saved, whatever its kind.
+ * A card can be decided only when its choice is made: a `needsChoice` card without a chosen tag writes nothing and stays
+ * Pending, so the review stays open until the user picks a tag (or leaves).
  */
-internal fun tagReviewCommitCandidates(
-    candidates: List<TagReviewCandidate>,
-    acceptedIds: Set<String>,
-    discardedIds: Set<String> = emptySet(),
-): List<TagReviewCandidate> = candidates.filter { candidate ->
-    candidate.item.id !in discardedIds &&
-        (candidate.proposal.kind == ProposalKind.Suggested || candidate.item.id in acceptedIds)
+internal fun canDecideNow(card: ReviewCardState, chosenTagId: String?): Boolean =
+    !card.changes.needsChoice || chosenTagId != null
+
+/** Back with nothing written discards the review (the whole tag change is undone); with a garment written it is left. */
+internal fun tagReviewLeaveKind(appliedCount: Int): LeaveKind = TagReviewSession().leaveKind(appliedCount)
+
+/** Applied cards whose write has come back with a change: a result with no item, and a write in flight, are not counted. */
+internal fun writtenGarmentCount(session: TagReviewSession): Int = session.cards.count { card ->
+    val applied = (card.decision as? ReviewDecision.Applied)?.applied
+    applied != null && (applied.removed.isNotEmpty() || applied.added.isNotEmpty())
 }
 
-/** Accept all counts the open cards with a concrete target only: accepted and discarded cards are closed, manual choices are not counted. */
-internal fun tagReviewOpenAcceptableCount(candidates: List<TagReviewCandidate>, closedIds: Set<String>): Int =
-    candidates.count { candidate -> candidate.proposal.kind == ProposalKind.Suggested && candidate.item.id !in closedIds }
+/** True while a decided card's write has not come back yet. */
+internal fun writesInFlight(session: TagReviewSession): Boolean = session.cards.any { card ->
+    val decision = card.decision
+    decision is ReviewDecision.Applied && decision.applied == null
+}
+
+/**
+ * The review finishes once the scan has ended and every found card is decided, with no write in flight, no picker or
+ * discard dialog open, and only once ([finished]).
+ */
+internal fun shouldFinishTagReview(
+    session: TagReviewSession,
+    isScanning: Boolean,
+    pickerOpen: Boolean,
+    discardDialogOpen: Boolean,
+    finished: Boolean,
+): Boolean =
+    !finished && !pickerOpen && !discardDialogOpen && session.isComplete(isScanning) && !writesInFlight(session)
+
+/**
+ * The session after the write of [garmentIds] came back: each result decides its card; a failed write puts the cards back
+ * in the list as Pending, with their chips kept.
+ */
+internal fun TagReviewSession.afterWrite(garmentIds: List<String>, outcome: Result<List<ApplyResult>>): TagReviewSession =
+    outcome.fold(
+        onSuccess = { results -> results.fold(this) { session, result -> session.appliedResult(result.applied.garmentId, result) } },
+        onFailure = { garmentIds.fold(this) { session, garmentId -> session.applyFailed(garmentId) } },
+    )
+
+/**
+ * The key of a card's list item. A card whose write failed comes back with a new key, so the exit animation it had
+ * finished starts over and the card shows again.
+ */
+internal fun reviewCardKey(garmentId: String, returns: Int): String = if (returns == 0) garmentId else "$garmentId#$returns"
 
 /**
  * Snapshot, then write, in one coroutine. The snapshot is read after the previous review write's database part, never its
@@ -328,8 +368,9 @@ internal fun canStartTagReviewAction(offerInFlight: Boolean, promptPending: Bool
 
 /**
  * Review of a category or occasion change. Garments are scanned incrementally on Dispatchers.Default, so the screen
- * opens at once and proposals appear as they are found. Nothing is written until [onCommit]; leaving the screen
- * cancels the scan and discards the garment proposals, while the tag change itself stays.
+ * opens at once and proposals appear as they are found. Each decided garment is written as it leaves the list ([onApply]);
+ * leaving the screen cancels the scan, keeps every garment already written, and never undoes a write. [onFinish] runs once
+ * the scan has ended and every found card is decided.
  */
 @Composable
 internal fun TagReviewScreen(
@@ -337,10 +378,16 @@ internal fun TagReviewScreen(
     request: TagReviewRequest,
     prepareScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
     discardDialogOpen: Boolean,
-    onCommit: (List<ClothingItem>) -> Unit,
+    onApply: suspend (List<TagDelta>) -> Result<List<ApplyResult>>,
+    @Suppress("unused") onRevert: suspend (List<AppliedDelta>) -> Result<List<ApplyResult>>,
+    onAppliedCountChange: (Int) -> Unit,
+    onFinish: (List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val applyFailedMessage = stringResource(R.string.review_apply_failed)
     val changeSet = request.changeSet
     val labelsById = remember(changeSet.id) {
         (changeSet.beforeTags + changeSet.afterTags).associate { tag -> tag.id to tag.localizedTagLabel(context) }
@@ -356,24 +403,25 @@ internal fun TagReviewScreen(
             .filter { tag -> tag.categoryId == changeSet.categoryId }
             .mapTo(mutableSetOf(), GarmentTag::id)
     }
-    // Pinned per change set: a later sync emission neither restarts the scan nor drops accepted proposals.
+    // Pinned per change set: a later sync emission neither restarts the scan nor drops the decisions made so far.
     val garments = remember(changeSet.id) { request.garments.filterNot(ClothingItem::isArchived) }
     val afterTagIds = remember(changeSet.id) { changeSet.afterTags.mapTo(mutableSetOf(), GarmentTag::id) }
     val collator = remember(changeSet.id) { browseCollator() }
     val candidates = remember(changeSet.id) { mutableStateListOf<TagReviewCandidate>() }
     // The chip choices and decisions of every card, from the moment its garment is found.
     var session by remember(changeSet.id) { mutableStateOf(TagReviewSession()) }
-    // Accepted ids stay in [candidates] for the commit; discarded cards are never saved. Hidden ids are the resolved cards whose exit has finished, and the garments with nothing to toggle.
-    val acceptedIds = remember(changeSet.id) { mutableStateListOf<String>() }
-    val discardedIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    // Hidden ids are the cards whose exit has finished, and the garments with nothing to toggle. [returns] counts the failed
+    // writes of each card, so a card that comes back gets a new key (see reviewCardKey). [writtenGarments] is what the finish reports.
     val hiddenIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    val returns = remember(changeSet.id) { mutableStateMapOf<String, Int>() }
+    val writtenGarments = remember(changeSet.id) { mutableStateListOf<ClothingItem>() }
     var scannedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var skippedCount by remember(changeSet.id) { mutableIntStateOf(0) }
     var isPreparing by remember(changeSet.id) { mutableStateOf(true) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
     var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
-    var committed by remember(changeSet.id) { mutableStateOf(false) }
+    var finished by remember(changeSet.id) { mutableStateOf(false) }
 
     // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
     LaunchedEffect(changeSet.id) {
@@ -417,38 +465,41 @@ internal fun TagReviewScreen(
         Log.d(TAG_REVIEW_SCAN_LOG_TAG, tagReviewScanLogLine(changeSet, candidates.size))
     }
 
-    // Accept all saves every proposal with a concrete target; a manual-choice proposal joins only when the user accepts it.
-    val commitCandidates = tagReviewCommitCandidates(candidates.toList(), acceptedIds.toSet(), discardedIds.toSet())
-    val closedIds = acceptedIds.toSet() + discardedIds
-    // Each garment is written through applyDelta with its own chip choices: a chip left out writes nothing, a kept removal keeps
-    // its tag, and a garment whose delta changes nothing is not in the result.
-    fun commitUpdatedItems(): List<ClothingItem> {
-        val now = System.currentTimeMillis()
-        return commitCandidates.mapNotNull { candidate ->
-            val card = session.cards.firstOrNull { cardState -> cardState.garmentId == candidate.item.id }
-            val delta = commitDeltaFor(card, afterTagIds) ?: return@mapNotNull null
-            applyDelta(
-                live = candidate.live,
-                delta = delta,
-                existingTags = changeSet.afterTags,
-                categoryId = changeSet.categoryId,
-                now = now,
-            ).item
+    // The count of written garments tells the shell which leave dialog to show; it is reported whenever it changes.
+    val appliedCount = writtenGarmentCount(session)
+    LaunchedEffect(appliedCount) { onAppliedCountChange(appliedCount) }
+
+    // Decide, then write: the card leaves the list at once. The write's result settles the card when it comes back; a failed
+    // write puts the card back in the list with the chips it had, and says so in a snackbar.
+    fun writeDecision(garmentIds: List<String>, delta: TagDelta) {
+        scope.launch {
+            val outcome = onApply(listOf(delta))
+            session = session.afterWrite(garmentIds, outcome)
+            val results = outcome.getOrNull()
+            if (results != null) {
+                results.mapNotNullTo(writtenGarments) { result -> result.item }
+            } else {
+                garmentIds.forEach { garmentId ->
+                    hiddenIds.remove(garmentId)
+                    returns[garmentId] = (returns[garmentId] ?: 0) + 1
+                }
+                snackbarHostState.showSnackbar(applyFailedMessage)
+            }
         }
     }
 
-    val autoCommit = shouldAutoCommit(
-        candidateIds = candidates.mapTo(mutableSetOf()) { candidate -> candidate.item.id },
-        closedIds = closedIds + hiddenIds,
+    // Finish once: the scan has ended, every found card is decided and no write is in flight (see shouldFinishTagReview).
+    val finishNow = shouldFinishTagReview(
+        session = session,
         isScanning = isScanning,
-        committed = committed,
         pickerOpen = pickerGarmentId != null,
         discardDialogOpen = discardDialogOpen,
+        finished = finished,
     )
-    LaunchedEffect(autoCommit) {
-        if (autoCommit) {
-            committed = true
-            onCommit(commitUpdatedItems())
+    LaunchedEffect(finishNow) {
+        if (finishNow) {
+            finished = true
+            onFinish(writtenGarments.toList())
         }
     }
 
@@ -552,17 +603,17 @@ internal fun TagReviewScreen(
 
                 items(
                     items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
-                    key = { candidate -> candidate.item.id },
+                    key = { candidate -> reviewCardKey(candidate.item.id, returns[candidate.item.id] ?: 0) },
                 ) { candidate ->
                     val garmentId = candidate.item.id
-                    val accepted = garmentId in acceptedIds
-                    val discarded = garmentId in discardedIds
                     val card = session.cards.firstOrNull { cardState -> cardState.garmentId == garmentId }
                     val chosen = card?.let { cardState -> chosenTagOf(cardState, afterTagIds) }
+                    // A decided card (applied, written, kept or rejected) leaves the list; a write that fails brings it back.
+                    val resolved = card == null || card.decision !is ReviewDecision.Pending
                     ReviewAcceptedCard(
-                        resolved = accepted || discarded,
+                        resolved = resolved,
                         onGone = { hiddenIds.add(garmentId) },
-                        direction = if (discarded) ExitDirection.Discard else ExitDirection.Accept,
+                        direction = if (card?.decision is ReviewDecision.Rejected) ExitDirection.Discard else ExitDirection.Accept,
                     ) {
                         if (card != null) {
                             val groupLabels = candidate.live.tags
@@ -589,7 +640,7 @@ internal fun TagReviewScreen(
                                     chosenTagId = chosen,
                                 ),
                                 labelOf = { tagId -> labelsById[tagId] ?: tagId },
-                                resolved = accepted || discarded,
+                                resolved = resolved,
                                 photo = {
                                     TagReviewPhoto(
                                         item = candidate.item,
@@ -599,17 +650,13 @@ internal fun TagReviewScreen(
                                 onToggle = { key -> session = session.toggle(garmentId, key) },
                                 onChoose = { pickerGarmentId = garmentId },
                                 onApply = {
-                                    session = session.apply(garmentId, afterTagIds).first
-                                    if (session.pending.none { cardState -> cardState.garmentId == garmentId }) {
-                                        acceptedIds.add(garmentId)
+                                    if (canDecideNow(card, chosen)) {
+                                        val (next, delta) = session.apply(garmentId, afterTagIds)
+                                        session = next
+                                        if (delta != null) writeDecision(listOf(garmentId), delta)
                                     }
                                 },
-                                onReject = {
-                                    session = session.reject(garmentId)
-                                    if (session.pending.none { cardState -> cardState.garmentId == garmentId }) {
-                                        discardedIds.add(garmentId)
-                                    }
-                                },
+                                onReject = { session = session.reject(garmentId) },
                             )
                         }
                     }
@@ -630,23 +677,18 @@ internal fun TagReviewScreen(
             }
         }
 
-        // Accept all counts open cards with a concrete target; manual-choice proposals stay out unless accepted by hand.
-        // Hidden cards (nothing to toggle, or exit finished) are closed and never counted.
-        val openAcceptableCount = tagReviewOpenAcceptableCount(candidates.toList(), closedIds + hiddenIds)
+        // Done leaves the review as Back does: with nothing written it asks to discard, with a garment written it asks to leave.
         ReviewBottomBar(
-            label = when {
-                openAcceptableCount > 0 -> stringResource(R.string.tag_review_accept_all, openAcceptableCount)
-                acceptedIds.isNotEmpty() -> stringResource(R.string.tag_review_save_accepted, acceptedIds.size)
-                else -> stringResource(R.string.done)
-            },
+            label = stringResource(R.string.done),
             enabled = !isScanning,
-            onClick = {
-                // Same once-only flag as the auto-commit: a Done tapped in the frame the auto-commit fires must not commit twice.
-                if (!committed) {
-                    committed = true
-                    onCommit(commitUpdatedItems())
-                }
-            },
+            onClick = onRequestDiscard,
+        )
+        // Above the bottom bar (about 104 dp tall): a failed save says so here.
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 112.dp),
         )
     }
 }

@@ -143,6 +143,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -205,7 +206,12 @@ import com.gusanitolabs.robia.suggestions.DuplicateGroup
 import com.gusanitolabs.robia.suggestions.DuplicatePairKey
 import com.gusanitolabs.robia.suggestions.DuplicateScanHistory
 import com.gusanitolabs.robia.suggestions.DuplicateSession
+import com.gusanitolabs.robia.suggestions.AppliedDelta
+import com.gusanitolabs.robia.suggestions.ApplyResult
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import com.gusanitolabs.robia.suggestions.TagDelta
+import com.gusanitolabs.robia.suggestions.applyDelta
+import com.gusanitolabs.robia.suggestions.revertDelta
 import com.gusanitolabs.robia.suggestions.duplicateScanDue
 import com.gusanitolabs.robia.suggestions.duplicateScanSignature
 import com.gusanitolabs.robia.suggestions.groupsAfter
@@ -251,6 +257,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -405,6 +412,21 @@ fun RobiaApp(
     }
     fun launchReviewWrite(write: suspend CoroutineScope.() -> List<WardrobeSyncOperation>) = reviewWrites.launch(write)
     val embeddingRepository = remember(app) { EmbeddingRepository(app.database.embeddingDao()) }
+    // A tag review's apply or revert: one batch in the serial review chain, each garment read live by id and the tags read live.
+    suspend fun writeTagReview(categoryId: String, changes: List<TagReviewChange>): Result<List<ApplyResult>> =
+        reviewWrites.launchAwaited {
+            writeTagReviewChanges(
+                categoryId = categoryId,
+                changes = changes,
+                readGarment = { garmentId -> wardrobeRepository.observeItem(garmentId).first() },
+                readTags = { tagRepository.observeTags().first() },
+                upsert = { items ->
+                    wardrobeRepository.upsertItems(items)
+                    app.appScope.launch { items.forEach { item -> storeSuggestionVectors(app, embeddingRepository, item, null) } }
+                },
+                now = System.currentTimeMillis(),
+            )
+        }
     val suggestionService = remember(app, wardrobeRepository, embeddingRepository) {
         SuggestionService(
             embedder = app.embeddingEngineHolder,
@@ -560,6 +582,7 @@ fun RobiaApp(
                     listOf(WardrobeSyncOperation.UpsertTags(restoredTagIds + mergedTagIds))
                 }
             },
+            onTagReviewWrite = ::writeTagReview,
             readGarmentsForReview = {
                 // Timing for the snapshot delay: the join waits for the previous review write's database part only.
                 val requestedAt = System.nanoTime()
@@ -921,6 +944,9 @@ private fun RobiaShell(
     onRestoreDefaultTags: (TagCategory) -> Unit,
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     readGarmentsForReview: suspend () -> List<ClothingItem>,
+    onTagReviewWrite: suspend (categoryId: String, changes: List<TagReviewChange>) -> Result<List<ApplyResult>> = { _, _ ->
+        Result.success(emptyList())
+    },
     onUndoReview: (buildPlan: suspend () -> ReviewUndoPlan) -> Unit = {},
     initialPerformanceBatchFixtureUris: List<String> = emptyList(),
 ) {
@@ -974,6 +1000,9 @@ private fun RobiaShell(
     val reviewScope = rememberCoroutineScope()
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
+    var showTagReviewLeaveDialog by remember { mutableStateOf(false) }
+    // Garments the open review has written so far (zero when no review is open): it decides Discard or Leave on Back.
+    var tagReviewAppliedCount by remember { mutableIntStateOf(0) }
     // Process-scoped: survives activity recreation. "Not duplicates" is also stored in Room, so the pairs stay out after a restart (REQ-DU-02).
     val duplicateGroups by DuplicateSession.groups.collectAsState()
     val duplicateBackfill by app.embeddingBackfill.progress.collectAsState()
@@ -1465,16 +1494,31 @@ private fun RobiaShell(
         offerTagReviewAfterWrite(restoredTagChangeSet(availableTags, category.id, defaults)) { onRestoreDefaultTags(category) }
     }
 
-    fun commitTagReview(updatedItems: List<ClothingItem>) {
-        if (updatedItems.isNotEmpty()) onSaveItems(updatedItems, emptyMap())
+    // The garments were written as they were decided: finishing only shows the summary and leaves for Manage tags.
+    fun finishTagReview(writtenGarments: List<ClothingItem>) {
         activeTagReview = null
         showTagReviewDiscardDialog = false
-        reviewComplete = reviewCompleteText(ReviewCompleteKind.Tags, updatedItems.size)
+        showTagReviewLeaveDialog = false
+        tagReviewAppliedCount = 0
+        reviewComplete = reviewCompleteText(ReviewCompleteKind.Tags, writtenGarments.size)
         replaceRoute(RobiaRoute.ManageTags)
     }
 
+    // Back with nothing written asks today's question (Discard undoes the tag change). Back with a garment written asks to
+    // leave, which keeps the tag change and every written garment.
     fun requestTagReviewDiscard() {
-        showTagReviewDiscardDialog = true
+        if (tagReviewLeaveKind(tagReviewAppliedCount) == LeaveKind.Discard) {
+            showTagReviewDiscardDialog = true
+        } else {
+            showTagReviewLeaveDialog = true
+        }
+    }
+
+    fun leaveTagReview() {
+        activeTagReview = null
+        showTagReviewLeaveDialog = false
+        tagReviewAppliedCount = 0
+        replaceRoute(RobiaRoute.ManageTags)
     }
 
     // Read when the undo runs, after the write it follows, so the plan sees the garments that write left behind. Archived
@@ -1808,6 +1852,24 @@ private fun RobiaShell(
             },
             dismissButton = {
                 TextButton(onClick = { showTagReviewDiscardDialog = false }) {
+                    Text(stringResource(R.string.review_keep_reviewing))
+                }
+            },
+        )
+    }
+
+    if (showTagReviewLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showTagReviewLeaveDialog = false },
+            title = { Text(stringResource(R.string.review_leave_title)) },
+            text = { Text(pluralStringResource(R.plurals.review_leave_body, tagReviewAppliedCount, tagReviewAppliedCount)) },
+            confirmButton = {
+                TextButton(onClick = ::leaveTagReview) {
+                    Text(stringResource(R.string.review_leave))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTagReviewLeaveDialog = false }) {
                     Text(stringResource(R.string.review_keep_reviewing))
                 }
             },
@@ -2152,9 +2214,11 @@ private fun RobiaShell(
             prepareTagReviewScan = { changeSet, garments -> prepareTagReviewScan(app, changeSet, garments) },
             manageTagsTabId = manageTagsTabId,
             onManageTagsTabIdChange = { manageTagsTabId = it },
-            onCommitTagReview = ::commitTagReview,
+            onFinishTagReview = ::finishTagReview,
+            onTagReviewWrite = onTagReviewWrite,
+            onTagReviewAppliedCountChange = { tagReviewAppliedCount = it },
             onRequestTagReviewDiscard = ::requestTagReviewDiscard,
-            showTagReviewDiscardDialog = showTagReviewDiscardDialog,
+            tagReviewDialogOpen = showTagReviewDiscardDialog || showTagReviewLeaveDialog,
             onCommitColorReview = ::commitColorReview,
             onCloseColorReview = {
                 activeColorReviewChangeSet = null
@@ -2947,9 +3011,11 @@ private fun RobiaNavHost(
     prepareTagReviewScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
     manageTagsTabId: String?,
     onManageTagsTabIdChange: (String?) -> Unit,
-    onCommitTagReview: (List<ClothingItem>) -> Unit,
+    onFinishTagReview: (List<ClothingItem>) -> Unit,
+    onTagReviewWrite: suspend (categoryId: String, changes: List<TagReviewChange>) -> Result<List<ApplyResult>>,
+    onTagReviewAppliedCountChange: (Int) -> Unit,
     onRequestTagReviewDiscard: () -> Unit,
-    showTagReviewDiscardDialog: Boolean,
+    tagReviewDialogOpen: Boolean,
     onClearRestoreSyncLog: () -> Unit,
     onLanguageSelected: (LanguagePreference) -> Unit,
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
@@ -3060,8 +3126,11 @@ private fun RobiaNavHost(
                 innerPadding = innerPadding,
                 request = request,
                 prepareScan = prepareTagReviewScan,
-                discardDialogOpen = showTagReviewDiscardDialog,
-                onCommit = onCommitTagReview,
+                discardDialogOpen = tagReviewDialogOpen,
+                onApply = { deltas -> onTagReviewWrite(request.changeSet.categoryId, deltas.map(TagReviewChange::Apply)) },
+                onRevert = { applied -> onTagReviewWrite(request.changeSet.categoryId, applied.map(TagReviewChange::Revert)) },
+                onAppliedCountChange = onTagReviewAppliedCountChange,
+                onFinish = onFinishTagReview,
                 onRequestDiscard = onRequestTagReviewDiscard,
             )
         } ?: EmptyStateCard(onAddClick = { onRouteSelected(RobiaRoute.AddEditClothing) })
@@ -3667,6 +3736,74 @@ internal class ReviewWrites(
         val previousWrite = latest
         launch { applyPlan(afterPreviousWrite(previousWrite, buildPlan)) }
     }
+
+    /**
+     * A write whose outcome the caller waits for (a tag review's apply or revert). It runs after the write before it, on [scope]
+     * (leaving the caller does not cancel it), and enqueues its sync operations detached, as [launch] does. A failure is a failed
+     * [Result] and never reaches [scope]; cancellation is rethrown.
+     */
+    suspend fun <T> launchAwaited(write: suspend () -> Pair<T, List<WardrobeSyncOperation>>): Result<T> {
+        val previousWrite = latest
+        // Lazy start: [latest] is set before the write can run, as in [launch].
+        val job = scope.async(start = CoroutineStart.LAZY) {
+            try {
+                val (value, operations) = afterPreviousWrite(previousWrite, write)
+                scope.launch { operations.forEach { operation -> enqueue(operation) } }
+                Result.success(value)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
+        }
+        latest = job
+        job.start()
+        return job.await()
+    }
+}
+
+/** One change of a tag review write: a decided garment's delta, or the revert of a delta that was written. */
+internal sealed interface TagReviewChange {
+    val garmentId: String
+
+    data class Apply(val delta: TagDelta) : TagReviewChange {
+        override val garmentId: String get() = delta.garmentId
+    }
+
+    data class Revert(val applied: AppliedDelta) : TagReviewChange {
+        override val garmentId: String get() = applied.garmentId
+    }
+}
+
+/**
+ * The body of one tag review write, run after the previous review write. The live tag table is read once and each garment is
+ * read live by id, never from a snapshot. A change to a garment already in the batch sees that change. Every garment that
+ * changed is upserted in one call, and each gets one `UpsertItem` operation. A change that changes nothing (or finds an
+ * archived or missing garment) has a null item and writes nothing.
+ */
+internal suspend fun writeTagReviewChanges(
+    categoryId: String,
+    changes: List<TagReviewChange>,
+    readGarment: suspend (String) -> ClothingItem?,
+    readTags: suspend () -> List<GarmentTag>,
+    upsert: suspend (List<ClothingItem>) -> Unit,
+    now: Long,
+): Pair<List<ApplyResult>, List<WardrobeSyncOperation>> {
+    val tags = readTags()
+    val live = mutableMapOf<String, ClothingItem?>()
+    val results = changes.map { change ->
+        val garmentId = change.garmentId
+        val current = if (garmentId in live) live.getValue(garmentId) else readGarment(garmentId).also { item -> live[garmentId] = item }
+        val result = when (change) {
+            is TagReviewChange.Apply -> applyDelta(current, change.delta, tags, categoryId, now)
+            is TagReviewChange.Revert -> revertDelta(current, change.applied, tags, categoryId, now)
+        }
+        result.item?.let { item -> live[garmentId] = item }
+        result
+    }
+    val written = results.mapNotNull(ApplyResult::item).associateBy(ClothingItem::id).values.toList()
+    if (written.isNotEmpty()) upsert(written)
+    return results to written.map { item -> WardrobeSyncOperation.UpsertItem(item.id) }
 }
 
 /** A prompt's cancel or confirm acts only while its request is still the pending one; a stale callback finds it taken. */

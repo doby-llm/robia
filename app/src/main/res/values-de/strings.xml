@@ -921,4 +921,12 @@
     <string name="review_cd_removed">%1$s wurde bereits entfernt.</string>
     <string name="review_cd_replace">%1$s setzen. Doppeltippen, um es wegzulassen.</string>
     <string name="review_cd_replace_off">%1$s wird nicht gesetzt. Doppeltippen, um es zu setzen.</string>
+    <!-- REV-SAVE -->
+    <string name="review_leave_title">Überprüfung verlassen?</string>
+    <plurals name="review_leave_body">
+        <item quantity="one">1 Kleidungsstück ist schon aktualisiert. Der Rest bleibt unverändert.</item>
+        <item quantity="other">%1$d Kleidungsstücke sind schon aktualisiert. Der Rest bleibt unverändert.</item>
+    </plurals>
+    <string name="review_leave">Verlassen</string>
+    <string name="review_apply_failed">Speichern fehlgeschlagen. Das Kleidungsstück ist wieder in der Liste.</string>
 </resources>
