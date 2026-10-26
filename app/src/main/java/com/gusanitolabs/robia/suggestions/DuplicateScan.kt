@@ -3,7 +3,6 @@ package com.gusanitolabs.robia.suggestions
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.gusanitolabs.robia.BuildConfig
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.GarmentVectors
@@ -31,13 +30,8 @@ import java.util.PriorityQueue
 /** Largest group the review shows; a bigger connected component is split by its strongest pairs (REQ-DU-02). */
 const val DUPLICATE_GROUP_MAX_SIZE = 6
 
-/** A rescan is due once this many garments were added since the last scan (REQ-DU-04). */
-const val DUPLICATE_RESCAN_NEW_GARMENTS = 5
-
 /** Number of same-category pairs the calibration screen shows (G-DUP). */
 const val CALIBRATION_PAIR_COUNT = 30
-
-private const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
 private const val DUPLICATE_LOG_TAG = "RobiaDuplicates"
 
@@ -83,16 +77,19 @@ data class CalibrationCounts(val active: Int, val withVector: Int, val hashMatch
 /** The calibration pairs of one scan, with the counts that explain an empty list. */
 data class CalibrationScan(val pairs: List<CalibrationPair>, val counts: CalibrationCounts)
 
-/** When a scan ran and how many active garments it saw. */
-data class DuplicateScanRecord(val atEpochMillis: Long, val garmentCount: Int)
+/** The result of one scan: [Success] with its groups, or [Failed] when the vectors or the photos could not be read. */
+sealed interface DuplicateScanOutcome {
+    data class Success(val groups: List<DuplicateGroup>) : DuplicateScanOutcome
+    data object Failed : DuplicateScanOutcome
+}
 
 /**
- * The scan of this process. It is not persisted, so a restart scans again on the next Browse visit; persisting it
- * needs a settings key that DUP1 does not add.
+ * The [duplicateScanSignature] of the last successful scan of this process. It is not persisted, so a restart scans
+ * again on the next Browse visit; persisting it needs a settings key that DUP1 does not add.
  */
 object DuplicateScanHistory {
     @Volatile
-    var last: DuplicateScanRecord? = null
+    var lastSignature: String? = null
 }
 
 /**
@@ -272,36 +269,71 @@ fun List<DuplicateGroup>.keepingActive(activeIds: Set<String>): List<DuplicateGr
 }
 
 /**
- * REQ-DU-04: a scan is due before the first run, after [DUPLICATE_RESCAN_NEW_GARMENTS] new garments, or once a day
- * when the number of garments changed.
+ * Identifies what a scan reads: the id and photo URI of each active garment, sorted by id. Order, name, tags and notes
+ * do not change it. A replaced photo has a new URI (a new file name), so it changes it too.
  */
-fun duplicateScanDue(last: DuplicateScanRecord?, garmentCount: Int, nowEpochMillis: Long): Boolean {
-    if (last == null) return true
-    val change = garmentCount - last.garmentCount
-    return change >= DUPLICATE_RESCAN_NEW_GARMENTS || (change != 0 && nowEpochMillis - last.atEpochMillis >= DAY_MILLIS)
+fun duplicateScanSignature(items: List<ClothingItem>): String = items
+    .filterNot(ClothingItem::isArchived)
+    .sortedBy(ClothingItem::id)
+    .joinToString(separator = "\n") { item -> "${item.id}\t${item.photoUri.orEmpty()}" }
+
+/** REQ-DU-04 (R3-DEC-051): a scan is due whenever the active garments differ from the last successful scan's. */
+fun duplicateScanDue(lastSignature: String?, signature: String): Boolean = lastSignature != signature
+
+/** The signature to remember after a scan: a Success records [signature]; a Failed keeps [previous], so the scan is retried. */
+fun nextDuplicateScanSignature(previous: String?, signature: String, outcome: DuplicateScanOutcome): String? =
+    when (outcome) {
+        is DuplicateScanOutcome.Success -> signature
+        DuplicateScanOutcome.Failed -> previous
+    }
+
+/** The groups to show after a scan: a Success replaces [current]; a Failed keeps them. */
+fun DuplicateScanOutcome.groupsAfter(current: List<DuplicateGroup>): List<DuplicateGroup> = when (this) {
+    is DuplicateScanOutcome.Success -> groups
+    DuplicateScanOutcome.Failed -> current
 }
 
 /**
  * The background scan (REQ-DU-04): a one-shot vector snapshot, then the current photo hash of the candidates only. A
  * garment whose stored hash is unique cannot pair, so its photo is not re-encoded. [dismissed] is read after the
- * snapshot and the hashes, so a dismissal made while they were read is still honoured. A failed scan returns no groups.
+ * snapshot and the hashes, so a dismissal made while they were read is still honoured.
  */
 suspend fun scanDuplicates(
     context: Context,
     items: List<ClothingItem>,
     embeddingRepository: EmbeddingRepository,
     dismissed: () -> Set<DuplicatePairKey>,
-): List<DuplicateGroup> = withContext(Dispatchers.IO) {
-    try {
-        val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
-        val currentHashes = resolvePhotoHashes(sharedHashCandidates(items, vectors), items, hash = { uri -> currentPhotoHash(context, uri) })
-        scan(items, vectors, currentHashes, dismissed())
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        if (BuildConfig.DEBUG) Log.w(DUPLICATE_LOG_TAG, "Duplicate scan failed: ${failure::class.java.simpleName}", failure)
-        emptyList()
-    }
+): DuplicateScanOutcome = withContext(Dispatchers.IO) {
+    collectDuplicateScan(
+        items = items,
+        snapshot = { embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID) },
+        hash = { uri -> currentPhotoHash(context, uri) },
+        dismissed = dismissed,
+        onFailure = { failure ->
+            Log.w(DUPLICATE_LOG_TAG, "Duplicate scan failed: ${failure::class.java.simpleName}: ${failure.message}")
+        },
+    )
+}
+
+/**
+ * The body of [scanDuplicates] with its inputs injected, so it runs on the JVM. Any failure except cancellation is passed
+ * to [onFailure] and gives [DuplicateScanOutcome.Failed]; cancellation propagates.
+ */
+internal suspend fun collectDuplicateScan(
+    items: List<ClothingItem>,
+    snapshot: suspend () -> Map<String, GarmentVectors>,
+    hash: suspend (uri: String) -> String?,
+    dismissed: () -> Set<DuplicatePairKey>,
+    onFailure: (Exception) -> Unit,
+): DuplicateScanOutcome = try {
+    val vectors = snapshot()
+    val currentHashes = resolvePhotoHashes(sharedHashCandidates(items, vectors), items, hash = hash)
+    DuplicateScanOutcome.Success(scan(items, vectors, currentHashes, dismissed()))
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: Exception) {
+    onFailure(failure)
+    DuplicateScanOutcome.Failed
 }
 
 /**

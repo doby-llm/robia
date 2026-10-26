@@ -202,10 +202,12 @@ import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
 import com.gusanitolabs.robia.suggestions.DuplicateScanHistory
-import com.gusanitolabs.robia.suggestions.DuplicateScanRecord
 import com.gusanitolabs.robia.suggestions.DuplicateSession
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.duplicateScanDue
+import com.gusanitolabs.robia.suggestions.duplicateScanSignature
+import com.gusanitolabs.robia.suggestions.groupsAfter
+import com.gusanitolabs.robia.suggestions.nextDuplicateScanSignature
 import com.gusanitolabs.robia.suggestions.scanDuplicates
 import com.gusanitolabs.robia.suggestions.QueryEmbedding
 import com.gusanitolabs.robia.suggestions.SavedExample
@@ -1118,15 +1120,16 @@ private fun RobiaShell(
         ),
     )
     // REQ-DU-04: a one-shot scan off the main thread, at rest in Browse and after the embedding backfill has finished a pass
-    // with nothing left (settled); before that, remaining = 0 only means "not computed yet".
-    LaunchedEffect(clothingItems.size, currentRoute, duplicateBackfill.remaining, duplicateBackfill.settled, wardrobeItemsLoading) {
+    // with nothing left (settled); before that, remaining = 0 only means "not computed yet". Keyed on the signature, so a
+    // change to the active garments during a scan restarts it.
+    val duplicateSignature = remember(clothingItems) { duplicateScanSignature(clothingItems) }
+    LaunchedEffect(duplicateSignature, currentRoute, duplicateBackfill.remaining, duplicateBackfill.settled, wardrobeItemsLoading) {
         if (wardrobeItemsLoading || currentRoute != RobiaRoute.Browse) return@LaunchedEffect
         if (!duplicateBackfill.settled || duplicateBackfill.remaining > 0) return@LaunchedEffect
-        val count = clothingItems.size
-        val now = System.currentTimeMillis()
-        if (!duplicateScanDue(DuplicateScanHistory.last, count, now)) return@LaunchedEffect
-        DuplicateSession.replaceGroups(scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value })
-        DuplicateScanHistory.last = DuplicateScanRecord(atEpochMillis = now, garmentCount = count)
+        if (!duplicateScanDue(DuplicateScanHistory.lastSignature, duplicateSignature)) return@LaunchedEffect
+        val outcome = scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value }
+        DuplicateSession.replaceGroups(outcome.groupsAfter(DuplicateSession.groups.value))
+        DuplicateScanHistory.lastSignature = nextDuplicateScanSignature(DuplicateScanHistory.lastSignature, duplicateSignature, outcome)
     }
     // Every route that archives or deletes a garment (Browse, review, item detail) changes clothingItems, so groups drop it here.
     // Not while the wardrobe is loading: an empty list would drop every group.
