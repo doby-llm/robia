@@ -218,6 +218,7 @@
 - **PLAN-CHANGE 2026-10-24 (R3-DEC-041):** CHK also lists the DEV rows of the Round 3b tasks below; its predecessors include them.
 - **PLAN-CHANGE 2026-10-24 (R3-DEC-046):** CHK also lists the DEV rows of the Round 3c tasks (OUT-DROP, UI-SMART, DARK1 to DARK4) and REV when it exists; its predecessors include them. V-OUT-D is not listed (dropped).
 - **PLAN-CHANGE 2026-10-25 (R3-DEC-051):** CHK also lists the DEV rows of the Round 3d tasks (NAV-BACK, ADD-UX, PICKER-FIX, REV-PROGRESS, DUP-FAST, DUP-TRIGGER; V-DUP2-D as before) and REV when it exists; its predecessors include them. G-DUP and V-DUP1-D are not listed (closed by R3-DEC-047).
+- **PLAN-CHANGE 2026-10-26 (R3-DEC-055):** "REV when it exists" is now the Round 3e tasks REV-TOKENS, REV-MODEL, REV-SESSION, REV-COLOR, REV-CARD, REV-SAVE, REV-UNDO, REV-BULK and REV-DONE (predecessors of CHK); CHK lists their one DEV row, V-REV-D.
 
 ---
 
@@ -239,24 +240,23 @@ CHK         <- ALL (round 3 and 3b)
 ```
 Shared files (writers in order): `sync/GoogleDriveWardrobeRepository.kt` SYNC-AUTH → SYNC-ETA → SYNC-SPEED; `sync/WardrobeSyncOutboxProcessor.kt` SYNC-AUTH → SYNC-BANNER → SYNC-ETA; `ui/RobiaApp.kt` SYNC-BANNER → SYNC-ETA; `sync/DriveHttpErrors.kt` SYNC-AUTH → SYNC-SPEED; `sync/fakes/FakeDriveSnapshotApi.kt` SYNC-AUTH → SYNC-SPEED.
 
-### Open decisions (D-F10 and D-F13 decided by Manu on 2026-10-24; D-F12 direction decided 2026-10-25, design round 3 open)
+### Open decisions (D-F10 and D-F13 decided by Manu on 2026-10-24; D-F12 decided by Manu on 2026-10-26)
 - **D-F10 (smart background remove, ED1): decided 2026-10-24 (R3-DEC-043, Manu).** Option C: a deterministic pure-Kotlin tap that removes the tapped connected component of the current alpha; the gesture, trail, 60 % guard, history and hint stay. Task UI-SMART (Round 3c below). If V-UI-SMART-D still fails on the device, the next step is removal of the smart tool (option B), not another fix. V-ED1-D is replaced by V-UI-SMART-D.
 - **D-F13 (Outfit lab, OUT): decided 2026-10-24 (R3-DEC-042, Manu).** The Outfit lab is removed. Task OUT-DROP (Round 3c below). V-OUT-D and G-OUT are closed as dropped.
-- **D-F12 (garment review redesign, colour + tag review): direction A "Pick, then decide" chosen by Manu on 2026-10-25 (R3-DEC-050); decided now: design round 3 for the red "−" language of removed tags (F21, REQ-FB-21).** Mockups: `mockups/review-redesign/`. The REV task is still unwritten and is written after design round 3 (DARK1 is merged, so REV builds on the theme tokens; REQ-FB-12; R3-DEC-046). Semantics fixed by R3-DEC-050: leaving halfway keeps every garment already decided, one tag group per review.
-- **F15–F21 (Manu, 2026-10-25, R3-DEC-047 to R3-DEC-051):** F15 → NAV-BACK; F16 + F20 → ADD-UX; F17 → PICKER-FIX; F18 → DUP-FAST, DUP-TRIGGER and DUP2 (T_DUP = 0.96, G-DUP closed); F19 → REV-PROGRESS; F21 → REV (design round 3). Round 3d below.
+- **D-F12 (garment review redesign, colour + tag review): decided by Manu on 2026-10-26 (R3-DEC-052).** Direction A "Pick, then decide" (R3-DEC-050) with the signed chips of design round 3 (`mockups/review-redesign-3/`): green "+" for added tags, red "−" with strike-through for removed tags, never colour alone. Card semantics R3-DEC-053 (coordinator, overturnable), what the code forces R3-DEC-054, the nine tasks REV-TOKENS to REV-DONE R3-DEC-055 (Round 3e below). The colour review keeps its screen and gains one description line.
+- **F15–F21 (Manu, 2026-10-25, R3-DEC-047 to R3-DEC-051):** F15 → NAV-BACK; F16 + F20 → ADD-UX; F17 → PICKER-FIX; F18 → DUP-FAST, DUP-TRIGGER and DUP2 (T_DUP = 0.96, G-DUP closed); F19 → REV-PROGRESS; F21 → REV (Round 3e). Round 3d below.
 
-### Remaining execution order (updated 2026-10-25, R3-DEC-051; first written 2026-10-24, R3-DEC-046)
-Merged already: UI-CAL, UI-WHITE, EX2, BAT3, SYNC-AUTH, SYNC-BANNER, SYNC-ETA, OUT-DROP, UI-SMART, DARK1. Remaining, in the order the coordinator starts them; "after" is a file conflict, not a logical dependency, and a task starts as soon as its file predecessors are merged.
-1. **SYNC-SPEED** (in independent review round 2). Files: `sync/GoogleDriveWardrobeRepository.kt`, `sync/DriveFileIndex.kt`, `sync/DriveHttpErrors.kt`, the fake API. DUP2 follows it on `sync/GoogleDriveWardrobeRepository.kt`.
-2. **DARK2, DARK3, DARK4** (pending; mutually parallel, disjoint Files). DARK2 comes before ADD-UX (`ui/AddEditClothingScreen.kt`) and PICKER-FIX (`ui/GarmentFieldRows.kt`); DARK3 comes before DUP-FAST (`ui/DuplicateCalibrationScreen.kt`) and DUP2 (`ui/DuplicateReviewScreen.kt`); DARK4 shares nothing with Round 3d.
-3. **NAV-BACK ∥ DUP-FAST** (disjoint: `ui/RobiaApp.kt` + `ui/BackExitPolicy.kt` against `suggestions/DuplicateScan.kt` + `data/EmbeddingRepository.kt` + `ui/DuplicateCalibrationScreen.kt`). NAV-BACK conflicts with nothing pending and may start at once; DUP-FAST starts after DARK3.
-4. **DUP-TRIGGER** (after DUP-FAST on `suggestions/DuplicateScan.kt`, after NAV-BACK on `ui/RobiaApp.kt`).
-5. **ADD-UX ∥ PICKER-FIX** (both after DARK2; disjoint: `ui/AddEditClothingScreen.kt` against `ui/ReviewScaffold.kt` + `ui/GarmentFieldRows.kt`).
-6. **REV-PROGRESS** (after PICKER-FIX on `ui/ReviewScaffold.kt`; `ui/TagReviewScreen.kt` and `ui/ColorReviewScreen.kt` have no other writer before REV).
-7. **DUP2** (after DUP-FAST and DUP-TRIGGER; after DARK3 on `ui/DuplicateReviewScreen.kt`; after NAV-BACK and DUP-TRIGGER on `ui/RobiaApp.kt`; after SYNC-SPEED on `sync/GoogleDriveWardrobeRepository.kt`). Independent review: yes + E2.
-8. **REV** (after design round 3 and Manu's confirmation, D-F12; after PICKER-FIX and REV-PROGRESS on `ui/ReviewScaffold.kt`, `ui/TagReviewScreen.kt`, `ui/ColorReviewScreen.kt`). Not yet written.
-9. **CHK** (all; last).
-Lanes: sync 1 → (DUP2); dark 2 → ADD-UX ∥ PICKER-FIX → REV-PROGRESS → REV; duplicates DUP-FAST → DUP-TRIGGER → DUP2; NAV-BACK ahead of DUP-TRIGGER. At most one worker per shared file at a time.
+### Remaining execution order (updated 2026-10-26, R3-DEC-055; first written 2026-10-24, R3-DEC-046)
+Merged already: UI-CAL, UI-WHITE, EX2, BAT3, SYNC-AUTH, SYNC-BANNER, SYNC-ETA, SYNC-SPEED, OUT-DROP, UI-SMART, DARK1, DARK2, DARK3, DARK4, NAV-BACK, PICKER-FIX, ADD-UX, REV-PROGRESS, DUP-FAST. Remaining, in the order the coordinator starts them; "after" is a file conflict, not a logical dependency, and a task starts as soon as its file predecessors are merged.
+1. **DUP-TRIGGER** (after DUP-FAST on `suggestions/DuplicateScan.kt`, after NAV-BACK on `ui/RobiaApp.kt`; both merged, so it may start at once).
+2. **REV-TOKENS ∥ REV-MODEL ∥ REV-COLOR** (Round 3e; disjoint Files: `core/designsystem/Color.kt` + `Theme.kt` against new `suggestions/ReviewChanges.kt` against `ui/ColorReviewScreen.kt` + the three `strings.xml`). The coordinator starts REV after DUP-TRIGGER is merged and runs it as one lane; no REV task shares a file with DUP-TRIGGER except REV-SAVE (`ui/RobiaApp.kt`). Nothing else writes the review files (`ui/TagReviewScreen.kt`, `ui/ColorReviewScreen.kt`, `ui/ReviewScaffold.kt`) any more.
+3. **REV-SESSION** (after REV-MODEL; new `ui/TagReviewSession.kt` only; may run beside REV-TOKENS and REV-COLOR).
+4. **DUP2** (after DUP-FAST and DUP-TRIGGER; after DARK3 on `ui/DuplicateReviewScreen.kt`, merged; after NAV-BACK and DUP-TRIGGER on `ui/RobiaApp.kt`; after SYNC-SPEED on `sync/GoogleDriveWardrobeRepository.kt`, merged). Independent review: yes + E2. Runs beside the REV lane; it and REV-SAVE both write `ui/RobiaApp.kt` (different regions), so one at a time, whichever is ready first.
+5. **REV-CARD** (after REV-TOKENS, REV-MODEL, REV-SESSION and REV-COLOR; rewrites the tag review cards on `ui/TagReviewScreen.kt`, still one commit at the end, `ui/RobiaApp.kt` untouched).
+6. **REV-SAVE** (after REV-CARD; after DUP-TRIGGER, and DUP2 if it is already running, on `ui/RobiaApp.kt`). Independent review: yes.
+7. **REV-UNDO → REV-BULK → REV-DONE** (serial on `ui/TagReviewScreen.kt` and the three `strings.xml`; REV-UNDO also edits `ReviewAcceptedCard` in `ui/ReviewScaffold.kt`). REV-UNDO and REV-BULK: independent review yes.
+8. **CHK** (all; last).
+Lanes: duplicates DUP-TRIGGER → DUP2; review REV-TOKENS ∥ REV-MODEL ∥ REV-COLOR → REV-SESSION → REV-CARD → REV-SAVE → REV-UNDO → REV-BULK → REV-DONE; `ui/RobiaApp.kt` DUP-TRIGGER → (DUP2 | REV-SAVE). At most one worker per shared file at a time.
 
 ## SYNC-AUTH — Drive sign-in errors: refresh and retry, correct classification, honest banner (F8)
 - **Reqs:** REQ-FB-08 · **Predecessors:** — · **Successors:** SYNC-BANNER, SYNC-SPEED · **Independent review: yes**
@@ -333,7 +333,7 @@ DARK1    <- (none)      (file order only: after SYNC-AUTH on MainActivity.kt, af
 DARK2    <- DARK1
 DARK3    <- DARK1       (file order: after DARK1 on ui/SettingsScreen.kt)
 DARK4    <- DARK1       (file order: after UI-SMART on ui/PhotoEditorScreen.kt)
-REV      <- DARK1       (not yet written; D-F12)
+REV      <- DARK1       (written in Round 3e: REV-TOKENS to REV-DONE, R3-DEC-055)
 CHK      <- ALL
 ```
 
@@ -396,7 +396,7 @@ REV-PROGRESS <- PICKER-FIX       (ui/ReviewScaffold.kt)
 DUP-FAST     <- (none)           (file order: after DARK3 on ui/DuplicateCalibrationScreen.kt)
 DUP-TRIGGER  <- DUP-FAST, NAV-BACK
 DUP2         <- DUP1, OR2, ZIP, DUP-FAST, DUP-TRIGGER   (file order: after DARK3, SYNC-SPEED)
-REV          <- DARK1, design round 3, PICKER-FIX, REV-PROGRESS   (not yet written)
+REV          <- DARK1, design round 3, PICKER-FIX, REV-PROGRESS   (written in Round 3e: REV-TOKENS to REV-DONE, R3-DEC-055)
 CHK          <- ALL
 ```
 
@@ -442,3 +442,91 @@ CHK          <- ALL
 - **Out of scope:** Scan cost (DUP-FAST), the cosine tier and dismissals (DUP2), the banner, persisting the history to disk, any other `RobiaApp.kt` code.
 - **Acceptance:** V-DUP-TRIGGER-1, V-DUP-TRIGGER-2, V-DUP-TRIGGER-3, V-DUP-TRIGGER-D.
 - **Test replaced by this design:** the `duplicateScanDue` assertions in `DuplicateScanTest` (about lines 149-153) pin the 5-new / 24 h rule. Rewrite them with equal strength for the signature rule (see V-DUP-TRIGGER-1). V-DUP1-3's "once per 24 hours, 5 new garments" text is superseded.
+
+---
+
+## Round 3e — Garment review redesign (REV, F12 + F21)
+
+Source: R3-DEC-052 to R3-DEC-055 (Manu approved the design on 2026-10-26; mockups `mockups/review-redesign-3/` for the signed chips, `mockups/review-redesign-2/pick-then-decide.html` for the card flow). Same worker rules 0–13; all tasks start from latest `origin/main`; line numbers in the briefs may be a few lines off. Rule 2 applies: `strings.xml` in three locales and new tests are always allowed. Rule 9 is refined: new UI uses the existing theme tokens plus the add/remove tokens of REV-TOKENS; a colour literal needs a `// theme-fixed: <reason>` marker (the DARK scan tests are in force); contrast ≥ 4.5:1 in light and dark; tap targets ≥ 48 dp.
+
+**Dependency summary.** Conflict-driven (full order under "Remaining execution order").
+```
+REV-TOKENS  <- (none)           (DARK1 merged)
+REV-MODEL   <- (none)
+REV-COLOR   <- (none)           (first writer of the strings.xml blocks)
+REV-SESSION <- REV-MODEL
+REV-CARD    <- REV-TOKENS, REV-MODEL, REV-SESSION, REV-COLOR   (file order on strings.xml)
+REV-SAVE    <- REV-CARD, DUP-TRIGGER                          (ui/RobiaApp.kt; with DUP2 one at a time)
+REV-UNDO    <- REV-SAVE
+REV-BULK    <- REV-UNDO
+REV-DONE    <- REV-BULK
+CHK         <- ALL
+```
+Shared files (writers in order): `ui/TagReviewScreen.kt` REV-CARD → REV-SAVE → REV-UNDO → REV-BULK → REV-DONE; `ui/RobiaApp.kt` DUP-TRIGGER → (DUP2 | REV-SAVE); `ui/ReviewScaffold.kt` REV-UNDO only; `ui/ColorReviewScreen.kt` REV-COLOR only; `core/designsystem/Color.kt` and `Theme.kt` REV-TOKENS only; the three `res/values*/strings.xml` REV-COLOR → REV-CARD → REV-SAVE → REV-UNDO → REV-BULK → REV-DONE (one `<!-- REV-… -->` block each). Every other new file has one owner.
+
+**What is reviewed (from the code, R3-DEC-054).** Only category and occasion groups, one group per review. A change is a set difference inside the group: removed = before − proposed, added = proposed − before. Locked removal = a tag that no longer exists (deleted before the review opened). Swap = a category group with exactly one removed and one added tag.
+
+## REV-TOKENS — Add and remove colour tokens for the review chips (F21)
+- **Reqs:** REQ-FB-21, REQ-FB-12 · **Predecessors:** — · **Successors:** REV-CARD · **Independent review: no**
+- **Files:** `core/designsystem/Color.kt`; `core/designsystem/Theme.kt` (`RobiaExtras`, `RobiaLightExtras`, `RobiaDarkExtras` and the new colour holder only); new `app/src/test/java/com/gusanitolabs/robia/core/designsystem/ReviewChangeColorsTest.kt`.
+- **In scope:** `RobiaChangeColors(sign, onSign, container, onContainer, border)` and two members on `RobiaExtras`, `addColors` and `removeColors`, with the light and dark values of the mockup (table in the brief); both extras instances filled. The pairs are tested for WCAG contrast ≥ 4.5:1 in light and dark: sign against the card (`surfaceContainerLowest` of the scheme), on-container against container, on-sign against sign; the existing light scheme hex pins and dark table stay green.
+- **Out of scope:** Any change to `ColorScheme` roles, to a screen, to the swatch palette; the border colour contrast (decorative; the sign and the fill carry the meaning).
+- **Acceptance:** V-REV-TOKENS-1, V-REV-TOKENS-2.
+
+## REV-MODEL — What a review card says and what applying does (pure; F12 + F21)
+- **Reqs:** REQ-FB-12, REQ-FB-21 · **Predecessors:** — · **Successors:** REV-SESSION, REV-CARD, REV-SAVE · **Independent review: yes** (defines the apply and revert of user data)
+- **Files:** new `suggestions/ReviewChanges.kt`; new `app/src/test/java/com/gusanitolabs/robia/suggestions/ReviewChangesTest.kt`.
+- **In scope:** (1) `ReviewChange` = `Add(tagId)`, `Remove(tagId, locked)`, `Swap(fromId, toId, fromLocked)` with a stable `key`, derived from a `ReviewProposal` inside one group (`reviewChangesFor`), with `needsChoice` for a `ChooseManually` proposal; adds of tags that do not exist now are dropped; tags of other groups are ignored. (2) The fixed order: swaps, removals, additions, each alphabetical by label (collator, primary strength), ties by id. (3) The primary button model from the changes and the left-out keys: `Apply(n)` (a swap counts as one), `ApplyPartial(on, of)`, `KeepAsIs`, `GotIt` (only locked chips); Reject is shown with the first two only. (4) `noTagsLeft` for the quiet note (occasion group, the garment has occasions now, none after). (5) `TagDelta`, `AppliedDelta` and `applyDelta(live, delta, existingTags, group, now)`: live tags − removed + added inside the group, adds only for tags that exist now, a category group never ends with two categories (the add applies only when no other category remains, and the removal only with it), an archived or missing garment is left alone, the result carries the delta that actually changed; `revertDelta` is `applyDelta` of the inverse of that effective delta, so a tag the user changed in between is not touched.
+- **Out of scope:** `ReviewPlanner` and its proposals, any UI, any write, sync, session state (REV-SESSION).
+- **Acceptance:** V-REV-MODEL-1, V-REV-MODEL-2, V-REV-MODEL-3, V-REV-MODEL-4, V-REV-MODEL-5, V-REV-MODEL-6.
+
+## REV-SESSION — Decision state of a tag review (pure; F12 + F21)
+- **Reqs:** REQ-FB-12, REQ-FB-21 · **Predecessors:** REV-MODEL · **Successors:** REV-CARD, REV-SAVE, REV-UNDO, REV-BULK, REV-DONE · **Independent review: no**
+- **Files:** new `ui/TagReviewSession.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewSessionTest.kt`.
+- **In scope:** An immutable `TagReviewSession` over the cards in scan order: per card the changes, the left-out keys, the chosen tag of a `needsChoice` card and the decision `Pending`, `Applied(intended, applied?)` (`applied == null` while the write is in flight) or `Rejected`. Pure transitions: add a card (idempotent by garment id), `toggle` (a locked removal never toggles; a swap with a locked half toggles only the replacement), `choose`, `apply` (the button decides: `Apply*` → Applied with the delta, `KeepAsIs` → Rejected, `GotIt` → Applied with an empty delta and no write), `reject`, `appliedResult`, `applyFailed` (back to Pending), `revert` (Applied with a result or Rejected → Pending, chip choices kept, returns the delta to reverse, none for Rejected and empty deltas; refused while a write is in flight). Queries: left count, pending cards in scan order, reviewed cards most recent first, applied-garment count (non-empty intended delta, in flight included), `bulkPlan` (cards with something to apply or to dismiss; `needsChoice` without a choice stays out; counts of tags added, tags removed and garments, locked removals not counted as removed), `applyBulk`, completion tallies (garments updated, tags added, tags removed, garments kept) and `isComplete(scanning)` (scan ended, at least one card, none Pending), `leaveKind(appliedCount)` = `Discard` (0) or `Leave`.
+- **Out of scope:** Compose, writes, strings, the planner, the model's apply and revert (REV-MODEL).
+- **Acceptance:** V-REV-SESSION-1, V-REV-SESSION-2, V-REV-SESSION-3, V-REV-SESSION-4.
+
+## REV-COLOR — Colour review: one description line (F12, Manu 2026-10-26)
+- **Reqs:** REQ-FB-12 · **Predecessors:** — · **Successors:** REV-CARD (file order on `strings.xml`) · **Independent review: no**
+- **Files:** `ui/ColorReviewScreen.kt` (one new line of text only); the three `strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/ui/ColorReviewHintTest.kt`.
+- **In scope:** One line of body text under the progress header: "Robia suggests the colors on the right. Tap one to change it before you accept." (`color_review_tap_hint`; ES "Robia propone los colores de la derecha. Toca uno para cambiarlo antes de aceptar.", DE "Robia schlägt die Farben rechts vor. Tippe auf eine, um sie vor dem Akzeptieren zu ändern."), `bodyMedium` in `onSurfaceVariant`, shown while there is at least one card, no new colour literal.
+- **Out of scope:** Every other part of the colour review (cards, buttons, bottom bar, counts, dialogs, semantics), the shared scaffold.
+- **Acceptance:** V-REV-COLOR-1, V-REV-COLOR-2.
+
+## REV-CARD — Tag review cards with signed chips (F12 + F21; still one commit at the end)
+- **Reqs:** REQ-FB-12, REQ-FB-21 · **Predecessors:** REV-TOKENS, REV-MODEL, REV-SESSION, REV-COLOR · **Successors:** REV-SAVE · **Independent review: yes** (the commit now writes the per-chip choices; the reviewer checks that a chip left out is never written and a kept tag is never removed)
+- **Files:** `ui/TagReviewScreen.kt` (the screen body, the candidate card and the picker use; the offer, change-set and undo-plan functions stay); new `ui/ReviewChangeChips.kt`; new `ui/TagReviewCard.kt`; new `ui/TagReviewCardModel.kt`; the three `strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewCardModelTest.kt`; new `app/src/test/java/com/gusanitolabs/robia/ui/DarkThemeReviewScanTest.kt`.
+- **In scope:** Each candidate is a card (container `surfaceContainerLowest`, `outlineVariant` border): thumbnail and a description line "Category · Colour" (never the garment name), "Now: …" for the occasion group, the chips in the fixed order with the REV-TOKENS colours (filled sign circle, strike-through on removals, hollow sign and dashed ghost for an add left out, plain chip for a removal kept, one framed unit for a swap, locked removals static), each chip a switch (36 dp chip in a 48 dp row, TalkBack state and action text, 150 ms cross-fade, none under reduced motion, a light haptic tick, chips never re-sort), the quiet "no occasions" and "all changes skipped" lines, and the footer: Reject and the counted primary button (`Apply n changes` / `Apply n of m` / `Keep as is` / `Got it`), both 48 dp, Apply the wider. A pinned header above the list: "N left" and the review progress bar once the scan has ended (while it runs, the existing scan header and its REV-PROGRESS bar stay), plus the existing change-set header texts and one hint line. The list shrinks with the existing exit animation. A `ChooseManually` card shows the locked chip and a "Choose" button that opens the existing single-choice picker; the choice becomes a "+" chip; the picker is removed from every other card. Per-tag toggles live in the REV-SESSION state; Apply and Reject still go into today's accepted and discarded id lists and the one commit at the end (Done, Accept all, auto commit) now writes each accepted garment through REV-MODEL's `applyDelta` on its snapshot copy with the chip choices; Back and Discard are unchanged. The bottom bar and its strings stay as they are. `DarkThemeReviewScanTest` scans the review files for unmarked colour literals.
+- **Out of scope:** Saving per garment and the Back dialog (REV-SAVE), Undo, Reviewed section, Apply all remaining wording (REV-UNDO, REV-BULK), completion (REV-DONE), the colour review, `ReviewScaffold.kt`, `ReviewPlanner`, `RobiaApp.kt`.
+- **Acceptance:** V-REV-CARD-1, V-REV-CARD-2, V-REV-CARD-3, V-REV-CARD-4, V-REV-CARD-5.
+- **Tests that stay as they are:** `TagReviewAcceptAllTest` and the tag part of `ReviewDiscardTest` (the id lists and `shouldAutoCommit` are untouched here; REV-SAVE replaces them).
+
+## REV-SAVE — Save each garment as it leaves the list; leave halfway (F21, R3-DEC-050)
+- **Reqs:** REQ-FB-21, REQ-FB-12 · **Predecessors:** REV-CARD, DUP-TRIGGER (file order on `ui/RobiaApp.kt`; DUP2 one at a time) · **Successors:** REV-UNDO · **Independent review: yes** (writes user data)
+- **Files:** `ui/TagReviewScreen.kt`; `ui/RobiaApp.kt` (the tag review wiring only: `commitTagReview`, `discardTagReview`, `requestTagReviewDiscard`, the discard dialog, the `TagReviewScreen` call, a new serial apply path next to `ReviewWrites`); the three `strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewSaveTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewAcceptAllTest.kt` and `app/src/test/java/com/gusanitolabs/robia/ui/ReviewDiscardTest.kt` (the tag assertions replaced, equal strength).
+- **In scope:** The screen is driven by `TagReviewSession`. Apply (and Keep as is, Got it, Reject) decides the garment at once: Reject, Keep as is and Got it write nothing; Apply sends its `TagDelta` to `onApply`, a suspend callback that returns the effective `AppliedDelta` (or a failure that puts the card back with a snackbar "Couldn't save. The garment is back in the list."). RobiaApp runs it in the same serial chain as the other review writes: wait for the previous write, plain-read the live garments and the live tags (never `readGarmentsForReview`), `applyDelta`, `wardrobeRepository.upsertItems` for the changed garments, `WardrobeSyncOperation.UpsertItem` for each, detached as `ReviewWrites.launch` does. `onRevert` (wired now, used by REV-UNDO) runs the same chain with `revertDelta`. The commit-at-end path, `tagReviewCommitCandidates`, `tagReviewOpenAcceptableCount` and `shouldAutoCommit` are removed; when the scan has ended and no card is Pending the screen calls `onFinish(changedGarments)`, which keeps today's completion overlay and route to Manage tags for now. Leaving: the screen reports the applied-garment count; Back with 0 applied asks today's question (Discard undoes the whole tag change), with ≥ 1 applied asks "Leave the review?" (`review_leave_title`, plural `review_leave_body`: "N garments are already updated. The rest stay as they are.", `review_leave`) and Leave keeps the tag change and every applied garment and goes to Manage tags; Keep reviewing is unchanged. A pending write finishes when the screen is left (it runs on the app scope).
+- **Out of scope:** Undo, Reviewed section, bulk, completion screen (later tasks), the offer, snapshot and prompt code, `tagReviewUndoPlan`, the colour review, DB schema.
+- **Acceptance:** V-REV-SAVE-1, V-REV-SAVE-2, V-REV-SAVE-3, V-REV-SAVE-4, V-REV-SAVE-5.
+- **Tests replaced by this design:** `TagReviewAcceptAllTest` (both tests) and in `ReviewDiscardTest` `discardedSuggestedCardIsNotCommitted`, `discardedManualChoiceIsNotCommittedEvenWhenAcceptedBefore`, `acceptAllCountsOpenSuggestedCardsOnly`, `reviewClosesWhenEveryCardIsAcceptedOrDiscarded` pin the commit-at-end functions. Rewrite them with equal strength for the new rules: a Rejected garment and an unchosen `ChooseManually` garment are never written; only decided garments are written; the review finishes only when the scan has ended and every found card is decided. The colour tests of `ReviewDiscardTest` stay as they are.
+
+## REV-UNDO — Undo snackbar, "Reviewed · N" and "Review again" (F12)
+- **Reqs:** REQ-FB-12 · **Predecessors:** REV-SAVE · **Successors:** REV-BULK · **Independent review: yes** (reverts user data)
+- **Files:** `ui/TagReviewScreen.kt`; `ui/ReviewScaffold.kt` (`ReviewAcceptedCard` only); the three `strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewUndoTest.kt`.
+- **In scope:** After every decision a snackbar (short duration, one at a time, a new decision replaces it): "N changes applied" (plural) or "Kept as it was", with Undo; Undo is the latest decision's `revert` (a write through `onRevert` for an Applied garment, none for a Rejected one) and the card returns to its place in the list with its chips as the user left them; Undo is disabled while that garment's write is in flight. "Got it" shows no snackbar. A collapsed section "Reviewed · N" with Show/Hide after the pending cards, and "N reviewed ▾" in the pinned header that opens it: each row is the description line, the outcome ("N changes applied" / "Kept as it was") and a 48 dp "Review again", which is the same `revert`. A failed revert keeps the garment decided and shows `review_revert_failed`. `ReviewAcceptedCard` resets when `resolved` goes back to false, so a garment undone while it is still leaving comes back instead of staying invisible; the colour review's behaviour is unchanged.
+- **Out of scope:** Apply all remaining, completion screen, the write path (REV-SAVE), the colour review's screen.
+- **Acceptance:** V-REV-UNDO-1, V-REV-UNDO-2, V-REV-UNDO-3, V-REV-UNDO-4.
+
+## REV-BULK — Apply all remaining, with confirmation (F12)
+- **Reqs:** REQ-FB-12 · **Predecessors:** REV-UNDO · **Successors:** REV-DONE · **Independent review: yes** (batch write of user data)
+- **Files:** `ui/TagReviewScreen.kt`; the three `strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewBulkTest.kt`.
+- **In scope:** The bottom bar becomes "Apply all remaining (N)" (N = garments the bulk plan would change; disabled while the scan runs and when it is 0) and opens a confirmation (`review_bulk_title`; the body states tags added, tags removed (omitted when 0) and garments; confirm "Apply", dismiss "Cancel"). Confirm runs REV-SESSION's `applyBulk`: each remaining card is applied with its current chips (cards with every change left out count as kept, locked-only cards are dismissed, a `ChooseManually` card without a choice stays in the list), as ONE `onApply` batch; the snackbar says "N garments updated" (plural) with an Undo that reverts the whole batch in one write and returns those cards to the list. The old strings `tag_review_accept_all` and `tag_review_save_accepted` stay in the files, unused by this screen.
+- **Out of scope:** Completion screen, the colour review's "Accept all", any new write path.
+- **Acceptance:** V-REV-BULK-1, V-REV-BULK-2, V-REV-BULK-3.
+
+## REV-DONE — Completion screen with "Edit changes" (F12)
+- **Reqs:** REQ-FB-12, REQ-FB-21 · **Predecessors:** REV-BULK · **Successors:** — · **Independent review: no**
+- **Files:** `ui/TagReviewScreen.kt`; new `ui/TagReviewComplete.kt`; the three `strings.xml`; new `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewCompleteTest.kt`.
+- **In scope:** When `isComplete(scanning)` the list is replaced by a static completion view (no sparkle, no auto-dismiss): a check in a soft circle, the existing plural `review_complete_tags` ("Tags updated on N garments") or `review_complete_none` ("No garments changed") when none changed, the tally "+ N tags added · − N tags removed" in the add and remove colours with filled sign circles (an entry shows only when its number is above 0), "N kept as they were" (`review_complete_kept`, plural), up to five thumbnails of the updated garments, a tonal "Edit changes" button that returns to the list with every garment in "Reviewed", and a filled "Done" that calls `onFinish(0)` (the screen has shown its own completion, so RobiaApp's overlay does not appear) and returns to Manage tags. The Undo snackbar stays reachable on the way in. "Edit changes" sets a screen flag that keeps the list visible until a card has been returned to Pending and decided again, so the completion view does not come straight back. The empty-scan card, the model-unavailable card and the skipped line keep today's behaviour.
+- **Out of scope:** `ReviewCompleteOverlay.kt` (still used by the colour review), the colour review, any write path.
+- **Acceptance:** V-REV-DONE-1, V-REV-DONE-2, V-REV-D.
