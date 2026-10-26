@@ -894,4 +894,31 @@
     <string name="duplicate_tier_very_similar">Very similar</string>
     <!-- REV-COLOR -->
     <string name="color_review_tap_hint">Robia suggests the colors on the right. Tap one to change it before you accept.</string>
+    <!-- REV-CARD -->
+    <string name="review_reject">Reject</string>
+    <plurals name="review_apply_n">
+        <item quantity="one">Apply 1 change</item>
+        <item quantity="other">Apply %1$d changes</item>
+    </plurals>
+    <string name="review_apply_n_of_m">Apply %1$d of %2$d</string>
+    <string name="review_keep_as_is">Keep as is</string>
+    <string name="review_got_it">Got it</string>
+    <string name="review_all_skipped">All changes skipped: the garment stays as it is.</string>
+    <string name="review_none_left_occ">After this, the garment has no occasions.</string>
+    <string name="review_hint_changes">Tap a change to skip it, then apply or reject. Reviewed garments leave the list.</string>
+    <plurals name="review_left">
+        <item quantity="one">1 left</item>
+        <item quantity="other">%1$d left</item>
+    </plurals>
+    <string name="review_now">Now: %1$s</string>
+    <string name="review_none">none</string>
+    <string name="review_cd_add">Add %1$s. Double-tap to leave it out.</string>
+    <string name="review_cd_add_off">%1$s will not be added. Double-tap to add it.</string>
+    <string name="review_cd_remove">Remove %1$s. Double-tap to keep it.</string>
+    <string name="review_cd_remove_off">%1$s stays. Double-tap to remove it.</string>
+    <string name="review_cd_swap">%1$s instead of %2$s. Double-tap to keep %2$s.</string>
+    <string name="review_cd_swap_off">Stays %2$s. Double-tap to change to %1$s.</string>
+    <string name="review_cd_removed">%1$s was already removed.</string>
+    <string name="review_cd_replace">Set %1$s. Double-tap to leave it out.</string>
+    <string name="review_cd_replace_off">%1$s will not be set. Double-tap to set it.</string>
 </resources>
