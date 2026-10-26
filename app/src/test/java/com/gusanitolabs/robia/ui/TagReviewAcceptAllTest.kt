@@ -22,8 +22,8 @@ class TagReviewAcceptAllTest {
         assertEquals(listOf(manual), tagReviewCommitCandidates(listOf(manual), setOf("gB")))
     }
 
-    private fun candidate(id: String, kind: ProposalKind) = TagReviewCandidate(
-        item = ClothingItem(id = id, name = id, tags = emptyList(), createdAtEpochMillis = 0, updatedAtEpochMillis = 0),
-        proposal = ReviewProposal(id, emptySet(), emptySet(), kind),
-    )
+    private fun candidate(id: String, kind: ProposalKind): TagReviewCandidate {
+        val item = ClothingItem(id = id, name = id, tags = emptyList(), createdAtEpochMillis = 0, updatedAtEpochMillis = 0)
+        return TagReviewCandidate(item = item, proposal = ReviewProposal(id, emptySet(), emptySet(), kind), live = item)
+    }
 }

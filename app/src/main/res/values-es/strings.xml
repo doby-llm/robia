@@ -894,4 +894,31 @@
     <string name="duplicate_tier_very_similar">Muy similar</string>
     <!-- REV-COLOR -->
     <string name="color_review_tap_hint">Robia propone los colores de la derecha. Toca uno para cambiarlo antes de aceptar.</string>
+    <!-- REV-CARD -->
+    <string name="review_reject">Rechazar</string>
+    <plurals name="review_apply_n">
+        <item quantity="one">Aplicar 1 cambio</item>
+        <item quantity="other">Aplicar %1$d cambios</item>
+    </plurals>
+    <string name="review_apply_n_of_m">Aplicar %1$d de %2$d</string>
+    <string name="review_keep_as_is">Dejar como está</string>
+    <string name="review_got_it">Entendido</string>
+    <string name="review_all_skipped">Todos los cambios saltados: la prenda se queda como está.</string>
+    <string name="review_none_left_occ">Después de esto, la prenda no tendrá ocasiones.</string>
+    <string name="review_hint_changes">Toca un cambio para saltarlo y luego aplica o rechaza. Las prendas revisadas salen de la lista.</string>
+    <plurals name="review_left">
+        <item quantity="one">Queda 1</item>
+        <item quantity="other">Quedan %1$d</item>
+    </plurals>
+    <string name="review_now">Ahora: %1$s</string>
+    <string name="review_none">ninguna</string>
+    <string name="review_cd_add">Añadir %1$s. Toca dos veces para dejarla fuera.</string>
+    <string name="review_cd_add_off">%1$s no se añadirá. Toca dos veces para añadirla.</string>
+    <string name="review_cd_remove">Quitar %1$s. Toca dos veces para conservarla.</string>
+    <string name="review_cd_remove_off">%1$s se queda. Toca dos veces para quitarla.</string>
+    <string name="review_cd_swap">%1$s en lugar de %2$s. Toca dos veces para conservar %2$s.</string>
+    <string name="review_cd_swap_off">Se queda en %2$s. Toca dos veces para cambiar a %1$s.</string>
+    <string name="review_cd_removed">%1$s ya se quitó.</string>
+    <string name="review_cd_replace">Poner %1$s. Toca dos veces para dejarla fuera.</string>
+    <string name="review_cd_replace_off">%1$s no se pondrá. Toca dos veces para ponerla.</string>
 </resources>

@@ -294,10 +294,14 @@ class ReviewDiscardTest {
         assertTrue(written)
     }
 
-    private fun candidate(id: String, kind: ProposalKind) = TagReviewCandidate(
-        item = garment(id),
-        proposal = ReviewProposal(garmentId = id, before = emptySet(), proposed = setOf(category.id), kind = kind),
-    )
+    private fun candidate(id: String, kind: ProposalKind): TagReviewCandidate {
+        val item = garment(id)
+        return TagReviewCandidate(
+            item = item,
+            proposal = ReviewProposal(garmentId = id, before = emptySet(), proposed = setOf(category.id), kind = kind),
+            live = item,
+        )
+    }
 
     private fun deleteChangeSet() = TagChangeSet(
         id = "delete",
