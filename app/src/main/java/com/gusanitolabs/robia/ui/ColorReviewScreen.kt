@@ -266,6 +266,16 @@ internal fun ColorReviewScreen(
                 )
             }
 
+            if (candidates.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        text = stringResource(R.string.color_review_tap_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             if (!isScanning && candidates.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     val hasEligibleItems = reviewItems.isNotEmpty()
