@@ -91,6 +91,8 @@ def tp(key, n, *args):
 
 TAGS = dict(r2.TAGS)
 TAGS["datenight"] = ("Date night", "Noche de cita", "Date-Abend")
+TAGS["weekendaway"] = ("Weekend away", "Escapada", "Wochenendausflug")  # custom occasion merged into the default Casual
+TAGS["casual"] = ("Casual", "Informal", "Freizeit")
 
 
 def tn(tag):
@@ -337,8 +339,13 @@ def card_rows(g, now, items, off=(), group="occasion"):
 NOW = {"coat": ["everyday"], "shirt": ["everyday"], "dress": ["everyday"], "blazer": ["business", "weekend", "datenight"],
        "trench": ["everyday", "weekend"], "skirt": ["weekend"], "jeans": ["everyday"], "tee": ["active"]}
 SINGLES = [("coat", [("add", "business")]), ("shirt", [("add", "formal")]), ("dress", [("add", "dressedup")])]
-RESTORE = ("blazer", [("add", "everyday"), ("add", "formal"), ("add", "dressedup"), ("add", "statement"),
-                      ("rem", "weekend"), ("rem", "datenight")])
+# Restore default tags only adds defaults (restoredTagChangeSet); a custom tag merged into a default re-points its garments,
+# which the review shows as a swap. Custom tags that were not merged stay and only appear in the "Now:" line.
+RESTORE = ("blazer", ["business", "weekendaway", "datenight"],
+           [("add", "everyday"), ("add", "formal"), ("add", "dressedup"), ("add", "statement"), ("swap", "casual", "weekendaway")])
+# A mixed adds + removes proposal (e.g. after a tag is deleted or merged): the stress case for red next to green.
+MIXED = ("blazer", [("add", "everyday"), ("add", "formal"), ("add", "dressedup"), ("add", "statement"),
+                    ("rem", "weekend"), ("rem", "datenight")])
 SWAPS = [("knit", [("swap", "knitwear", "tops")]), ("trench", [("swap", "coats", "jackets")]), ("tee", [("swap", "shirts", "tops")])]
 REMOVAL = [("trench", [("rem", "weekend")]), ("skirt", [("rem", "weekend")])]
 
@@ -354,7 +361,7 @@ def lang(code, fn):
     return run
 
 
-def screens(card, alt=False):
+def screens(card, alt=False, cvd=False):
     out = []
 
     def lst(th, cards, left=37, reviewed=0, total=37, ctx="review_ctx_restored_occ", with_ctx=True):
@@ -373,14 +380,18 @@ def screens(card, alt=False):
                    "<b>Reject</b> = keep the garment’s tags exactly as they are. <b>Apply 1 change</b> = apply what is on (filled). Both remove the garment from the list (Undo snackbar).",
                    "Apply is the wider, right-hand button (thumb side); both 48 dp. Bottom bar: <b>Apply all remaining (37)</b> with a confirmation that states adds and removes."]))
 
-    g, items = RESTORE
-    out.append(("Restore case · 4 adds + 2 removes", lambda th: lst(th, [c(g, items), c(*SINGLES[0])]),
-                ["Restoring the default occasions adds 4 and removes the 2 custom ones this garment had (assumed rule, see open question 2). Business is unchanged: it only appears in the “Now:” line.",
-                 ("Rows in reading order: <b>− Removes</b> first, then <b>+ Adds</b>; each label has its own filled sign circle in the matching colour."
+    g, items = MIXED
+    rg, rnow, ritems = RESTORE
+    restore_card = (lambda th: lst(th, [c(g, items), c(*SINGLES[0])])) if cvd else (lambda th: lst(th, [card(rg, rnow, ritems), c(*SINGLES[0])]))
+    out.append(("Restore case · 4 adds + 1 merge", restore_card,
+                ["Restoring the default occasions <b>only adds</b>: 4 defaults this garment lacks. It never removes custom tags: Business and the custom Date night are unchanged and only appear in the “Now:” line.",
+                 "The one red sign comes from a <b>merge</b>: the custom “Weekend away” was merged into the default Casual, so its garments move to Casual. "
+                 "It is a swap, one unit “− Weekend away → + Casual”, one tap target; tapped, the garment keeps Weekend away.",
+                 ("Rows in reading order: <b>⇄ Changes</b> (the merge) first, then <b>+ Adds</b>; each label has its own filled sign circle in the matching colour."
                   if alt else
-                  "Reading order is fixed: <b>removals first, then additions</b>, so red never interleaves with green. Removed tags: red tint, filled <b>−</b>, <s>struck-through</s> text. Added: green tint, filled <b>+</b>, plain text."),
-                 "<b>Tap a + chip</b> to leave it out; <b>tap a − chip</b> to keep the tag after all. Each chip is a switch (36 dp visual, 48 dp row); state changes immediately, nothing is saved until the footer.",
-                 "Primary button counts what will happen: <b>Apply 6 changes</b>."]))
+                  "Reading order is fixed: <b>swap first, then additions</b>, so the red half never interleaves with the green chips. Added: green tint, filled <b>+</b>, plain text."),
+                 "<b>Tap a + chip</b> to leave it out; <b>tap the swap</b> to keep Weekend away. Each chip is a switch (36 dp visual, 48 dp row); state changes immediately, nothing is saved until the footer.",
+                 "Primary button counts what will happen: <b>Apply 5 changes</b>. Removals-only cards come from deleting or merging a tag or changing a category, not from restore (state 4)."]))
 
     out.append(("Swap category", lambda th: lst(th, [c(g2, it, group="category") for g2, it in SWAPS], ctx="review_ctx_restored_cat"),
                 ["A category review (one group per review). A garment has one category, so a change is a <b>swap</b>: one unit “− Tops → + Knitwear” inside a thin frame.",
@@ -421,7 +432,7 @@ def screens(card, alt=False):
     return out
 
 
-# ---------------------------------------------------------------- explored variants (restore case, light)
+# ---------------------------------------------------------------- explored variants (mixed adds + removes case, light)
 def _variant_phone(th, body, foot_label):
     _, col, cat, _ = GARMENTS["blazer"]
     now = NOW["blazer"]
@@ -434,14 +445,14 @@ def _variant_phone(th, body, foot_label):
 
 
 def v1(th):  # Manu's literal idea: mixed flow, model order
-    _, items = RESTORE
+    _, items = MIXED
     mixed = [items[0], items[4], items[1], items[2], items[5], items[3]]
     chips = "".join(f'<span class="tc">{item_chip(it, set()).replace("class=" + chr(34) + "cx ", "class=" + chr(34) + "cx bare ")}</span>' for it in mixed)
     return _variant_phone(th, f'<div class="chg">{chips}</div>', tp("review_apply_n", 6))
 
 
 def v2(th):
-    _, items = RESTORE
+    _, items = MIXED
     return phone(th, appbar(t("tag_review_title")) + rhead(37, 0, 37) + '<div class="scroll"><div style="height:4px"></div>'
                  + card_rows("blazer", NOW["blazer"], items) + '</div>' + bulk_bar(37))
 
@@ -473,7 +484,7 @@ def v5(th):  # one in-place strip: the result set, changes marked in place
 
 def control_colour_only(th):
     """CVD control, not a proposal: same chips with colour as the only cue (no sign, no strike)."""
-    _, items = RESTORE
+    _, items = MIXED
     chips = "".join(f'<span class="tc"><span class="cx {it[0]} colouronly"><span class="s"></span><span class="l">{e(tn(it[1]))}</span></span></span>'
                     for it in ordered(items))
     return _variant_phone(th, f'<div class="chg">{chips}</div>', tp("review_apply_n", 6))
@@ -488,11 +499,11 @@ VARIANTS = [
     ("2 · Labelled rows “Adds” / “Removes”", "alt", v2,
      "Two sections with a leading sign + word, chips under each; swap gets its own “Changes” row.",
      "The clearest for colour-blind users and screen readers (the word is there), and the rows sort red from green by themselves. Costs: +2 label lines per card "
-     "(≈40 dp on the restore case), labels are redundant on the 80 % single-add cards, and a <i>kept</i> removal still sits under “Removes”, so the label can contradict the chip. "
+     "(≈40 dp on a mixed card), labels are redundant on the 80 % single-add cards, and a <i>kept</i> removal still sits under “Removes”, so the label can contradict the chip. "
      "Built in full as the alternative."),
     ("3 · Unified diff list", "drop", v3,
      "One row per tag with a +/− gutter and a switch; unchanged tags dimmed in place.",
-     "Most explicit and very accessible (gutter sign + row + switch), and shows the full result. But it is a code-review metaphor, one 44–48 dp row per tag makes the restore card ~2× taller "
+     "Most explicit and very accessible (gutter sign + row + switch), and shows the full result. But it is a code-review metaphor, one 44–48 dp row per tag makes a mixed card ~2× taller "
      "(7 rows here, more with many occasions), and dimmed kept rows look disabled rather than “unchanged”. Too heavy for 100+ garments."),
     ("4 · Before / after strips", "drop", v4,
      "“Now” strip with removed tags crossed out in place, “After” strip with added tags appearing in place.",
@@ -604,7 +615,7 @@ def index_page():
         sk += (f'<div class="sketch"><div class="mini">{fn("light")}</div><span class="verdict {vcls}">{verdict}</span><h3>{e(name)}</h3>'
                f'<p><b>{e(pitch)}</b></p><p>{crit}</p></div>')
     side = ""
-    for idx, label in ((1, "Restore case · 4 adds + 2 removes"), (4, "User skipped one add and one remove")):
+    for idx, label in ((1, "Restore case · 4 adds + 1 merge"), (4, "User skipped one add and one remove")):
         side += f'<h2 class="sec">Side by side · {e(label)}</h2><div class="side">'
         for slug, title, pitch, scr in DESIGNS:
             LANG = "en"
@@ -612,7 +623,7 @@ def index_page():
                 side += f'<div class="col"><h3><a href="{slug}.html">{e(title)}</a> <small>{th}</small></h3>{scr()[idx][1](th)}</div>'
         side += "</div>"
     cmp_rows = [
-        ("Restore card height (4 + 2)", ("good", "3 chip lines"), ("mid", "+2 label lines (≈ +40 dp)")),
+        ("Restore card height (4 adds + 1 merge)", ("good", "3 chip lines"), ("mid", "+2 label lines (≈ +40 dp)")),
         ("Single-add card", ("good", "same as round 2"), ("mid", "label “+ Adds” above one chip is redundant")),
         ("Without colour", ("good", "sign shape + strike + reading order"), ("good", "words + strike + grouping")),
         ("Skipped states", ("good", "hollow sign, one rule for all chips"), ("mid", "kept chip sits under “Removes”; needs “1/2” count")),
@@ -654,7 +665,7 @@ Why “Apply 4 of 6” and not “Apply 3 · keep 1 · leave out 1”: with mixe
               '<p>Card buttons: <b>Reject</b> = keep the garment exactly as it is. <b>Apply N changes</b> / <b>Apply n of N</b> = apply what is filled. All skipped → one <b>Keep as is</b>. '
               'Alternative, also fully built: <b>Labelled rows</b> (“− Removes” / “+ Adds” headers), clearer in words but taller and redundant on single-add cards.</p></div>'
             + DARK_NOTE
-            + f'<h2 class="sec">1 · Five visual languages explored</h2><p class="secd">Same garment in all five: a restored-defaults proposal with 4 adds, 2 removes and 1 unchanged tag (Business).</p>'
+            + f'<h2 class="sec">1 · Five visual languages explored</h2><p class="secd">Same garment in all five: a mixed proposal (as after deleting or merging tags) with 4 adds, 2 removes and 1 unchanged tag (Business), the hardest case for red next to green.</p>'
               f'<div class="sketches">{sk}</div>'
             + f'<h2 class="sec">2 · The converged language</h2><p class="secd">Every chip state, light and dark. The text column states the meaning without referring to colour.</p>{leg}'
             + f'<h2 class="sec">3 · Tap behaviour</h2>{tap}'
@@ -669,9 +680,8 @@ Why “Apply 4 of 6” and not “Apply 3 · keep 1 · leave out 1”: with mixe
             + '<h2 class="sec">8 · Open questions for Manu</h2><div class="diag"><ol>'
               '<li><b>Left button name.</b> (a) <b>Reject</b> / Rechazar / Ablehnen, as in round 2 <i>(recommended: explicit, as you asked)</i>; '
               '(b) <b>Keep as is</b> / Dejar como está / Unverändert lassen, which names the result and already appears when everything is skipped.</li>'
-              '<li><b>Should restoring defaults ever propose removals?</b> The restore mockups assume that restoring default occasions also removes custom ones (“Weekend away”, “Date night”) from garments. '
-              '(a) Yes, propose them in red and let the user keep them <i>(as drawn)</i>; (b) no, restore only adds, and red appears only when a tag is deleted or a category is swapped <i>(less red, simpler)</i>.</li>'
-              '</ol></div>'
+              '</ol><p>Settled in code (<code>restoredTagChangeSet</code>): <b>restoring defaults never removes custom tags</b>. It only adds defaults; a custom tag merged into a default '
+              'shows as one swap “− Weekend away → + Casual”. Removal-only cards come from deleting or merging a tag or changing a category.</p></div>'
             + '<h2 class="sec">Pages</h2><ul>' + "".join(f'<li><a href="{s}.html">{e(ti)}</a> — 7 states, light + dark, string tables</li>' for s, ti, _, _ in DESIGNS) + '</ul>'
             + '<p class="secd">Built by <code>build.py</code> (imports round 2’s, which imports round 1’s). PNGs: one per phone '
               '(<code>&lt;page&gt;-NN-&lt;state&gt;-light|dark.png</code>), page slices, <code>variants-*.png</code>, <code>cvd-strip.png</code>.</p>'
@@ -736,11 +746,11 @@ def simulate(im, kind):
 
 
 def cvd_strip():
-    """Card crops of the restore + skipped states (light, dark) and a colour-only control, × 4 vision types."""
+    """Card crops of the mixed adds + removes and skipped states (light, dark) and a colour-only control, × 4 vision types."""
     from PIL import Image, ImageDraw, ImageFont
     global LANG, USED
     LANG, USED = "en", []
-    scr = DESIGNS[0][3]()
+    scr = screens(card_signed, cvd=True)  # the mixed adds + removes card, so the control row compares the same chips
     restore, skipped = scr[1][1], scr[4][1]
     cells = [restore("light"), restore("dark"), skipped("light"), control_colour_only("light")]
     names = ["Recommended · light", "Recommended · dark", "Recommended · skipped states", "CONTROL: colour only (not a proposal)"]
