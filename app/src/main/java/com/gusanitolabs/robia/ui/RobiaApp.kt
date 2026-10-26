@@ -247,6 +247,7 @@ import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncState
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -358,6 +359,7 @@ private val bottomDestinations = listOf(
 )
 
 private const val TAG_REVIEW_OFFER_LOG_TAG = "TagReviewOffer"
+private const val TAG_DUPLICATE_DISMISSAL_LOG_TAG = "DuplicateDismissal"
 
 @Composable
 fun RobiaApp(
@@ -501,6 +503,7 @@ fun RobiaApp(
             onRefreshDriveUsageClick = { syncGateway.refreshDriveUsage() },
             onCheckPhotosClick = { syncGateway.checkPhotos() },
             onBackUpNowClick = { scope.launch { syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot()) } },
+            syncGateway = syncGateway,
             onSaveItem = { item, capture ->
                 scope.launch {
                     wardrobeRepository.upsertItem(item)
@@ -906,6 +909,7 @@ private fun RobiaShell(
     /** Null hides the "Check photos" row. */
     onCheckPhotosClick: (suspend () -> DriveSyncResult<PhotoIntegrityReport>)? = null,
     onBackUpNowClick: () -> Unit = {},
+    syncGateway: WardrobeSyncGateway = NoOpWardrobeSyncGateway,
     suggestionService: SuggestionService,
     onSaveItem: (ClothingItem, SuggestionCapture?) -> Unit,
     onSaveItems: (List<ClothingItem>, Map<String, SuggestionCapture>) -> Unit,
@@ -1153,9 +1157,18 @@ private fun RobiaShell(
         // Every pair of the group in one write, so none of them can come back after a restart (REQ-DU-02).
         val dismissedAtEpochMillis = System.currentTimeMillis()
         reviewScope.launch(Dispatchers.IO) {
-            duplicateDismissalDao.insertAll(
-                group.pairKeys().map { key -> DismissedDuplicatePairEntity(key.first, key.second, dismissedAtEpochMillis) },
-            )
+            try {
+                duplicateDismissalDao.insertAll(
+                    group.pairKeys().map { key -> DismissedDuplicatePairEntity(key.first, key.second, dismissedAtEpochMillis) },
+                )
+                // A dismissal is an ordinary data change: the full snapshot carries it, and an unconfigured sync makes this a no-op.
+                syncGateway.enqueue(WardrobeSyncOperation.ExportFullSnapshot())
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                // Only the class name: the message may carry a photo URI. The in-memory dismissal stays in place.
+                Log.w(TAG_DUPLICATE_DISMISSAL_LOG_TAG, "dismissal not saved or synced: ${failure::class.java.simpleName}")
+            }
         }
     }
     val firstRunInputs = FirstRunPromptInputs(
