@@ -396,7 +396,7 @@ class ReviewChangesTest {
     fun revertKeepsATagTheUserAddedInBetween() {
         val original = garment(everyday)
         val applied = applyDelta(original, TagDelta("g", setOf(everyday.id), setOf(formal.id)), allTags, "occasion", now)
-        val userAdded = applied.item!!.copy(tags = applied.item!!.tags + business)
+        val userAdded = applied.item!!.let { it.copy(tags = it.tags + business) }
         val reverted = revertDelta(userAdded, applied.applied, allTags, "occasion", now + 1)
         assertEquals(idsOf(everyday, business), tagIds(reverted.item!!))
     }
