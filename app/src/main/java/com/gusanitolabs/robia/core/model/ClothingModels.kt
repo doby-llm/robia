@@ -212,6 +212,19 @@ enum class CutoutEdges { Soft, Sharp }
 
 enum class BatchCutoutMode { Balanced, MemorySaver }
 
+/** Settings > Appearance > Theme (REQ-FB-14). Device-local: not part of any snapshot. */
+enum class ThemeMode(val storageValue: String) {
+    Light("light"),
+    Dark("dark"),
+    System("system"),
+    ;
+
+    companion object {
+        /** Absent or unknown stored values read as Light, the default. */
+        fun fromStorage(value: String?): ThemeMode = entries.firstOrNull { it.storageValue == value } ?: Light
+    }
+}
+
 data class RobiaSettings(
     val languagePreference: LanguagePreference = LanguagePreference.System,
     val developerModeUnlocked: Boolean = false,
@@ -236,17 +249,23 @@ data class RobiaSettings(
     val driveAuthorizedAccountEmail: String? = null,
     /** Choices of the Export screen (EX1); reused for the next export. */
     val exportOptions: ExportOptions = ExportOptions(),
+    /** Settings > Appearance > Theme; Light until the user chooses otherwise (REQ-FB-14). */
+    val themeMode: ThemeMode = ThemeMode.Light,
 ) {
     /** The Developer switch's view of [cutoutEngine]: on when the method is Automatic. */
     val preciseCutoutEnabled: Boolean
         get() = cutoutEngine == CutoutEngineChoice.Automatic
 }
 
-/** Export screen choices (REQ-EX-01). [photo] is the Robia photo unless the garment has an original. */
+/**
+ * Export screen choices (REQ-EX-01). [photo] is the Robia photo unless the garment has an original.
+ * [showFrame] is the Robia frame switch (REQ-FB-03); the screen resolves it against [fields].
+ */
 data class ExportOptions(
     val photo: ExportPhoto = ExportPhoto.Robia,
     val format: ExportFormat = ExportFormat.Image,
     val fields: Set<ExportField> = DEFAULT_EXPORT_FIELDS,
+    val showFrame: Boolean = true,
 ) {
     /** The photo an export of a garment uses: the original only when it has one, else the Robia photo. */
     fun photoFor(hasOriginal: Boolean): ExportPhoto =

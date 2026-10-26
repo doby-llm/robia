@@ -11,7 +11,12 @@ import com.gusanitolabs.robia.sync.PhotoUploadPipeline
 internal class FakePhotoSources {
     val sources = mutableMapOf<String, String>()
 
-    fun pipeline(api: FakeDriveSnapshotApi, onPurgeDeferred: (String) -> Unit = {}): PhotoUploadPipeline = PhotoUploadPipeline(
+    fun pipeline(
+        api: FakeDriveSnapshotApi,
+        onPurgeDeferred: (String) -> Unit = {},
+        originalBytesOf: (GarmentPhotoRecord) -> ByteArray? = { null },
+        refreshAccessToken: suspend () -> String? = { null },
+    ): PhotoUploadPipeline = PhotoUploadPipeline(
         api = api,
         sourceHashOf = { photo -> sha256Hex(sources.getValue(photo.localUri).toByteArray()).take(16) },
         encode = { photo ->
@@ -19,6 +24,8 @@ internal class FakePhotoSources {
             ImageBlob(bytes = webp, mimeType = "image/webp", contentHash = sha256Hex(webp), decodedWidth = 2, decodedHeight = 2)
         },
         onPurgeDeferred = onPurgeDeferred,
+        originalBytesOf = originalBytesOf,
+        refreshAccessToken = refreshAccessToken,
     )
 }
 

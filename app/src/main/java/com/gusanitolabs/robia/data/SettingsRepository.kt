@@ -23,10 +23,12 @@ import com.gusanitolabs.robia.core.model.ExportPhoto
 import com.gusanitolabs.robia.core.model.HangerSensitivity
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
+import com.gusanitolabs.robia.core.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 import java.util.UUID
@@ -76,6 +78,10 @@ interface SettingsRepository {
     suspend fun setDriveAuthorizedAccountEmail(email: String?) {}
     /** Export screen choices (EX1); default no-op for fakes that do not model them. */
     suspend fun setExportOptions(options: ExportOptions) {}
+    /** Settings > Appearance > Theme (REQ-FB-14); default Light for fakes that do not model it. */
+    val themeMode: Flow<ThemeMode> get() = flowOf(ThemeMode.Light)
+    /** Writes the theme choice; default no-op for fakes that do not model it. */
+    suspend fun setThemeMode(mode: ThemeMode) {}
 }
 
 class DataStoreSettingsRepository(
@@ -165,6 +171,14 @@ class DataStoreSettingsRepository(
 
     override suspend fun setExportOptions(options: ExportOptions) {
         dataStore.edit { preferences -> preferences.writeExportOptions(options) }
+    }
+
+    override val themeMode: Flow<ThemeMode> = dataStore.data.map { preferences ->
+        ThemeMode.fromStorage(preferences[themeModeKey])
+    }
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { preferences -> preferences[themeModeKey] = mode.storageValue }
     }
 
     override suspend fun pauseSyncForDriveBackupDeletion() {
@@ -280,21 +294,24 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         driveBoundAccountEmail = preferences[driveBoundAccountEmailKey]?.takeIf(String::isNotBlank),
         driveAuthorizedAccountEmail = preferences[driveAuthorizedAccountEmailKey]?.takeIf(String::isNotBlank),
         exportOptions = exportOptions(),
+        themeMode = ThemeMode.fromStorage(preferences[themeModeKey]),
     )
 }
 
-/** EX1: absent keys fall back to the defaults; unknown values are dropped. */
+/** EX1: absent keys fall back to the defaults; unknown values are dropped. EX2: an absent frame key means frame on. */
 internal fun Preferences.exportOptions(): ExportOptions = ExportOptions(
     photo = this[exportPhotoKey].toEnumOr(ExportPhoto.Robia),
     format = this[exportFormatKey].toEnumOr(ExportFormat.Image),
     fields = this[exportFieldsKey]?.mapNotNull { name -> ExportField.entries.firstOrNull { it.name == name } }?.toSet()
         ?: DEFAULT_EXPORT_FIELDS,
+    showFrame = this[exportFrameKey] ?: true,
 )
 
 internal fun MutablePreferences.writeExportOptions(options: ExportOptions) {
     this[exportPhotoKey] = options.photo.name
     this[exportFormatKey] = options.format.name
     this[exportFieldsKey] = options.fields.map(ExportField::name).toSet()
+    this[exportFrameKey] = options.showFrame
 }
 
 private fun String?.toLanguagePreference(): LanguagePreference =
@@ -365,3 +382,5 @@ private val driveAuthorizedAccountEmailKey = stringPreferencesKey("drive_authori
 private val exportPhotoKey = stringPreferencesKey("export_photo")
 private val exportFormatKey = stringPreferencesKey("export_format")
 private val exportFieldsKey = stringSetPreferencesKey("export_fields")
+private val exportFrameKey = booleanPreferencesKey("export_frame")
+private val themeModeKey = stringPreferencesKey("theme_mode")

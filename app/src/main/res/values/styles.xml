@@ -6,4 +6,10 @@
         <item name="android:navigationBarColor">@color/robia_blue</item>
         <item name="android:fontFamily">sans</item>
     </style>
+    <!-- DARK1: Settings > Appearance > Theme set to Dark; the default stays the light style above (R3-DEC-045). -->
+    <style name="Theme.Robia.Dark" parent="Theme.Robia">
+        <item name="android:windowBackground">@color/robia_background_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

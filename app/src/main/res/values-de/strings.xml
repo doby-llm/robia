@@ -817,7 +817,7 @@
     <string name="duplicate_empty">Keine möglichen Duplikate mehr.</string>
     <string name="duplicate_calibration_title">Duplikat-Kalibrierung</string>
     <string name="duplicate_calibration_summary">Markiere die ähnlichsten Paare derselben Kategorie als Gleich oder Verschieden.</string>
-    <string name="duplicate_calibration_empty">Noch keine Paare derselben Kategorie mit Bildvektor.</string>
+    <string name="duplicate_calibration_empty">Noch keine Paare zum Vergleichen. Aktive Kleidungsstücke: %1$d · mit Vektor: %2$d · Foto passt: %3$d · mit Kategorie: %4$d</string>
     <string name="duplicate_mark_same">Gleich</string>
     <string name="duplicate_mark_different">Verschieden</string>
     <string name="duplicate_calibration_progress">%1$d von %2$d markiert</string>
@@ -842,26 +842,6 @@
     <string name="analytics_section_locations">Standorte</string>
     <string name="analytics_empty_title">Noch keine Kleidungsstücke</string>
     <string name="analytics_empty_body">Füge Kleidungsstücke hinzu, um zu sehen, wie sich dein Kleiderschrank auf Kategorien, Farben und mehr verteilt.</string>
-    <!-- OUT -->
-    <string name="outfit_lab_title">Outfit-Labor</string>
-    <string name="outfit_lab_summary_settings">Drei Outfit-Vorschläge aus deinen vorhandenen Vektoren. Nur für Entwickler.</string>
-    <string name="outfit_lab_summary">Wähle ein Ausgangsstück oder beschreibe ein Outfit. Robia schlägt drei Outfits aus deinem Kleiderschrank vor, mit den Vektoren, die schon vorhanden sind. Bewerte sie, um das Protokoll aufzubauen; ohne Export verlässt nichts das Gerät.</string>
-    <string name="outfit_lab_seed_title">Ausgangsstück (optional)</string>
-    <string name="outfit_lab_prompt_label">Oder beschreibe das Outfit</string>
-    <string name="outfit_lab_prompt_hint">zum Beispiel: entspannter Wochenend-Look</string>
-    <string name="outfit_lab_season_title">Jahreszeit</string>
-    <string name="outfit_lab_occasion_title">Anlass</string>
-    <string name="outfit_lab_generate">Outfits vorschlagen</string>
-    <string name="outfit_lab_prompt_failed">Die Beschreibung konnte nicht verarbeitet werden. Versuche es erneut, wenn das Modell bereit ist.</string>
-    <string name="outfit_lab_empty">Kein Outfit passt zu dieser Auswahl.</string>
-    <string name="outfit_lab_why_shares">Gemeinsam: %1$s</string>
-    <string name="outfit_lab_why_similar_colours">ähnliche Farben</string>
-    <string name="outfit_lab_why_none">Keine gemeinsamen Schlagwörter</string>
-    <string name="outfit_lab_thumbs_up">👍</string>
-    <string name="outfit_lab_thumbs_down">👎</string>
-    <string name="outfit_lab_ratings_count">Gespeicherte Bewertungen: %1$d</string>
-    <string name="outfit_lab_export">Bewertungen exportieren</string>
-    <string name="outfit_lab_export_chooser">Bewertungen teilen</string>
     <!-- OR2 -->
     <string name="drive_usage_originals">· %d Originale</string>
     <!-- EX1 -->
@@ -885,4 +865,29 @@
     <string name="zip_export_hint">Fotos, Originale und Daten, gespeichert, wo du sie wählst</string>
     <string name="zip_export_progress">Deine Daten werden vorbereitet… %1$d von %2$d</string>
     <string name="zip_export_failed">Der Export wurde nicht abgeschlossen. Bitte versuche es erneut.</string>
+    <!-- SYNC-AUTH -->
+    <string name="sync_auth_checking_connection">Google-Drive-Verbindung wird geprüft…</string>
+    <!-- BAT3 -->
+    <string name="batch_follow">Folgen</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Robia-Rahmen</string>
+    <string name="export_frame_hint">Weißer Rand und Robia-Logo um das Foto</string>
+    <string name="export_frame_locked_hint">Schalte die anderen Anzeigen-Optionen aus, um den Rahmen auszublenden.</string>
+    <!-- UI-CAL -->
+    <string name="duplicate_calibration_loading">Kleidungsfotos werden verglichen…</string>
+    <!-- UI-SMART -->
+    <string name="editor_smart_keep_hint">Die Schnellauswahl entfernt lose Teile. Wähle Entfernen oder nutze den Pinsel, um Teile zu behalten.</string>
+    <!-- DARK1 -->
+    <string name="settings_group_appearance">Darstellung</string>
+    <string name="settings_theme">Design</string>
+    <string name="settings_theme_light">Hell</string>
+    <string name="settings_theme_dark">Dunkel</string>
+    <string name="settings_theme_system">Wie das System</string>
+    <!-- ADD-UX -->
+    <string name="gallery_multi">Galerie · mehrere</string>
+    <string name="add_batch_hint">Tipp: Wähle mehrere Fotos auf einmal, um sie als Stapel hinzuzufügen.</string>
+    <!-- NAV-BACK -->
+    <string name="back_exit_hint">Zum Beenden erneut Zurück drücken</string>
+    <!-- DUP-FAST -->
+    <string name="duplicate_calibration_preparing">Fotos werden vorbereitet… %1$d von %2$d</string>
 </resources>

@@ -33,6 +33,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -128,6 +129,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -160,6 +162,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
+import com.gusanitolabs.robia.core.designsystem.resolveDarkTheme
 import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -174,6 +177,7 @@ import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.PhotoRestoreState
 import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
+import com.gusanitolabs.robia.core.model.ThemeMode
 import com.gusanitolabs.robia.data.EmbeddingRepository
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
@@ -230,6 +234,7 @@ import com.gusanitolabs.robia.sync.SyncCycleSummary
 import com.gusanitolabs.robia.sync.MergeSummary
 import com.gusanitolabs.robia.sync.NoOpWardrobeSyncGateway
 import com.gusanitolabs.robia.sync.PhotoIntegrityReport
+import com.gusanitolabs.robia.sync.RestoreUploadProgress
 import com.gusanitolabs.robia.sync.SyncAttention
 import com.gusanitolabs.robia.sync.SyncAttentionKind
 import com.gusanitolabs.robia.sync.SyncRunResult
@@ -331,10 +336,6 @@ private sealed interface RobiaRoute {
         override val titleRes = R.string.analytics_title
     }
 
-    data object OutfitLab : RobiaRoute {
-        override val titleRes = R.string.outfit_lab_title
-    }
-
     data class Export(val itemId: String) : RobiaRoute {
         override val titleRes = R.string.export_title
     }
@@ -363,6 +364,7 @@ fun RobiaApp(
     onRequestCloudSetup: () -> Unit = {},
     performanceFixtureUris: List<String> = emptyList(),
     performanceBatch: Boolean = false,
+    themeMode: ThemeMode = ThemeMode.Light,
 ) {
     val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
     val settingsLoaded = persistedSettings != null
@@ -420,7 +422,7 @@ fun RobiaApp(
     }
 
     LocalizedRobiaContent(settings.languagePreference) {
-        RobiaTheme {
+        RobiaTheme(darkTheme = resolveDarkTheme(themeMode, isSystemInDarkTheme())) {
         val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
         RobiaShell(
             suggestionService = suggestionService,
@@ -1162,10 +1164,17 @@ private fun RobiaShell(
             .let { next -> if (next == MergeCombinePhase.Done) MergeCombinePhase.Idle else next }
     }
     // Safety net: no cycle ever finished after the tap (offline, work not scheduled) must not leave 'Combining' forever.
+    // It never fires while a cycle runs: a large upload outlasts the timeout after the merge is already applied (REQ-FB-02).
+    val cycleRunning by rememberUpdatedState(
+        syncState.restoreProgress != null || syncState.connectionStatus == DriveSyncConnectionStatus.Syncing,
+    )
     LaunchedEffect(mergeCombinePhase) {
-        if (mergeCombinePhase == MergeCombinePhase.Combining) {
-            kotlinx.coroutines.delay(MERGE_COMBINE_TIMEOUT_MS)
-            if (mergeCombinePhase == MergeCombinePhase.Combining) mergeCombinePhase = MergeCombinePhase.Failed
+        val tappedAtMs = SystemClock.elapsedRealtime()
+        while (mergeCombinePhase == MergeCombinePhase.Combining) {
+            delay(MERGE_COMBINE_CHECK_INTERVAL_MS)
+            if (mergeCombineTimedOut(mergeCombinePhase, SystemClock.elapsedRealtime() - tappedAtMs, cycleRunning)) {
+                mergeCombinePhase = MergeCombinePhase.Failed
+            }
         }
     }
 
@@ -1672,6 +1681,42 @@ private fun RobiaShell(
         }
     }
 
+    val backExitHintMessage = stringResource(R.string.back_exit_hint)
+    var lastExitHintMs by remember { mutableStateOf<Long?>(null) }
+    // A new route, search, filter or selection starts the exit window over.
+    LaunchedEffect(currentRoute, browseQuery, similarToGarmentId, browseFilters, selectedBrowseItemIds) {
+        lastExitHintMs = null
+    }
+    // Tabs use replaceRoute, so Browse and Manage sit alone on the stack; this root handler peels them one layer per press.
+    BackHandler(
+        enabled = routeStack.size == 1 && restoreProgress == null &&
+            (currentRoute == RobiaRoute.Browse || currentRoute == RobiaRoute.ManageTags),
+    ) {
+        val nowMs = SystemClock.elapsedRealtime()
+        val state = BackState(
+            onManage = currentRoute == RobiaRoute.ManageTags,
+            selectionCount = selectedBrowseItemIds.size,
+            hasQuery = searchActive,
+            hasSimilarTo = similarToGarmentId != null,
+            hasFilters = browseFilters.hasActiveFilters,
+            lastExitHintMs = lastExitHintMs,
+        )
+        when (decideBack(state, nowMs)) {
+            BackAction.ClearSelection -> selectedBrowseItemIds = emptySet()
+            BackAction.ClearSearchAndFilters -> {
+                browseQuery = ""
+                similarToGarmentId = null
+                browseFilters = BrowseFilterState()
+            }
+            BackAction.GoToBrowse -> replaceRoute(RobiaRoute.Browse)
+            BackAction.ShowExitHint -> {
+                Toast.makeText(context, backExitHintMessage, Toast.LENGTH_SHORT).show()
+                lastExitHintMs = nowMs
+            }
+            BackAction.Exit -> context.findActivity()?.finish()
+        }
+    }
+
     if (showBackupDeletionConfirmation) {
         AlertDialog(
             onDismissRequest = { showBackupDeletionConfirmation = false },
@@ -1799,8 +1844,11 @@ private fun RobiaShell(
         )
     }
 
-    val mergeProposalCardShown = (syncState.pendingMergeSummary != null && mergeDialogDismissed) ||
-        mergeCombinePhase != MergeCombinePhase.Idle
+    val mergeProposalCardShown = mergeCardVisible(
+        proposalPending = syncState.pendingMergeSummary != null,
+        dialogDismissed = mergeDialogDismissed,
+        phase = mergeCombinePhase,
+    )
     val mergeProposalCard: (@Composable () -> Unit)? = if (mergeProposalCardShown) {
         {
             MergeProposalCard(
@@ -1932,7 +1980,6 @@ private fun RobiaShell(
                 currentRoute != RobiaRoute.TagReview &&
                 currentRoute != RobiaRoute.DuplicateReview &&
                 currentRoute != RobiaRoute.DuplicateCalibration &&
-                currentRoute != RobiaRoute.OutfitLab &&
                 currentRoute != RobiaRoute.Analytics &&
                 currentRoute !is RobiaRoute.Export
             ) {
@@ -2097,7 +2144,6 @@ private fun RobiaShell(
             onDismissDuplicateGroup = dismissDuplicateGroup,
             onDeleteDuplicateItems = onDeleteItems,
             onDuplicateCalibrationClick = { pushRoute(RobiaRoute.DuplicateCalibration) },
-            onOutfitLabClick = { pushRoute(RobiaRoute.OutfitLab) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
             mergeProposalCard = mergeProposalCard,
@@ -2408,15 +2454,23 @@ private fun MergeProposalCard(
                     Button(onClick = onCombine, enabled = !combining, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.sync_merge_confirm))
                     }
-                    DestructiveOutlinedButton(
-                        label = stringResource(R.string.sync_merge_replace),
-                        onClick = onReplace,
-                        enabled = !combining,
-                    )
+                    // Replace is destructive: only a pending proposal offers it, never a finished or failed Combine.
+                    if (summary != null) {
+                        DestructiveOutlinedButton(
+                            label = stringResource(R.string.sync_merge_replace),
+                            onClick = onReplace,
+                            enabled = !combining,
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun batchEtaText(eta: BatchEta): String = eta.toBatchEtaString().let { (resId, count) ->
+    if (count == null) stringResource(resId) else stringResource(resId, count)
 }
 
 @Composable
@@ -2445,6 +2499,25 @@ private fun CloudRestoreProgressOverlay(
         etaState = etaState.updated(progress, SystemClock.elapsedRealtime())
     }
     val eta = etaState.estimate(progress)
+    // The upload ETA starts with the Uploading phase, so its batch-style estimator is created per phase.
+    val uploadEstimator = remember(progress.diagnostics?.correlationId, progress.phase) {
+        BatchEtaEstimator { SystemClock.elapsedRealtime() }
+    }
+    var previousUpload by remember(progress.diagnostics?.correlationId, progress.phase) {
+        mutableStateOf<RestoreUploadProgress?>(null)
+    }
+    var uploadEta by remember(progress.diagnostics?.correlationId, progress.phase) {
+        mutableStateOf<BatchEta?>(null)
+    }
+    LaunchedEffect(progress.uploadProgress) {
+        progress.uploadProgress?.let { upload ->
+            uploadEta = uploadEtaAfter(uploadEstimator, previousUpload, upload)
+            previousUpload = upload
+        }
+    }
+    val shownUploadEta = uploadEta.takeIf {
+        progress.phase == CloudRestorePhase.Uploading && progress.status == CloudRestoreStatus.Running
+    }
     var showDiagnostics by remember(diagnostics?.correlationId, progress.status) {
         mutableStateOf(progress.status != CloudRestoreStatus.Running)
     }
@@ -2572,7 +2645,7 @@ private fun CloudRestoreProgressOverlay(
                         }
                         // Always composed, so the line keeps its height when the estimate appears or disappears.
                         Text(
-                            text = eta?.let { estimate ->
+                            text = shownUploadEta?.let { estimate -> batchEtaText(estimate) } ?: eta?.let { estimate ->
                                 when (estimate) {
                                     RestoreEta.LessThanMinute -> stringResource(R.string.cloud_restore_eta_less_than_minute)
                                     is RestoreEta.AboutMinutes -> stringResource(
@@ -2858,7 +2931,6 @@ private fun RobiaNavHost(
     onDismissDuplicateGroup: (DuplicateGroup) -> Unit,
     onDeleteDuplicateItems: (List<String>) -> Unit,
     onDuplicateCalibrationClick: () -> Unit,
-    onOutfitLabClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
     mergeProposalCard: (@Composable () -> Unit)? = null,
@@ -2966,9 +3038,6 @@ private fun RobiaNavHost(
         )
         RobiaRoute.DuplicateCalibration -> if (developerModeUnlocked && developerModeEnabled) {
             DuplicateCalibrationScreen(innerPadding = innerPadding, items = domainItems)
-        }
-        RobiaRoute.OutfitLab -> if (developerModeUnlocked && developerModeEnabled) {
-            OutfitLabScreen(innerPadding = innerPadding, garments = domainItems)
         }
         RobiaRoute.AddEditClothing -> AddEditClothingScreen(
             innerPadding = innerPadding,
@@ -3106,7 +3175,6 @@ private fun RobiaNavHost(
             onBrowseLayoutChange = onBrowseLayoutChange,
             onRestoreSyncLogClick = onRestoreSyncLogClick,
             onDuplicateCalibrationClick = onDuplicateCalibrationClick,
-            onOutfitLabClick = onOutfitLabClick,
         )
         RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
             DeveloperRestoreSyncLogScreen(
@@ -3132,7 +3200,6 @@ private fun RobiaNavHost(
                 onBrowseLayoutChange = onBrowseLayoutChange,
                 onRestoreSyncLogClick = onRestoreSyncLogClick,
                 onDuplicateCalibrationClick = onDuplicateCalibrationClick,
-                onOutfitLabClick = onOutfitLabClick,
             )
         }
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
@@ -3275,7 +3342,7 @@ private fun PlaceholderScreen(
     }
 }
 
-internal fun MainColor.swatchColor(): Color = hex.toComposeColor() ?: Color(0xFFDADADA)
+internal fun MainColor.swatchColor(): Color = hex.toComposeColor() ?: Color(0xFFDADADA) // theme-fixed: garment colour data
 
 internal fun String?.normalizedHexOrNull(): String? {
     val normalized = this?.trim()?.removePrefix("#") ?: return null

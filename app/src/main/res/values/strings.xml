@@ -817,7 +817,7 @@
     <string name="duplicate_empty">No possible duplicates left.</string>
     <string name="duplicate_calibration_title">Duplicate calibration</string>
     <string name="duplicate_calibration_summary">Mark the most similar same-category pairs as Same or Different.</string>
-    <string name="duplicate_calibration_empty">No same-category pairs with a stored photo vector yet.</string>
+    <string name="duplicate_calibration_empty">No pairs to compare yet. Active: %1$d · with vector: %2$d · photo matched: %3$d · with category: %4$d</string>
     <string name="duplicate_mark_same">Same</string>
     <string name="duplicate_mark_different">Different</string>
     <string name="duplicate_calibration_progress">%1$d of %2$d marked</string>
@@ -842,26 +842,6 @@
     <string name="analytics_section_locations">Locations</string>
     <string name="analytics_empty_title">No garments yet</string>
     <string name="analytics_empty_body">Add garments to see how your wardrobe is spread across categories, colours and more.</string>
-    <!-- OUT -->
-    <string name="outfit_lab_title">Outfit lab</string>
-    <string name="outfit_lab_summary_settings">Three outfit proposals from your existing vectors. Developer only.</string>
-    <string name="outfit_lab_summary">Pick a seed garment or describe an outfit. Robia proposes three outfits from your wardrobe using the vectors it already has. Rate them to build the log; nothing leaves the device unless you export it.</string>
-    <string name="outfit_lab_seed_title">Seed garment (optional)</string>
-    <string name="outfit_lab_prompt_label">Or describe the outfit</string>
-    <string name="outfit_lab_prompt_hint">for example: relaxed weekend look</string>
-    <string name="outfit_lab_season_title">Season</string>
-    <string name="outfit_lab_occasion_title">Occasion</string>
-    <string name="outfit_lab_generate">Propose outfits</string>
-    <string name="outfit_lab_prompt_failed">The description could not be processed. Try again once the model is ready.</string>
-    <string name="outfit_lab_empty">No outfit fits these choices.</string>
-    <string name="outfit_lab_why_shares">Shares: %1$s</string>
-    <string name="outfit_lab_why_similar_colours">similar colours</string>
-    <string name="outfit_lab_why_none">No shared tags</string>
-    <string name="outfit_lab_thumbs_up">👍</string>
-    <string name="outfit_lab_thumbs_down">👎</string>
-    <string name="outfit_lab_ratings_count">Ratings saved: %1$d</string>
-    <string name="outfit_lab_export">Export ratings</string>
-    <string name="outfit_lab_export_chooser">Share ratings</string>
     <!-- OR2 -->
     <string name="drive_usage_originals">· %d originals</string>
     <!-- EX1 -->
@@ -885,4 +865,29 @@
     <string name="zip_export_hint">Photos, originals and data, saved where you choose</string>
     <string name="zip_export_progress">Preparing your data… %1$d of %2$d</string>
     <string name="zip_export_failed">The export didn\'t finish. Try again.</string>
+    <!-- SYNC-AUTH -->
+    <string name="sync_auth_checking_connection">Checking your Google Drive connection…</string>
+    <!-- BAT3 -->
+    <string name="batch_follow">Follow</string>
+    <!-- EX2 -->
+    <string name="export_frame_title">Robia frame</string>
+    <string name="export_frame_hint">White border and Robia logo around the photo</string>
+    <string name="export_frame_locked_hint">Turn off the other Show options to hide the frame.</string>
+    <!-- UI-CAL -->
+    <string name="duplicate_calibration_loading">Comparing garment photos…</string>
+    <!-- UI-SMART -->
+    <string name="editor_smart_keep_hint">Smart tap removes loose pieces. Choose Remove, or use the brush to keep parts.</string>
+    <!-- DARK1 -->
+    <string name="settings_group_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_system">Follow system</string>
+    <!-- ADD-UX -->
+    <string name="gallery_multi">Gallery · pick several</string>
+    <string name="add_batch_hint">Tip: pick several photos at once to add them as a batch.</string>
+    <!-- NAV-BACK -->
+    <string name="back_exit_hint">Press back again to exit</string>
+    <!-- DUP-FAST -->
+    <string name="duplicate_calibration_preparing">Preparing photos… %1$d of %2$d</string>
 </resources>

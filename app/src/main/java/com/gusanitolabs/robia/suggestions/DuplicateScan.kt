@@ -10,14 +10,23 @@ import com.gusanitolabs.robia.data.GarmentVectors
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import java.util.PriorityQueue
 
 /** Largest group the review shows; a bigger connected component is split by its strongest pairs (REQ-DU-02). */
 const val DUPLICATE_GROUP_MAX_SIZE = 6
@@ -31,6 +40,12 @@ const val CALIBRATION_PAIR_COUNT = 30
 private const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
 private const val DUPLICATE_LOG_TAG = "RobiaDuplicates"
+
+/** Photos hashed at once; each decodes a bitmap of about 4 MB (REQ-FB-18 a). */
+private const val HASH_PARALLELISM = 3
+
+/** Rows of the pair pass between two yields, so a long calibration stays cancellable. */
+private const val ROWS_PER_YIELD = 32
 
 /** The tag category whose tags name a garment's kind (DefaultTags). */
 private const val CATEGORY_CATEGORY_ID = "category"
@@ -54,6 +69,19 @@ data class DuplicateGroup(val garmentIds: List<String>, val tier: DuplicateTier)
 
 /** One calibration candidate: two garments of the same category and their IMAGE cosine. */
 data class CalibrationPair(val a: String, val b: String, val cosine: Float)
+
+/**
+ * Why a calibration list can be short. A funnel: each count is over the garments that passed the step before it, so
+ * [categorised] is how many garments can form a pair.
+ */
+data class CalibrationCounts(val active: Int, val withVector: Int, val hashMatched: Int, val categorised: Int) {
+    companion object {
+        val NONE = CalibrationCounts(active = 0, withVector = 0, hashMatched = 0, categorised = 0)
+    }
+}
+
+/** The calibration pairs of one scan, with the counts that explain an empty list. */
+data class CalibrationScan(val pairs: List<CalibrationPair>, val counts: CalibrationCounts)
 
 /** When a scan ran and how many active garments it saw. */
 data class DuplicateScanRecord(val atEpochMillis: Long, val garmentCount: Int)
@@ -128,16 +156,98 @@ fun calibrationPairs(
     vectors: Map<String, GarmentVectors>,
     currentPhotoHashes: Map<String, String>,
     top: Int = CALIBRATION_PAIR_COUNT,
+): List<CalibrationPair> = topCalibrationPairs(items, vectors, currentPhotoHashes, top, onRow = {})
+
+/**
+ * The [top] most similar same-category pairs, found block by block: no list of all pairs is built and only the best
+ * [top] are kept, in the order of the old all-pairs sort (cosine desc, then ids). [onRow] runs once per row of the pass.
+ */
+internal inline fun topCalibrationPairs(
+    items: List<ClothingItem>,
+    vectors: Map<String, GarmentVectors>,
+    currentPhotoHashes: Map<String, String>,
+    top: Int,
+    onRow: () -> Unit,
 ): List<CalibrationPair> {
-    val garments = eligibleGarments(items, vectors, currentPhotoHashes).filter { it.category != null }
-    val unit = garments.map { it.vector.normalized() }
-    return garments.indices
-        .flatMap { i -> (i + 1 until garments.size).map { j -> i to j } }
-        .filter { (i, j) -> garments[i].category == garments[j].category }
-        .map { (i, j) -> CalibrationPair(garments[i].id, garments[j].id, dot(unit[i], unit[j])) }
-        .sortedWith(compareByDescending<CalibrationPair> { it.cosine }.thenBy { it.a }.thenBy { it.b })
-        .take(top)
+    val best = CalibrationTop(top)
+    scanBlocks(eligibleGarments(items, vectors, currentPhotoHashes), onRow) { a, b, cosine -> best.offer(a, b, cosine) }
+    return best.sorted()
 }
+
+/**
+ * Visits every pair inside a category block once, with its IMAGE cosine. [garments] are in id order, so each pair is
+ * visited as (a, b) with a < b. [onRow] runs once per row. Returns the number of pairs visited. DUP2 reuses this pass.
+ */
+internal inline fun scanBlocks(
+    garments: List<Eligible>,
+    onRow: () -> Unit,
+    visit: (a: String, b: String, cosine: Float) -> Unit,
+): Long {
+    var examined = 0L
+    for (block in blocksByCategory(garments)) {
+        val packed = packUnitVectors(block)
+        val dimension = block.first().vector.size
+        for (i in block.indices) {
+            onRow()
+            for (j in i + 1 until block.size) {
+                visit(block[i].id, block[j].id, blockDot(packed, dimension, i, j))
+                examined++
+            }
+        }
+    }
+    return examined
+}
+
+/** The eligible garments that have a category, one list per category, each in the id order of [garments]. */
+internal fun blocksByCategory(garments: List<Eligible>): Collection<List<Eligible>> =
+    garments.filter { garment -> garment.category != null }.groupBy(Eligible::category).values
+
+/** The unit vectors of one block in one array: row r occupies [r * dimension, (r + 1) * dimension). */
+internal fun packUnitVectors(block: List<Eligible>): FloatArray {
+    val dimension = block.first().vector.size
+    val packed = FloatArray(block.size * dimension)
+    block.forEachIndexed { row, garment ->
+        val unit = garment.vector.normalized()
+        require(unit.size == dimension) { "Vector sizes differ: ${unit.size} vs $dimension" }
+        unit.copyInto(packed, row * dimension)
+    }
+    return packed
+}
+
+/** [dot] of two rows of a packed block, with the same sum in the same order, so the values equal the all-pairs ones. */
+internal fun blockDot(packed: FloatArray, dimension: Int, i: Int, j: Int): Float {
+    var sum = 0.0
+    val rowI = i * dimension
+    val rowJ = j * dimension
+    for (k in 0 until dimension) sum += packed[rowI + k].toDouble() * packed[rowJ + k].toDouble()
+    return sum.toFloat()
+}
+
+/** The best [limit] pairs so far. A heap whose head is the weakest pair, so it never holds more than [limit] pairs. */
+internal class CalibrationTop(private val limit: Int) {
+    private val weakestFirst = PriorityQueue<CalibrationPair>(maxOf(limit, 1)) { x, y -> BEST_FIRST.compare(y, x) }
+
+    val size: Int get() = weakestFirst.size
+
+    fun offer(a: String, b: String, cosine: Float) {
+        if (limit <= 0) return
+        if (weakestFirst.size < limit) {
+            weakestFirst.add(CalibrationPair(a, b, cosine))
+            return
+        }
+        val weakest = weakestFirst.peek()
+        // Most pairs lose on cosine alone; only an equal cosine needs the ids.
+        if (cosine < weakest.cosine) return
+        val pair = CalibrationPair(a, b, cosine)
+        if (BEST_FIRST.compare(pair, weakest) >= 0) return
+        weakestFirst.poll()
+        weakestFirst.add(pair)
+    }
+
+    fun sorted(): List<CalibrationPair> = weakestFirst.sortedWith(BEST_FIRST)
+}
+
+private val BEST_FIRST = compareByDescending<CalibrationPair> { it.cosine }.thenBy { it.a }.thenBy { it.b }
 
 /**
  * Export of the calibration marks: `[{"a","b","cos","same"}]`, in the order of [pairs]. `same` is null for a pair
@@ -184,7 +294,7 @@ suspend fun scanDuplicates(
 ): List<DuplicateGroup> = withContext(Dispatchers.IO) {
     try {
         val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
-        val currentHashes = currentPhotoHashes(context, sharedHashCandidates(items, vectors), items)
+        val currentHashes = resolvePhotoHashes(sharedHashCandidates(items, vectors), items, hash = { uri -> currentPhotoHash(context, uri) })
         scan(items, vectors, currentHashes, dismissed())
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -196,24 +306,48 @@ suspend fun scanDuplicates(
 
 /**
  * The calibration list (G-DUP): every active garment is checked, because same-category pairs are not limited to a shared
- * hash. A failed scan returns no pairs.
+ * hash. A failed scan returns no pairs and [CalibrationCounts.NONE], and logs one line outside DEBUG (no photo data).
+ * [onProgress] reports (done, total) while the photos are prepared (REQ-FB-18 a).
  */
 suspend fun scanCalibrationPairs(
     context: Context,
     items: List<ClothingItem>,
     embeddingRepository: EmbeddingRepository,
-): List<CalibrationPair> = withContext(Dispatchers.IO) {
+    onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+): CalibrationScan = withContext(Dispatchers.IO) {
     try {
         val vectors = embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID)
         val active = items.filterNot(ClothingItem::isArchived).map(ClothingItem::id).toSet()
-        val currentHashes = currentPhotoHashes(context, active, items)
-        calibrationPairs(items, vectors, currentHashes)
+        val currentHashes = resolvePhotoHashes(active, items, hash = { uri -> currentPhotoHash(context, uri) }, onProgress = onProgress)
+        var rows = 0
+        CalibrationScan(
+            pairs = topCalibrationPairs(items, vectors, currentHashes, CALIBRATION_PAIR_COUNT, onRow = {
+                if (++rows % ROWS_PER_YIELD == 0) yield()
+            }),
+            counts = calibrationCounts(items, vectors, currentHashes),
+        )
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (failure: Exception) {
-        if (BuildConfig.DEBUG) Log.w(DUPLICATE_LOG_TAG, "Calibration scan failed: ${failure::class.java.simpleName}", failure)
-        emptyList()
+        Log.w(DUPLICATE_LOG_TAG, "Calibration scan failed: ${failure::class.java.simpleName}: ${failure.message}")
+        CalibrationScan(emptyList(), CalibrationCounts.NONE)
     }
+}
+
+/** The funnel behind [scanCalibrationPairs]: active, with an IMAGE vector, hash matched, then categorised. */
+internal fun calibrationCounts(
+    items: List<ClothingItem>,
+    vectors: Map<String, GarmentVectors>,
+    currentPhotoHashes: Map<String, String>,
+): CalibrationCounts {
+    val active = items.filterNot(ClothingItem::isArchived)
+    val eligible = eligibleGarments(items, vectors, currentPhotoHashes)
+    return CalibrationCounts(
+        active = active.size,
+        withVector = active.count { item -> vectors[item.id]?.image != null },
+        hashMatched = eligible.size,
+        categorised = eligible.count { garment -> garment.category != null },
+    )
 }
 
 /** Active garments whose stored IMAGE hash is shared with another garment that has an IMAGE vector. */
@@ -230,12 +364,38 @@ internal fun sharedHashCandidates(items: List<ClothingItem>, vectors: Map<String
         .flatten()
         .toSet()
 
-private suspend fun currentPhotoHashes(context: Context, ids: Set<String>, items: List<ClothingItem>): Map<String, String> {
+/**
+ * The current photo hash of each garment in [ids] that has a photo. At most [HASH_PARALLELISM] photos are read at once.
+ * A photo that cannot be hashed leaves its garment out; cancellation propagates and stops the photos not yet started.
+ * [onProgress] reports (done, total) before the first photo and after each one, never going backwards.
+ */
+internal suspend fun resolvePhotoHashes(
+    ids: Set<String>,
+    items: List<ClothingItem>,
+    hash: suspend (uri: String) -> String?,
+    onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+): Map<String, String> = coroutineScope {
     val photos = items.associateBy(ClothingItem::id)
-    return ids.mapNotNull { id ->
-        val uri = photos[id]?.photoUri?.takeIf(String::isNotBlank) ?: return@mapNotNull null
-        currentPhotoHash(context, uri)?.let { hash -> id to hash }
-    }.toMap()
+    val work = ids.mapNotNull { id -> photos[id]?.photoUri?.takeIf(String::isNotBlank)?.let { uri -> id to uri } }
+    val gate = Semaphore(HASH_PARALLELISM)
+    val progressLock = Mutex()
+    var done = 0
+    onProgress(0, work.size)
+    work.map { (id, uri) ->
+        async {
+            val hashed = gate.withPermit {
+                try {
+                    hash(uri)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    null
+                }
+            }
+            progressLock.withLock { onProgress(++done, work.size) }
+            hashed?.let { id to it }
+        }
+    }.awaitAll().filterNotNull().toMap()
 }
 
 /** SHA-256 of the encoded input, the same value the IMAGE vector stored as `input_hash`. Null when the photo cannot be read. */
@@ -248,11 +408,11 @@ private suspend fun currentPhotoHash(context: Context, uri: String): String? = t
 }
 
 /** An active garment whose stored IMAGE vector still matches its current photo (REQ-DU-01). */
-private class Eligible(val id: String, val vector: FloatArray, val inputHash: String, val category: String?)
+internal class Eligible(val id: String, val vector: FloatArray, val inputHash: String, val category: String?)
 
 private class Edge(val a: String, val b: String, val strength: Float)
 
-private fun eligibleGarments(
+internal fun eligibleGarments(
     items: List<ClothingItem>,
     vectors: Map<String, GarmentVectors>,
     currentPhotoHashes: Map<String, String>,

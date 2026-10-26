@@ -98,6 +98,8 @@ class WardrobeSyncOutboxProcessor(
     private var cyclePhotoUploadFailureIds: Set<String> = emptySet()
     /** The Drive failure that ended this cycle's upload attempt, reported in [lastCycle]. Written and read only while holding [mutex]. */
     private var cycleDriveFailure: Throwable? = null
+    /** The reason of the Blocked result that ended the current cycle, for the sync-ended log line. */
+    private var cycleBlockedReason: DriveSyncDisabledReason? = null
     /** Local work the phone had before this cycle claimed anything (rows, vectors, cloud deletion). Written and read only while holding [mutex]. */
     private var cyclePendingLocalWork = false
     /** The merge decision this cycle reached, logged with the cycle. Written and read only while holding [mutex]. */
@@ -804,6 +806,10 @@ class WardrobeSyncOutboxProcessor(
         forceImport: Boolean,
         mergeConfirmed: Boolean,
     ): SyncRunResult {
+        // A new cycle starts with no sign-in state: only its own outcome sets the banner again.
+        authBlocked.value = false
+        DriveHttpDiagnostics.lastFailure = null
+        cycleBlockedReason = null
         val idleStartedAt = System.currentTimeMillis()
         val status = settingsRepository.settings.first().driveSyncConnectionStatus
         if (status != DriveSyncConnectionStatus.Connected) {
@@ -872,7 +878,8 @@ class WardrobeSyncOutboxProcessor(
             recordSyncEnded(
                 syncCorrelationId,
                 syncStartedAt,
-                "result=$result decision=${cycleMergeDecision?.name ?: "none"}",
+                "result=$result decision=${cycleMergeDecision?.name ?: "none"}" +
+                    syncFailureDetail(result, cycleBlockedReason, DriveHttpDiagnostics.lastFailure),
                 level = if (result == SyncRunResult.Success) "info" else "warn",
             )
             settleClaimedWork(result, lockedWork, lockedMetadataWork)
@@ -887,7 +894,13 @@ class WardrobeSyncOutboxProcessor(
             cycleFailure = throwable
             cycleResult = SyncRunResult.Retry
             releaseClaimedWork(lockedWork, lockedMetadataWork)
-            recordSyncEnded(syncCorrelationId, syncStartedAt, "failure", level = "error", throwable = throwable)
+            recordSyncEnded(
+                syncCorrelationId,
+                syncStartedAt,
+                "failure" + syncFailureDetail(SyncRunResult.Retry, cycleBlockedReason, DriveHttpDiagnostics.lastFailure),
+                level = "error",
+                throwable = throwable,
+            )
             SyncRunResult.Retry
         } finally {
             isProcessing.value = false
@@ -948,7 +961,6 @@ class WardrobeSyncOutboxProcessor(
         val result = restoreThenFlush(localSnapshot, userConfirmed)
         if (result == SyncRunResult.Success) {
             settingsRepository.setSyncConflict(false)
-            pendingMergeSummary.value = null
         }
         return result
     }
@@ -966,7 +978,7 @@ class WardrobeSyncOutboxProcessor(
     private suspend fun proposeMergeOrUpload(localSnapshot: WardrobeSyncSnapshot): SyncRunResult {
         val remote = when (val fetched = driveRepository.fetchSnapshotRecords()) {
             is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
-            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Blocked -> return blockedRunResult(fetched)
             is DriveSyncResult.Failure -> return fetched.retry()
         }
         return decideWithRemote(localSnapshot, remote) ?: uploadLocalSnapshot(localSnapshot)
@@ -1021,7 +1033,7 @@ class WardrobeSyncOutboxProcessor(
         val lastKnownRevision = settingsRepository.lastKnownRemoteRevision.first()
         val remoteManifest = when (val fetched = driveRepository.fetchManifest()) {
             is DriveSyncResult.Success -> fetched.value
-            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Blocked -> return blockedRunResult(fetched)
             is DriveSyncResult.Failure -> return fetched.retry()
         }
         val otherWriterBackup = remoteManifest.isNewerWriterThan(deviceId, lastKnownRevision)
@@ -1029,7 +1041,7 @@ class WardrobeSyncOutboxProcessor(
         // another writer's data and the guarded or failed photo records. A missing file reads as an empty snapshot.
         val remote = when (val fetched = driveRepository.fetchSnapshotRecords()) {
             is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
-            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Blocked -> return blockedRunResult(fetched)
             is DriveSyncResult.Failure -> return fetched.retry()
         }
         if (otherWriterBackup && remote.hasUserData()) decideWithRemote(localSnapshot, remote)?.let { return it }
@@ -1043,7 +1055,7 @@ class WardrobeSyncOutboxProcessor(
                 cyclePhotoUploadFailureIds = uploaded.value.photoUploadFailures.mapTo(mutableSetOf()) { it.garmentId }
                 SyncRunResult.Success
             }
-            is DriveSyncResult.Blocked -> uploaded.reason.toRunResult()
+            is DriveSyncResult.Blocked -> blockedRunResult(uploaded)
             is DriveSyncResult.Failure -> uploaded.failureResult()
         }
     }
@@ -1075,7 +1087,7 @@ class WardrobeSyncOutboxProcessor(
         if (accountMismatchHeld()) return SyncRunResult.NeedsUser
         val remote = when (val fetched = driveRepository.fetchSnapshot()) {
             is DriveSyncResult.Success -> fetched.value.sortedDeterministically()
-            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Blocked -> return blockedRunResult(fetched)
             is DriveSyncResult.Failure -> return SyncRunResult.Retry
         }
         // An empty remote must never wipe the phone; it keeps the conflict visible instead.
@@ -1083,6 +1095,8 @@ class WardrobeSyncOutboxProcessor(
         // A newer schema is never applied: the conflict stays unresolved and nothing on the phone is cleared.
         if (remote.metadata.schemaVersion > WARDROBE_SYNC_SCHEMA_VERSION) return SyncRunResult.NeedsUser
         snapshotRepository.replaceLocalWithRemote(remote)
+        // The Replace is applied, so a proposal shown before it is answered: it must not keep the Combine/Replace card or block later cycles.
+        pendingMergeSummary.value = null
         settingsRepository.setLastKnownRemoteRevision(remote.metadata.revision, remote.metadata.writerDeviceId)
         settingsRepository.setSyncConflict(false)
         return SyncRunResult.Success
@@ -1096,7 +1110,7 @@ class WardrobeSyncOutboxProcessor(
         if (accountMismatchHeld()) return SyncRunResult.NeedsUser
         val manifest = when (val fetched = driveRepository.fetchManifest()) {
             is DriveSyncResult.Success -> fetched.value
-            is DriveSyncResult.Blocked -> return fetched.reason.toRunResult()
+            is DriveSyncResult.Blocked -> return blockedRunResult(fetched)
             is DriveSyncResult.Failure -> return SyncRunResult.Retry
         }
         val conflictRevision = settingsRepository.syncConflictRemoteRevision.first()
@@ -1180,6 +1194,12 @@ class WardrobeSyncOutboxProcessor(
     ) {
         lockedWork.forEach { item -> wardrobeRepository.releaseGarmentSyncToQueued(item.id, item.revision) }
         lockedMetadataWork.forEach { item -> wardrobeRepository.releaseMetadataSyncToQueued(item) }
+    }
+
+    /** The run result of a Blocked fetch or upload; its reason is kept for the sync-ended log line. */
+    private fun blockedRunResult(blocked: DriveSyncResult.Blocked): SyncRunResult {
+        cycleBlockedReason = blocked.reason
+        return blocked.reason.toRunResult()
     }
 
     private fun DriveSyncDisabledReason.toRunResult(): SyncRunResult = when (this) {
@@ -1326,6 +1346,9 @@ class WardrobeSyncOutboxProcessor(
         }
         diagnostics.recordLocalSave(importResult)
         onRestoreImported()
+        // The local merge is applied, so the proposal is answered whatever the upload below ends with (Success, Retry or AuthBlocked).
+        // A kept proposal would otherwise block every later cycle (the guard above) and keep the Browse card on Replace.
+        pendingMergeSummary.value = null
 
         restoreProgress.value = diagnostics.progress(
             phase = CloudRestorePhase.Applying,
@@ -1369,9 +1392,9 @@ class WardrobeSyncOutboxProcessor(
         )
 
         // Photo progress only updates the overlay state; it adds no sync-log lines, one per photo would flood the log.
-        val onPhotoProgress = { completedPhotos: Int, totalPhotos: Int ->
+        val onPhotoProgress = { completedPhotos: Int, totalPhotos: Int, reusedPhotos: Int ->
             restoreProgress.value = restoreProgress.value?.copy(
-                uploadProgress = RestoreUploadProgress(completedPhotos, totalPhotos),
+                uploadProgress = RestoreUploadProgress(completedPhotos, totalPhotos, reusedPhotos),
             )
         }
         return when (val uploadResult = driveRepository.upsertSnapshot(mergedSnapshot, remoteSnapshot, onPhotoProgress)) {
@@ -1510,6 +1533,16 @@ private fun WardrobeSyncStateInputs.attention(): List<SyncAttention> = buildList
     if (driveFullCount > 0) add(SyncAttention(SyncAttentionKind.DriveFull))
     if (photoUploadFailedCount > 0) add(SyncAttention(SyncAttentionKind.PhotoUploadFailed))
     if (accountsConflict(authorizedAccountEmail, expectedAccountEmail)) add(SyncAttention(SyncAttentionKind.AccountMismatch))
+}
+
+/**
+ * What a cycle that did not succeed adds to its "sync ended" line: the Blocked reason and the last HTTP code and Google reason.
+ * Developer log only; it carries no token and no response body.
+ */
+internal fun syncFailureDetail(result: SyncRunResult, blockedReason: DriveSyncDisabledReason?, lastHttpFailure: String?): String {
+    if (result == SyncRunResult.Success) return ""
+    return listOfNotNull(blockedReason?.let { reason -> "blocked=${reason.name}" }, lastHttpFailure)
+        .joinToString(separator = "") { detail -> " $detail" }
 }
 
 /**

@@ -1,12 +1,15 @@
 package com.gusanitolabs.robia.ui
 
 import androidx.compose.ui.graphics.Color
+import com.gusanitolabs.robia.core.designsystem.RobiaDarkExtras
+import com.gusanitolabs.robia.core.designsystem.RobiaLightExtras
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.roundToInt
 
 class GarmentSwatchBackgroundTest {
     @Test
@@ -38,6 +41,18 @@ class GarmentSwatchBackgroundTest {
         assertEquals(listOf(surfaceTop, swatch.copy(alpha = 0.26f)), stops)
     }
 
+    /** V-DARK1-4: the photo-well token is #F3F3F4 (today's surfaceContainerLow) in both themes. */
+    @Test
+    fun brushTopStopComesFromThePhotoWellTokenInBothThemes() {
+        assertEquals(Color(0xFFF3F3F4), RobiaLightExtras.photoWellTop)
+        assertEquals(RobiaLightExtras.photoWellTop, RobiaDarkExtras.photoWellTop)
+        assertEquals(RobiaLightExtras.photoWellBottom, RobiaDarkExtras.photoWellBottom)
+        assertEquals(
+            RobiaDarkExtras.photoWellTop,
+            garmentSwatchStops(DisplayColorLabel.Red.swatchColor(), RobiaDarkExtras.photoWellTop)[0],
+        )
+    }
+
     @Test
     fun brushStopsFollowTheSwatchNotTheSurface() {
         val surfaceTop = Color(0xFFF1F3F4)
@@ -50,12 +65,20 @@ class GarmentSwatchBackgroundTest {
     }
 
     @Test
-    fun nearWhiteSwatchesGetTheWarmNeutralStops() {
+    fun nearWhiteSwatchesGetTheNeutralGreyStops() {
         val surfaceTop = Color(0xFFF1F3F4)
-        val neutral = listOf(Color(0xFFE6E0D9), Color(0xFFCFC5BA))
+        val neutral = listOf(Color(0xFFF3F3F4), Color(0xFFD6D5D6))
 
         assertEquals(neutral, garmentSwatchStops(DisplayColorLabel.White.swatchColor(), surfaceTop))
         assertEquals(neutral, garmentSwatchStops(DisplayColorLabel.Unknown.swatchColor(), surfaceTop))
+        assertEquals(
+            neutral,
+            garmentSwatchStops(
+                DisplayColorLabel.Yellow.swatchColor(),
+                surfaceTop,
+                nearWhite = isNearWhite(DisplayColorLabel.Yellow, "#EFE6D2"),
+            ),
+        )
         assertEquals(
             neutral,
             garmentSwatchStops(
@@ -64,6 +87,12 @@ class GarmentSwatchBackgroundTest {
                 nearWhite = isNearWhite(DisplayColorLabel.White, "#F8F9FA"),
             ),
         )
+        neutral.forEach { stop -> assertTrue("$stop is not neutral", channelSpread(stop) < 10) }
+    }
+
+    private fun channelSpread(colour: Color): Int {
+        val channels = listOf(colour.red, colour.green, colour.blue).map { (it * 255).roundToInt() }
+        return channels.max() - channels.min()
     }
 
     @Test

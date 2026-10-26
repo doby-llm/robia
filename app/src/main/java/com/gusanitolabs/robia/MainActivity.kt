@@ -2,16 +2,29 @@ package com.gusanitolabs.robia
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.lifecycleScope
+import com.gusanitolabs.robia.core.designsystem.RobiaBackground
+import com.gusanitolabs.robia.core.designsystem.RobiaDarkBackground
+import com.gusanitolabs.robia.core.designsystem.resolveDarkTheme
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
+import com.gusanitolabs.robia.core.model.ThemeMode
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.media.cutout.runCutoutDebugDump
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -26,6 +39,7 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val EXTRA_PERFORMANCE_FIXTURE_URIS = "com.gusanitolabs.robia.PERFORMANCE_FIXTURE_URIS"
@@ -33,6 +47,10 @@ private const val EXTRA_PERFORMANCE_BATCH = "com.gusanitolabs.robia.PERFORMANCE_
 private const val EXTRA_CUTOUT_DEBUG = "com.gusanitolabs.robia.CUTOUT_DEBUG"
 private const val CUTOUT_DEBUG_PACK_WAIT_MS = 10_000L
 private const val DRIVE_AUTH_LOG_TAG = "RobiaDriveAuth"
+private const val THEME_READ_TIMEOUT_MS = 250L
+// The activity library's default navigation bar scrims, kept for the explicit style.
+private val NAVIGATION_LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
+private val NAVIGATION_DARK_SCRIM = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
 
 class MainActivity : ComponentActivity() {
     private lateinit var authorizationClient: AuthorizationClient
@@ -46,15 +64,34 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        val app = application as RobiaApplication
+        settingsRepository = app.settingsRepository
+        // Read once before the first frame, bounded; Light when the stored choice is not read in time (R3-DEC-045).
+        val earlyThemeMode = runBlocking { withTimeoutOrNull(THEME_READ_TIMEOUT_MS) { settingsRepository.themeMode.first() } }
+            ?: ThemeMode.Light
+        val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val earlyDark = resolveDarkTheme(earlyThemeMode, systemDark)
+        if (earlyDark) setTheme(R.style.Theme_Robia_Dark)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { earlyDark },
+            navigationBarStyle = SystemBarStyle.auto(NAVIGATION_LIGHT_SCRIM, NAVIGATION_DARK_SCRIM) { earlyDark },
+        )
         super.onCreate(savedInstanceState)
         authorizationClient = Identity.getAuthorizationClient(this)
 
-        val app = application as RobiaApplication
-        settingsRepository = app.settingsRepository
         syncGateway = app.syncGateway
 
         setContent {
+            val themeMode by settingsRepository.themeMode.collectAsState(initial = earlyThemeMode)
+            val dark = resolveDarkTheme(themeMode, isSystemInDarkTheme())
+            DisposableEffect(dark) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                    navigationBarStyle = SystemBarStyle.auto(NAVIGATION_LIGHT_SCRIM, NAVIGATION_DARK_SCRIM) { dark },
+                )
+                window.setBackgroundDrawable(ColorDrawable((if (dark) RobiaDarkBackground else RobiaBackground).toArgb()))
+                onDispose {}
+            }
             RobiaApp(
                 settingsRepository = settingsRepository,
                 wardrobeRepository = app.wardrobeRepository,
@@ -63,6 +100,7 @@ class MainActivity : ComponentActivity() {
                 onRequestCloudSetup = ::requestGoogleDriveAuthorization,
                 performanceFixtureUris = performanceFixtureUris(),
                 performanceBatch = intent.getBooleanExtra(EXTRA_PERFORMANCE_BATCH, false),
+                themeMode = themeMode,
             )
         }
         // Debug-only cutout stage dump (K01); release and staging builds never start it.
@@ -122,7 +160,16 @@ class MainActivity : ComponentActivity() {
                     )
                     showCloudSetupLaunchFailure()
                 } else {
-                    persistDriveAuthorizationResult(result)
+                    lifecycleScope.launch {
+                        if (settingsRepository.settings.first().driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected) {
+                            // Drive is still connected: nothing to sign in to. Say so and sync, instead of rewriting the status silently.
+                            setCloudAuthorizationInFlight(false)
+                            Toast.makeText(this@MainActivity, R.string.sync_auth_checking_connection, Toast.LENGTH_SHORT).show()
+                            syncGateway.requestSyncInBackground("sign_in_tap_connected")
+                        } else {
+                            persistDriveAuthorizationResult(result)
+                        }
+                    }
                 }
             }
             .addOnFailureListener { showCloudSetupLaunchFailure() }

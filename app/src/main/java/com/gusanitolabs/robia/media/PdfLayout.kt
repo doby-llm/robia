@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.media
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Pure A4 layout for the garment PDF card (TS§9). Units are PDF points.
@@ -52,6 +53,8 @@ data class PdfPage(
     val swatches: List<PdfSwatch>,
     val metadata: List<PdfMetadataRow>,
     val footer: PdfBox,
+    /** False when the Robia frame is off (EX2): the page holds the photo alone, with no header, footer or paper. */
+    val framed: Boolean = true,
 )
 
 data class PdfLayout(val pages: List<PdfPage>)
@@ -125,9 +128,10 @@ private const val CARD_ROW_GAP = 28f
  * Places the first page (photo, title, notes, swatches, metadata) and any notes that do not fit
  * on continuation pages. Fonts shrink first (title 30 → 22 pt, notes 12.5 → 10 pt); the photo
  * takes the leftover height (up to 600 pt), and the info block is bottom-anchored so the band
- * above the footer stays at 24 pt.
+ * above the footer stays at 24 pt. With [showFrame] off the page is the photo alone (EX2).
  */
-fun computePdfLayout(content: PdfContent, measurer: PdfTextMeasurer): PdfLayout {
+fun computePdfLayout(content: PdfContent, measurer: PdfTextMeasurer, showFrame: Boolean = true): PdfLayout {
+    if (!showFrame) return photoOnlyPdfLayout()
     val title = content.title.trim()
     val notes = content.notes.trim()
     val metadata = content.metadata
@@ -245,6 +249,21 @@ fun computePdfLayout(content: PdfContent, measurer: PdfTextMeasurer): PdfLayout 
     }
     return PdfLayout(pages)
 }
+
+/** Frame off (EX2): one page with the photo across the content area and nothing else. */
+private fun photoOnlyPdfLayout(): PdfLayout = PdfLayout(
+    listOf(
+        PdfPage(
+            photo = PdfBox(MARGIN, CONTENT_TOP, CONTENT_WIDTH, CONTENT_BOTTOM - CONTENT_TOP),
+            title = null,
+            notes = null,
+            swatches = emptyList(),
+            metadata = emptyList(),
+            footer = PdfBox(MARGIN, FOOTER_TOP, CONTENT_WIDTH, FOOTER_HEIGHT),
+            framed = false,
+        ),
+    ),
+)
 
 private class TextFit(val titleSize: Float, val notesSize: Float, val notesOnFirstPage: Int)
 
@@ -364,6 +383,15 @@ data class CardLayout(
     val notes: PdfTextBlock?,
     val mark: PdfBox,
 )
+
+/**
+ * Frame off (EX2): the photo alone, scaled to keep its aspect ratio with its long edge at [CARD_HEIGHT] pixels.
+ * Returns (width, height) in pixels.
+ */
+fun photoOnlyCardSize(photoWidth: Int, photoHeight: Int): Pair<Int, Int> {
+    val scale = CARD_HEIGHT / max(photoWidth, photoHeight).coerceAtLeast(1)
+    return (photoWidth * scale).roundToInt().coerceAtLeast(1) to (photoHeight * scale).roundToInt().coerceAtLeast(1)
+}
 
 /**
  * Places the image card in [CARD_WIDTH] x [CARD_HEIGHT] pixels: photo on top, then the title, the chosen sections and the

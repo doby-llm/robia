@@ -2,8 +2,6 @@ package com.gusanitolabs.robia.ui
 
 import android.util.Log
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -433,13 +431,7 @@ internal fun TagReviewScreen(
         }
     }
 
-    val totalCount = garments.size.coerceAtLeast(1)
-    val progress = if (isScanning) scannedCount.toFloat() / totalCount.toFloat() else 1f
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 300),
-        label = "tagReviewProgress",
-    )
+    val scanProgress = reviewScanProgress(scannedCount, garments.size, isScanning)
 
     BackHandler { onRequestDiscard() }
 
@@ -500,7 +492,7 @@ internal fun TagReviewScreen(
                     } else {
                         stringResource(R.string.tag_review_scanning_count, scannedCount, garments.size)
                     },
-                    progress = if (isPreparing) 0f else animatedProgress,
+                    progress = if (isPreparing) 0f else scanProgress,
                 )
             }
 
