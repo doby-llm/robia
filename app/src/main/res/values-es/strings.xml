@@ -892,4 +892,6 @@
     <string name="duplicate_calibration_preparing">Preparando fotos… %1$d de %2$d</string>
     <!-- DUP2 -->
     <string name="duplicate_tier_very_similar">Muy similar</string>
+    <!-- REV-COLOR -->
+    <string name="color_review_tap_hint">Robia propone los colores de la derecha. Toca uno para cambiarlo antes de aceptar.</string>
 </resources>
