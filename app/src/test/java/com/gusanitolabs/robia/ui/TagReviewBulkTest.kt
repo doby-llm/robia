@@ -12,6 +12,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,8 +63,33 @@ class TagReviewBulkTest {
 
     @Test
     fun theBarAppliesTheRestOnlyWhileThereAreCardsAndStaysDoneWithout() {
-        assertFalse(showsBulkBar(TagReviewSession()))
-        assertTrue(showsBulkBar(scenario()))
+        assertFalse(showsBulkBar(TagReviewSession(), isScanning = false, revertsInFlight = false, garments = 0))
+        assertTrue(showsBulkBar(scenario(), isScanning = false, revertsInFlight = false, garments = 3))
+    }
+
+    // V-REV-BULK-3 (B1): a chooser left with nothing to write (deleting the last category) or kept cards must not trap the review.
+
+    @Test
+    fun aChooserWithNothingToWriteShowsDoneNotADisabledBulkBar() {
+        val chooser = ReviewCardState(
+            garmentId = "x",
+            changes = ReviewChanges(changes = emptyList(), needsChoice = true),
+            liveGroupTagIds = emptySet(),
+            offeredTagIds = emptySet(),
+        )
+        val chooserOnly = session(chooser)
+        assertEquals(0, chooserOnly.bulkPlan(existingTagIds).garments)
+        assertFalse(showsBulkBar(chooserOnly, isScanning = false, revertsInFlight = false, garments = 0))
+        assertTrue(doneEnabled(isScanning = false, session = chooserOnly))
+
+        // N > 0 shows the bulk bar; a scan, or a write or revert in flight, shows it disabled rather than Done.
+        assertTrue(showsBulkBar(chooserOnly, isScanning = false, revertsInFlight = false, garments = 2))
+        assertTrue(showsBulkBar(chooserOnly, isScanning = true, revertsInFlight = false, garments = 0))
+        assertTrue(showsBulkBar(chooserOnly, isScanning = false, revertsInFlight = true, garments = 0))
+        val (inFlight, _) = scenario().startBulk(existingTagIds)
+        assertEquals(0, inFlight.bulkPlan(existingTagIds).garments)
+        assertTrue(showsBulkBar(inFlight, isScanning = false, revertsInFlight = false, garments = 0))
+        assertFalse(bulkBarEnabled(isScanning = false, session = inFlight, revertsInFlight = false, garments = 0))
     }
 
     @Test
@@ -97,38 +123,60 @@ class TagReviewBulkTest {
         val de = resource("app/src/main/res/values-de/strings.xml")
 
         listOf(
-            "<string name=\"review_apply_remaining\">Apply all remaining (%1\$d)</string>",
-            "<string name=\"review_bulk_title\">Apply the remaining %1\$d?</string>",
-            "<string name=\"review_apply\">Apply</string>",
-            "<item quantity=\"one\">Robia will add %1\$d tag and remove %2\$d on %3\$d garments. You can undo it right after.</item>",
-            "<item quantity=\"other\">Robia will add %1\$d tags and remove %2\$d on %3\$d garments. You can undo it right after.</item>",
-            "<item quantity=\"one\">Robia will add %1\$d tag to %2\$d garments. You can undo it right after.</item>",
-            "<item quantity=\"other\">Robia will add %1\$d tags to %2\$d garments. You can undo it right after.</item>",
+            "<plurals name=\"review_apply_remaining\">",
+            "<item quantity=\"one\">Apply the remaining garment</item>",
+            "<item quantity=\"other\">Apply all remaining (%1\$d)</item>",
+            "<plurals name=\"review_bulk_title\">",
+            "<item quantity=\"one\">Apply the remaining garment?</item>",
+            "<item quantity=\"other\">Apply the remaining %1\$d?</item>",
+            "<plurals name=\"review_bulk_tags\">",
+            "<item quantity=\"one\">%1\$d tag</item>",
+            "<item quantity=\"other\">%1\$d tags</item>",
+            "<plurals name=\"review_bulk_body\">",
+            "<item quantity=\"one\">Robia will add %1\$s and remove %2\$d on 1 garment. You can undo it right after.</item>",
+            "<item quantity=\"other\">Robia will add %1\$s and remove %2\$d on %3\$d garments. You can undo it right after.</item>",
+            "<plurals name=\"review_bulk_body_adds\">",
+            "<item quantity=\"one\">Robia will add %1\$s to 1 garment. You can undo it right after.</item>",
+            "<item quantity=\"other\">Robia will add %1\$s to %2\$d garments. You can undo it right after.</item>",
             "<item quantity=\"one\">1 garment updated</item>",
             "<item quantity=\"other\">%1\$d garments updated</item>",
+            "<string name=\"review_apply\">Apply</string>",
             "<string name=\"tag_review_accept_all\">Accept all (%1\$d)</string>",
+            "<string name=\"tag_review_save_accepted\">Save %1\$d accepted</string>",
         ).forEach { line -> assertTrue(line, en.contains(line)) }
         listOf(
-            "<string name=\"review_apply_remaining\">Aplicar las %1\$d restantes</string>",
-            "<string name=\"review_bulk_title\">¿Aplicar las %1\$d restantes?</string>",
-            "<string name=\"review_apply\">Aplicar</string>",
-            "<item quantity=\"one\">Robia añadirá %1\$d etiqueta y quitará %2\$d en %3\$d prendas. Podrás deshacerlo justo después.</item>",
-            "<item quantity=\"other\">Robia añadirá %1\$d etiquetas y quitará %2\$d en %3\$d prendas. Podrás deshacerlo justo después.</item>",
-            "<item quantity=\"one\">Robia añadirá %1\$d etiqueta a %2\$d prendas. Podrás deshacerlo justo después.</item>",
-            "<item quantity=\"other\">Robia añadirá %1\$d etiquetas a %2\$d prendas. Podrás deshacerlo justo después.</item>",
+            "<item quantity=\"one\">Aplicar la prenda restante</item>",
+            "<item quantity=\"other\">Aplicar las %1\$d restantes</item>",
+            "<item quantity=\"one\">¿Aplicar la prenda restante?</item>",
+            "<item quantity=\"other\">¿Aplicar las %1\$d restantes?</item>",
+            "<item quantity=\"one\">%1\$d etiqueta</item>",
+            "<item quantity=\"other\">%1\$d etiquetas</item>",
+            "<item quantity=\"one\">Robia añadirá %1\$s y quitará %2\$d en 1 prenda. Podrás deshacerlo justo después.</item>",
+            "<item quantity=\"other\">Robia añadirá %1\$s y quitará %2\$d en %3\$d prendas. Podrás deshacerlo justo después.</item>",
+            "<item quantity=\"one\">Robia añadirá %1\$s a 1 prenda. Podrás deshacerlo justo después.</item>",
+            "<item quantity=\"other\">Robia añadirá %1\$s a %2\$d prendas. Podrás deshacerlo justo después.</item>",
             "<item quantity=\"one\">1 prenda actualizada</item>",
             "<item quantity=\"other\">%1\$d prendas actualizadas</item>",
+            "<string name=\"review_apply\">Aplicar</string>",
+            "<string name=\"tag_review_accept_all\">Aceptar todo (%1\$d)</string>",
+            "<string name=\"tag_review_save_accepted\">Guardar %1\$d aceptados</string>",
         ).forEach { line -> assertTrue(line, es.contains(line)) }
         listOf(
-            "<string name=\"review_apply_remaining\">Alle restlichen %1\$d übernehmen</string>",
-            "<string name=\"review_bulk_title\">Die restlichen %1\$d übernehmen?</string>",
-            "<string name=\"review_apply\">Übernehmen</string>",
-            "<item quantity=\"one\">Robia fügt bei %3\$d Kleidungsstücken %1\$d Tag hinzu und entfernt %2\$d. Du kannst das gleich danach rückgängig machen.</item>",
-            "<item quantity=\"other\">Robia fügt bei %3\$d Kleidungsstücken %1\$d Tags hinzu und entfernt %2\$d. Du kannst das gleich danach rückgängig machen.</item>",
-            "<item quantity=\"one\">Robia fügt %2\$d Kleidungsstücken %1\$d Tag hinzu. Du kannst das gleich danach rückgängig machen.</item>",
-            "<item quantity=\"other\">Robia fügt %2\$d Kleidungsstücken %1\$d Tags hinzu. Du kannst das gleich danach rückgängig machen.</item>",
+            "<item quantity=\"one\">Das restliche Kleidungsstück übernehmen</item>",
+            "<item quantity=\"other\">Alle restlichen %1\$d übernehmen</item>",
+            "<item quantity=\"one\">Das restliche Kleidungsstück übernehmen?</item>",
+            "<item quantity=\"other\">Die restlichen %1\$d übernehmen?</item>",
+            "<item quantity=\"one\">%1\$d Tag</item>",
+            "<item quantity=\"other\">%1\$d Tags</item>",
+            "<item quantity=\"one\">Robia fügt bei 1 Kleidungsstück %1\$s hinzu und entfernt %2\$d. Du kannst das gleich danach rückgängig machen.</item>",
+            "<item quantity=\"other\">Robia fügt bei %3\$d Kleidungsstücken %1\$s hinzu und entfernt %2\$d. Du kannst das gleich danach rückgängig machen.</item>",
+            "<item quantity=\"one\">Robia fügt 1 Kleidungsstück %1\$s hinzu. Du kannst das gleich danach rückgängig machen.</item>",
+            "<item quantity=\"other\">Robia fügt %2\$d Kleidungsstücke %1\$s hinzu. Du kannst das gleich danach rückgängig machen.</item>",
             "<item quantity=\"one\">1 Kleidungsstück aktualisiert</item>",
             "<item quantity=\"other\">%1\$d Kleidungsstücke aktualisiert</item>",
+            "<string name=\"review_apply\">Übernehmen</string>",
+            "<string name=\"tag_review_accept_all\">Alle akzeptieren (%1\$d)</string>",
+            "<string name=\"tag_review_save_accepted\">%1\$d akzeptierte Änderungen speichern</string>",
         ).forEach { line -> assertTrue(line, de.contains(line)) }
     }
 
@@ -140,8 +188,9 @@ class TagReviewBulkTest {
         assertEquals(listOf("a", "b", "p", "c"), batch.batchIds)
         assertEquals(listOf(deltaA, deltaB, deltaP), batch.deltas)
 
+        // T(1): the screen's write is writeBulkBatch, ONE onApply call with the batch's deltas.
         val calls = mutableListOf<List<TagDelta>>()
-        val outcome = runBlocking { recordingApply(calls)(batch.deltas) }
+        val outcome = runBlocking { writeBulkBatch(batch, recordingApply(calls)) }
         assertEquals(listOf(listOf(deltaA, deltaB, deltaP)), calls)
 
         val after = decided.afterWrite(batch.writeIds, outcome)
@@ -172,15 +221,68 @@ class TagReviewBulkTest {
         assertEquals(2, after.tallies().garmentsUpdated)
     }
 
-    @Test
-    fun aFailedBatchReturnsEveryWriteCardToPendingWithItsChips() {
-        val (decided, batch) = scenario().startBulk(existingTagIds)
-        val failed = decided.afterWrite(batch.writeIds, Result.failure(IllegalStateException("disk full")))
+    // V-REV-BULK-4 (B2): a failed batch returns EVERY card of the batch (the writes and the kept ones) to Pending, with its chips.
 
-        assertEquals(listOf("a", "b", "p", "d"), failed.pending.map(ReviewCardState::garmentId))
+    @Test
+    fun aFailedBatchReturnsEveryCardOfTheBatchToPendingWithItsChips() {
+        val (decided, batch) = scenario().startBulk(existingTagIds)
+        val failed = decided.afterBulkWrite(batch, Result.failure(IllegalStateException("disk full")))
+
+        assertEquals(listOf("a", "b", "p", "c", "d"), failed.pending.map(ReviewCardState::garmentId))
         assertEquals(setOf(weekendKey), failed.cards.first { card -> card.garmentId == "p" }.skipped)
-        assertEquals(ReviewDecision.Rejected(), failed.cards.first { card -> card.garmentId == "c" }.decision)
+        assertEquals(ReviewDecision.Pending, failed.cards.first { card -> card.garmentId == "c" }.decision)
         assertEquals(0, failed.tallies().garmentsUpdated)
+        assertEquals(0, failed.tallies().garmentsKept)
+    }
+
+    @Test
+    fun reviewAgainIsRefusedForAKeptCardWhileTheBatchIsInFlight() {
+        val (inFlight, _) = scenario().startBulk(existingTagIds)
+        // "c" is kept by the batch: Review again would be allowed on its own, and is refused while the batch is in flight.
+        assertTrue(reviewAgainEnabled(inFlight, "c", emptyList(), bulkInFlight = false))
+        assertFalse(reviewAgainEnabled(inFlight, "c", emptyList(), bulkInFlight = true))
+        assertFalse(reviewAgainEnabled(inFlight, "a", emptyList(), bulkInFlight = true))
+        assertFalse(reviewAgainEnabled(inFlight, "a", listOf("a"), bulkInFlight = false))
+    }
+
+    // T(2): the bulk snackbar counts the results with an item, not the batch.
+
+    @Test
+    fun theBulkSnackAnnouncesOnlyTheGarmentsWithAnItem() {
+        val (_, batch) = scenario().startBulk(existingTagIds)
+        val outcome = Result.success(
+            listOf(
+                ApplyResult(item = null, applied = AppliedDelta("a", emptySet(), emptySet())),
+                landedResult(deltaB),
+                landedResult(deltaP),
+            ),
+        )
+        assertEquals(BulkUndo(garments = 2, batch = listOf("a", "b", "p", "c")), bulkUndoFor(batch, outcome))
+        assertNull(bulkUndoFor(batch, Result.failure(IllegalStateException("disk full"))))
+    }
+
+    // T(3): the finish waits for a bulk revert, whose garments are in flight until its one write lands.
+
+    @Test
+    fun theFinishWaitsForABulkRevertInFlight() {
+        // One garment, written and decided: the review is complete, so only the revert in flight keeps it open.
+        val (decided, batch) = session(card("a", ReviewChange.Add("casual"))).startBulk(existingTagIds)
+        val written = decided.afterBulkWrite(batch, Result.success(batch.deltas.map { delta -> landedResult(delta) }))
+        val revert = written.bulkRevert(batch.batchIds, emptyList())
+        val reverting = mutableListOf<String>()
+        reverting.markBulkRevertInFlight(revert)
+        assertEquals(listOf("a"), reverting)
+
+        fun finishes(revertsInFlight: Boolean) = shouldFinishTagReview(
+            session = written,
+            isScanning = false,
+            pickerOpen = false,
+            discardDialogOpen = false,
+            finished = false,
+            revertsInFlight = revertsInFlight,
+        )
+        assertFalse(finishes(revertsInFlight = reverting.isNotEmpty()))
+        assertTrue(finishes(revertsInFlight = false))
     }
 
     @Test
