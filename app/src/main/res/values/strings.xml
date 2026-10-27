@@ -970,4 +970,19 @@
         <item quantity="one">1 garment updated</item>
         <item quantity="other">%1$d garments updated</item>
     </plurals>
+    <!-- REV-DONE -->
+    <string name="review_complete_none">No garments changed</string>
+    <plurals name="review_complete_added">
+        <item quantity="one">1 tag added</item>
+        <item quantity="other">%1$d tags added</item>
+    </plurals>
+    <plurals name="review_complete_removed">
+        <item quantity="one">1 tag removed</item>
+        <item quantity="other">%1$d tags removed</item>
+    </plurals>
+    <plurals name="review_complete_kept">
+        <item quantity="one">1 kept as it was</item>
+        <item quantity="other">%1$d kept as they were</item>
+    </plurals>
+    <string name="review_complete_edit">Edit changes</string>
 </resources>

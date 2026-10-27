@@ -156,9 +156,10 @@ internal fun doneEnabled(isScanning: Boolean, session: TagReviewSession): Boolea
 internal fun doneFinishes(finished: Boolean, session: TagReviewSession): Boolean = !finished && !writesInFlight(session)
 
 /**
- * The review finishes once the scan has ended and every found card is decided, with no write or revert in flight, no picker or
+ * The review is complete once the scan has ended and every found card is decided, with no write or revert in flight, no picker or
  * discard dialog open, and only once ([finished]). A revert in flight keeps its garment Applied, so the review waits for it:
- * a landed revert puts the card back to Pending, a failed one keeps it decided and the finish follows with the right count.
+ * a landed revert puts the card back to Pending, a failed one keeps it decided and the completion follows with the right count.
+ * [showsCompletion] uses it as the guard of the completion view.
  */
 internal fun shouldFinishTagReview(
     session: TagReviewSession,
@@ -552,8 +553,9 @@ internal fun canStartTagReviewAction(offerInFlight: Boolean, promptPending: Bool
 /**
  * Review of a category or occasion change. Garments are scanned incrementally on Dispatchers.Default, so the screen
  * opens at once and proposals appear as they are found. Each decided garment is written as it leaves the list ([onApply]);
- * leaving the screen cancels the scan, keeps every garment already written, and never undoes a write. [onFinish] runs once:
- * when the scan has ended and every found card is decided, or when Done is tapped (cards still Pending are left as they are).
+ * leaving the screen cancels the scan, keeps every garment already written, and never undoes a write. When the review is complete
+ * the completion view ([showsCompletion]) holds the screen until Done, which runs [onFinish] once (cards still Pending are left as
+ * they are). Done on the completion view carries no count: the view has shown the tally already.
  */
 @Composable
 internal fun TagReviewScreen(
@@ -617,6 +619,8 @@ internal fun TagReviewScreen(
     var bulkConfirmOpen by remember(changeSet.id) { mutableStateOf(false) }
     var bulkInFlight by remember(changeSet.id) { mutableStateOf(false) }
     val bulkPlan = remember(session, afterTagIds) { session.bulkPlan(afterTagIds) }
+    // Edit changes from the completion view: the list stays up until a card is returned to Pending and decided again.
+    var editState by remember(changeSet.id) { mutableStateOf(ReviewEditState.Off) }
 
     // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
     LaunchedEffect(changeSet.id) {
@@ -664,6 +668,7 @@ internal fun TagReviewScreen(
     val writtenCount = writtenGarmentCount(session)
     val leaveCount = session.appliedGarmentCount
     LaunchedEffect(writtenCount, leaveCount) { onAppliedCountChange(writtenCount, leaveCount) }
+    LaunchedEffect(session.leftCount) { editState = reviewEditAfter(editState, session.leftCount) }
 
     // Decide, then write: the card leaves the list at once. The write's result settles the card when it comes back; a failed
     // write puts the card back in the list with the chips it had, and says so in a snackbar.
@@ -799,19 +804,12 @@ internal fun TagReviewScreen(
         }
     }
 
-    // Finish once: the scan has ended, every found card is decided and no write is in flight (see shouldFinishTagReview).
-    val finishNow = shouldFinishTagReview(
-        session = session,
-        isScanning = isScanning,
-        pickerOpen = pickerGarmentId != null,
-        discardDialogOpen = discardDialogOpen,
-        finished = finished,
-        revertsInFlight = revertingIds.isNotEmpty(),
-    )
-    LaunchedEffect(finishNow) {
-        if (finishNow) {
-            finished = true
-            onFinish(writtenGarments.toList())
+    // The completion view holds the review open until Done: it is never shown over a write or revert in flight (see showsCompletion).
+    val completionShown = showsCompletion(session, isScanning, revertsInFlight = revertingIds.isNotEmpty(), edit = editState)
+    // The cards of a complete review have left the list; they stay out when the list comes back (Edit changes), unless returned.
+    LaunchedEffect(completionShown) {
+        if (completionShown) {
+            candidates.forEach { candidate -> if (candidate.item.id !in hiddenIds) hiddenIds.add(candidate.item.id) }
         }
     }
 
@@ -894,7 +892,7 @@ internal fun TagReviewScreen(
                 } else {
                     ReviewLeftHeader(leftCount = headerState.leftCount, progress = headerState.progress)
                 }
-                if (session.reviewed.isNotEmpty()) {
+                if (session.reviewed.isNotEmpty() && !completionShown) {
                     TextButton(
                         onClick = {
                             reviewedOpen = true
@@ -917,134 +915,146 @@ internal fun TagReviewScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(reviewColumnCount()),
-                state = gridState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentPadding = PaddingValues(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 128.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                if (modelUnavailable) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ReviewEmptyCard(
-                            title = stringResource(R.string.tag_review_needs_model),
-                            body = stringResource(R.string.tag_review_needs_model_body),
-                        )
-                    }
-                } else if (!isScanning && candidates.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ReviewEmptyCard(
-                            title = stringResource(R.string.tag_review_empty_title),
-                            body = stringResource(R.string.tag_review_empty_body),
-                        )
-                    }
-                }
-
-                items(
-                    items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
-                    key = { candidate -> reviewCardKey(candidate.item.id, returns[candidate.item.id] ?: 0) },
-                ) { candidate ->
-                    val garmentId = candidate.item.id
-                    val card = session.cards.firstOrNull { cardState -> cardState.garmentId == garmentId }
-                    val chosen = card?.let { cardState -> chosenTagOf(cardState, afterTagIds) }
-                    // A decided card (applied, written, kept or rejected) leaves the list; a write that fails brings it back.
-                    val resolved = card == null || card.decision !is ReviewDecision.Pending
-                    ReviewAcceptedCard(
-                        resolved = resolved,
-                        onGone = { hiddenIds.add(garmentId) },
-                        direction = if (card?.decision is ReviewDecision.Rejected) ExitDirection.Discard else ExitDirection.Accept,
-                    ) {
-                        if (card != null) {
-                            val groupLabels = candidate.live.tags
-                                .filter { tag -> tag.categoryId == changeSet.categoryId }
-                                .map { tag -> tag.localizedTagLabel(context) }
-                                .sortedAlphabetically(label = { label -> label })
-                            TagReviewCard(
-                                card = card,
-                                identity = tagReviewIdentityLine(candidate.live),
-                                nowLine = if (changeSet.categoryId == TAG_KIND_OCCASION) {
-                                    stringResource(
-                                        R.string.review_now,
-                                        nowLine(groupLabels, stringResource(R.string.review_none)),
-                                    )
-                                } else {
-                                    null
-                                },
-                                chosenTagId = chosen,
-                                noTagsLeft = noTagsLeft(
-                                    isOccasionGroup = changeSet.categoryId == TAG_KIND_OCCASION,
-                                    beforeGroupIds = card.liveGroupTagIds,
-                                    changes = card.changes,
-                                    skipped = card.skipped,
-                                    chosenTagId = chosen,
-                                ),
-                                labelOf = { tagId -> labelsById[tagId] ?: tagId },
-                                resolved = resolved,
-                                photo = {
-                                    TagReviewPhoto(
-                                        item = candidate.item,
-                                        swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
-                                    )
-                                },
-                                onToggle = { key -> session = session.toggle(garmentId, key) },
-                                onChoose = { pickerGarmentId = garmentId },
-                                onApply = {
-                                    if (canDecideNow(card, chosen)) {
-                                        val (next, delta) = session.apply(garmentId, afterTagIds)
-                                        session = next
-                                        showUndoSnack(garmentId, next)
-                                        if (delta != null) writeDecision(listOf(garmentId), delta)
-                                    }
-                                },
-                                onReject = {
-                                    session = session.reject(garmentId)
-                                    showUndoSnack(garmentId, session)
-                                },
+            if (completionShown) {
+                TagReviewCompletion(
+                    tallies = session.tallies(),
+                    thumbnails = completionThumbnails(session, writtenGarments.toList()),
+                    onEditChanges = {
+                        reviewedOpen = true
+                        editState = ReviewEditState.Looking
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(reviewColumnCount()),
+                    state = gridState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 128.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    if (modelUnavailable) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            ReviewEmptyCard(
+                                title = stringResource(R.string.tag_review_needs_model),
+                                body = stringResource(R.string.tag_review_needs_model_body),
+                            )
+                        }
+                    } else if (!isScanning && candidates.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            ReviewEmptyCard(
+                                title = stringResource(R.string.tag_review_empty_title),
+                                body = stringResource(R.string.tag_review_empty_body),
                             )
                         }
                     }
-                }
 
-                // The decided garments, collapsed by default, most recent first, after the last pending card.
-                if (session.reviewed.isNotEmpty()) {
-                    item(key = "reviewed-header", span = { GridItemSpan(maxLineSpan) }) {
-                        ReviewedSectionHeader(
-                            count = session.reviewed.size,
-                            expanded = reviewedOpen,
-                            onToggle = { reviewedOpen = !reviewedOpen },
-                        )
-                    }
-                    if (reviewedOpen) {
-                        items(
-                            items = session.reviewed,
-                            key = { card -> "reviewed-${card.garmentId}" },
-                            span = { GridItemSpan(maxLineSpan) },
-                        ) { card ->
-                            candidates.firstOrNull { candidate -> candidate.item.id == card.garmentId }?.let { candidate ->
-                                ReviewedRow(
-                                    candidate = candidate,
-                                    outcome = reviewOutcomeOf(card),
-                                    enabled = reviewAgainEnabled(session, card.garmentId, revertingIds, bulkInFlight),
-                                    onReviewAgain = { undoDecision(card.garmentId) },
+                    items(
+                        items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
+                        key = { candidate -> reviewCardKey(candidate.item.id, returns[candidate.item.id] ?: 0) },
+                    ) { candidate ->
+                        val garmentId = candidate.item.id
+                        val card = session.cards.firstOrNull { cardState -> cardState.garmentId == garmentId }
+                        val chosen = card?.let { cardState -> chosenTagOf(cardState, afterTagIds) }
+                        // A decided card (applied, written, kept or rejected) leaves the list; a write that fails brings it back.
+                        val resolved = card == null || card.decision !is ReviewDecision.Pending
+                        ReviewAcceptedCard(
+                            resolved = resolved,
+                            onGone = { hiddenIds.add(garmentId) },
+                            direction = if (card?.decision is ReviewDecision.Rejected) ExitDirection.Discard else ExitDirection.Accept,
+                        ) {
+                            if (card != null) {
+                                val groupLabels = candidate.live.tags
+                                    .filter { tag -> tag.categoryId == changeSet.categoryId }
+                                    .map { tag -> tag.localizedTagLabel(context) }
+                                    .sortedAlphabetically(label = { label -> label })
+                                TagReviewCard(
+                                    card = card,
+                                    identity = tagReviewIdentityLine(candidate.live),
+                                    nowLine = if (changeSet.categoryId == TAG_KIND_OCCASION) {
+                                        stringResource(
+                                            R.string.review_now,
+                                            nowLine(groupLabels, stringResource(R.string.review_none)),
+                                        )
+                                    } else {
+                                        null
+                                    },
+                                    chosenTagId = chosen,
+                                    noTagsLeft = noTagsLeft(
+                                        isOccasionGroup = changeSet.categoryId == TAG_KIND_OCCASION,
+                                        beforeGroupIds = card.liveGroupTagIds,
+                                        changes = card.changes,
+                                        skipped = card.skipped,
+                                        chosenTagId = chosen,
+                                    ),
+                                    labelOf = { tagId -> labelsById[tagId] ?: tagId },
+                                    resolved = resolved,
+                                    photo = {
+                                        TagReviewPhoto(
+                                            item = candidate.item,
+                                            swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
+                                        )
+                                    },
+                                    onToggle = { key -> session = session.toggle(garmentId, key) },
+                                    onChoose = { pickerGarmentId = garmentId },
+                                    onApply = {
+                                        if (canDecideNow(card, chosen)) {
+                                            val (next, delta) = session.apply(garmentId, afterTagIds)
+                                            session = next
+                                            showUndoSnack(garmentId, next)
+                                            if (delta != null) writeDecision(listOf(garmentId), delta)
+                                        }
+                                    },
+                                    onReject = {
+                                        session = session.reject(garmentId)
+                                        showUndoSnack(garmentId, session)
+                                    },
                                 )
                             }
                         }
                     }
-                }
 
-                if (isScanning || (!modelUnavailable && skippedCount > 0)) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ReviewHelperRow(
-                            isScanning = isScanning,
-                            text = if (isScanning) {
-                                stringResource(R.string.tag_review_checking_helper)
-                            } else {
-                                stringResource(R.string.tag_review_skipped, skippedCount)
-                            },
-                        )
+                    // The decided garments, collapsed by default, most recent first, after the last pending card.
+                    if (session.reviewed.isNotEmpty()) {
+                        item(key = "reviewed-header", span = { GridItemSpan(maxLineSpan) }) {
+                            ReviewedSectionHeader(
+                                count = session.reviewed.size,
+                                expanded = reviewedOpen,
+                                onToggle = { reviewedOpen = !reviewedOpen },
+                            )
+                        }
+                        if (reviewedOpen) {
+                            items(
+                                items = session.reviewed,
+                                key = { card -> "reviewed-${card.garmentId}" },
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) { card ->
+                                candidates.firstOrNull { candidate -> candidate.item.id == card.garmentId }?.let { candidate ->
+                                    ReviewedRow(
+                                        candidate = candidate,
+                                        outcome = reviewOutcomeOf(card),
+                                        enabled = reviewAgainEnabled(session, card.garmentId, revertingIds, bulkInFlight),
+                                        onReviewAgain = { undoDecision(card.garmentId) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (isScanning || (!modelUnavailable && skippedCount > 0)) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            ReviewHelperRow(
+                                isScanning = isScanning,
+                                text = if (isScanning) {
+                                    stringResource(R.string.tag_review_checking_helper)
+                                } else {
+                                    stringResource(R.string.tag_review_skipped, skippedCount)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -1052,8 +1062,9 @@ internal fun TagReviewScreen(
 
         // With cards, the bar applies the rest after a confirmation (N is the bulk plan). With none it is Done, the same finish as the
         // automatic one, so the review can end. Back, the top bar and the system back still ask Discard or Leave.
-        // Done is not while a revert is in flight: its garment would be counted as updated after the finish.
-        if (showsBulkBar(session, isScanning, revertingIds.isNotEmpty(), bulkPlan.garments)) {
+        // Done is not while a revert is in flight: its garment would be counted as updated after the finish. On the completion view
+        // Done carries no count (the view has shown the tally), so RobiaApp shows no overlay.
+        if (!completionShown && showsBulkBar(session, isScanning, revertingIds.isNotEmpty(), bulkPlan.garments)) {
             ReviewBottomBar(
                 label = pluralStringResource(R.plurals.review_apply_remaining, bulkPlan.garments, bulkPlan.garments),
                 enabled = bulkBarEnabled(isScanning, session, revertingIds.isNotEmpty(), bulkPlan.garments),
@@ -1066,7 +1077,7 @@ internal fun TagReviewScreen(
                 onClick = {
                     if (revertingIds.isEmpty() && doneFinishes(finished, session)) {
                         finished = true
-                        onFinish(writtenGarments.toList())
+                        onFinish(if (completionShown) emptyList() else writtenGarments.toList())
                     }
                 },
             )
@@ -1198,7 +1209,7 @@ private fun TagReviewHeader(
 }
 
 @Composable
-private fun TagReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
+internal fun TagReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
