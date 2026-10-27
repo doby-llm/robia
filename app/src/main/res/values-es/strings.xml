@@ -944,4 +944,30 @@
     <string name="review_hide">Ocultar</string>
     <string name="review_again">Revisar otra vez</string>
     <string name="review_revert_failed">No se pudo deshacer. La prenda se queda actualizada.</string>
+    <!-- REV-BULK -->
+    <plurals name="review_apply_remaining">
+        <item quantity="one">Aplicar la prenda restante</item>
+        <item quantity="other">Aplicar las %1$d restantes</item>
+    </plurals>
+    <plurals name="review_bulk_title">
+        <item quantity="one">¿Aplicar la prenda restante?</item>
+        <item quantity="other">¿Aplicar las %1$d restantes?</item>
+    </plurals>
+    <plurals name="review_bulk_tags">
+        <item quantity="one">%1$d etiqueta</item>
+        <item quantity="other">%1$d etiquetas</item>
+    </plurals>
+    <plurals name="review_bulk_body">
+        <item quantity="one">Robia añadirá %1$s y quitará %2$d en 1 prenda. Podrás deshacerlo justo después.</item>
+        <item quantity="other">Robia añadirá %1$s y quitará %2$d en %3$d prendas. Podrás deshacerlo justo después.</item>
+    </plurals>
+    <plurals name="review_bulk_body_adds">
+        <item quantity="one">Robia añadirá %1$s a 1 prenda. Podrás deshacerlo justo después.</item>
+        <item quantity="other">Robia añadirá %1$s a %2$d prendas. Podrás deshacerlo justo después.</item>
+    </plurals>
+    <string name="review_apply">Aplicar</string>
+    <plurals name="review_snack_bulk">
+        <item quantity="one">1 prenda actualizada</item>
+        <item quantity="other">%1$d prendas actualizadas</item>
+    </plurals>
 </resources>

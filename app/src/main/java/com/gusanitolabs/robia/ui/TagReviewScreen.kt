@@ -181,6 +181,101 @@ internal fun TagReviewSession.afterWrite(garmentIds: List<String>, outcome: Resu
     )
 
 /**
+ * One bulk batch: every planned garment ([batchIds]: the writes and the kept cards), and the garments and deltas of its one
+ * write ([writeIds], [deltas]), in scan order.
+ */
+internal data class BulkBatch(val batchIds: List<String>, val writeIds: List<String>, val deltas: List<TagDelta>)
+
+/** Decides the planned cards of Apply all remaining: the cards with something to write are in flight, the kept ones are decided. */
+internal fun TagReviewSession.startBulk(existingTagIds: Set<String>): Pair<TagReviewSession, BulkBatch> {
+    val batchIds = bulkPlan(existingTagIds).garmentIds
+    val (next, deltas) = applyBulk(existingTagIds)
+    return next to BulkBatch(batchIds = batchIds, writeIds = deltas.map(TagDelta::garmentId), deltas = deltas)
+}
+
+/** Apply all remaining's write: the batch goes in ONE [onApply] call, with its deltas only. */
+internal suspend fun writeBulkBatch(
+    batch: BulkBatch,
+    onApply: suspend (List<TagDelta>) -> Result<List<ApplyResult>>,
+): Result<List<ApplyResult>> = onApply(batch.deltas)
+
+/**
+ * The session after the batch write came back. A failed batch puts EVERY card of the batch back in the list as Pending: the write
+ * cards (see [afterWrite]) and the kept ones, which are reverted from Rejected.
+ */
+internal fun TagReviewSession.afterBulkWrite(batch: BulkBatch, outcome: Result<List<ApplyResult>>): TagReviewSession {
+    val written = afterWrite(batch.writeIds, outcome)
+    if (outcome.isSuccess) return written
+    return (batch.batchIds - batch.writeIds.toSet()).fold(written) { session, garmentId -> session.revert(garmentId).first }
+}
+
+/** The garments a write really changed: a result with an item. A result with no item found nothing to change and is not counted. */
+internal fun writtenGarmentIds(outcome: Result<List<ApplyResult>>): List<String> =
+    outcome.getOrNull().orEmpty().filter { result -> result.item != null }.map { result -> result.applied.garmentId }
+
+/**
+ * One bulk Undo: the garments with nothing written ([localIds]) go back at once; the others ([writeIds], [deltas]) are reverted
+ * by ONE write of the deltas their applies returned. Undo acts only on garments Undo is allowed for (see [canUndoNow]).
+ */
+internal data class BulkRevert(val localIds: List<String>, val writeIds: List<String>, val deltas: List<AppliedDelta>)
+
+internal fun TagReviewSession.bulkRevert(batchIds: List<String>, revertingIds: Collection<String>): BulkRevert {
+    val reverts = batchIds.filter { garmentId -> canUndoNow(this, garmentId, revertingIds) }
+        .associateWith { garmentId -> revert(garmentId).second }
+    return BulkRevert(
+        localIds = reverts.filterValues { delta -> delta == null }.keys.toList(),
+        writeIds = reverts.filterValues { delta -> delta != null }.keys.toList(),
+        deltas = reverts.values.filterNotNull(),
+    )
+}
+
+/** The garments of a bulk revert that landed (their result has an item): they come back to Pending. The others stay decided. */
+internal fun bulkRevertLanded(writeIds: List<String>, outcome: Result<List<ApplyResult>>): List<String> {
+    val landed = writtenGarmentIds(outcome).toSet()
+    return writeIds.filter { garmentId -> garmentId in landed }
+}
+
+/** A bulk Undo's write is in flight for the garments it sends: the review does not finish until it lands (see [shouldFinishTagReview]). */
+internal fun MutableList<String>.markBulkRevertInFlight(plan: BulkRevert) {
+    addAll(plan.writeIds)
+}
+
+/**
+ * The bulk snackbar of a batch's write: the garments really changed (a result with an item, see [writtenGarmentIds]) and the whole
+ * batch to undo. Null when none changed, so there is no snackbar.
+ */
+internal fun bulkUndoFor(batch: BulkBatch, outcome: Result<List<ApplyResult>>): BulkUndo? {
+    val written = writtenGarmentIds(outcome).size
+    return if (written == 0) null else BulkUndo(written, batch.batchIds)
+}
+
+/** Apply all remaining is enabled with N > 0, once the scan has ended and no apply or revert is in flight. */
+internal fun bulkBarEnabled(isScanning: Boolean, session: TagReviewSession, revertsInFlight: Boolean, garments: Int): Boolean =
+    !isScanning && garments > 0 && !writesInFlight(session) && !revertsInFlight
+
+/**
+ * The bottom bar applies the rest while there are cards and something to wait for or to write: a scan running, N > 0, or a write
+ * or revert in flight (then it is disabled). Otherwise it is Done, so the review can end: with only unchosen choosers or kept cards
+ * left, N is 0 and Done finishes without writing them. With no card (an empty scan, an unavailable model) it stays Done.
+ */
+internal fun showsBulkBar(session: TagReviewSession, isScanning: Boolean, revertsInFlight: Boolean, garments: Int): Boolean =
+    session.cards.isNotEmpty() && (isScanning || garments > 0 || writesInFlight(session) || revertsInFlight)
+
+/**
+ * "Undo" and "Review again" of a garment are off while a bulk batch is in flight: a kept card of the batch cannot be decided again
+ * before the batch lands, and a failed batch puts it back in the list.
+ */
+internal fun reviewAgainEnabled(
+    session: TagReviewSession,
+    garmentId: String,
+    reverting: Collection<String>,
+    bulkInFlight: Boolean,
+): Boolean = !bulkInFlight && canUndoNow(session, garmentId, reverting)
+
+/** The confirmation says nothing about removed tags when the bulk removes none. */
+internal fun bulkBodyAddsOnly(plan: BulkPlan): Boolean = plan.tagsRemoved == 0
+
+/**
  * The key of a card's list item. A card whose write failed comes back with a new key, so the exit animation it had
  * finished starts over and the card shows again.
  */
@@ -193,8 +288,14 @@ internal sealed interface ReviewOutcome {
     data object KeptAsIs : ReviewOutcome
 }
 
-/** The undo snackbar: the outcome of the latest decision (null for Got it, which says nothing). [serial] makes each decision a new one. */
-private data class ReviewUndoSnack(val garmentId: String, val outcome: ReviewOutcome?, val serial: Int)
+/**
+ * The undo snackbar: the outcome of the latest decision (null for Got it, which says nothing). [serial] makes each decision a new one.
+ * A bulk snackbar ([bulk] set) says how many garments were written and undoes its whole batch.
+ */
+private data class ReviewUndoSnack(val garmentId: String, val outcome: ReviewOutcome?, val serial: Int, val bulk: BulkUndo? = null)
+
+/** What the bulk snackbar says and undoes: the garments really written, and every garment of the batch. */
+internal data class BulkUndo(val garments: Int, val batch: List<String>)
 
 /** The units the card's button counts: what Apply writes. */
 internal fun cardUnits(card: ReviewCardState): Int =
@@ -512,6 +613,10 @@ internal fun TagReviewScreen(
     var undoSnack by remember(changeSet.id) { mutableStateOf<ReviewUndoSnack?>(null) }
     val revertingIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var reviewedOpen by remember(changeSet.id) { mutableStateOf(false) }
+    // Apply all remaining: the confirmation, and whether its one batch write is in flight (its snackbar's Undo waits for it).
+    var bulkConfirmOpen by remember(changeSet.id) { mutableStateOf(false) }
+    var bulkInFlight by remember(changeSet.id) { mutableStateOf(false) }
+    val bulkPlan = remember(session, afterTagIds) { session.bulkPlan(afterTagIds) }
 
     // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
     LaunchedEffect(changeSet.id) {
@@ -602,7 +707,7 @@ internal fun TagReviewScreen(
     // is pending again at once. A written one is pending again when its revert has landed; until then it stays decided and
     // Undo is refused. A failed revert keeps the garment decided and says so.
     fun undoDecision(garmentId: String) {
-        if (!canUndoNow(session, garmentId, revertingIds)) return
+        if (!reviewAgainEnabled(session, garmentId, revertingIds, bulkInFlight)) return
         val (reverted, delta) = session.revert(garmentId)
         if (delta == null) {
             session = reverted
@@ -624,18 +729,74 @@ internal fun TagReviewScreen(
         }
     }
 
-    // One undo snackbar at a time: a new decision restarts this effect, which replaces the one up. Undo acts on its garment.
+    // Apply all remaining: the planned cards are decided and their deltas go in ONE write. The cards with nothing to write are kept
+    // and never written. A failed write returns its cards to the list; a write that changed nothing shows no snackbar.
+    fun applyAllRemaining() {
+        if (writesInFlight(session) || revertingIds.isNotEmpty()) return
+        val (decided, batch) = session.startBulk(afterTagIds)
+        if (batch.deltas.isEmpty()) return
+        session = decided
+        bulkInFlight = true
+        scope.launch {
+            val outcome = writeBulkBatch(batch, onApply)
+            bulkInFlight = false
+            session = session.afterBulkWrite(batch, outcome)
+            val results = outcome.getOrNull()
+            if (results != null) {
+                results.mapNotNullTo(writtenGarments) { result -> result.item }
+                undoSnack = bulkUndoFor(batch, outcome)?.let { bulk ->
+                    val serial = (undoSnack?.serial ?: 0) + 1
+                    ReviewUndoSnack(batch.batchIds.first(), outcome = null, serial = serial, bulk = bulk)
+                }
+            } else {
+                // Every card of the batch is back in the list, the kept ones too (see afterBulkWrite).
+                batch.batchIds.forEach { garmentId -> bringBack(garmentId) }
+                snackbarHostState.showSnackbar(applyFailedMessage)
+            }
+        }
+    }
+
+    // Undo of Apply all remaining: the whole batch in ONE write of the deltas the write returned. Cards with nothing written
+    // go back at once. A revert that did not land leaves its garments decided and says so.
+    fun undoBulk(batch: List<String>) {
+        if (bulkInFlight) return
+        val plan = session.bulkRevert(batch, revertingIds)
+        session = plan.localIds.fold(session) { current, garmentId -> current.revert(garmentId).first }
+        plan.localIds.forEach { garmentId -> bringBack(garmentId) }
+        if (plan.writeIds.isEmpty()) return
+        revertingIds.markBulkRevertInFlight(plan)
+        scope.launch {
+            val outcome = onRevert(plan.deltas)
+            revertingIds.removeAll(plan.writeIds.toSet())
+            val landed = bulkRevertLanded(plan.writeIds, outcome)
+            landed.forEach { garmentId ->
+                session = session.revert(garmentId).first
+                writtenGarments.removeWritten(garmentId)
+                bringBack(garmentId)
+            }
+            if (landed.size < plan.writeIds.size) {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(revertFailedMessage)
+            }
+        }
+    }
+
+    // One undo snackbar at a time: a new decision restarts this effect, which replaces the one up. Undo acts on its garment, or its batch.
     LaunchedEffect(undoSnack) {
         val snack = undoSnack ?: return@LaunchedEffect
         val outcome = snack.outcome
+        val bulk = snack.bulk
         snackbarHostState.currentSnackbarData?.dismiss()
-        if (outcome == null) return@LaunchedEffect
-        val message = when (outcome) {
-            is ReviewOutcome.Changes -> context.resources.getQuantityString(R.plurals.review_snack_applied, outcome.units, outcome.units)
-            ReviewOutcome.KeptAsIs -> keptMessage
+        if (outcome == null && bulk == null) return@LaunchedEffect
+        val message = when {
+            bulk != null -> context.resources.getQuantityString(R.plurals.review_snack_bulk, bulk.garments, bulk.garments)
+            outcome is ReviewOutcome.Changes -> context.resources.getQuantityString(R.plurals.review_snack_applied, outcome.units, outcome.units)
+            else -> keptMessage
         }
         val result = snackbarHostState.showSnackbar(message = message, actionLabel = undoLabel, duration = SnackbarDuration.Short)
-        if (result == SnackbarResult.ActionPerformed) undoDecision(snack.garmentId)
+        if (result == SnackbarResult.ActionPerformed) {
+            if (bulk != null) undoBulk(bulk.batch) else undoDecision(snack.garmentId)
+        }
     }
 
     // Finish once: the scan has ended, every found card is decided and no write is in flight (see shouldFinishTagReview).
@@ -680,6 +841,17 @@ internal fun TagReviewScreen(
                 },
             )
         }
+    }
+
+    if (bulkConfirmOpen) {
+        BulkApplyDialog(
+            plan = bulkPlan,
+            onConfirm = {
+                bulkConfirmOpen = false
+                applyAllRemaining()
+            },
+            onDismiss = { bulkConfirmOpen = false },
+        )
     }
 
     val headerState = reviewHeaderState(
@@ -855,7 +1027,7 @@ internal fun TagReviewScreen(
                                 ReviewedRow(
                                     candidate = candidate,
                                     outcome = reviewOutcomeOf(card),
-                                    enabled = canUndoNow(session, card.garmentId, revertingIds),
+                                    enabled = reviewAgainEnabled(session, card.garmentId, revertingIds, bulkInFlight),
                                     onReviewAgain = { undoDecision(card.garmentId) },
                                 )
                             }
@@ -878,18 +1050,27 @@ internal fun TagReviewScreen(
             }
         }
 
-        // Done ends the review (the same finish as the automatic one). Back, the top bar and the system back still ask Discard or Leave.
-        // Not while a revert is in flight: its garment would be counted as updated after the finish.
-        ReviewBottomBar(
-            label = stringResource(R.string.done),
-            enabled = doneEnabled(isScanning, session) && revertingIds.isEmpty(),
-            onClick = {
-                if (revertingIds.isEmpty() && doneFinishes(finished, session)) {
-                    finished = true
-                    onFinish(writtenGarments.toList())
-                }
-            },
-        )
+        // With cards, the bar applies the rest after a confirmation (N is the bulk plan). With none it is Done, the same finish as the
+        // automatic one, so the review can end. Back, the top bar and the system back still ask Discard or Leave.
+        // Done is not while a revert is in flight: its garment would be counted as updated after the finish.
+        if (showsBulkBar(session, isScanning, revertingIds.isNotEmpty(), bulkPlan.garments)) {
+            ReviewBottomBar(
+                label = pluralStringResource(R.plurals.review_apply_remaining, bulkPlan.garments, bulkPlan.garments),
+                enabled = bulkBarEnabled(isScanning, session, revertingIds.isNotEmpty(), bulkPlan.garments),
+                onClick = { bulkConfirmOpen = true },
+            )
+        } else {
+            ReviewBottomBar(
+                label = stringResource(R.string.done),
+                enabled = doneEnabled(isScanning, session) && revertingIds.isEmpty(),
+                onClick = {
+                    if (revertingIds.isEmpty() && doneFinishes(finished, session)) {
+                        finished = true
+                        onFinish(writtenGarments.toList())
+                    }
+                },
+            )
+        }
         // Above the bottom bar (about 104 dp tall): a failed save or undo says so here, and the undo snackbar offers Undo.
         SnackbarHost(
             hostState = snackbarHostState,
@@ -898,7 +1079,10 @@ internal fun TagReviewScreen(
                 .padding(bottom = 112.dp),
         ) { data ->
             val actionLabel = data.visuals.actionLabel
-            val undoEnabled = undoSnack?.let { snack -> canUndoNow(session, snack.garmentId, revertingIds) } == true
+            val snack = undoSnack
+            // A bulk Undo waits for the batch write in flight; a bulk snackbar is enabled while any of its garments can be undone.
+            val undoEnabled = snack != null && !bulkInFlight &&
+                (snack.bulk?.batch ?: listOf(snack.garmentId)).any { garmentId -> canUndoNow(session, garmentId, revertingIds) }
             Snackbar(
                 action = {
                     if (actionLabel != null) {
@@ -1090,6 +1274,40 @@ private fun TagReviewPickerDialog(
                 Button(onClick = { onConfirm(selection) }) {
                     Text(stringResource(R.string.done))
                 }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+/** Apply all remaining: the counts are the bulk plan's. Cancel changes nothing. */
+@Composable
+private fun BulkApplyDialog(
+    plan: BulkPlan,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(pluralStringResource(R.plurals.review_bulk_title, plan.garments, plan.garments)) },
+        text = {
+            // The tags are one plural of the added count ("1 tag", "2 tags"); the garments are the plural of the plan's garments.
+            val tags = pluralStringResource(R.plurals.review_bulk_tags, plan.tagsAdded, plan.tagsAdded)
+            Text(
+                if (bulkBodyAddsOnly(plan)) {
+                    pluralStringResource(R.plurals.review_bulk_body_adds, plan.garments, tags, plan.garments)
+                } else {
+                    pluralStringResource(R.plurals.review_bulk_body, plan.garments, tags, plan.tagsRemoved, plan.garments)
+                },
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.review_apply))
             }
         },
         dismissButton = {

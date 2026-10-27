@@ -944,4 +944,30 @@
     <string name="review_hide">Ausblenden</string>
     <string name="review_again">Erneut prüfen</string>
     <string name="review_revert_failed">Rückgängig fehlgeschlagen. Das Kleidungsstück bleibt aktualisiert.</string>
+    <!-- REV-BULK -->
+    <plurals name="review_apply_remaining">
+        <item quantity="one">Das restliche Kleidungsstück übernehmen</item>
+        <item quantity="other">Alle restlichen %1$d übernehmen</item>
+    </plurals>
+    <plurals name="review_bulk_title">
+        <item quantity="one">Das restliche Kleidungsstück übernehmen?</item>
+        <item quantity="other">Die restlichen %1$d übernehmen?</item>
+    </plurals>
+    <plurals name="review_bulk_tags">
+        <item quantity="one">%1$d Tag</item>
+        <item quantity="other">%1$d Tags</item>
+    </plurals>
+    <plurals name="review_bulk_body">
+        <item quantity="one">Robia fügt bei 1 Kleidungsstück %1$s hinzu und entfernt %2$d. Du kannst das gleich danach rückgängig machen.</item>
+        <item quantity="other">Robia fügt bei %3$d Kleidungsstücken %1$s hinzu und entfernt %2$d. Du kannst das gleich danach rückgängig machen.</item>
+    </plurals>
+    <plurals name="review_bulk_body_adds">
+        <item quantity="one">Robia fügt 1 Kleidungsstück %1$s hinzu. Du kannst das gleich danach rückgängig machen.</item>
+        <item quantity="other">Robia fügt %2$d Kleidungsstücke %1$s hinzu. Du kannst das gleich danach rückgängig machen.</item>
+    </plurals>
+    <string name="review_apply">Übernehmen</string>
+    <plurals name="review_snack_bulk">
+        <item quantity="one">1 Kleidungsstück aktualisiert</item>
+        <item quantity="other">%1$d Kleidungsstücke aktualisiert</item>
+    </plurals>
 </resources>
