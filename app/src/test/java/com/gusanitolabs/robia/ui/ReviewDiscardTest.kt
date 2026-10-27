@@ -76,9 +76,9 @@ class ReviewDiscardTest {
         val decided = TagReviewSession().withCard(card("a", ReviewChange.Add("casual"))).reject("a")
         val open = decided.withCard(card("b", ReviewChange.Add("weekend")))
 
-        assertTrue(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false))
-        assertFalse(shouldFinishTagReview(decided, isScanning = true, pickerOpen = false, discardDialogOpen = false, finished = false))
-        assertFalse(shouldFinishTagReview(open, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false))
+        assertTrue(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false, revertsInFlight = false))
+        assertFalse(shouldFinishTagReview(decided, isScanning = true, pickerOpen = false, discardDialogOpen = false, finished = false, revertsInFlight = false))
+        assertFalse(shouldFinishTagReview(open, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false, revertsInFlight = false))
     }
 
     private fun card(

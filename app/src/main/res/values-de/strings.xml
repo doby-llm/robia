@@ -936,7 +936,10 @@
     </plurals>
     <string name="review_snack_kept">Bleibt unverändert</string>
     <string name="review_section_reviewed">Geprüft · %1$d</string>
-    <string name="review_reviewed_n">%1$d geprüft</string>
+    <plurals name="review_reviewed_n">
+        <item quantity="one">%1$d geprüft</item>
+        <item quantity="other">%1$d geprüft</item>
+    </plurals>
     <string name="review_show">Anzeigen</string>
     <string name="review_hide">Ausblenden</string>
     <string name="review_again">Erneut prüfen</string>

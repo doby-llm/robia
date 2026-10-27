@@ -179,9 +179,9 @@ class TagReviewSaveTest {
         assertFalse(finishes(decided, isScanning = true))
         assertTrue(finishes(decided, isScanning = false))
         assertFalse(finishes(TagReviewSession(), isScanning = false))
-        assertFalse(shouldFinishTagReview(decided, isScanning = false, pickerOpen = true, discardDialogOpen = false, finished = false))
-        assertFalse(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = true, finished = false))
-        assertFalse(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = true))
+        assertFalse(shouldFinishTagReview(decided, isScanning = false, pickerOpen = true, discardDialogOpen = false, finished = false, revertsInFlight = false))
+        assertFalse(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = true, finished = false, revertsInFlight = false))
+        assertFalse(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = true, revertsInFlight = false))
     }
 
     @Test
@@ -506,7 +506,7 @@ class TagReviewSaveTest {
         operations.filterIsInstance<WardrobeSyncOperation.UpsertItem>().map(WardrobeSyncOperation.UpsertItem::itemId)
 
     private fun finishes(session: TagReviewSession, isScanning: Boolean): Boolean =
-        shouldFinishTagReview(session, isScanning, pickerOpen = false, discardDialogOpen = false, finished = false)
+        shouldFinishTagReview(session, isScanning, pickerOpen = false, discardDialogOpen = false, finished = false, revertsInFlight = false)
 
     private fun session(vararg cards: ReviewCardState): TagReviewSession =
         cards.fold(TagReviewSession()) { session, card -> session.withCard(card) }

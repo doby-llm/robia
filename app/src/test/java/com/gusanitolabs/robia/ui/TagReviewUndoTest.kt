@@ -204,10 +204,15 @@ class TagReviewUndoTest {
         assertTrue(es.contains("<item quantity=\"other\">%1\$d cambios aplicados</item>"))
         assertTrue(de.contains("<item quantity=\"one\">1 Änderung übernommen</item>"))
         assertTrue(de.contains("<item quantity=\"other\">%1\$d Änderungen übernommen</item>"))
+        assertTrue(en.contains("<item quantity=\"one\">1 reviewed</item>"))
+        assertTrue(en.contains("<item quantity=\"other\">%1\$d reviewed</item>"))
+        assertTrue(es.contains("<item quantity=\"one\">1 revisada</item>"))
+        assertTrue(es.contains("<item quantity=\"other\">%1\$d revisadas</item>"))
+        assertTrue(de.contains("<item quantity=\"one\">%1\$d geprüft</item>"))
+        assertTrue(de.contains("<item quantity=\"other\">%1\$d geprüft</item>"))
         listOf(
             "<string name=\"review_snack_kept\">Kept as it was</string>",
             "<string name=\"review_section_reviewed\">Reviewed · %1\$d</string>",
-            "<string name=\"review_reviewed_n\">%1\$d reviewed</string>",
             "<string name=\"review_show\">Show</string>",
             "<string name=\"review_hide\">Hide</string>",
             "<string name=\"review_again\">Review again</string>",
@@ -216,7 +221,6 @@ class TagReviewUndoTest {
         listOf(
             "<string name=\"review_snack_kept\">Se queda como estaba</string>",
             "<string name=\"review_section_reviewed\">Revisadas · %1\$d</string>",
-            "<string name=\"review_reviewed_n\">%1\$d revisadas</string>",
             "<string name=\"review_show\">Mostrar</string>",
             "<string name=\"review_hide\">Ocultar</string>",
             "<string name=\"review_again\">Revisar otra vez</string>",
@@ -225,7 +229,6 @@ class TagReviewUndoTest {
         listOf(
             "<string name=\"review_snack_kept\">Bleibt unverändert</string>",
             "<string name=\"review_section_reviewed\">Geprüft · %1\$d</string>",
-            "<string name=\"review_reviewed_n\">%1\$d geprüft</string>",
             "<string name=\"review_show\">Anzeigen</string>",
             "<string name=\"review_hide\">Ausblenden</string>",
             "<string name=\"review_again\">Erneut prüfen</string>",
@@ -241,6 +244,66 @@ class TagReviewUndoTest {
         assertFalse(reviewCardLeaving(leaving = true, resolved = false))
         assertFalse(reviewCardLeaving(leaving = false, resolved = true))
         assertFalse(reviewCardLeaving(leaving = false, resolved = false))
+    }
+
+    // REV-UNDO B1: a revert in flight holds the automatic finish; Undo is refused for its garment only; the revert gets what was applied.
+
+    @Test
+    fun theFinishWaitsForARevertInFlightAndFollowsWhenItEnds() {
+        val landed = landedApply(session(card("g", ReviewChange.Add("casual"))), "g")
+
+        assertTrue(
+            shouldFinishTagReview(
+                landed, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false, revertsInFlight = false,
+            ),
+        )
+        assertFalse(
+            shouldFinishTagReview(
+                landed, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false, revertsInFlight = true,
+            ),
+        )
+    }
+
+    @Test
+    fun canUndoRefusesTheGarmentThatIsRevertingAndAllowsAnotherOne() {
+        val two = landedApply(landedApply(session(card("a", ReviewChange.Add("casual")), card("b", ReviewChange.Add("casual"))), "a"), "b")
+
+        assertFalse(canUndoNow(two, "a", listOf("a")))
+        assertTrue(canUndoNow(two, "b", listOf("a")))
+    }
+
+    @Test
+    fun aSecondUndoDuringTheFirstRevertIsRefused() {
+        val landed = landedApply(session(card("g", ReviewChange.Add("casual"))), "g")
+
+        // The card stays Applied while its revert runs, so the reverting set alone stops a second Undo.
+        assertTrue(canUndoNow(landed, "g", emptyList()))
+        assertFalse(canUndoNow(landed, "g", listOf("g")))
+    }
+
+    @Test
+    fun theRevertReceivesTheAppliedDeltaNotTheIntendedOne() {
+        val start = session(card("a", ReviewChange.Add("casual"), ReviewChange.Add("weekend")))
+        val (applying, delta) = start.apply("a", existingTagIds)
+        assertEquals(setOf("casual", "weekend"), delta?.add)
+
+        // The write found weekend already on the garment: only casual was written, so only casual is reversed.
+        val partlyApplied = AppliedDelta("a", emptySet(), setOf("casual"))
+        val landed = applying.appliedResult("a", ApplyResult(item = garment("a"), applied = partlyApplied))
+        val write = RecordingRevert()
+
+        undo(landed, "a", write)
+
+        assertEquals(listOf(listOf(partlyApplied)), write.calls)
+    }
+
+    @Test
+    fun aLandedRevertTakesTheGarmentOutOfTheWrittenList() {
+        val written = mutableListOf(garment("a"), garment("b"))
+
+        written.removeWritten("a")
+
+        assertEquals(listOf("b"), written.map { item -> item.id })
     }
 
     // Helpers. The screen runs Undo as: the session's revert gives the delta, the write runs, and the session changes only once

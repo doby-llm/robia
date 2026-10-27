@@ -156,8 +156,9 @@ internal fun doneEnabled(isScanning: Boolean, session: TagReviewSession): Boolea
 internal fun doneFinishes(finished: Boolean, session: TagReviewSession): Boolean = !finished && !writesInFlight(session)
 
 /**
- * The review finishes once the scan has ended and every found card is decided, with no write in flight, no picker or
- * discard dialog open, and only once ([finished]).
+ * The review finishes once the scan has ended and every found card is decided, with no write or revert in flight, no picker or
+ * discard dialog open, and only once ([finished]). A revert in flight keeps its garment Applied, so the review waits for it:
+ * a landed revert puts the card back to Pending, a failed one keeps it decided and the finish follows with the right count.
  */
 internal fun shouldFinishTagReview(
     session: TagReviewSession,
@@ -165,8 +166,9 @@ internal fun shouldFinishTagReview(
     pickerOpen: Boolean,
     discardDialogOpen: Boolean,
     finished: Boolean,
+    revertsInFlight: Boolean,
 ): Boolean =
-    !finished && !pickerOpen && !discardDialogOpen && session.isComplete(isScanning) && !writesInFlight(session)
+    !finished && !pickerOpen && !discardDialogOpen && !revertsInFlight && session.isComplete(isScanning) && !writesInFlight(session)
 
 /**
  * The session after the write of [garmentIds] came back: each result decides its card; a failed write puts the cards back
@@ -236,6 +238,11 @@ internal fun canUndoNow(session: TagReviewSession, garmentId: String, reverting:
  */
 internal fun revertLanded(outcome: Result<List<ApplyResult>>): Boolean =
     outcome.getOrNull()?.all { result -> result.item != null } == true
+
+/** A landed revert takes its garment out of the written list: the finish counts what is still written. */
+internal fun MutableList<ClothingItem>.removeWritten(garmentId: String) {
+    removeAll { written -> written.id == garmentId }
+}
 
 /**
  * Snapshot, then write, in one coroutine. The snapshot is read after the previous review write's database part, never its
@@ -579,6 +586,13 @@ internal fun TagReviewScreen(
                 garmentIds.forEach { garmentId -> if (undoSnack?.garmentId == garmentId) showUndoSnack(garmentId, session) }
             } else {
                 garmentIds.forEach { garmentId -> bringBack(garmentId) }
+                // The undo snackbar of this write says "changes applied", which is wrong now: it goes before the failure shows.
+                garmentIds.forEach { garmentId ->
+                    if (undoSnack?.garmentId == garmentId) {
+                        undoSnack = null
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                    }
+                }
                 snackbarHostState.showSnackbar(applyFailedMessage)
             }
         }
@@ -601,7 +615,7 @@ internal fun TagReviewScreen(
             revertingIds.remove(garmentId)
             if (revertLanded(outcome)) {
                 session = session.revert(garmentId).first
-                writtenGarments.removeAll { written -> written.id == garmentId }
+                writtenGarments.removeWritten(garmentId)
                 bringBack(garmentId)
             } else {
                 snackbarHostState.currentSnackbarData?.dismiss()
@@ -631,6 +645,7 @@ internal fun TagReviewScreen(
         pickerOpen = pickerGarmentId != null,
         discardDialogOpen = discardDialogOpen,
         finished = finished,
+        revertsInFlight = revertingIds.isNotEmpty(),
     )
     LaunchedEffect(finishNow) {
         if (finishNow) {
@@ -715,7 +730,7 @@ internal fun TagReviewScreen(
                         },
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        Text(stringResource(R.string.review_reviewed_n, session.reviewed.size))
+                        Text(pluralStringResource(R.plurals.review_reviewed_n, session.reviewed.size, session.reviewed.size))
                         Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
                     }
                 }
