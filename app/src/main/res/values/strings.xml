@@ -944,4 +944,20 @@
     <string name="review_hide">Hide</string>
     <string name="review_again">Review again</string>
     <string name="review_revert_failed">Couldn’t undo. The garment stays as updated.</string>
+    <!-- REV-BULK -->
+    <string name="review_apply_remaining">Apply all remaining (%1$d)</string>
+    <string name="review_bulk_title">Apply the remaining %1$d?</string>
+    <plurals name="review_bulk_body">
+        <item quantity="one">Robia will add %1$d tag and remove %2$d on %3$d garments. You can undo it right after.</item>
+        <item quantity="other">Robia will add %1$d tags and remove %2$d on %3$d garments. You can undo it right after.</item>
+    </plurals>
+    <plurals name="review_bulk_body_adds">
+        <item quantity="one">Robia will add %1$d tag to %2$d garments. You can undo it right after.</item>
+        <item quantity="other">Robia will add %1$d tags to %2$d garments. You can undo it right after.</item>
+    </plurals>
+    <string name="review_apply">Apply</string>
+    <plurals name="review_snack_bulk">
+        <item quantity="one">1 garment updated</item>
+        <item quantity="other">%1$d garments updated</item>
+    </plurals>
 </resources>
