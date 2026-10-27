@@ -4,17 +4,21 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.suggestions.AppliedDelta
 import com.gusanitolabs.robia.suggestions.ApplyResult
+import com.gusanitolabs.robia.suggestions.ReviewButton
 import com.gusanitolabs.robia.suggestions.ReviewChange
 import com.gusanitolabs.robia.suggestions.ReviewChanges
 import com.gusanitolabs.robia.suggestions.TagDelta
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -343,6 +347,163 @@ class TagReviewSaveTest {
             scope.cancel()
         }
     }
+
+    // V-REV-SAVE-4 (B1): Done ends the review and writes nothing new; Back keeps the discard question.
+
+    @Test
+    fun doneOnAnEmptyScanFinishesAndBackStillAsksToDiscard() {
+        val empty = TagReviewSession()
+
+        assertTrue(doneEnabled(isScanning = false, session = empty))
+        assertTrue(doneFinishes(finished = false, session = empty))
+        assertFalse(doneFinishes(finished = true, session = empty))
+        assertEquals(LeaveKind.Discard, tagReviewLeaveKind(empty.appliedGarmentCount))
+    }
+
+    @Test
+    fun doneWithOnlyPendingCardsFinishesAndWritesNothingForThem() {
+        val pending = session(
+            card("a", ReviewChange.Add("casual")),
+            card("b", needsChoice = true, offered = setOf("weekend")),
+        )
+
+        assertTrue(doneFinishes(finished = false, session = pending))
+        assertEquals(2, pending.leftCount)
+        assertEquals(0, pending.appliedGarmentCount)
+        assertFalse(writesInFlight(pending))
+    }
+
+    @Test
+    fun doneIsNotAvailableWhileAWriteIsInFlightOrTheScanRuns() {
+        val (inFlight, _) = session(card("a", ReviewChange.Add("casual"))).apply("a", existingTagIds = setOf("casual"))
+
+        assertFalse(doneEnabled(isScanning = true, session = TagReviewSession()))
+        assertFalse(doneEnabled(isScanning = false, session = inFlight))
+        assertFalse(doneFinishes(finished = false, session = inFlight))
+    }
+
+    // V-REV-SAVE-4 (B2): a write still in flight counts for Back, so its undo never runs under a kept tag change.
+
+    @Test
+    fun aWriteInFlightMakesBackLeaveButIsNotInTheWrittenText() {
+        val (inFlight, _) = session(card("a", ReviewChange.Add("casual"))).apply("a", existingTagIds = setOf("casual"))
+
+        assertEquals(0, writtenGarmentCount(inFlight))
+        assertEquals(1, inFlight.appliedGarmentCount)
+        assertEquals(LeaveKind.Leave, tagReviewLeaveKind(inFlight.appliedGarmentCount))
+    }
+
+    // V-REV-SAVE-4 (B3): a chooser card with no tag keeps its Keep as is disabled, as it does nothing.
+
+    @Test
+    fun aChooseManuallyKeepAsIsIsDisabledUntilATagIsChosen() {
+        val manual = session(card("m", needsChoice = true, offered = setOf("casual"))).cards.single()
+
+        assertEquals(ReviewButton.KeepAsIs, buttonOf(manual, chosenTagId = null))
+        assertFalse(canDecideNow(manual, chosenTagId = null))
+        assertTrue(canDecideNow(manual, chosenTagId = "casual"))
+    }
+
+    // V-REV-SAVE-5 (T1): every changed garment is enqueued once, an unchanged one and a failed write are not.
+
+    @Test
+    fun aWriteEnqueuesOneUpsertPerChangedGarmentAndNothingForAnUnchangedOneOrAFailedWrite() = runBlocking {
+        // Unconfined: the enqueue runs inside the write, so the recorded operations are complete once the write returns.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val enqueued = CopyOnWriteArrayList<WardrobeSyncOperation>()
+        val writes = ReviewWrites(scope) { operation -> enqueued.add(operation) }
+        val store = LiveStore(
+            listOf(
+                garment("changed", tags = listOf(evening)),
+                garment("unchanged", tags = listOf(casual)),
+                garment("failing"),
+            ),
+            tags = listOf(evening, casual),
+        )
+        try {
+            writes.launchAwaited {
+                store.write(
+                    listOf(
+                        TagReviewChange.Apply(TagDelta("changed", emptySet(), setOf("casual"))),
+                        TagReviewChange.Apply(TagDelta("unchanged", emptySet(), setOf("casual"))),
+                    ),
+                )
+            }
+            withTimeout(2_000) { while (enqueued.isEmpty()) delay(1) }
+            assertEquals(listOf("changed"), upsertedIdsOf(enqueued))
+
+            val failed = writes.launchAwaited {
+                writeTagReviewChanges(
+                    categoryId = "occasion",
+                    changes = listOf(TagReviewChange.Apply(TagDelta("failing", emptySet(), setOf("casual")))),
+                    readGarment = { id -> store.garments[id] },
+                    readTags = { store.tags },
+                    upsert = { throw IllegalStateException("disk full") },
+                    now = 100L,
+                )
+            }
+
+            assertTrue(failed.isFailure)
+            assertEquals(listOf("changed"), upsertedIdsOf(enqueued))
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    // V-REV-SAVE-5 (T2): a cancelled write is a cancellation for its caller, never a failed Result.
+
+    @Test
+    fun aCancelledWaitingWriteIsCancelledForItsCallerAndNotAFailedResult() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob())
+        val writes = ReviewWrites(scope) { _ -> }
+        try {
+            val gate = CompletableDeferred<Unit>()
+            val caller = async(start = CoroutineStart.UNDISPATCHED) {
+                writes.launchAwaited {
+                    gate.await()
+                    "never" to emptyList<WardrobeSyncOperation>()
+                }
+            }
+
+            // The write is waiting on the gate; cancelling the gate cancels the write while the caller waits for it.
+            gate.cancel(CancellationException("cancelled while waiting"))
+
+            val outcome = runCatching { withTimeout(2_000) { caller.await() } }
+            assertTrue(outcome.exceptionOrNull() is CancellationException)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    // V-REV-SAVE-5 (T3): the row is built from the live garment, not from the snapshot the review opened with.
+
+    @Test
+    fun aWriteBuildsTheRowFromTheLiveGarmentNotTheSnapshotTheReviewOpenedWith() {
+        // The review opened with the garment untagged; the database has evening since. Only casual is added to the live row.
+        val snapshot = garment("g", tags = emptyList())
+        val live = garment("g", tags = listOf(evening))
+        val reads = CopyOnWriteArrayList<String>()
+        val upserted = CopyOnWriteArrayList<ClothingItem>()
+
+        val (results, _) = runBlocking {
+            writeTagReviewChanges(
+                categoryId = "occasion",
+                changes = listOf(TagReviewChange.Apply(TagDelta("g", emptySet(), setOf("casual")))),
+                readGarment = { id -> reads.add(id); live },
+                readTags = { listOf(evening, casual) },
+                upsert = { items -> upserted.addAll(items) },
+                now = 100L,
+            )
+        }
+
+        assertEquals(listOf("g"), reads.toList())
+        assertTrue(upserted.single().tags != snapshot.tags)
+        assertEquals(setOf("evening", "casual"), upserted.single().tags.map(GarmentTag::id).toSet())
+        assertEquals(setOf("evening", "casual"), results.single().item?.tags?.map(GarmentTag::id)?.toSet())
+    }
+
+    private fun upsertedIdsOf(operations: List<WardrobeSyncOperation>): List<String> =
+        operations.filterIsInstance<WardrobeSyncOperation.UpsertItem>().map(WardrobeSyncOperation.UpsertItem::itemId)
 
     private fun finishes(session: TagReviewSession, isScanning: Boolean): Boolean =
         shouldFinishTagReview(session, isScanning, pickerOpen = false, discardDialogOpen = false, finished = false)

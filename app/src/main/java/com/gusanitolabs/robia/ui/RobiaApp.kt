@@ -1001,8 +1001,10 @@ private fun RobiaShell(
     var activeTagReview by remember { mutableStateOf<TagReviewRequest?>(null) }
     var showTagReviewDiscardDialog by remember { mutableStateOf(false) }
     var showTagReviewLeaveDialog by remember { mutableStateOf(false) }
-    // Garments the open review has written so far (zero when no review is open): it decides Discard or Leave on Back.
+    // Garments the open review has written so far (zero when no review is open): the leave dialog's text counts them.
     var tagReviewAppliedCount by remember { mutableIntStateOf(0) }
+    // Garments the open review has applied, a write in flight included: it decides Discard or Leave on Back.
+    var tagReviewLeaveCount by remember { mutableIntStateOf(0) }
     // Process-scoped: survives activity recreation. "Not duplicates" is also stored in Room, so the pairs stay out after a restart (REQ-DU-02).
     val duplicateGroups by DuplicateSession.groups.collectAsState()
     val duplicateBackfill by app.embeddingBackfill.progress.collectAsState()
@@ -1500,14 +1502,15 @@ private fun RobiaShell(
         showTagReviewDiscardDialog = false
         showTagReviewLeaveDialog = false
         tagReviewAppliedCount = 0
+        tagReviewLeaveCount = 0
         reviewComplete = reviewCompleteText(ReviewCompleteKind.Tags, writtenGarments.size)
         replaceRoute(RobiaRoute.ManageTags)
     }
 
-    // Back with nothing written asks today's question (Discard undoes the tag change). Back with a garment written asks to
-    // leave, which keeps the tag change and every written garment.
+    // Back with nothing applied asks today's question (Discard undoes the tag change). Back with a garment applied asks to
+    // leave, which keeps the tag change and every written garment. A write still in flight counts as applied.
     fun requestTagReviewDiscard() {
-        if (tagReviewLeaveKind(tagReviewAppliedCount) == LeaveKind.Discard) {
+        if (tagReviewLeaveKind(tagReviewLeaveCount) == LeaveKind.Discard) {
             showTagReviewDiscardDialog = true
         } else {
             showTagReviewLeaveDialog = true
@@ -1518,6 +1521,7 @@ private fun RobiaShell(
         activeTagReview = null
         showTagReviewLeaveDialog = false
         tagReviewAppliedCount = 0
+        tagReviewLeaveCount = 0
         replaceRoute(RobiaRoute.ManageTags)
     }
 
@@ -2216,7 +2220,10 @@ private fun RobiaShell(
             onManageTagsTabIdChange = { manageTagsTabId = it },
             onFinishTagReview = ::finishTagReview,
             onTagReviewWrite = onTagReviewWrite,
-            onTagReviewAppliedCountChange = { tagReviewAppliedCount = it },
+            onTagReviewAppliedCountChange = { written, leave ->
+                tagReviewAppliedCount = written
+                tagReviewLeaveCount = leave
+            },
             onRequestTagReviewDiscard = ::requestTagReviewDiscard,
             tagReviewDialogOpen = showTagReviewDiscardDialog || showTagReviewLeaveDialog,
             onCommitColorReview = ::commitColorReview,
@@ -3013,7 +3020,7 @@ private fun RobiaNavHost(
     onManageTagsTabIdChange: (String?) -> Unit,
     onFinishTagReview: (List<ClothingItem>) -> Unit,
     onTagReviewWrite: suspend (categoryId: String, changes: List<TagReviewChange>) -> Result<List<ApplyResult>>,
-    onTagReviewAppliedCountChange: (Int) -> Unit,
+    onTagReviewAppliedCountChange: (writtenCount: Int, leaveCount: Int) -> Unit,
     onRequestTagReviewDiscard: () -> Unit,
     tagReviewDialogOpen: Boolean,
     onClearRestoreSyncLog: () -> Unit,

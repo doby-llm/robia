@@ -118,7 +118,10 @@ internal fun tagReviewPickerTitle(noun: String, garmentName: String, namedTitle:
 internal fun canDecideNow(card: ReviewCardState, chosenTagId: String?): Boolean =
     !card.changes.needsChoice || chosenTagId != null
 
-/** Back with nothing written discards the review (the whole tag change is undone); with a garment written it is left. */
+/**
+ * Back with nothing applied discards the review (the whole tag change is undone); with a garment applied it is left. The count
+ * is [TagReviewSession.appliedGarmentCount], so a write still in flight counts: its undo would run after it otherwise.
+ */
 internal fun tagReviewLeaveKind(appliedCount: Int): LeaveKind = TagReviewSession().leaveKind(appliedCount)
 
 /** Applied cards whose write has come back with a change: a result with no item, and a write in flight, are not counted. */
@@ -132,6 +135,15 @@ internal fun writesInFlight(session: TagReviewSession): Boolean = session.cards.
     val decision = card.decision
     decision is ReviewDecision.Applied && decision.applied == null
 }
+
+/** Done is available once the scan has ended and no write is in flight: a write's undo must not race a finish. */
+internal fun doneEnabled(isScanning: Boolean, session: TagReviewSession): Boolean = !isScanning && !writesInFlight(session)
+
+/**
+ * Done ends the review as the automatic finish does, once: not while a write is in flight. Cards still Pending are left as they
+ * are; nothing is written for them.
+ */
+internal fun doneFinishes(finished: Boolean, session: TagReviewSession): Boolean = !finished && !writesInFlight(session)
 
 /**
  * The review finishes once the scan has ended and every found card is decided, with no write in flight, no picker or
@@ -369,8 +381,8 @@ internal fun canStartTagReviewAction(offerInFlight: Boolean, promptPending: Bool
 /**
  * Review of a category or occasion change. Garments are scanned incrementally on Dispatchers.Default, so the screen
  * opens at once and proposals appear as they are found. Each decided garment is written as it leaves the list ([onApply]);
- * leaving the screen cancels the scan, keeps every garment already written, and never undoes a write. [onFinish] runs once
- * the scan has ended and every found card is decided.
+ * leaving the screen cancels the scan, keeps every garment already written, and never undoes a write. [onFinish] runs once:
+ * when the scan has ended and every found card is decided, or when Done is tapped (cards still Pending are left as they are).
  */
 @Composable
 internal fun TagReviewScreen(
@@ -380,7 +392,7 @@ internal fun TagReviewScreen(
     discardDialogOpen: Boolean,
     onApply: suspend (List<TagDelta>) -> Result<List<ApplyResult>>,
     @Suppress("unused") onRevert: suspend (List<AppliedDelta>) -> Result<List<ApplyResult>>,
-    onAppliedCountChange: (Int) -> Unit,
+    onAppliedCountChange: (writtenCount: Int, leaveCount: Int) -> Unit,
     onFinish: (List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
 ) {
@@ -465,9 +477,10 @@ internal fun TagReviewScreen(
         Log.d(TAG_REVIEW_SCAN_LOG_TAG, tagReviewScanLogLine(changeSet, candidates.size))
     }
 
-    // The count of written garments tells the shell which leave dialog to show; it is reported whenever it changes.
-    val appliedCount = writtenGarmentCount(session)
-    LaunchedEffect(appliedCount) { onAppliedCountChange(appliedCount) }
+    // The shell's leave question is decided on the applied count, in-flight writes included; its text counts the written ones.
+    val writtenCount = writtenGarmentCount(session)
+    val leaveCount = session.appliedGarmentCount
+    LaunchedEffect(writtenCount, leaveCount) { onAppliedCountChange(writtenCount, leaveCount) }
 
     // Decide, then write: the card leaves the list at once. The write's result settles the card when it comes back; a failed
     // write puts the card back in the list with the chips it had, and says so in a snackbar.
@@ -677,11 +690,16 @@ internal fun TagReviewScreen(
             }
         }
 
-        // Done leaves the review as Back does: with nothing written it asks to discard, with a garment written it asks to leave.
+        // Done ends the review (the same finish as the automatic one). Back, the top bar and the system back still ask Discard or Leave.
         ReviewBottomBar(
             label = stringResource(R.string.done),
-            enabled = !isScanning,
-            onClick = onRequestDiscard,
+            enabled = doneEnabled(isScanning, session),
+            onClick = {
+                if (doneFinishes(finished, session)) {
+                    finished = true
+                    onFinish(writtenGarments.toList())
+                }
+            },
         )
         // Above the bottom bar (about 104 dp tall): a failed save says so here.
         SnackbarHost(
