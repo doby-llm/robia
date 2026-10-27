@@ -171,6 +171,12 @@ internal fun ReviewCandidateCard(
 }
 
 /**
+ * A card leaves only while it is resolved. One that is undone while it is still leaving (not resolved any more) is visible
+ * again at once. The colour review never un-resolves a card, so this changes nothing there.
+ */
+internal fun reviewCardLeaving(leaving: Boolean, resolved: Boolean): Boolean = leaving && resolved
+
+/**
  * Wraps a review card that is resolved, by Accept or Discard. Resolving it shows the state for a moment, then fades and
  * shrinks it away and calls [onGone], which removes it from the list. Accepted proposals stay in the screen's state for the commit.
  */
@@ -184,6 +190,7 @@ internal fun ReviewAcceptedCard(
     var leaving by remember { mutableStateOf(false) }
     val currentOnGone by rememberUpdatedState(onGone)
     LaunchedEffect(resolved) {
+        leaving = reviewCardLeaving(leaving, resolved)
         if (resolved) {
             delay(REVIEW_ACCEPT_HIGHLIGHT_MILLIS.toLong())
             leaving = true

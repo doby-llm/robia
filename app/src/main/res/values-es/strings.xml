@@ -929,4 +929,16 @@
     </plurals>
     <string name="review_leave">Salir</string>
     <string name="review_apply_failed">No se pudo guardar. La prenda vuelve a la lista.</string>
+    <!-- REV-UNDO -->
+    <plurals name="review_snack_applied">
+        <item quantity="one">1 cambio aplicado</item>
+        <item quantity="other">%1$d cambios aplicados</item>
+    </plurals>
+    <string name="review_snack_kept">Se queda como estaba</string>
+    <string name="review_section_reviewed">Revisadas · %1$d</string>
+    <string name="review_reviewed_n">%1$d revisadas</string>
+    <string name="review_show">Mostrar</string>
+    <string name="review_hide">Ocultar</string>
+    <string name="review_again">Revisar otra vez</string>
+    <string name="review_revert_failed">No se pudo deshacer. La prenda se queda actualizada.</string>
 </resources>
