@@ -1,29 +1,49 @@
 package com.gusanitolabs.robia.ui
 
-import com.gusanitolabs.robia.core.model.ClothingItem
-import com.gusanitolabs.robia.suggestions.ProposalKind
-import com.gusanitolabs.robia.suggestions.ReviewProposal
+import com.gusanitolabs.robia.suggestions.ReviewChange
+import com.gusanitolabs.robia.suggestions.ReviewChanges
+import com.gusanitolabs.robia.suggestions.TagDelta
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 
+// Replaces the commit-at-end tests (tagReviewCommitCandidates, accept all): only the cards the user decided are written.
 class TagReviewAcceptAllTest {
     @Test
-    fun acceptAllTakesEveryConcreteProposalAndLeavesManualChoicesOut() {
-        val suggested = candidate("gA", ProposalKind.Suggested)
-        val manual = candidate("gB", ProposalKind.ChooseManually)
+    fun onlyDecidedCardsAreWritten() {
+        val existing = setOf("casual", "weekend", "evening")
+        val start = TagReviewSession()
+            .withCard(card("applied", ReviewChange.Add("casual")))
+            .withCard(card("rejected", ReviewChange.Add("weekend")))
+            .withCard(card("pending", ReviewChange.Add("evening")))
 
-        assertEquals(listOf(suggested), tagReviewCommitCandidates(listOf(suggested, manual), emptySet()))
+        val (applied, appliedDelta) = start.apply("applied", existing)
+        val rejected = applied.reject("rejected")
+        val (_, rejectedDelta) = rejected.apply("rejected", existing)
+
+        assertEquals(TagDelta("applied", remove = emptySet(), add = setOf("casual")), appliedDelta)
+        assertNull(rejectedDelta)
+        assertEquals(listOf("pending"), rejected.pending.map { card -> card.garmentId })
     }
 
     @Test
-    fun manualChoiceJoinsOnlyWhenTheUserAcceptsItByHand() {
-        val manual = candidate("gB", ProposalKind.ChooseManually)
+    fun aChooseManuallyCardWithoutAChoiceIsNeverWritten() {
+        val manual = TagReviewSession().withCard(card("manual", needsChoice = true, offered = setOf("casual")))
 
-        assertEquals(listOf(manual), tagReviewCommitCandidates(listOf(manual), setOf("gB")))
+        assertFalse(canDecideNow(manual.cards.single(), chosenTagId = null))
+        assertEquals(emptyList<TagDelta>(), manual.bulkPlan(existingTagIds = setOf("casual")).deltas)
     }
 
-    private fun candidate(id: String, kind: ProposalKind): TagReviewCandidate {
-        val item = ClothingItem(id = id, name = id, tags = emptyList(), createdAtEpochMillis = 0, updatedAtEpochMillis = 0)
-        return TagReviewCandidate(item = item, proposal = ReviewProposal(id, emptySet(), emptySet(), kind), live = item)
-    }
+    private fun card(
+        garmentId: String,
+        vararg changes: ReviewChange,
+        needsChoice: Boolean = false,
+        offered: Set<String> = emptySet(),
+    ) = ReviewCardState(
+        garmentId = garmentId,
+        changes = ReviewChanges(changes = changes.toList(), needsChoice = needsChoice),
+        liveGroupTagIds = emptySet(),
+        offeredTagIds = offered,
+    )
 }

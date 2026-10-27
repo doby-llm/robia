@@ -921,4 +921,12 @@
     <string name="review_cd_removed">%1$s was already removed.</string>
     <string name="review_cd_replace">Set %1$s. Double-tap to leave it out.</string>
     <string name="review_cd_replace_off">%1$s will not be set. Double-tap to set it.</string>
+    <!-- REV-SAVE -->
+    <string name="review_leave_title">Leave the review?</string>
+    <plurals name="review_leave_body">
+        <item quantity="one">1 garment is already updated. The rest stay as they are.</item>
+        <item quantity="other">%1$d garments are already updated. The rest stay as they are.</item>
+    </plurals>
+    <string name="review_leave">Leave</string>
+    <string name="review_apply_failed">Couldn’t save. The garment is back in the list.</string>
 </resources>

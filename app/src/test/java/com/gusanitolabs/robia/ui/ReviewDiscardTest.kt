@@ -3,8 +3,8 @@ package com.gusanitolabs.robia.ui
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
-import com.gusanitolabs.robia.suggestions.ProposalKind
-import com.gusanitolabs.robia.suggestions.ReviewProposal
+import com.gusanitolabs.robia.suggestions.ReviewChange
+import com.gusanitolabs.robia.suggestions.ReviewChanges
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOperation
@@ -27,69 +27,71 @@ import java.util.concurrent.CopyOnWriteArrayList
 class ReviewDiscardTest {
     private val category = GarmentTag(id = "top", categoryId = "category", name = "Tops", sortOrder = 0)
 
-    // Tag review: discard and the commit, accept-all count, and auto-close.
+    // Tag review: the decision rules that replace the commit at the end (the flow is in TagReviewSaveTest).
 
     @Test
-    fun discardedSuggestedCardIsNotCommitted() {
-        val kept = candidate("kept", ProposalKind.Suggested)
-        val discarded = candidate("discarded", ProposalKind.Suggested)
+    fun rejectedSuggestedCardIsNeverWritten() {
+        val session = TagReviewSession()
+            .withCard(card("kept", ReviewChange.Add("casual")))
+            .withCard(card("rejected", ReviewChange.Add("casual")))
+            .reject("rejected")
 
-        assertEquals(
-            listOf(kept),
-            tagReviewCommitCandidates(listOf(kept, discarded), acceptedIds = emptySet(), discardedIds = setOf("discarded")),
-        )
+        val (_, delta) = session.apply("rejected", existingTagIds = setOf("casual"))
+
+        assertNull(delta)
+        assertEquals(listOf("kept"), session.pending.map { card -> card.garmentId })
     }
 
     @Test
-    fun discardedManualChoiceIsNotCommittedEvenWhenAcceptedBefore() {
-        val manual = candidate("manual", ProposalKind.ChooseManually)
+    fun rejectedManualChoiceIsNeverWrittenEvenWhenChosenBefore() {
+        val session = TagReviewSession()
+            .withCard(card("manual", needsChoice = true, offered = setOf("casual")))
+            .choose("manual", "casual")
+            .reject("manual")
 
-        assertEquals(
-            emptyList<TagReviewCandidate>(),
-            tagReviewCommitCandidates(listOf(manual), acceptedIds = setOf("manual"), discardedIds = setOf("manual")),
-        )
+        val (after, delta) = session.apply("manual", existingTagIds = setOf("casual"))
+
+        assertNull(delta)
+        assertTrue(after.cards.single().decision is ReviewDecision.Rejected)
     }
 
     @Test
-    fun acceptAllCountsOpenSuggestedCardsOnly() {
-        val candidates = listOf(
-            candidate("open1", ProposalKind.Suggested),
-            candidate("open2", ProposalKind.Suggested),
-            candidate("accepted", ProposalKind.Suggested),
-            candidate("discarded", ProposalKind.Suggested),
-            candidate("manual", ProposalKind.ChooseManually),
-        )
+    fun leftCountCountsOpenCardsOnly() {
+        val session = TagReviewSession()
+            .withCard(card("open1", ReviewChange.Add("casual")))
+            .withCard(card("open2", ReviewChange.Add("weekend")))
+            .withCard(card("accepted", ReviewChange.Add("evening")))
+            .withCard(card("discarded", ReviewChange.Add("casual")))
+            .withCard(card("manual", needsChoice = true, offered = setOf("casual")))
+            .apply("accepted", existingTagIds = setOf("casual", "weekend", "evening")).first
+            .reject("discarded")
 
-        assertEquals(4, tagReviewOpenAcceptableCount(candidates, closedIds = emptySet()))
-        assertEquals(2, tagReviewOpenAcceptableCount(candidates, closedIds = setOf("accepted", "discarded")))
-        assertEquals(0, tagReviewOpenAcceptableCount(candidates, closedIds = setOf("open1", "open2", "accepted", "discarded")))
+        // The applied and the discarded cards are closed; the two open cards and the manual choice (no choice yet) are left.
+        assertEquals(3, session.leftCount)
+        assertEquals(0, session.reject("open1").reject("open2").choose("manual", "casual").reject("manual").leftCount)
     }
 
     @Test
-    fun reviewClosesWhenEveryCardIsAcceptedOrDiscarded() {
-        val ids = setOf("accepted", "discarded")
+    fun reviewFinishesOnlyAfterTheScanAndWhenEveryFoundCardIsDecided() {
+        val decided = TagReviewSession().withCard(card("a", ReviewChange.Add("casual"))).reject("a")
+        val open = decided.withCard(card("b", ReviewChange.Add("weekend")))
 
-        assertTrue(
-            shouldAutoCommit(
-                candidateIds = ids,
-                closedIds = setOf("accepted") + setOf("discarded"),
-                isScanning = false,
-                committed = false,
-                pickerOpen = false,
-                discardDialogOpen = false,
-            ),
-        )
-        assertFalse(
-            shouldAutoCommit(
-                candidateIds = ids + "open",
-                closedIds = setOf("accepted", "discarded"),
-                isScanning = false,
-                committed = false,
-                pickerOpen = false,
-                discardDialogOpen = false,
-            ),
-        )
+        assertTrue(shouldFinishTagReview(decided, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false))
+        assertFalse(shouldFinishTagReview(decided, isScanning = true, pickerOpen = false, discardDialogOpen = false, finished = false))
+        assertFalse(shouldFinishTagReview(open, isScanning = false, pickerOpen = false, discardDialogOpen = false, finished = false))
     }
+
+    private fun card(
+        garmentId: String,
+        vararg changes: ReviewChange,
+        needsChoice: Boolean = false,
+        offered: Set<String> = emptySet(),
+    ) = ReviewCardState(
+        garmentId = garmentId,
+        changes = ReviewChanges(changes = changes.toList(), needsChoice = needsChoice),
+        liveGroupTagIds = emptySet(),
+        offeredTagIds = offered,
+    )
 
     // Colour review: the commit rule and the removed-colour clearing.
 
@@ -292,15 +294,6 @@ class ReviewDiscardTest {
 
         assertNull(offerTagReviewRequest(changeSet = null, readGarments = { listOf(garment("g1")) }, write = { written = true }))
         assertTrue(written)
-    }
-
-    private fun candidate(id: String, kind: ProposalKind): TagReviewCandidate {
-        val item = garment(id)
-        return TagReviewCandidate(
-            item = item,
-            proposal = ReviewProposal(garmentId = id, before = emptySet(), proposed = setOf(category.id), kind = kind),
-            live = item,
-        )
     }
 
     private fun deleteChangeSet() = TagChangeSet(

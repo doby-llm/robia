@@ -193,9 +193,10 @@ internal fun TagReviewCard(
                         )
                     }
                 }
+                // A chooser card with no tag yet cannot be decided: its Keep as is (or Apply) would do nothing, so it is disabled.
                 FilledTonalButton(
                     onClick = onApply,
-                    enabled = !resolved,
+                    enabled = !resolved && canDecideNow(card, chosenTagId),
                     modifier = Modifier
                         .weight(if (button.showsReject) 1.45f else 1f)
                         .heightIn(min = 48.dp),
