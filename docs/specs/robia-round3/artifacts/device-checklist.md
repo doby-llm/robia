@@ -1,8 +1,8 @@
 # Robia round 3 — device checklist
 
 **Build under test:** latest `main` staging APK.
-APK link: <to be filled by the coordinator>
-Main SHA: <to be filled>
+APK link: https://drive.google.com/file/d/1HJ-Fyyw1v7V9_I8Ih_s1CJlvwyOvcKUg/view (`robia-staging-0de712b.apk`, 82799462 bytes, md5 186379bcb06a5318e4bec786dfd2193c; shared with the tester only)
+Main SHA: 0de712b (CI run 40490458230, signer 0b0f81a5a287ab2c, the same as the previous builds)
 
 An install over the existing app keeps your data only when the signer matches (same signer as the previous builds). If the signer differs, Android refuses the update or wipes the data; say so if that happens.
 
