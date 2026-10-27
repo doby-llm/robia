@@ -970,4 +970,19 @@
         <item quantity="one">1 prenda actualizada</item>
         <item quantity="other">%1$d prendas actualizadas</item>
     </plurals>
+    <!-- REV-DONE -->
+    <string name="review_complete_none">Ninguna prenda cambió</string>
+    <plurals name="review_complete_added">
+        <item quantity="one">1 etiqueta añadida</item>
+        <item quantity="other">%1$d etiquetas añadidas</item>
+    </plurals>
+    <plurals name="review_complete_removed">
+        <item quantity="one">1 etiqueta quitada</item>
+        <item quantity="other">%1$d etiquetas quitadas</item>
+    </plurals>
+    <plurals name="review_complete_kept">
+        <item quantity="one">1 se quedó igual</item>
+        <item quantity="other">%1$d se quedaron igual</item>
+    </plurals>
+    <string name="review_complete_edit">Editar cambios</string>
 </resources>
