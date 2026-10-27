@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,7 +20,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material3.AlertDialog
@@ -28,8 +31,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,8 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -56,6 +64,7 @@ import com.gusanitolabs.robia.media.ImagePurpose
 import com.gusanitolabs.robia.suggestions.AppliedDelta
 import com.gusanitolabs.robia.suggestions.ApplyResult
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
+import com.gusanitolabs.robia.suggestions.ReviewButton
 import com.gusanitolabs.robia.suggestions.ReviewPlanner
 import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
@@ -64,6 +73,7 @@ import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingFailure
 import com.gusanitolabs.robia.suggestions.noTagsLeft
 import com.gusanitolabs.robia.suggestions.labelTextFor
+import com.gusanitolabs.robia.suggestions.primaryButtonFor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -146,8 +156,9 @@ internal fun doneEnabled(isScanning: Boolean, session: TagReviewSession): Boolea
 internal fun doneFinishes(finished: Boolean, session: TagReviewSession): Boolean = !finished && !writesInFlight(session)
 
 /**
- * The review finishes once the scan has ended and every found card is decided, with no write in flight, no picker or
- * discard dialog open, and only once ([finished]).
+ * The review finishes once the scan has ended and every found card is decided, with no write or revert in flight, no picker or
+ * discard dialog open, and only once ([finished]). A revert in flight keeps its garment Applied, so the review waits for it:
+ * a landed revert puts the card back to Pending, a failed one keeps it decided and the finish follows with the right count.
  */
 internal fun shouldFinishTagReview(
     session: TagReviewSession,
@@ -155,8 +166,9 @@ internal fun shouldFinishTagReview(
     pickerOpen: Boolean,
     discardDialogOpen: Boolean,
     finished: Boolean,
+    revertsInFlight: Boolean,
 ): Boolean =
-    !finished && !pickerOpen && !discardDialogOpen && session.isComplete(isScanning) && !writesInFlight(session)
+    !finished && !pickerOpen && !discardDialogOpen && !revertsInFlight && session.isComplete(isScanning) && !writesInFlight(session)
 
 /**
  * The session after the write of [garmentIds] came back: each result decides its card; a failed write puts the cards back
@@ -173,6 +185,64 @@ internal fun TagReviewSession.afterWrite(garmentIds: List<String>, outcome: Resu
  * finished starts over and the card shows again.
  */
 internal fun reviewCardKey(garmentId: String, returns: Int): String = if (returns == 0) garmentId else "$garmentId#$returns"
+
+/** What a decision says in the undo snackbar and in the Reviewed section: changes written (a swap counts as one), or kept as it was. */
+internal sealed interface ReviewOutcome {
+    data class Changes(val units: Int) : ReviewOutcome
+
+    data object KeptAsIs : ReviewOutcome
+}
+
+/** The undo snackbar: the outcome of the latest decision (null for Got it, which says nothing). [serial] makes each decision a new one. */
+private data class ReviewUndoSnack(val garmentId: String, val outcome: ReviewOutcome?, val serial: Int)
+
+/** The units the card's button counts: what Apply writes. */
+internal fun cardUnits(card: ReviewCardState): Int =
+    when (val button = primaryButtonFor(card.changes, card.skipped, card.chosenTagId)) {
+        is ReviewButton.Apply -> button.count
+        is ReviewButton.ApplyPartial -> button.on
+        ReviewButton.KeepAsIs, ReviewButton.GotIt -> 0
+    }
+
+/**
+ * The snackbar outcome of a decided card, or null when there is none: Got it writes nothing and changes nothing. A rejection,
+ * and an apply whose write found nothing to change (a null item, see [TagReviewSession.appliedResult]), is kept as it was.
+ * An apply in flight counts its units already.
+ */
+internal fun undoSnackOutcome(card: ReviewCardState): ReviewOutcome? =
+    when (val decision = card.decision) {
+        ReviewDecision.Pending -> null
+        is ReviewDecision.Rejected -> ReviewOutcome.KeptAsIs
+        is ReviewDecision.Applied -> if (decision.intended.isEmpty) null else ReviewOutcome.Changes(cardUnits(card))
+    }
+
+/** The outcome a Reviewed row shows: Got it reads as kept, since nothing changed. */
+internal fun reviewOutcomeOf(card: ReviewCardState): ReviewOutcome = undoSnackOutcome(card) ?: ReviewOutcome.KeptAsIs
+
+/**
+ * Undo and "Review again" are for a card that was applied (and written) or rejected. Refused while its write is in flight
+ * (the session refuses too) and while its revert is running ([reverting]), so a second Undo for the same decision does nothing.
+ */
+internal fun canUndoNow(session: TagReviewSession, garmentId: String, reverting: Collection<String>): Boolean {
+    if (garmentId in reverting) return false
+    return when (val decision = session.cards.firstOrNull { card -> card.garmentId == garmentId }?.decision) {
+        is ReviewDecision.Applied -> decision.applied != null
+        is ReviewDecision.Rejected -> true
+        ReviewDecision.Pending, null -> false
+    }
+}
+
+/**
+ * A revert landed when its write came back and every result has its garment. A null item (an archived or missing garment, or
+ * a revert that finds nothing left to reverse, which the write cannot tell apart) is a failed revert: the garment stays decided.
+ */
+internal fun revertLanded(outcome: Result<List<ApplyResult>>): Boolean =
+    outcome.getOrNull()?.all { result -> result.item != null } == true
+
+/** A landed revert takes its garment out of the written list: the finish counts what is still written. */
+internal fun MutableList<ClothingItem>.removeWritten(garmentId: String) {
+    removeAll { written -> written.id == garmentId }
+}
 
 /**
  * Snapshot, then write, in one coroutine. The snapshot is read after the previous review write's database part, never its
@@ -391,7 +461,7 @@ internal fun TagReviewScreen(
     prepareScan: suspend (TagChangeSet, List<ClothingItem>) -> ReviewPlanner.Scan,
     discardDialogOpen: Boolean,
     onApply: suspend (List<TagDelta>) -> Result<List<ApplyResult>>,
-    @Suppress("unused") onRevert: suspend (List<AppliedDelta>) -> Result<List<ApplyResult>>,
+    onRevert: suspend (List<AppliedDelta>) -> Result<List<ApplyResult>>,
     onAppliedCountChange: (writtenCount: Int, leaveCount: Int) -> Unit,
     onFinish: (List<ClothingItem>) -> Unit,
     onRequestDiscard: () -> Unit,
@@ -400,6 +470,10 @@ internal fun TagReviewScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val applyFailedMessage = stringResource(R.string.review_apply_failed)
+    val revertFailedMessage = stringResource(R.string.review_revert_failed)
+    val undoLabel = stringResource(R.string.undo)
+    val keptMessage = stringResource(R.string.review_snack_kept)
+    val gridState = rememberLazyGridState()
     val changeSet = request.changeSet
     val labelsById = remember(changeSet.id) {
         (changeSet.beforeTags + changeSet.afterTags).associate { tag -> tag.id to tag.localizedTagLabel(context) }
@@ -434,6 +508,10 @@ internal fun TagReviewScreen(
     var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
     var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
     var finished by remember(changeSet.id) { mutableStateOf(false) }
+    // Undo: the snackbar of the latest decision (null: none), the garments whose revert write is in flight, and the Reviewed section.
+    var undoSnack by remember(changeSet.id) { mutableStateOf<ReviewUndoSnack?>(null) }
+    val revertingIds = remember(changeSet.id) { mutableStateListOf<String>() }
+    var reviewedOpen by remember(changeSet.id) { mutableStateOf(false) }
 
     // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
     LaunchedEffect(changeSet.id) {
@@ -484,6 +562,19 @@ internal fun TagReviewScreen(
 
     // Decide, then write: the card leaves the list at once. The write's result settles the card when it comes back; a failed
     // write puts the card back in the list with the chips it had, and says so in a snackbar.
+    // A card that comes back (a failed write, or an undo) is shown again: out of the hidden set, and with a new key.
+    fun bringBack(garmentId: String) {
+        hiddenIds.remove(garmentId)
+        returns[garmentId] = (returns[garmentId] ?: 0) + 1
+    }
+
+    // The undo snackbar of a decision: a new decision replaces the one up. A pending card has no decision to show.
+    fun showUndoSnack(garmentId: String, next: TagReviewSession) {
+        val card = next.cards.firstOrNull { cardState -> cardState.garmentId == garmentId } ?: return
+        if (card.decision == ReviewDecision.Pending) return
+        undoSnack = ReviewUndoSnack(garmentId, undoSnackOutcome(card), (undoSnack?.serial ?: 0) + 1)
+    }
+
     fun writeDecision(garmentIds: List<String>, delta: TagDelta) {
         scope.launch {
             val outcome = onApply(listOf(delta))
@@ -491,14 +582,60 @@ internal fun TagReviewScreen(
             val results = outcome.getOrNull()
             if (results != null) {
                 results.mapNotNullTo(writtenGarments) { result -> result.item }
+                // A write that found nothing to change turns the snackbar into "Kept as it was", and the Undo of it is gone.
+                garmentIds.forEach { garmentId -> if (undoSnack?.garmentId == garmentId) showUndoSnack(garmentId, session) }
             } else {
+                garmentIds.forEach { garmentId -> bringBack(garmentId) }
+                // The undo snackbar of this write says "changes applied", which is wrong now: it goes before the failure shows.
                 garmentIds.forEach { garmentId ->
-                    hiddenIds.remove(garmentId)
-                    returns[garmentId] = (returns[garmentId] ?: 0) + 1
+                    if (undoSnack?.garmentId == garmentId) {
+                        undoSnack = null
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                    }
                 }
                 snackbarHostState.showSnackbar(applyFailedMessage)
             }
         }
+    }
+
+    // Undo and "Review again" are the same step: the latest decision's revert. A card with nothing written (a rejection, Got it)
+    // is pending again at once. A written one is pending again when its revert has landed; until then it stays decided and
+    // Undo is refused. A failed revert keeps the garment decided and says so.
+    fun undoDecision(garmentId: String) {
+        if (!canUndoNow(session, garmentId, revertingIds)) return
+        val (reverted, delta) = session.revert(garmentId)
+        if (delta == null) {
+            session = reverted
+            bringBack(garmentId)
+            return
+        }
+        revertingIds.add(garmentId)
+        scope.launch {
+            val outcome = onRevert(listOf(delta))
+            revertingIds.remove(garmentId)
+            if (revertLanded(outcome)) {
+                session = session.revert(garmentId).first
+                writtenGarments.removeWritten(garmentId)
+                bringBack(garmentId)
+            } else {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(revertFailedMessage)
+            }
+        }
+    }
+
+    // One undo snackbar at a time: a new decision restarts this effect, which replaces the one up. Undo acts on its garment.
+    LaunchedEffect(undoSnack) {
+        val snack = undoSnack ?: return@LaunchedEffect
+        val outcome = snack.outcome
+        snackbarHostState.currentSnackbarData?.dismiss()
+        if (outcome == null) return@LaunchedEffect
+        val message = when (outcome) {
+            is ReviewOutcome.Changes -> context.resources.getQuantityString(R.plurals.review_snack_applied, outcome.units, outcome.units)
+            ReviewOutcome.KeptAsIs -> keptMessage
+        }
+        val result = snackbarHostState.showSnackbar(message = message, actionLabel = undoLabel, duration = SnackbarDuration.Short)
+        if (result == SnackbarResult.ActionPerformed) undoDecision(snack.garmentId)
     }
 
     // Finish once: the scan has ended, every found card is decided and no write is in flight (see shouldFinishTagReview).
@@ -508,6 +645,7 @@ internal fun TagReviewScreen(
         pickerOpen = pickerGarmentId != null,
         discardDialogOpen = discardDialogOpen,
         finished = finished,
+        revertsInFlight = revertingIds.isNotEmpty(),
     )
     LaunchedEffect(finishNow) {
         if (finishNow) {
@@ -552,6 +690,12 @@ internal fun TagReviewScreen(
         found = session.leftCount + session.reviewed.size,
     )
 
+    // The grid index of the "Reviewed" header: the empty or unavailable card (if any), then the pending cards as composed.
+    fun reviewedSectionIndex(): Int {
+        val leading = if (modelUnavailable || (!isScanning && candidates.isEmpty())) 1 else 0
+        return leading + candidates.count { candidate -> candidate.item.id !in hiddenIds }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -578,6 +722,18 @@ internal fun TagReviewScreen(
                 } else {
                     ReviewLeftHeader(leftCount = headerState.leftCount, progress = headerState.progress)
                 }
+                if (session.reviewed.isNotEmpty()) {
+                    TextButton(
+                        onClick = {
+                            reviewedOpen = true
+                            scope.launch { gridState.animateScrollToItem(reviewedSectionIndex()) }
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(pluralStringResource(R.plurals.review_reviewed_n, session.reviewed.size, session.reviewed.size))
+                        Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
+                    }
+                }
                 TagReviewHeader(
                     changeSet = changeSet,
                     labelsById = labelsById,
@@ -591,6 +747,7 @@ internal fun TagReviewScreen(
             }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(reviewColumnCount()),
+                state = gridState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -666,11 +823,42 @@ internal fun TagReviewScreen(
                                     if (canDecideNow(card, chosen)) {
                                         val (next, delta) = session.apply(garmentId, afterTagIds)
                                         session = next
+                                        showUndoSnack(garmentId, next)
                                         if (delta != null) writeDecision(listOf(garmentId), delta)
                                     }
                                 },
-                                onReject = { session = session.reject(garmentId) },
+                                onReject = {
+                                    session = session.reject(garmentId)
+                                    showUndoSnack(garmentId, session)
+                                },
                             )
+                        }
+                    }
+                }
+
+                // The decided garments, collapsed by default, most recent first, after the last pending card.
+                if (session.reviewed.isNotEmpty()) {
+                    item(key = "reviewed-header", span = { GridItemSpan(maxLineSpan) }) {
+                        ReviewedSectionHeader(
+                            count = session.reviewed.size,
+                            expanded = reviewedOpen,
+                            onToggle = { reviewedOpen = !reviewedOpen },
+                        )
+                    }
+                    if (reviewedOpen) {
+                        items(
+                            items = session.reviewed,
+                            key = { card -> "reviewed-${card.garmentId}" },
+                            span = { GridItemSpan(maxLineSpan) },
+                        ) { card ->
+                            candidates.firstOrNull { candidate -> candidate.item.id == card.garmentId }?.let { candidate ->
+                                ReviewedRow(
+                                    candidate = candidate,
+                                    outcome = reviewOutcomeOf(card),
+                                    enabled = canUndoNow(session, card.garmentId, revertingIds),
+                                    onReviewAgain = { undoDecision(card.garmentId) },
+                                )
+                            }
                         }
                     }
                 }
@@ -691,23 +879,102 @@ internal fun TagReviewScreen(
         }
 
         // Done ends the review (the same finish as the automatic one). Back, the top bar and the system back still ask Discard or Leave.
+        // Not while a revert is in flight: its garment would be counted as updated after the finish.
         ReviewBottomBar(
             label = stringResource(R.string.done),
-            enabled = doneEnabled(isScanning, session),
+            enabled = doneEnabled(isScanning, session) && revertingIds.isEmpty(),
             onClick = {
-                if (doneFinishes(finished, session)) {
+                if (revertingIds.isEmpty() && doneFinishes(finished, session)) {
                     finished = true
                     onFinish(writtenGarments.toList())
                 }
             },
         )
-        // Above the bottom bar (about 104 dp tall): a failed save says so here.
+        // Above the bottom bar (about 104 dp tall): a failed save or undo says so here, and the undo snackbar offers Undo.
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 112.dp),
+        ) { data ->
+            val actionLabel = data.visuals.actionLabel
+            val undoEnabled = undoSnack?.let { snack -> canUndoNow(session, snack.garmentId, revertingIds) } == true
+            Snackbar(
+                action = {
+                    if (actionLabel != null) {
+                        TextButton(onClick = data::performAction, enabled = undoEnabled) {
+                            Text(actionLabel)
+                        }
+                    }
+                },
+            ) {
+                Text(data.visuals.message)
+            }
+        }
+    }
+}
+
+/** The collapsed "Reviewed · N" row after the pending cards, with Show or Hide. */
+@Composable
+private fun ReviewedSectionHeader(
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.review_section_reviewed, count),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
+        TextButton(onClick = onToggle, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(if (expanded) R.string.review_hide else R.string.review_show))
+        }
+    }
+}
+
+/** One decided garment: its thumbnail, identity, outcome, and "Review again" (the same step as Undo). */
+@Composable
+private fun ReviewedRow(
+    candidate: TagReviewCandidate,
+    outcome: ReviewOutcome,
+    enabled: Boolean,
+    onReviewAgain: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(modifier = Modifier.size(width = 36.dp, height = 42.dp)) {
+            TagReviewPhoto(
+                item = candidate.item,
+                swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = tagReviewIdentityLine(candidate.live),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = when (outcome) {
+                    is ReviewOutcome.Changes -> pluralStringResource(R.plurals.review_snack_applied, outcome.units, outcome.units)
+                    ReviewOutcome.KeptAsIs -> stringResource(R.string.review_snack_kept)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onReviewAgain, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.review_again))
+        }
     }
 }
 
