@@ -306,6 +306,18 @@ class TagReviewUndoTest {
         assertEquals(listOf("b"), written.map { item -> item.id })
     }
 
+    // V-FB3-NOSNACK-1: a single decision shows no snackbar; the bulk snackbar keeps its own shape (no outcome, a batch to undo).
+
+    @Test
+    fun theScreenHasNoSnackbarForASingleDecision() {
+        val screen = resource("app/src/main/java/com/gusanitolabs/robia/ui/TagReviewScreen.kt")
+        val undoSnack = screen.lines().first { line -> line.startsWith("private data class ReviewUndoSnack(") }
+
+        assertFalse(screen.contains("showUndoSnack("))
+        assertFalse(screen.contains("keptMessage"))
+        assertFalse(undoSnack, undoSnack.contains("outcome"))
+    }
+
     // Helpers. The screen runs Undo as: the session's revert gives the delta, the write runs, and the session changes only once
     // the revert has landed. [undo] is that step, so a failed revert leaves the card decided.
 
