@@ -1,5 +1,8 @@
 package com.gusanitolabs.robia.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,27 +17,42 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
+import kotlinx.coroutines.delay
 
 /** Most thumbnails the completion shows: the first garments the landed writes updated, in write order. */
 internal const val REVIEW_COMPLETE_MAX_THUMBNAILS = 5
+
+/** A decided card leaves the list after its highlight and then its exit ([ReviewAcceptedCard]). */
+internal const val REVIEW_CARD_LEAVE_MILLIS = REVIEW_ACCEPT_HIGHLIGHT_MILLIS.toLong() + REVIEW_ACCEPT_EXIT_MILLIS
+
+/** The completion's reveal: the title, the tally, the thumbnails and the button fade in one step after the other. */
+private const val COMPLETION_REVEAL_STEP_MILLIS = 250
+private const val COMPLETION_REVEAL_STEPS = 4
+private val COMPLETION_REVEAL_SLIDE = 12.dp
 
 /**
  * Edit changes: [Looking] keeps the list up while the user looks at "Reviewed". [Returned]: a card went back to Pending, so the
@@ -70,6 +88,16 @@ internal fun showsCompletion(
         revertsInFlight = revertsInFlight,
     )
 
+/**
+ * The part of [REVIEW_CARD_LEAVE_MILLIS] still to wait after the last decision, so the last card has left the list before the
+ * completion swaps in. Time, not hidden cards: a decided card that is off-screen in the lazy grid is never composed, so it
+ * never reports its exit. 0 with no decision; never negative, never above the leave time.
+ */
+internal fun completionWaitMillis(nowMs: Long, lastDecisionMs: Long?): Long {
+    if (lastDecisionMs == null) return 0L
+    return (REVIEW_CARD_LEAVE_MILLIS - (nowMs - lastDecisionMs)).coerceIn(0L, REVIEW_CARD_LEAVE_MILLIS)
+}
+
 /** The tally entries of the completion view. [Kept] is garments left as they were, with no sign. */
 internal enum class CompletionEntry { Added, Removed, Kept }
 
@@ -99,8 +127,9 @@ internal fun completionThumbnails(session: TagReviewSession, written: List<Cloth
 }
 
 /**
- * The static completion of a tag review: a check, the title, the tally in the add and remove signs, the thumbnails and
- * "Edit changes". No sparkle and no timer; Done is the bottom bar of the screen.
+ * The completion of a tag review, in the look of the colour review's finish: the badge (a check with sparks), then the title,
+ * the tally in the add and remove signs, the thumbnails and "Edit changes", which fade in one step after the other. Under reduced
+ * motion all of it shows at once. Done is the bottom bar of the screen.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -110,6 +139,14 @@ internal fun TagReviewCompletion(
     onEditChanges: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val reducedMotion = LocalReducedMotion.current
+    var revealed by remember { mutableIntStateOf(if (reducedMotion) COMPLETION_REVEAL_STEPS else 0) }
+    LaunchedEffect(Unit) {
+        while (revealed < COMPLETION_REVEAL_STEPS) {
+            delay(COMPLETION_REVEAL_STEP_MILLIS.toLong())
+            revealed += 1
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -117,55 +154,73 @@ internal fun TagReviewCompletion(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(72.dp)
-                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(36.dp),
+        ReviewCompleteBadge()
+        CompletionReveal(shown = revealed > 0) {
+            Text(
+                text = if (completionHasChanges(tallies)) {
+                    pluralStringResource(R.plurals.review_complete_tags, tallies.garmentsUpdated, tallies.garmentsUpdated)
+                } else {
+                    stringResource(R.string.review_complete_none)
+                },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
             )
         }
-        Text(
-            text = if (completionHasChanges(tallies)) {
-                pluralStringResource(R.plurals.review_complete_tags, tallies.garmentsUpdated, tallies.garmentsUpdated)
-            } else {
-                stringResource(R.string.review_complete_none)
-            },
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            completionEntries(tallies).forEach { (entry, count) -> CompletionTallyEntry(entry, count) }
+        CompletionReveal(shown = revealed > 1) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                completionEntries(tallies).forEach { (entry, count) -> CompletionTallyEntry(entry, count) }
+            }
         }
         if (thumbnails.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                thumbnails.forEach { item ->
-                    Box(modifier = Modifier.size(width = 36.dp, height = 42.dp)) {
-                        TagReviewPhoto(
-                            item = item,
-                            swatch = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
-                        )
+            CompletionReveal(shown = revealed > 2) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    thumbnails.forEach { item ->
+                        Box(modifier = Modifier.size(width = 36.dp, height = 42.dp)) {
+                            TagReviewPhoto(
+                                item = item,
+                                swatch = item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
+                            )
+                        }
                     }
                 }
             }
         }
-        FilledTonalButton(
-            onClick = onEditChanges,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp),
-        ) {
-            Text(stringResource(R.string.review_complete_edit))
+        CompletionReveal(shown = revealed > 3, modifier = Modifier.fillMaxWidth()) {
+            FilledTonalButton(
+                onClick = onEditChanges,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.review_complete_edit))
+            }
         }
+    }
+}
+
+/**
+ * One part of the completion's reveal: it fades in and slides up 12 dp when [shown] turns true. It takes its place in the
+ * layout from the start (transparent until then), so the parts below do not jump as they arrive. Under reduced motion it snaps.
+ */
+@Composable
+private fun CompletionReveal(shown: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val reducedMotion = LocalReducedMotion.current
+    val progress by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = if (reducedMotion) snap() else tween(durationMillis = COMPLETION_REVEAL_STEP_MILLIS),
+        label = "completionReveal",
+    )
+    Box(
+        modifier = modifier.graphicsLayer {
+            alpha = progress
+            translationY = (1f - progress) * COMPLETION_REVEAL_SLIDE.toPx()
+        },
+    ) {
+        content()
     }
 }
 

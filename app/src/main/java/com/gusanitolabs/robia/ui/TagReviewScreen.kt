@@ -1,7 +1,18 @@
 package com.gusanitolabs.robia.ui
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -76,6 +88,7 @@ import com.gusanitolabs.robia.suggestions.noTagsLeft
 import com.gusanitolabs.robia.suggestions.labelTextFor
 import com.gusanitolabs.robia.suggestions.primaryButtonFor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
@@ -86,6 +99,8 @@ private const val TAG_KIND_OCCASION = "occasion"
 private const val TAG_REVIEW_SCAN_LOG_TAG = "TagReviewScan"
 private const val TAG_REVIEW_OFFER_LOG_TAG = "TagReviewOffer"
 private val ReviewedTagKinds = setOf(TAG_KIND_CATEGORY, TAG_KIND_OCCASION)
+// The completion swap: the pinned header fades out and the list cross-fades to the completion view in this time.
+private const val COMPLETION_SWAP_MILLIS = 300
 
 internal data class TagReviewCandidate(
     val item: ClothingItem,
@@ -633,6 +648,9 @@ internal fun TagReviewScreen(
     val bulkPlan = remember(session, afterTagIds) { session.bulkPlan(afterTagIds) }
     // Edit changes from the completion view: the list stays up until a card is returned to Pending and decided again.
     var editState by remember(changeSet.id) { mutableStateOf(ReviewEditState.Off) }
+    // The time of the last decision (Apply, Reject, Keep as is, Got it, Apply all remaining): the completion waits for its card.
+    var lastDecisionMs by remember(changeSet.id) { mutableStateOf<Long?>(null) }
+    val reducedMotion = LocalReducedMotion.current
 
     // Keyed on the change set: a new change cancels the running scan, and only the current change set's results land.
     LaunchedEffect(changeSet.id) {
@@ -740,6 +758,7 @@ internal fun TagReviewScreen(
         val (decided, batch) = session.startBulk(afterTagIds)
         if (batch.deltas.isEmpty()) return
         session = decided
+        lastDecisionMs = SystemClock.elapsedRealtime()
         bulkInFlight = true
         scope.launch {
             val outcome = writeBulkBatch(batch, onApply)
@@ -798,9 +817,30 @@ internal fun TagReviewScreen(
 
     // The completion view holds the review open until Done: it is never shown over a write or revert in flight (see showsCompletion).
     val completionShown = showsCompletion(session, isScanning, revertsInFlight = revertingIds.isNotEmpty(), edit = editState)
-    // The cards of a complete review have left the list; they stay out when the list comes back (Edit changes), unless returned.
+    // The completion swaps in once it is due and the last decided card has left (see completionWaitMillis: time, not hidden cards,
+    // because an off-screen card never reports its exit). The cards are hidden at the swap, so that does not cut the wait short.
+    var completionReady by remember(changeSet.id) { mutableStateOf(false) }
     LaunchedEffect(completionShown) {
-        if (completionShown) {
+        while (completionShown && completionWaitMillis(SystemClock.elapsedRealtime(), lastDecisionMs) > 0L) {
+            delay(completionWaitMillis(SystemClock.elapsedRealtime(), lastDecisionMs))
+        }
+        completionReady = completionShown
+    }
+    val completionSwapped = completionShown && completionReady
+    // The pinned header fades out with the list when the completion swaps in, and fades back when the list returns.
+    val swapEnter = if (reducedMotion) {
+        EnterTransition.None
+    } else {
+        fadeIn(tween(COMPLETION_SWAP_MILLIS)) + expandVertically(tween(COMPLETION_SWAP_MILLIS))
+    }
+    val swapExit = if (reducedMotion) {
+        ExitTransition.None
+    } else {
+        fadeOut(tween(COMPLETION_SWAP_MILLIS)) + shrinkVertically(tween(COMPLETION_SWAP_MILLIS))
+    }
+    // The cards of a complete review have left the list; they stay out when the list comes back (Edit changes), unless returned.
+    LaunchedEffect(completionReady) {
+        if (completionReady) {
             candidates.forEach { candidate -> if (candidate.item.id !in hiddenIds) hiddenIds.add(candidate.item.id) }
         }
     }
@@ -865,180 +905,195 @@ internal fun TagReviewScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Pinned above the cards: it does not scroll with them.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, top = 24.dp, end = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+            AnimatedVisibility(
+                visible = !completionSwapped,
+                enter = swapEnter,
+                exit = swapExit,
             ) {
-                if (headerState.showsScan) {
-                    ReviewProgressHeader(
-                        title = stringResource(R.string.tag_review_scan_title),
-                        countText = if (isPreparing) {
-                            stringResource(R.string.tag_review_preparing)
-                        } else {
-                            stringResource(R.string.tag_review_scanning_count, scannedCount, garments.size)
-                        },
-                        progress = if (isPreparing) 0f else scanProgress,
-                    )
-                } else {
-                    ReviewLeftHeader(leftCount = headerState.leftCount, progress = headerState.progress)
-                }
-                if (session.reviewed.isNotEmpty() && !completionShown) {
-                    TextButton(
-                        onClick = {
-                            reviewedOpen = true
-                            scope.launch { gridState.animateScrollToItem(reviewedSectionIndex()) }
-                        },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text(pluralStringResource(R.plurals.review_reviewed_n, session.reviewed.size, session.reviewed.size))
-                        Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
-                    }
-                }
-                TagReviewHeader(
-                    changeSet = changeSet,
-                    labelsById = labelsById,
-                    affectedCount = affectedGarmentCount(changeSet, garments, candidates.size),
-                )
-            }
-            if (completionShown) {
-                TagReviewCompletion(
-                    tallies = session.tallies(),
-                    thumbnails = completionThumbnails(session, writtenGarments.toList()),
-                    onEditChanges = {
-                        reviewedOpen = true
-                        editState = ReviewEditState.Looking
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(reviewColumnCount()),
-                    state = gridState,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    contentPadding = PaddingValues(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 128.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                        .padding(start = 24.dp, top = 24.dp, end = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    if (modelUnavailable) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            ReviewEmptyCard(
-                                title = stringResource(R.string.tag_review_needs_model),
-                                body = stringResource(R.string.tag_review_needs_model_body),
-                            )
-                        }
-                    } else if (!isScanning && candidates.isEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            ReviewEmptyCard(
-                                title = stringResource(R.string.tag_review_empty_title),
-                                body = stringResource(R.string.tag_review_empty_body),
-                            )
+                    if (headerState.showsScan) {
+                        ReviewProgressHeader(
+                            title = stringResource(R.string.tag_review_scan_title),
+                            countText = if (isPreparing) {
+                                stringResource(R.string.tag_review_preparing)
+                            } else {
+                                stringResource(R.string.tag_review_scanning_count, scannedCount, garments.size)
+                            },
+                            progress = if (isPreparing) 0f else scanProgress,
+                        )
+                    } else {
+                        ReviewLeftHeader(leftCount = headerState.leftCount, progress = headerState.progress)
+                    }
+                    if (session.reviewed.isNotEmpty() && !completionShown) {
+                        TextButton(
+                            onClick = {
+                                reviewedOpen = true
+                                scope.launch { gridState.animateScrollToItem(reviewedSectionIndex()) }
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(pluralStringResource(R.plurals.review_reviewed_n, session.reviewed.size, session.reviewed.size))
+                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
                         }
                     }
-
-                    items(
-                        items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
-                        key = { candidate -> reviewCardKey(candidate.item.id, returns[candidate.item.id] ?: 0) },
-                    ) { candidate ->
-                        val garmentId = candidate.item.id
-                        val card = session.cards.firstOrNull { cardState -> cardState.garmentId == garmentId }
-                        val chosen = card?.let { cardState -> chosenTagOf(cardState, afterTagIds) }
-                        // A decided card (applied, written, kept or rejected) leaves the list; a write that fails brings it back.
-                        val resolved = card == null || card.decision !is ReviewDecision.Pending
-                        ReviewAcceptedCard(
-                            resolved = resolved,
-                            onGone = { hiddenIds.add(garmentId) },
-                            direction = if (card?.decision is ReviewDecision.Rejected) ExitDirection.Discard else ExitDirection.Accept,
-                        ) {
-                            if (card != null) {
-                                val groupLabels = candidate.live.tags
-                                    .filter { tag -> tag.categoryId == changeSet.categoryId }
-                                    .map { tag -> tag.localizedTagLabel(context) }
-                                    .sortedAlphabetically(label = { label -> label })
-                                TagReviewCard(
-                                    card = card,
-                                    identity = tagReviewIdentityLine(candidate.live),
-                                    nowLine = if (changeSet.categoryId == TAG_KIND_OCCASION) {
-                                        stringResource(
-                                            R.string.review_now,
-                                            nowLine(groupLabels, stringResource(R.string.review_none)),
-                                        )
-                                    } else {
-                                        null
-                                    },
-                                    chosenTagId = chosen,
-                                    noTagsLeft = noTagsLeft(
-                                        isOccasionGroup = changeSet.categoryId == TAG_KIND_OCCASION,
-                                        beforeGroupIds = card.liveGroupTagIds,
-                                        changes = card.changes,
-                                        skipped = card.skipped,
-                                        chosenTagId = chosen,
-                                    ),
-                                    labelOf = { tagId -> labelsById[tagId] ?: tagId },
-                                    resolved = resolved,
-                                    photo = {
-                                        TagReviewPhoto(
-                                            item = candidate.item,
-                                            swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
-                                        )
-                                    },
-                                    onToggle = { key -> session = session.toggle(garmentId, key) },
-                                    onChoose = { pickerGarmentId = garmentId },
-                                    onApply = {
-                                        if (canDecideNow(card, chosen)) {
-                                            val (next, delta) = session.apply(garmentId, afterTagIds)
-                                            session = next
-                                            if (delta != null) writeDecision(listOf(garmentId), delta)
-                                        }
-                                    },
-                                    onReject = {
-                                        session = session.reject(garmentId)
-                                    },
+                    TagReviewHeader(
+                        changeSet = changeSet,
+                        labelsById = labelsById,
+                        affectedCount = affectedGarmentCount(changeSet, garments, candidates.size),
+                    )
+                }
+            }
+            Crossfade(
+                targetState = completionSwapped,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                animationSpec = if (reducedMotion) snap() else tween(COMPLETION_SWAP_MILLIS),
+                label = "reviewCompletion",
+            ) { swapped ->
+                if (swapped) {
+                    TagReviewCompletion(
+                        tallies = session.tallies(),
+                        thumbnails = completionThumbnails(session, writtenGarments.toList()),
+                        onEditChanges = {
+                            reviewedOpen = true
+                            editState = ReviewEditState.Looking
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(reviewColumnCount()),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 128.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                    ) {
+                        if (modelUnavailable) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                ReviewEmptyCard(
+                                    title = stringResource(R.string.tag_review_needs_model),
+                                    body = stringResource(R.string.tag_review_needs_model_body),
+                                )
+                            }
+                        } else if (!isScanning && candidates.isEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                ReviewEmptyCard(
+                                    title = stringResource(R.string.tag_review_empty_title),
+                                    body = stringResource(R.string.tag_review_empty_body),
                                 )
                             }
                         }
-                    }
 
-                    // The decided garments, collapsed by default, most recent first, after the last pending card.
-                    if (session.reviewed.isNotEmpty()) {
-                        item(key = "reviewed-header", span = { GridItemSpan(maxLineSpan) }) {
-                            ReviewedSectionHeader(
-                                count = session.reviewed.size,
-                                expanded = reviewedOpen,
-                                onToggle = { reviewedOpen = !reviewedOpen },
-                            )
-                        }
-                        if (reviewedOpen) {
-                            items(
-                                items = session.reviewed,
-                                key = { card -> "reviewed-${card.garmentId}" },
-                                span = { GridItemSpan(maxLineSpan) },
-                            ) { card ->
-                                candidates.firstOrNull { candidate -> candidate.item.id == card.garmentId }?.let { candidate ->
-                                    ReviewedRow(
-                                        candidate = candidate,
-                                        outcome = reviewOutcomeOf(card),
-                                        enabled = reviewAgainEnabled(session, card.garmentId, revertingIds, bulkInFlight),
-                                        onReviewAgain = { undoDecision(card.garmentId) },
+                        items(
+                            items = candidates.filterNot { candidate -> candidate.item.id in hiddenIds },
+                            key = { candidate -> reviewCardKey(candidate.item.id, returns[candidate.item.id] ?: 0) },
+                        ) { candidate ->
+                            val garmentId = candidate.item.id
+                            val card = session.cards.firstOrNull { cardState -> cardState.garmentId == garmentId }
+                            val chosen = card?.let { cardState -> chosenTagOf(cardState, afterTagIds) }
+                            // A decided card (applied, written, kept or rejected) leaves the list; a write that fails brings it back.
+                            val resolved = card == null || card.decision !is ReviewDecision.Pending
+                            ReviewAcceptedCard(
+                                resolved = resolved,
+                                onGone = { hiddenIds.add(garmentId) },
+                                direction = if (card?.decision is ReviewDecision.Rejected) ExitDirection.Discard else ExitDirection.Accept,
+                            ) {
+                                if (card != null) {
+                                    val groupLabels = candidate.live.tags
+                                        .filter { tag -> tag.categoryId == changeSet.categoryId }
+                                        .map { tag -> tag.localizedTagLabel(context) }
+                                        .sortedAlphabetically(label = { label -> label })
+                                    TagReviewCard(
+                                        card = card,
+                                        identity = tagReviewIdentityLine(candidate.live),
+                                        nowLine = if (changeSet.categoryId == TAG_KIND_OCCASION) {
+                                            stringResource(
+                                                R.string.review_now,
+                                                nowLine(groupLabels, stringResource(R.string.review_none)),
+                                            )
+                                        } else {
+                                            null
+                                        },
+                                        chosenTagId = chosen,
+                                        noTagsLeft = noTagsLeft(
+                                            isOccasionGroup = changeSet.categoryId == TAG_KIND_OCCASION,
+                                            beforeGroupIds = card.liveGroupTagIds,
+                                            changes = card.changes,
+                                            skipped = card.skipped,
+                                            chosenTagId = chosen,
+                                        ),
+                                        labelOf = { tagId -> labelsById[tagId] ?: tagId },
+                                        resolved = resolved,
+                                        photo = {
+                                            TagReviewPhoto(
+                                                item = candidate.item,
+                                                swatch = candidate.item.colorMetrics.primaryDisplayLabel ?: DisplayColorLabel.Unknown,
+                                            )
+                                        },
+                                        onToggle = { key -> session = session.toggle(garmentId, key) },
+                                        onChoose = { pickerGarmentId = garmentId },
+                                        onApply = {
+                                            if (canDecideNow(card, chosen)) {
+                                                val (next, delta) = session.apply(garmentId, afterTagIds)
+                                                session = next
+                                                lastDecisionMs = SystemClock.elapsedRealtime()
+                                                if (delta != null) writeDecision(listOf(garmentId), delta)
+                                            }
+                                        },
+                                        onReject = {
+                                            session = session.reject(garmentId)
+                                            lastDecisionMs = SystemClock.elapsedRealtime()
+                                        },
                                     )
                                 }
                             }
                         }
-                    }
 
-                    if (isScanning || (!modelUnavailable && skippedCount > 0)) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            ReviewHelperRow(
-                                isScanning = isScanning,
-                                text = if (isScanning) {
-                                    stringResource(R.string.tag_review_checking_helper)
-                                } else {
-                                    stringResource(R.string.tag_review_skipped, skippedCount)
-                                },
-                            )
+                        // The decided garments, collapsed by default, most recent first, after the last pending card.
+                        if (session.reviewed.isNotEmpty()) {
+                            item(key = "reviewed-header", span = { GridItemSpan(maxLineSpan) }) {
+                                ReviewedSectionHeader(
+                                    count = session.reviewed.size,
+                                    expanded = reviewedOpen,
+                                    onToggle = { reviewedOpen = !reviewedOpen },
+                                )
+                            }
+                            if (reviewedOpen) {
+                                items(
+                                    items = session.reviewed,
+                                    key = { card -> "reviewed-${card.garmentId}" },
+                                    span = { GridItemSpan(maxLineSpan) },
+                                ) { card ->
+                                    candidates.firstOrNull { candidate -> candidate.item.id == card.garmentId }?.let { candidate ->
+                                        ReviewedRow(
+                                            candidate = candidate,
+                                            outcome = reviewOutcomeOf(card),
+                                            enabled = reviewAgainEnabled(session, card.garmentId, revertingIds, bulkInFlight),
+                                            onReviewAgain = { undoDecision(card.garmentId) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (isScanning || (!modelUnavailable && skippedCount > 0)) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                ReviewHelperRow(
+                                    isScanning = isScanning,
+                                    text = if (isScanning) {
+                                        stringResource(R.string.tag_review_checking_helper)
+                                    } else {
+                                        stringResource(R.string.tag_review_skipped, skippedCount)
+                                    },
+                                )
+                            }
                         }
                     }
                 }

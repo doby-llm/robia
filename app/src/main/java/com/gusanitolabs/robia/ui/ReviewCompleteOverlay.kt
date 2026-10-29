@@ -60,6 +60,42 @@ internal fun reviewCompleteDurationMs(reducedMotion: Boolean): Long =
     if (reducedMotion) REVIEW_COMPLETE_REDUCED_MILLIS else REVIEW_COMPLETE_MILLIS
 
 /**
+ * The mark of a finished review: a check in a soft circle with a few sparks. The check scales in over
+ * [REVIEW_COMPLETE_CHECK_SCALE_MILLIS]; under reduced motion it is at full size at once, and the sparks draw nothing.
+ */
+@Composable
+internal fun ReviewCompleteBadge() {
+    val reducedMotion = LocalReducedMotion.current
+    val checkScale = remember { Animatable(if (reducedMotion) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reducedMotion) checkScale.animateTo(1f, tween(durationMillis = REVIEW_COMPLETE_CHECK_SCALE_MILLIS))
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(144.dp),
+    ) {
+        SparkleBurst(modifier = Modifier.matchParentSize(), count = 7)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(72.dp)
+                .graphicsLayer {
+                    scaleX = checkScale.value
+                    scaleY = checkScale.value
+                }
+                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+    }
+}
+
+/**
  * Short "done" moment after a tag, colour or duplicate review is committed: a check in a soft circle with a few sparks, then
  * the summary. Leaves by itself after [reviewCompleteDurationMs], or at once on a tap.
  */
@@ -67,10 +103,6 @@ internal fun reviewCompleteDurationMs(reducedMotion: Boolean): Long =
 internal fun ReviewCompleteOverlay(text: ReviewCompleteText, onFinished: () -> Unit) {
     val reducedMotion = LocalReducedMotion.current
     val currentOnFinished by rememberUpdatedState(onFinished)
-    val checkScale = remember { Animatable(if (reducedMotion) 1f else 0f) }
-    LaunchedEffect(Unit) {
-        if (!reducedMotion) checkScale.animateTo(1f, tween(durationMillis = REVIEW_COMPLETE_CHECK_SCALE_MILLIS))
-    }
     LaunchedEffect(Unit) {
         delay(reviewCompleteDurationMs(reducedMotion))
         currentOnFinished()
@@ -93,29 +125,7 @@ internal fun ReviewCompleteOverlay(text: ReviewCompleteText, onFinished: () -> U
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(144.dp),
-            ) {
-                SparkleBurst(modifier = Modifier.matchParentSize(), count = 7)
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(72.dp)
-                        .graphicsLayer {
-                            scaleX = checkScale.value
-                            scaleY = checkScale.value
-                        }
-                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
-            }
+            ReviewCompleteBadge()
             Spacer(Modifier.height(16.dp))
             Text(
                 text = message,
