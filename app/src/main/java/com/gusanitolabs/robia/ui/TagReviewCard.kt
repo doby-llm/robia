@@ -62,6 +62,7 @@ internal fun TagReviewCard(
     photo: @Composable () -> Unit,
     onToggle: (String) -> Unit,
     onChoose: () -> Unit,
+    onReplace: (String?) -> Unit,
     onApply: () -> Unit,
     onReject: () -> Unit,
 ) {
@@ -118,13 +119,17 @@ internal fun TagReviewCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 for (change in chipsOf(card, chosenTagId)) {
+                    val chosen = chosenTagId != null && change is ReviewChange.Add && change.tagId == chosenTagId
+                    // The long press asks for another tag; the chosen tag of a chooser card asks for the chooser (key null).
+                    val onLongPress = { onReplace(if (chosen) null else change.key) }
                     ReviewCardChip(
                         change = change,
                         skipped = card.skipped,
-                        chosen = chosenTagId != null && change is ReviewChange.Add && change.tagId == chosenTagId,
+                        chosen = chosen,
                         labelOf = labelOf,
                         enabled = !resolved,
                         onToggle = onToggle,
+                        onLongPress = onLongPress.takeIf { replaceableChip(card, change) },
                     )
                 }
             }
@@ -219,7 +224,7 @@ internal fun TagReviewCard(
     }
 }
 
-/** One change of a card: a switch chip, or a framed category swap. */
+/** One change of a card: a switch chip, or a framed category swap. [onLongPress] is set on a replaceable chip only. */
 @Composable
 private fun ReviewCardChip(
     change: ReviewChange,
@@ -228,6 +233,7 @@ private fun ReviewCardChip(
     labelOf: (String) -> String,
     enabled: Boolean,
     onToggle: (String) -> Unit,
+    onLongPress: (() -> Unit)?,
 ) {
     val isSkipped = change.key in skipped
     when (change) {
@@ -237,6 +243,7 @@ private fun ReviewCardChip(
             stateText = chipText(chipDescription(change, isSkipped, chosen), labelOf(change.tagId)),
             enabled = enabled,
             onToggle = { onToggle(change.key) },
+            onLongPress = onLongPress,
         )
         is ReviewChange.Remove -> ReviewChangeChip(
             label = labelOf(change.tagId),
@@ -254,6 +261,7 @@ private fun ReviewCardChip(
             stateText = chipText(chipDescription(change, isSkipped), labelOf(change.toId), labelOf(change.fromId)),
             enabled = enabled,
             onToggle = { onToggle(change.key) },
+            onLongPress = onLongPress,
         )
     }
 }

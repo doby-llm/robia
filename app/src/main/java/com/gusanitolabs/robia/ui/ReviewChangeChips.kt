@@ -4,8 +4,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.extras
 
@@ -48,7 +52,8 @@ private const val CHIP_CROSSFADE_MILLIS = 150
 
 /**
  * One add or removal chip as a switch: a 48 dp row around a 36 dp chip. A locked removal is not a switch and has no ripple.
- * [stateText] is the `review_cd_*` text, read as the state description. Taps give a light haptic tick.
+ * [stateText] is the `review_cd_*` text, read as the state description. Taps give a light haptic tick. [onLongPress] is set
+ * only on a replaceable chip (R3-DEC-060): its long press asks for another tag.
  */
 @Composable
 internal fun ReviewChangeChip(
@@ -57,18 +62,10 @@ internal fun ReviewChangeChip(
     stateText: String,
     enabled: Boolean,
     onToggle: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
-    val haptic = LocalHapticFeedback.current
     val switchModifier = if (visual.switch) {
-        Modifier.toggleable(
-            value = visual.filledSign,
-            enabled = enabled,
-            role = Role.Switch,
-            onValueChange = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onToggle()
-            },
-        )
+        Modifier.chipSwitch(on = visual.filledSign, enabled = enabled, onToggle = onToggle, onLongPress = onLongPress)
     } else {
         Modifier
     }
@@ -85,7 +82,8 @@ internal fun ReviewChangeChip(
 
 /**
  * A category change as one unit: the "−" half, an arrow and the "+" half in a framed unit. The frame is ONE switch, unless the
- * "−" half is locked (a deleted category): then the frame is static and only the "+" half is the switch.
+ * "−" half is locked (a deleted category): then the frame is static and only the "+" half is the switch, and so the long press
+ * (R3-DEC-060) is on the "+" half.
  */
 @Composable
 internal fun ReviewSwapChip(
@@ -97,21 +95,17 @@ internal fun ReviewSwapChip(
     stateText: String,
     enabled: Boolean,
     onToggle: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
-    val haptic = LocalHapticFeedback.current
-    val onValueChange: (Boolean) -> Unit = {
-        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        onToggle()
-    }
     val frameSwitch = if (frame.switch) {
-        Modifier.toggleable(value = frame.filledSign, enabled = enabled, role = Role.Switch, onValueChange = onValueChange)
+        Modifier.chipSwitch(on = frame.filledSign, enabled = enabled, onToggle = onToggle, onLongPress = onLongPress)
     } else {
         Modifier
     }
     val halfSwitch = if (frame.switch) {
         Modifier
     } else {
-        Modifier.toggleable(value = addition.filledSign, enabled = enabled, role = Role.Switch, onValueChange = onValueChange)
+        Modifier.chipSwitch(on = addition.filledSign, enabled = enabled, onToggle = onToggle, onLongPress = onLongPress)
     }
     val outlineColor = MaterialTheme.colorScheme.outline
     Box(
@@ -143,6 +137,39 @@ internal fun ReviewSwapChip(
             }
         }
     }
+}
+
+/**
+ * The switch of a chip, role [Role.Switch] in both cases. Without [onLongPress] it is the `toggleable` it always was. With it the
+ * tap is the same toggle, and the long press asks for another tag with the TalkBack long-click label "Choose another tag".
+ * The spoken state stays the chip's state description. Both gestures give a light haptic tick.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.chipSwitch(
+    on: Boolean,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    onLongPress: (() -> Unit)?,
+): Modifier {
+    val haptic = LocalHapticFeedback.current
+    val toggle: () -> Unit = {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onToggle()
+    }
+    if (onLongPress == null) {
+        return toggleable(value = on, enabled = enabled, role = Role.Switch, onValueChange = { toggle() })
+    }
+    return combinedClickable(
+        enabled = enabled,
+        role = Role.Switch,
+        onClick = toggle,
+        onLongClickLabel = stringResource(R.string.review_chip_choose_another),
+        onLongClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onLongPress()
+        },
+    )
 }
 
 /**

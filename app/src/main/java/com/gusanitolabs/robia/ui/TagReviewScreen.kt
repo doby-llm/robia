@@ -636,7 +636,7 @@ internal fun TagReviewScreen(
     var isPreparing by remember(changeSet.id) { mutableStateOf(true) }
     var isScanning by remember(changeSet.id) { mutableStateOf(true) }
     var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
-    var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
+    var pickerTarget by remember(changeSet.id) { mutableStateOf<ReviewPickerTarget?>(null) }
     var finished by remember(changeSet.id) { mutableStateOf(false) }
     // Undo: the bulk snackbar (null: none), the garments whose revert write is in flight, and the Reviewed section.
     var undoSnack by remember(changeSet.id) { mutableStateOf<ReviewUndoSnack?>(null) }
@@ -849,9 +849,12 @@ internal fun TagReviewScreen(
 
     BackHandler { onRequestDiscard() }
 
-    // The chooser offers only the tags the garment does not have and that exist now; the card is never named in its title.
-    pickerGarmentId?.let { garmentId ->
-        session.cards.firstOrNull { cardState -> cardState.garmentId == garmentId }?.let { card ->
+    // The picker offers only the tags the garment does not have, that exist now and that no other chip of the card has; the card is
+    // never named in its title. A replacement (a chip's key) has no "None"; the chooser of a card that needs a choice has one.
+    pickerTarget?.let { target ->
+        session.cards.firstOrNull { cardState -> cardState.garmentId == target.garmentId }?.let { card ->
+            val chosen = chosenTagOf(card, afterTagIds)
+            val options = replacementOptions(card, chosen, target.key)
             TagReviewPickerDialog(
                 title = tagReviewPickerTitle(
                     noun = stringResource(
@@ -860,14 +863,19 @@ internal fun TagReviewScreen(
                     garmentName = "",
                     namedTitle = "",
                 ),
-                options = kindTags.filter { tag -> tag.id in card.offeredTagIds },
+                options = kindTags.filter { tag -> tag.id in options },
                 selectedIds = emptySet(),
                 multiChoice = false,
+                showNone = target.key == null,
                 labelsById = labelsById,
-                onDismiss = { pickerGarmentId = null },
-                onConfirm = { chosen ->
-                    session = session.choose(garmentId, chosen.singleOrNull())
-                    pickerGarmentId = null
+                onDismiss = { pickerTarget = null },
+                onConfirm = { picked ->
+                    if (target.key == null) {
+                        session = session.choose(target.garmentId, picked.singleOrNull())
+                    } else {
+                        picked.singleOrNull()?.let { tagId -> session = session.replaceChip(target.garmentId, target.key, tagId) }
+                    }
+                    pickerTarget = null
                 },
             )
         }
@@ -1038,7 +1046,8 @@ internal fun TagReviewScreen(
                                             )
                                         },
                                         onToggle = { key -> session = session.toggle(garmentId, key) },
-                                        onChoose = { pickerGarmentId = garmentId },
+                                        onChoose = { pickerTarget = ReviewPickerTarget(garmentId, key = null) },
+                                        onReplace = { key -> pickerTarget = ReviewPickerTarget(garmentId, key) },
                                         onApply = {
                                             if (canDecideNow(card, chosen)) {
                                                 val (next, delta) = session.apply(garmentId, afterTagIds)
@@ -1276,13 +1285,23 @@ internal fun TagReviewPhoto(item: ClothingItem, swatch: DisplayColorLabel) {
     }
 }
 
-/** Single choice for categories (the "no category" row clears it); multi choice with "None" for occasions. */
+/**
+ * The picker of a review card: the chip whose tag is replaced (R3-DEC-060), or null for the chooser of a card that needs a
+ * choice. Set when a chip is long-pressed or the "Choose" button is tapped; cleared on dismiss and on a pick.
+ */
+private data class ReviewPickerTarget(val garmentId: String, val key: String?)
+
+/**
+ * Single choice for categories (the "no category" row clears it); multi choice with "None" for occasions. [showNone] is false for
+ * a replacement: a tap on a chip already leaves it out, so the picker has no "None" there.
+ */
 @Composable
 private fun TagReviewPickerDialog(
     title: String,
     options: List<GarmentTag>,
     selectedIds: Set<String>,
     multiChoice: Boolean,
+    showNone: Boolean,
     labelsById: Map<String, String>,
     onDismiss: () -> Unit,
     onConfirm: (Set<String>) -> Unit,
@@ -1294,15 +1313,17 @@ private fun TagReviewPickerDialog(
         title = { Text(title) },
         text = {
             // Scrolls: a long category list must stay reachable on a small screen, the dialog itself does not scroll.
-            ReviewPickerList(optionCount = options.size) {
-                TagReviewPickerRow(
-                    label = stringResource(if (multiChoice) R.string.tag_review_none_occasion else R.string.tag_review_none),
-                    selected = selection.isEmpty(),
-                    multiChoice = multiChoice,
-                    onClick = {
-                        if (multiChoice) selection = emptySet() else onConfirm(emptySet())
-                    },
-                )
+            ReviewPickerList(optionCount = options.size + (if (showNone) 1 else 0)) {
+                if (showNone) {
+                    TagReviewPickerRow(
+                        label = stringResource(if (multiChoice) R.string.tag_review_none_occasion else R.string.tag_review_none),
+                        selected = selection.isEmpty(),
+                        multiChoice = multiChoice,
+                        onClick = {
+                            if (multiChoice) selection = emptySet() else onConfirm(emptySet())
+                        },
+                    )
+                }
                 options.forEach { tag ->
                     val isSelected = tag.id in selection
                     TagReviewPickerRow(
