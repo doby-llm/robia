@@ -377,7 +377,7 @@ fun PhotoEditorScreen(
         scope.launch {
             try {
                 sourceMutex.withLock {
-                    // Read under the lock: a stroke or a smart selection queued before this step may have replaced the photo.
+                    // Read under the lock: a stroke queued before this step may have replaced the photo.
                     val current = photo ?: return@withLock
                     val ownEdit = if (forward) current.session.canRedo else current.session.canUndo
                     if (ownEdit) {
