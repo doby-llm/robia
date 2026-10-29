@@ -203,8 +203,11 @@ enum class LanguagePreference(val storageValue: String?) {
 
 enum class BrowseLayout { PhotosOnly, PhotosWithDetails }
 
-/** Cutout method (SG4): Automatic uses the precise cutout when its pack is ready, Standard always uses ML Kit. */
-enum class CutoutEngineChoice { Automatic, Standard }
+/**
+ * Cutout method (Settings > Cutout). Standard = ML Kit. Precise = the precise engine, needs the cutout pack.
+ * Automatic = Precise when the pack is ready, otherwise Standard. Stored by name; an unknown stored name reads as Automatic.
+ */
+enum class CutoutEngineChoice { Automatic, Standard, Precise }
 
 enum class HangerSensitivity { Normal, High }
 
@@ -236,7 +239,7 @@ data class RobiaSettings(
     val browseLayout: BrowseLayout = BrowseLayout.PhotosOnly,
     /** Pinch-chosen Browse column count; clamped to [browseColumnRange] when shown. */
     val browseColumns: Int = 2,
-    /** Cutout method (Settings > Cutout); Standard is the default, Automatic (precise, Experimental) is opt-in. */
+    /** Cutout method (Settings > Cutout); Standard is the default, Precise and Automatic (Experimental) are opt-in. */
     val cutoutEngine: CutoutEngineChoice = CutoutEngineChoice.Standard,
     /** Hanger removal in the precise cutout; ignored by Standard. */
     val cutoutRemoveHanger: Boolean = true,
@@ -252,9 +255,9 @@ data class RobiaSettings(
     /** Settings > Appearance > Theme; Light until the user chooses otherwise (REQ-FB-14). */
     val themeMode: ThemeMode = ThemeMode.Light,
 ) {
-    /** The Developer switch's view of [cutoutEngine]: on when the method is Automatic. */
+    /** The Developer switch's view of [cutoutEngine]: on when the method is Precise or Automatic. */
     val preciseCutoutEnabled: Boolean
-        get() = cutoutEngine == CutoutEngineChoice.Automatic
+        get() = cutoutEngine != CutoutEngineChoice.Standard
 }
 
 /**

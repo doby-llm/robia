@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -67,13 +68,17 @@ internal fun cutoutDownloadPercent(state: ModelState): Int? = when (state) {
 /** The switch and the Settings value read On only when the pack is ready and the setting is on. */
 internal fun preciseCutoutOn(state: ModelState, enabled: Boolean): Boolean = state is ModelState.Ready && enabled
 
-/** Hanger options need the precise engine: the pack is ready and the method is Automatic (SG4). */
+/** Hanger options need the precise engine: the pack is ready and the method is not Standard (FB3-CUT-NAMES, R3-DEC-065). */
 internal fun cutoutHangerOptionsAvailable(packReady: Boolean, engine: CutoutEngineChoice): Boolean =
-    packReady && engine == CutoutEngineChoice.Automatic
+    packReady && engine != CutoutEngineChoice.Standard
 
 /** Hanger detection shows only with Remove hangers on and the hanger options available; otherwise its row and dialog are hidden. */
 internal fun hangerDetectionVisible(packReady: Boolean, engine: CutoutEngineChoice, removeHangers: Boolean): Boolean =
     cutoutHangerOptionsAvailable(packReady, engine) && removeHangers
+
+/** Precise needs the downloaded pack, unless it is the stored method; Standard and Automatic are always selectable. */
+internal fun cutoutMethodSelectable(option: CutoutEngineChoice, current: CutoutEngineChoice, packReady: Boolean): Boolean =
+    option != CutoutEngineChoice.Precise || packReady || option == current
 
 /** The single-choice row whose dialog is open; null when none is. */
 private enum class OpenCutoutChoice { Method, HangerDetection, Edges, BatchSpeed }
@@ -180,13 +185,8 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
                 CutoutChoiceItem(
                     headline = stringResource(R.string.cutout_method),
                     value = stringResource(settings.cutoutEngine.labelRes()),
-                    supporting = stringResource(
-                        if (settings.cutoutEngine == CutoutEngineChoice.Automatic) {
-                            R.string.cutout_method_automatic_hint
-                        } else {
-                            R.string.cutout_method_standard_hint
-                        },
-                    ),
+                    supporting = stringResource(settings.cutoutEngine.hintRes()),
+                    extraSupporting = cutoutMethodExperimentalHintRes(settings.cutoutEngine)?.let { stringResource(it) },
                     enabled = true,
                     onClick = { openChoice = OpenCutoutChoice.Method },
                 )
@@ -243,10 +243,11 @@ internal fun PreciseCutoutSettingsScreen(innerPadding: PaddingValues) {
     when (openChoice) {
         OpenCutoutChoice.Method -> CutoutChoiceDialog(
             title = stringResource(R.string.cutout_method),
-            options = listOf(CutoutEngineChoice.Standard, CutoutEngineChoice.Automatic),
+            options = listOf(CutoutEngineChoice.Standard, CutoutEngineChoice.Precise, CutoutEngineChoice.Automatic),
             labelOf = { it.labelRes() },
             suffixOf = { cutoutMethodExperimentalRes(it) },
-            supportingOf = { if (it == CutoutEngineChoice.Automatic) R.string.cutout_method_experimental_hint else null },
+            supportingOf = { it.hintRes() },
+            enabledOf = { cutoutMethodSelectable(it, settings.cutoutEngine, packReady) },
             current = settings.cutoutEngine,
             onSelected = { value ->
                 openChoice = null
@@ -345,12 +346,26 @@ private fun cutoutFailureRes(reason: ModelFailure): Int = when (reason) {
 private fun CutoutEngineChoice.labelRes(): Int = when (this) {
     CutoutEngineChoice.Automatic -> R.string.cutout_method_automatic
     CutoutEngineChoice.Standard -> R.string.cutout_method_standard
+    CutoutEngineChoice.Precise -> R.string.cutout_method_precise
 }
 
-/** K00: the precise (Automatic) method is labelled Experimental until G-CUT passes; Standard carries no label. */
+/** One-line help of a method (FB3-CUT-NAMES): the dialog shows it under each option and the row under its value. */
+@StringRes
+private fun CutoutEngineChoice.hintRes(): Int = when (this) {
+    CutoutEngineChoice.Automatic -> R.string.cutout_method_automatic_hint
+    CutoutEngineChoice.Standard -> R.string.cutout_method_standard_hint
+    CutoutEngineChoice.Precise -> R.string.cutout_method_precise_hint
+}
+
+/** K00 / FB3-CUT-NAMES: Precise and Automatic are labelled Experimental until G-CUT passes; Standard carries no label. */
 @StringRes
 internal fun cutoutMethodExperimentalRes(engine: CutoutEngineChoice): Int? =
-    if (engine == CutoutEngineChoice.Automatic) R.string.cutout_method_experimental else null
+    if (engine == CutoutEngineChoice.Standard) null else R.string.cutout_method_experimental
+
+/** The Experimental sentence under the method row while the stored method is Precise or Automatic. */
+@StringRes
+internal fun cutoutMethodExperimentalHintRes(engine: CutoutEngineChoice): Int? =
+    if (engine == CutoutEngineChoice.Standard) null else R.string.cutout_method_experimental_hint
 
 @StringRes
 private fun HangerSensitivity.labelRes(): Int = when (this) {
@@ -376,19 +391,28 @@ private fun BatchCutoutMode.labelRes(): Int = when (this) {
     BatchCutoutMode.MemorySaver -> R.string.batch_speed_memory_saver
 }
 
-/** One single-choice row of the Cutout sub-screen: the headline, the current value, and an optional supporting line. */
+/**
+ * One single-choice row of the Cutout sub-screen: the headline, the current value, and an optional supporting line
+ * with an optional second line under it ([extraSupporting]).
+ */
 @Composable
 private fun CutoutChoiceItem(
     headline: String,
     value: String,
     supporting: String?,
+    extraSupporting: String? = null,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val supportingSlot: (@Composable () -> Unit)? = if (supporting == null) {
         null
     } else {
-        { Text(supporting) }
+        {
+            Column {
+                Text(supporting)
+                extraSupporting?.let { Text(it) }
+            }
+        }
     }
     ListItem(
         headlineContent = { Text(headline) },
@@ -399,8 +423,8 @@ private fun CutoutChoiceItem(
 }
 
 /**
- * Radio-button dialog for one setting. [supportingOf] adds an optional line under each option.
- * Cancel, outside tap and back close it without a change.
+ * Radio-button dialog for one setting. [supportingOf] adds an optional line under each option; [enabledOf] greys out
+ * an option that cannot be chosen now. Cancel, outside tap and back close it without a change.
  */
 @Composable
 private fun <T> CutoutChoiceDialog(
@@ -409,6 +433,7 @@ private fun <T> CutoutChoiceDialog(
     labelOf: (T) -> Int,
     supportingOf: (T) -> Int? = { null },
     suffixOf: (T) -> Int? = { null },
+    enabledOf: (T) -> Boolean = { true },
     current: T,
     onSelected: (T) -> Unit,
     onDismiss: () -> Unit,
@@ -419,18 +444,21 @@ private fun <T> CutoutChoiceDialog(
         text = {
             Column {
                 options.forEach { option ->
+                    val enabled = enabledOf(option)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .selectable(
                                 selected = option == current,
+                                enabled = enabled,
                                 onClick = { onSelected(option) },
                                 role = Role.RadioButton,
                             )
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = 12.dp)
+                            .alpha(if (enabled) 1f else 0.38f),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(selected = option == current, onClick = null)
+                        RadioButton(selected = option == current, onClick = null, enabled = enabled)
                         Column(modifier = Modifier.padding(start = 8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(text = stringResource(labelOf(option)))

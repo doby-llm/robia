@@ -20,9 +20,9 @@ data class CutoutOptions(
     val edges: CutoutEdges,
 )
 
-/** Options for a photo from the saved settings; the precise engine needs the pack to be ready and the Automatic method. */
+/** Options for a photo from the saved settings; the precise engine needs the pack to be ready and a method other than Standard. */
 fun cutoutOptionsOf(settings: RobiaSettings, packReady: Boolean): CutoutOptions = CutoutOptions(
-    usePrecise = useEnginePrecise(packReady, settings.cutoutEngine == CutoutEngineChoice.Automatic),
+    usePrecise = useEnginePrecise(packReady, settings.cutoutEngine != CutoutEngineChoice.Standard),
     removeHanger = settings.cutoutRemoveHanger,
     hangerThreshold = when (settings.cutoutHangerSensitivity) {
         HangerSensitivity.Normal -> HANGER_THRESHOLD_NORMAL
