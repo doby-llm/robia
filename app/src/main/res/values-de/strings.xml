@@ -903,7 +903,6 @@
     <string name="review_got_it">Verstanden</string>
     <string name="review_all_skipped">Alle Änderungen ausgelassen: Das Kleidungsstück bleibt unverändert.</string>
     <string name="review_none_left_occ">Danach hat das Kleidungsstück keine Anlässe mehr.</string>
-    <string name="review_hint_changes">Tippe auf eine Änderung, um sie auszulassen, dann übernimm oder lehne ab. Geprüfte Kleidungsstücke verschwinden aus der Liste.</string>
     <plurals name="review_left">
         <item quantity="one">Noch 1</item>
         <item quantity="other">Noch %1$d</item>
