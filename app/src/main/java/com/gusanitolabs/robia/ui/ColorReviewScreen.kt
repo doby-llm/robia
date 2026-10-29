@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.color.ColorLabelResolver
 import com.gusanitolabs.robia.core.color.PaletteColorMatch
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.designsystem.pressScale
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
@@ -105,7 +106,7 @@ internal fun ColorReviewPromptDialog(
                     imageVector = Icons.Outlined.AutoAwesome,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    tint = MaterialTheme.extras.sparkOnPrimary,
                 )
             }
         },

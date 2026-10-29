@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.GarmentTag
@@ -516,7 +517,7 @@ internal fun TagReviewPromptDialog(
                     imageVector = Icons.Outlined.AutoAwesome,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    tint = MaterialTheme.extras.sparkOnPrimary,
                 )
             }
         },
@@ -908,11 +909,6 @@ internal fun TagReviewScreen(
                     changeSet = changeSet,
                     labelsById = labelsById,
                     affectedCount = affectedGarmentCount(changeSet, garments, candidates.size),
-                )
-                Text(
-                    text = stringResource(R.string.review_hint_changes),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (completionShown) {
