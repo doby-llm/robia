@@ -296,8 +296,7 @@
     <string name="photo_editor_tab_light">Light</string>
     <string name="refine_keep">Keep</string>
     <string name="refine_remove">Remove</string>
-    <string name="refine_brush">Brush</string>
-    <string name="refine_hint">Tap or swipe over a part to keep or remove it.</string>
+    <string name="refine_hint">Paint over a part to keep or remove it.</string>
     <string name="refine_no_source_hint">The original photo is not available here, so fully removed parts cannot be restored; use Remove and Undo.</string>
     <string name="refine_undo">Undo</string>
     <string name="refine_reset">Reset</string>
@@ -788,8 +787,6 @@
     <!-- K00 -->
     <string name="cutout_method_experimental">Experimental</string>
     <string name="cutout_method_experimental_hint">May remove parts of the garment. Check each result.</string>
-    <!-- ED1 -->
-    <string name="editor_smart_whole_garment">That selects the whole garment. Tap the background or hanger pieces, or use the brush.</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Cancel</string>
     <!-- ED2 -->
@@ -873,8 +870,6 @@
     <string name="export_frame_locked_hint">Turn off the other Show options to hide the frame.</string>
     <!-- UI-CAL -->
     <string name="duplicate_calibration_loading">Comparing garment photos…</string>
-    <!-- UI-SMART -->
-    <string name="editor_smart_keep_hint">Smart tap removes loose pieces. Choose Remove, or use the brush to keep parts.</string>
     <!-- DARK1 -->
     <string name="settings_group_appearance">Appearance</string>
     <string name="settings_theme">Theme</string>
