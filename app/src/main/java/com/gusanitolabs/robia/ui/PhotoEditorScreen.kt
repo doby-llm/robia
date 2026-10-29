@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -79,7 +78,6 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -93,7 +91,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -124,21 +121,16 @@ import com.gusanitolabs.robia.media.cutout.PhotoHistory
 import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
 import com.gusanitolabs.robia.media.cutout.RedoCutoutChoice
 import com.gusanitolabs.robia.media.cutout.RefineSession
-import com.gusanitolabs.robia.media.cutout.SmartTapOutcome
 import com.gusanitolabs.robia.media.cutout.atEngineCanvas
 import com.gusanitolabs.robia.media.cutout.brushRadiusPx
-import com.gusanitolabs.robia.media.cutout.componentsToRemove
 import com.gusanitolabs.robia.media.cutout.originalLayer
 import com.gusanitolabs.robia.media.cutout.redoCutoutChoices
 import com.gusanitolabs.robia.media.cutout.redoCutoutOptions
 import com.gusanitolabs.robia.media.cutout.releaseOnFailure
-import com.gusanitolabs.robia.media.cutout.smartTapOutcome
-import com.gusanitolabs.robia.media.cutout.snapRadiusPhotoPx
 import com.gusanitolabs.robia.media.cutout.trimmedBy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -146,18 +138,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** A smart selection runs the segmenter on at most this many points of a drag, evenly spaced along its length. */
-private const val SMART_MAX_POINTS = 12
-private const val SMART_TRAIL_DASH_DP = 16f
-private const val SMART_TRAIL_GAP_DP = 12f
-/** A smart tap on a transparent pixel picks the loose piece within this distance on screen (see [snapRadiusPhotoPx]). */
-private const val SMART_SNAP_DP = 16f
-private const val PULSE_MS = 300L
-private const val PULSE_RADIUS_DP = 20f
 private const val BRUSH_RADIUS_DP = 24f
 private const val BRUSH_FEATHER_DP = 6f
 private const val MIN_ZOOM = 1f
@@ -182,9 +165,6 @@ private class CutoutPhoto(val source: Bitmap, val session: RefineSession, val fr
     fun colour(): IntArray = session.restoredColour(argbOf(source))
 }
 
-/** A tap or drag that must be pulsed for [PULSE_MS]; a new instance per touch so repeated touches restart the pulse. */
-private class PulseMark(val at: Offset)
-
 /**
  * The original photo that Redo cutout runs on, or null when Redo is hidden (SG4). Only a photo picked in this editing session
  * has one: for a saved garment the stored photo is the only copy (answer 3A), so [savedPhotoUri] hides it. [originalUri] is the
@@ -194,7 +174,7 @@ internal fun redoSourceUri(editorRawUri: String?, savedPhotoUri: String?, origin
     originalUri?.takeIf { it.isNotBlank() } ?: editorRawUri?.takeIf { it.isNotBlank() && it != savedPhotoUri }
 
 /**
- * Full-screen photo editor (SG3, UX-DEC-011): Cutout (smart tap/swipe selection and a brush) and Light (brightness and
+ * Full-screen photo editor (SG3, UX-DEC-011): Cutout (a brush that keeps or removes parts) and Light (brightness and
  * temperature). Works on the stored processed PNG, so it needs no downloadable pack. Cancel writes nothing; Done writes
  * one new PNG for the cutout and hands it to the caller, which applies the Light adjustments and re-analyses the garment.
  * With [rawSourceUri], Redo cutout re-runs one engine on the original photo (SG4); the stored photo changes only on Done.
@@ -218,7 +198,6 @@ fun PhotoEditorScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current.density
-    val touchSlop = LocalViewConfiguration.current.touchSlop
     val noSourceHint = stringResource(R.string.refine_no_source_hint)
     val snackbarHostState = remember { SnackbarHostState() }
     // Guards every read of photo.source, so dispose can close and recycle after they finish.
@@ -226,12 +205,9 @@ fun PhotoEditorScreen(
     val app = context.applicationContext as RobiaApplication
     val packReady by app.cutoutPack.ready.collectAsState(initial = false)
     val redoFailedMessage = stringResource(R.string.redo_cutout_failed)
-    val wholeGarmentMessage = stringResource(R.string.editor_smart_whole_garment)
-    val keepHintMessage = stringResource(R.string.editor_smart_keep_hint)
 
     var tab by rememberSaveable { mutableStateOf(EditorTab.Cutout) }
     var mode by rememberSaveable { mutableStateOf(RefineSession.Mode.Keep) }
-    var brush by rememberSaveable { mutableStateOf(false) }
     var brightness by rememberSaveable { mutableStateOf(0f) }
     var temperature by rememberSaveable { mutableStateOf(0f) }
     var selectedTool by rememberSaveable { mutableStateOf(QuickEditTool.Brightness) }
@@ -260,7 +236,6 @@ fun PhotoEditorScreen(
     var pan by remember { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var strokeScreen by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    var pulse by remember { mutableStateOf<PulseMark?>(null) }
 
     val session = photo?.session
     val canUndo = remember(revision, session) { session?.canUndo == true || photoHistory.canGoBack }
@@ -327,13 +302,6 @@ fun PhotoEditorScreen(
         rendered?.let { preview = it }
     }
 
-    LaunchedEffect(pulse) {
-        if (pulse != null) {
-            delay(PULSE_MS)
-            pulse = null
-        }
-    }
-
     fun commitStroke(points: List<Offset>, current: CutoutPhoto, fit: FitRect) {
         val w = current.source.width
         val radius = brushRadiusPx(BRUSH_RADIUS_DP, density, zoom) * (w / fit.width)
@@ -367,50 +335,11 @@ fun PhotoEditorScreen(
         }
     }
 
-    fun runSmartSelection(points: List<Offset>, current: CutoutPhoto, snapRadiusPx: Int) {
-        scope.launch {
-            val hint = sourceMutex.withLock {
-                // Queued before an Undo or Redo replaced this photo; its bitmap is already recycled.
-                if (current.source.isRecycled) return@withLock null
-                val w = current.source.width
-                val h = current.source.height
-                val touched = points.map { selectPixelOf(it, w, h) }
-                val alpha = current.session.currentAlpha()
-                val pick = withContext(Dispatchers.Default) { componentsToRemove(alpha, w, h, touched, snapRadiusPx) }
-                onDiagnostic("refine_component_tap components=${pick.removedComponents} primary=${pick.touchedPrimary}")
-                when (smartTapOutcome(mode, pick, alpha)) {
-                    SmartTapOutcome.Remove -> {
-                        current.session.apply(RefineSession.Mode.Remove, pick.mask, hard = true)
-                        photoHistory.discardRedo()
-                        revision++
-                        null
-                    }
-                    SmartTapOutcome.WholeGarmentHint -> wholeGarmentMessage
-                    SmartTapOutcome.KeepHint -> keepHintMessage
-                    SmartTapOutcome.NothingToRemove -> null
-                }
-            }
-            hint?.let { snackbarHostState.showSnackbar(it) }
-        }
-    }
-
-    fun finishGesture(
-        path: List<Offset>,
-        moved: Boolean,
-        fit: FitRect,
-        current: CutoutPhoto,
-        touchedAt: Offset,
-    ) {
+    fun finishGesture(path: List<Offset>, fit: FitRect, current: CutoutPhoto) {
         val w = current.source.width
         val h = current.source.height
         val photoPath = path.map { screenToPhoto(it, containerSize, zoom, pan, w, h) }
-        if (brush) {
-            commitStroke(photoPath, current, fit)
-            return
-        }
-        pulse = PulseMark(touchedAt)
-        val snapRadiusPx = snapRadiusPhotoPx(SMART_SNAP_DP, density, fit.width / w, zoom)
-        runSmartSelection(smartSelectionPoints(photoPath, moved), current, snapRadiusPx)
+        commitStroke(photoPath, current, fit)
     }
 
     /**
@@ -448,7 +377,7 @@ fun PhotoEditorScreen(
         scope.launch {
             try {
                 sourceMutex.withLock {
-                    // Read under the lock: a stroke or a smart selection queued before this step may have replaced the photo.
+                    // Read under the lock: a stroke queued before this step may have replaced the photo.
                     val current = photo ?: return@withLock
                     val ownEdit = if (forward) current.session.canRedo else current.session.canUndo
                     if (ownEdit) {
@@ -608,11 +537,10 @@ fun PhotoEditorScreen(
                                 Modifier
                             },
                         )
-                        .pointerInput(tab, brush, mode, photo) {
+                        .pointerInput(tab, mode, photo) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 val path = mutableListOf(down.position)
-                                var moved = false
                                 var multiTouch = false
                                 var anyPressed = true
                                 if (tab == EditorTab.Light) showBefore = true
@@ -635,7 +563,6 @@ fun PhotoEditorScreen(
                                         event.changes.forEach(PointerInputChange::consume)
                                     } else if (pressed.size == 1 && !multiTouch) {
                                         val change = pressed.first()
-                                        if ((change.position - down.position).getDistance() > touchSlop) moved = true
                                         path += change.position
                                         if (tab == EditorTab.Cutout) strokeScreen = path.toList()
                                         change.consume()
@@ -649,7 +576,7 @@ fun PhotoEditorScreen(
                                     return@awaitEachGesture
                                 }
                                 val fit = fitRect(containerSize, current.source.width, current.source.height)
-                                finishGesture(path.toList(), moved, fit, current, down.position)
+                                finishGesture(path.toList(), fit, current)
                             }
                         },
                     contentAlignment = Alignment.Center,
@@ -695,7 +622,7 @@ fun PhotoEditorScreen(
                                 },
                             )
                         }
-                        // The stroke and pulse sit on the light checkerboard in both themes, so they use the light roles and stay visible.
+                        // The stroke sits on the light checkerboard in both themes, so it uses the light roles and stays visible.
                         val overlayColor = (if (mode == RefineSession.Mode.Keep) RobiaPrimary else RobiaError).copy(alpha = 0.35f)
                         if (strokeScreen.size > 1) {
                             Canvas(Modifier.fillMaxSize()) {
@@ -703,30 +630,14 @@ fun PhotoEditorScreen(
                                     moveTo(strokeScreen.first().x, strokeScreen.first().y)
                                     strokeScreen.drop(1).forEach { lineTo(it.x, it.y) }
                                 }
-                                // A smart trail is the brush trail, dashed; butt caps so the gaps show.
                                 drawPath(
                                     path = strokePath,
                                     color = overlayColor,
                                     style = Stroke(
                                         width = BRUSH_RADIUS_DP.dp.toPx() * 2f,
-                                        cap = if (brush) StrokeCap.Round else StrokeCap.Butt,
+                                        cap = StrokeCap.Round,
                                         join = StrokeJoin.Round,
-                                        pathEffect = if (brush) {
-                                            null
-                                        } else {
-                                            PathEffect.dashPathEffect(floatArrayOf(SMART_TRAIL_DASH_DP.dp.toPx(), SMART_TRAIL_GAP_DP.dp.toPx()))
-                                        },
                                     ),
-                                )
-                            }
-                        }
-                        val pulseColor = RobiaPrimary.copy(alpha = 0.35f)
-                        pulse?.let { mark ->
-                            Canvas(Modifier.fillMaxSize()) {
-                                drawCircle(
-                                    color = pulseColor,
-                                    radius = PULSE_RADIUS_DP.dp.toPx(),
-                                    center = mark.at,
                                 )
                             }
                         }
@@ -744,8 +655,6 @@ fun PhotoEditorScreen(
                         CutoutControls(
                             mode = mode,
                             onModeChange = { mode = it },
-                            brush = brush,
-                            onBrushChange = { brush = it },
                             canUndo = canUndo && !redoing && !replaying && !saving,
                             canRedo = canRedo && !redoing && !replaying,
                             canReset = changed && !redoing && !replaying && !saving,
@@ -823,8 +732,6 @@ private fun redoChoiceLabelRes(choice: RedoCutoutChoice): Int = when (choice) {
 private fun CutoutControls(
     mode: RefineSession.Mode,
     onModeChange: (RefineSession.Mode) -> Unit,
-    brush: Boolean,
-    onBrushChange: (Boolean) -> Unit,
     canUndo: Boolean,
     canRedo: Boolean,
     canReset: Boolean,
@@ -849,11 +756,6 @@ private fun CutoutControls(
         )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        FilterChip(
-            selected = brush,
-            onClick = { onBrushChange(!brush) },
-            label = { Text(stringResource(R.string.refine_brush)) },
-        )
         Spacer(Modifier.weight(1f))
         if (onRedo != null) {
             TextButton(onClick = onRedo, enabled = redoEnabled) {
@@ -1028,44 +930,6 @@ internal fun clampPan(pan: Offset, container: IntSize, zoom: Float): Offset {
     val limitX = (zoom - 1f) * container.width / 2f
     val limitY = (zoom - 1f) * container.height / 2f
     return Offset(pan.x.coerceIn(-limitX, limitX), pan.y.coerceIn(-limitY, limitY))
-}
-
-/**
- * The pixel a smart tap at photo point [point] selects, as the (x, y) that select() receives. A photo point is continuous and
- * pixel i covers [i, i + 1), so the pixel is the floor of the point, clamped to the photo. Mask values are row-major: index y * width + x.
- */
-internal fun selectPixelOf(point: Offset, width: Int, height: Int): Pair<Int, Int> =
-    floor(point.x).toInt().coerceIn(0, width - 1) to floor(point.y).toInt().coerceIn(0, height - 1)
-
-/**
- * The points a smart gesture selects: a tap its first point; a drag of any length its path sampled to at most [max] points. There is no
- * time limit on a drag, so a slow drag selects like a quick one.
- */
-internal fun smartSelectionPoints(path: List<Offset>, moved: Boolean, max: Int = SMART_MAX_POINTS): List<Offset> =
-    if (moved) samplePath(path, max) else path.take(1)
-
-/**
- * [points] sampled to at most [max] points, evenly spaced by distance along the path and always starting and ending on its
- * first and last point. A path that is already short enough is returned as it is.
- */
-internal fun samplePath(points: List<Offset>, max: Int = SMART_MAX_POINTS): List<Offset> {
-    require(max >= 2) { "A sampled path needs at least its two ends" }
-    if (points.size <= max) return points.toList()
-    // Distance along the path at each vertex.
-    val along = FloatArray(points.size)
-    for (i in 1 until points.size) along[i] = along[i - 1] + (points[i] - points[i - 1]).getDistance()
-    val total = along.last()
-    if (total == 0f) return listOf(points.first())
-    val sampled = ArrayList<Offset>(max)
-    var segment = 0
-    for (k in 0 until max) {
-        val target = total * k / (max - 1)
-        while (segment < points.size - 2 && along[segment + 1] < target) segment++
-        val span = along[segment + 1] - along[segment]
-        val t = if (span > 0f) ((target - along[segment]) / span).coerceIn(0f, 1f) else 0f
-        sampled += points[segment] + (points[segment + 1] - points[segment]) * t
-    }
-    return sampled
 }
 
 private fun alphaOf(bitmap: Bitmap): FloatArray {

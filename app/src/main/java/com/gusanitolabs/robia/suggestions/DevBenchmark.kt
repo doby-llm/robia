@@ -4,16 +4,12 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Debug
-import android.util.Log
-import com.google.ai.edge.litertlm.Backend
 import com.gusanitolabs.robia.media.BackgroundRemovalEngine
 import com.gusanitolabs.robia.media.BackgroundRemovalStatus
 import com.gusanitolabs.robia.sync.RestoreSyncLogEvent
 import com.gusanitolabs.robia.sync.RestoreSyncLogRepository
 import com.gusanitolabs.robia.suggestions.engine.EmbeddingEngineHolder
 import com.gusanitolabs.robia.suggestions.engine.ImageInputEncoder
-import com.gusanitolabs.robia.suggestions.engine.LiteRtNativeEmbedder
-import com.gusanitolabs.robia.suggestions.model.ModelState
 import com.gusanitolabs.robia.suggestions.model.ModelStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -37,8 +33,7 @@ class DevBenchmark(
     private val modelStore: ModelStore,
     private val syncLog: RestoreSyncLogRepository,
 ) {
-    /** [useGpu] measures the LiteRT GPU backend instead, see [runGpuBenchmark]. */
-    suspend fun measure(useGpu: Boolean = false): String = withContext(Dispatchers.Default) {
+    suspend fun measure(): String = withContext(Dispatchers.Default) {
         coroutineScope {
             val peakPssKb = AtomicLong(0)
             val sampler = launch {
@@ -48,67 +43,12 @@ class DevBenchmark(
                 }
             }
             try {
-                if (useGpu) runGpuBenchmark(peakPssKb) else runBenchmark(peakPssKb)
+                runBenchmark(peakPssKb)
             } finally {
                 sampler.cancel()
             }
         }
     }
-
-    /**
-     * The GPU row: the bundled image on the GPU backend, compared with the CPU vector of the same image. The CPU vector
-     * comes from the production embedder, which is then released so that the peak PSS covers the GPU engine alone. Any
-     * failure other than a cancellation is reported as `GPU unavailable`, not thrown.
-     */
-    private suspend fun runGpuBenchmark(peakPssKb: AtomicLong): String {
-        val asset = context.assets.open(IMAGE_ASSET).use { it.readBytes() }
-        val cpuVector = holder.embedImage(ImageInputEncoder.encodeBytes(asset).bytes).normalized()
-        holder.unload()
-        peakPssKb.set(0)
-        val report = try {
-            gpuReport(asset, cpuVector, peakPssKb)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (failure: Throwable) {
-            gpuUnavailableReport(deviceLine(), failure)
-        }
-        Log.i(GPU_LOG_TAG, report)
-        return report
-    }
-
-    private suspend fun gpuReport(asset: ByteArray, cpuVector: FloatArray, peakPssKb: AtomicLong): String {
-        val modelPath = (modelStore.state.value as? ModelState.Ready)?.path ?: error("Model is not downloaded")
-        val started = System.nanoTime()
-        val gpu = LiteRtNativeEmbedder(
-            cacheDir = context.cacheDir.absolutePath,
-            modelPath = modelPath,
-            backend = Backend.GPU(),
-            visionBackend = Backend.GPU(),
-        )
-        val loadMs = (System.nanoTime() - started) / NANOS_PER_MS
-        try {
-            val imageMs = mutableListOf<Long>()
-            var gpuVector = FloatArray(0)
-            repeat(RUNS) {
-                val imageStarted = System.nanoTime()
-                val vector = gpu.embedImage(ImageInputEncoder.encodeBytes(asset).bytes)
-                imageMs += (System.nanoTime() - imageStarted) / NANOS_PER_MS
-                if (gpuVector.isEmpty()) gpuVector = vector
-            }
-            return gpuBenchmarkReport(
-                deviceLine = deviceLine(),
-                loadMs = loadMs,
-                imageMs = imageMs,
-                peakPssMb = peakPssKb.get() / KB_PER_MB,
-                parity = dot(gpuVector.normalized(), cpuVector),
-            )
-        } finally {
-            gpu.close()
-        }
-    }
-
-    private fun deviceLine(): String =
-        "device=${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE}) API ${Build.VERSION.SDK_INT}"
 
     private suspend fun runBenchmark(peakPssKb: AtomicLong): String {
         holder.unload()
@@ -176,7 +116,6 @@ class DevBenchmark(
         const val VECTOR_ASSET = "benchmark/garment_vector.b64"
         const val NANOS_PER_MS = 1_000_000L
         const val KB_PER_MB = 1024L
-        const val GPU_LOG_TAG = "RobiaBenchmark"
     }
 }
 
@@ -376,34 +315,6 @@ internal fun cutoutBenchmarkReport(
     add("fallbacks=$fallbacks")
     add("peak_pss_mb=$peakPssMb")
 }.joinToString("\n")
-
-/**
- * The developer report of a successful GPU run: the GPU engine's load time, image timings, peak PSS and the cosine of its
- * vector with the CPU vector of the same image ([parity]).
- */
-internal fun gpuBenchmarkReport(
-    deviceLine: String,
-    loadMs: Long,
-    imageMs: List<Long>,
-    peakPssMb: Long,
-    parity: Float,
-): String = listOf(
-    deviceLine,
-    "backend=gpu vision_backend=gpu vision_tokens=${EmbeddingRecipe.VISION_TOKENS}",
-    "load_ms=$loadMs",
-    "image_ms median=${imageMs.median()} p90=${imageMs.p90()} (n=${imageMs.size})",
-    "peak_pss_mb=$peakPssMb",
-    "parity_cosine=${String.format(Locale.US, "%.4f", parity)}",
-).joinToString("\n")
-
-/** `GPU unavailable: Class: message` for a GPU run that threw; the message has no line breaks and no absolute paths. */
-internal fun gpuUnavailableReport(deviceLine: String, failure: Throwable): String {
-    val message = failure.message.orEmpty()
-        .replace(ABSOLUTE_PATH, "<path>")
-        .replace('\n', ' ')
-        .ifEmpty { "no message" }
-    return listOf(deviceLine, "GPU unavailable: ${failure.javaClass.simpleName}: $message").joinToString("\n")
-}
 
 private fun List<Long>.median(): Long = sorted()[size / 2]
 
