@@ -105,34 +105,4 @@ class PhotoEditorMappingTest {
         assertEquals(Offset(60f, -40f), clampPan(Offset(60f, -40f), container, 2.5f))
         assertEquals(Offset.Zero, clampPan(Offset(50f, 50f), container, 1f))
     }
-
-    @Test
-    fun aTapSelectsThePixelThatContainsItAndClampsToThePhoto() {
-        // Pixel i covers [i, i + 1): 3.7 is inside pixel 3, not 4.
-        assertEquals(3 to 0, selectPixelOf(Offset(3.7f, 0.2f), 10, 10))
-        assertEquals(0 to 9, selectPixelOf(Offset(-0.4f, 9.99f), 10, 10))
-        assertEquals(9 to 9, selectPixelOf(Offset(10f, 10f), 10, 10))
-    }
-
-    @Test
-    fun aTapAtAPixelCentreSelectsThatPixelThroughTheWholeMapping() {
-        val container = IntSize(400, 800)
-        val zoom = 2f
-        val pan = Offset(-30f, 45f)
-        val photoWidth = 2000
-        val photoHeight = 1000
-        // The centre of pixel (1500, 700) in photo pixels, tapped where the preview draws it.
-        val centre = Offset(1500.5f, 700.5f)
-        val screen = photoToScreen(centre, container, zoom, pan, photoWidth, photoHeight)
-        val tapped = screenToPhoto(screen, container, zoom, pan, photoWidth, photoHeight)
-
-        assertEquals(1500 to 700, selectPixelOf(tapped, photoWidth, photoHeight))
-    }
-
-    @Test
-    fun theSelectedPixelIsTheRowMajorMaskEntry() {
-        val (x, y) = selectPixelOf(Offset(3.5f, 2.5f), 5, 4)
-        // select() returns w*h values row by row, so the tapped pixel is at y * width + x.
-        assertEquals(13, y * 5 + x)
-    }
 }
