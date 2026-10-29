@@ -54,6 +54,26 @@ internal fun tileContentDescription(
     return if (meta.isEmpty()) title else "$title, $meta"
 }
 
+/**
+ * The line under a duplicate row: the trimmed name when not blank; else the category label and the colour, the known
+ * ones joined; else the occasions and seasons; else null, so the row shows only its photo and its choices.
+ */
+internal fun duplicateRowLine(
+    name: String,
+    tags: List<UiTag>,
+    colourLabel: String?,
+    collator: Collator,
+): String? {
+    val trimmed = name.trim()
+    if (trimmed.isNotBlank()) return trimmed
+    val category = tags.firstOrNull { it.categoryId == CATEGORY_ID }?.label
+    val identity = listOfNotNull(category, colourLabel)
+        .filter { it.isNotBlank() }
+        .joinToString(CARD_META_SEPARATOR)
+    if (identity.isNotEmpty()) return identity
+    return cardMeta(tags, collator).ifEmpty { null }
+}
+
 internal fun browseCellFor(layout: BrowseLayout): BrowseCell = when (layout) {
     BrowseLayout.PhotosOnly -> BrowseCell.Tile
     BrowseLayout.PhotosWithDetails -> BrowseCell.Card

@@ -787,8 +787,6 @@
     <!-- K00 -->
     <string name="cutout_method_experimental">Experimental</string>
     <string name="cutout_method_experimental_hint">May remove parts of the garment. Check each result.</string>
-    <!-- GPU -->
-    <string name="dev_model_benchmark_gpu">Model benchmark (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Cancel</string>
     <!-- ED2 -->
@@ -900,7 +898,6 @@
     <string name="review_got_it">Got it</string>
     <string name="review_all_skipped">All changes skipped: the garment stays as it is.</string>
     <string name="review_none_left_occ">After this, the garment has no occasions.</string>
-    <string name="review_hint_changes">Tap a change to skip it, then apply or reject. Reviewed garments leave the list.</string>
     <plurals name="review_left">
         <item quantity="one">1 left</item>
         <item quantity="other">%1$d left</item>
