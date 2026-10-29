@@ -1,8 +1,8 @@
 # Robia round 3 — device checklist
 
 **Build under test:** latest `main` staging APK.
-APK link: TBD-COORDINATOR
-Main SHA: TBD-COORDINATOR (CI run TBD-COORDINATOR, signer TBD-COORDINATOR; the previous builds used signer 0b0f81a5a287ab2c)
+APK link: https://drive.google.com/file/d/1Rs1Fg1Y4ZVcZcihMh5hYGPYnsqfBPFDy/view?usp=drivesdk (Drive, shared with Manu only; 82798398 bytes, MD5 f6c2cb4952c43dfd40bfc651db87f1ad)
+Main SHA: bf25366 (CI run 40967478534, signer 0b0f81a5a287ab2c, the same signer; the previous builds used signer 0b0f81a5a287ab2c)
 
 **Feedback 3 (Manu, 2026-10-27, build 0de712b):** every row he did not mention is marked Pass with the note "Manu 2026-10-27: not mentioned = pass" (R3-DEC-056). Rows his items F21 to F32 name stay open with a note. The Round 3f section below lists the new rows; they are for the build that contains the Round 3f tasks (the coordinator fills its APK link and SHA).
 
