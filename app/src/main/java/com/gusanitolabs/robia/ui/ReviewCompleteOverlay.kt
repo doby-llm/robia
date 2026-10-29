@@ -39,8 +39,11 @@ private const val REVIEW_COMPLETE_MILLIS = 1600L
 private const val REVIEW_COMPLETE_REDUCED_MILLIS = 1200L
 private const val REVIEW_COMPLETE_CHECK_SCALE_MILLIS = 300
 
-/** Which review was committed. Named apart from [ReviewKind], which the review walk uses. */
-internal enum class ReviewCompleteKind { Tags, Colors }
+/**
+ * Which review was committed. Named apart from [ReviewKind], which the review walk uses. Tags and colours leave for Manage;
+ * duplicates leave for Browse, where the duplicate review was opened from (REQ-FB-27).
+ */
+internal enum class ReviewCompleteKind { Tags, Colors, Duplicates }
 
 /** The summary shown on the completion screen: which review, and how many garments it changed. */
 internal data class ReviewCompleteText(val kind: ReviewCompleteKind, val count: Int)
@@ -49,13 +52,16 @@ internal data class ReviewCompleteText(val kind: ReviewCompleteKind, val count: 
 internal fun reviewCompleteText(kind: ReviewCompleteKind, changedGarments: Int): ReviewCompleteText? =
     if (changedGarments <= 0) null else ReviewCompleteText(kind, changedGarments)
 
-/** How long the completion screen stays before it returns to Manage by itself. */
+/**
+ * How long the completion screen stays before it clears itself. The caller has already moved to Manage (tags, colours) or
+ * to Browse (duplicates).
+ */
 internal fun reviewCompleteDurationMs(reducedMotion: Boolean): Long =
     if (reducedMotion) REVIEW_COMPLETE_REDUCED_MILLIS else REVIEW_COMPLETE_MILLIS
 
 /**
- * Short "done" moment after a tag or colour review is committed: a check in a soft circle with a few sparks, then the
- * summary. Leaves by itself after [reviewCompleteDurationMs], or at once on a tap.
+ * Short "done" moment after a tag, colour or duplicate review is committed: a check in a soft circle with a few sparks, then
+ * the summary. Leaves by itself after [reviewCompleteDurationMs], or at once on a tap.
  */
 @Composable
 internal fun ReviewCompleteOverlay(text: ReviewCompleteText, onFinished: () -> Unit) {
@@ -72,6 +78,7 @@ internal fun ReviewCompleteOverlay(text: ReviewCompleteText, onFinished: () -> U
     val message = when (text.kind) {
         ReviewCompleteKind.Tags -> pluralStringResource(R.plurals.review_complete_tags, text.count, text.count)
         ReviewCompleteKind.Colors -> pluralStringResource(R.plurals.review_complete_colors, text.count, text.count)
+        ReviewCompleteKind.Duplicates -> pluralStringResource(R.plurals.review_complete_duplicates, text.count, text.count)
     }
     Surface(
         color = MaterialTheme.colorScheme.surface,

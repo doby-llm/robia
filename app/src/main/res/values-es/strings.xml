@@ -980,4 +980,9 @@
     <!-- FB3-CUT-NAMES -->
     <string name="cutout_method_precise">Preciso</string>
     <string name="cutout_method_precise_hint">Ideal con perchas o fondos parecidos. Más lento. Necesita el paquete de recorte.</string>
+    <!-- FB3-DUP-DONE -->
+    <plurals name="review_complete_duplicates">
+        <item quantity="one">%1$d duplicado eliminado</item>
+        <item quantity="other">%1$d duplicados eliminados</item>
+    </plurals>
 </resources>

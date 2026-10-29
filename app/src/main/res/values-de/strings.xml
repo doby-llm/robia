@@ -980,4 +980,9 @@
     <!-- FB3-CUT-NAMES -->
     <string name="cutout_method_precise">Präzise</string>
     <string name="cutout_method_precise_hint">Am besten bei Bügeln oder ähnlichem Hintergrund. Langsamer. Braucht das Zuschnitt-Paket.</string>
+    <!-- FB3-DUP-DONE -->
+    <plurals name="review_complete_duplicates">
+        <item quantity="one">%1$d Duplikat entfernt</item>
+        <item quantity="other">%1$d Duplikate entfernt</item>
+    </plurals>
 </resources>

@@ -980,4 +980,9 @@
     <!-- FB3-CUT-NAMES -->
     <string name="cutout_method_precise">Precise</string>
     <string name="cutout_method_precise_hint">Best for hangers and similar-coloured backgrounds. Slower. Needs the cutout pack.</string>
+    <!-- FB3-DUP-DONE -->
+    <plurals name="review_complete_duplicates">
+        <item quantity="one">%1$d duplicate removed</item>
+        <item quantity="other">%1$d duplicates removed</item>
+    </plurals>
 </resources>
