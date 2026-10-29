@@ -984,4 +984,9 @@
         <item quantity="other">%1$d blieben unverändert</item>
     </plurals>
     <string name="review_complete_edit">Änderungen bearbeiten</string>
+    <!-- FB3-DUP-DONE -->
+    <plurals name="review_complete_duplicates">
+        <item quantity="one">%1$d Duplikat entfernt</item>
+        <item quantity="other">%1$d Duplikate entfernt</item>
+    </plurals>
 </resources>

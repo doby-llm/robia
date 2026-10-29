@@ -2250,6 +2250,10 @@ private fun RobiaShell(
             onDuplicateReviewClick = { pushRoute(RobiaRoute.DuplicateReview) },
             onDismissDuplicateGroup = dismissDuplicateGroup,
             onDeleteDuplicateItems = onDeleteItems,
+            onDuplicatesResolved = { removed ->
+                reviewComplete = reviewCompleteText(ReviewCompleteKind.Duplicates, removed)
+                replaceRoute(RobiaRoute.Browse)
+            },
             onDuplicateCalibrationClick = { pushRoute(RobiaRoute.DuplicateCalibration) },
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
@@ -3039,6 +3043,7 @@ private fun RobiaNavHost(
     onDuplicateReviewClick: () -> Unit,
     onDismissDuplicateGroup: (DuplicateGroup) -> Unit,
     onDeleteDuplicateItems: (List<String>) -> Unit,
+    onDuplicatesResolved: (removedCount: Int) -> Unit,
     onDuplicateCalibrationClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
@@ -3147,6 +3152,7 @@ private fun RobiaNavHost(
             items = domainItems,
             onNotDuplicates = onDismissDuplicateGroup,
             onDeleteItems = onDeleteDuplicateItems,
+            onAllResolved = onDuplicatesResolved,
         )
         RobiaRoute.DuplicateCalibration -> if (developerModeUnlocked && developerModeEnabled) {
             DuplicateCalibrationScreen(innerPadding = innerPadding, items = domainItems)

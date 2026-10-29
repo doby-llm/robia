@@ -24,9 +24,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,8 +49,16 @@ import com.gusanitolabs.robia.suggestions.DuplicateTier
 private const val DUPLICATE_PHOTO_EDGE_PX = 256
 
 /**
+ * REQ-FB-27 (R3-DEC-062): the review ends when the user resolves the last group. Only a screen that had groups and was
+ * emptied after the user acted ends; a screen opened empty, or emptied by a rescan under someone who only looks, does not.
+ */
+internal fun shouldFinishDuplicateReview(wasNonEmpty: Boolean, nowEmpty: Boolean, userActed: Boolean): Boolean =
+    wasNonEmpty && nowEmpty && userActed
+
+/**
  * REQ-DU-03: one card per group. Every garment starts as Keep, so nothing is deleted until it is marked and the delete is
  * confirmed. "Not duplicates" drops the group and keeps its pairs out of later scans, also after a restart (REQ-DU-02).
+ * When the user's last action leaves no group, [onAllResolved] fires once with the number of garments deleted here.
  */
 @Composable
 internal fun DuplicateReviewScreen(
@@ -57,12 +67,27 @@ internal fun DuplicateReviewScreen(
     items: List<ClothingItem>,
     onNotDuplicates: (DuplicateGroup) -> Unit,
     onDeleteItems: (List<String>) -> Unit,
+    onAllResolved: (removedCount: Int) -> Unit,
 ) {
     val itemsById = remember(items) { items.associateBy(ClothingItem::id) }
     var markedIds by remember { mutableStateOf(emptySet<String>()) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var removedCount by remember { mutableStateOf(0) }
+    var userActed by remember { mutableStateOf(false) }
+    var sawGroups by remember { mutableStateOf(false) }
+    var finished by remember { mutableStateOf(false) }
     val listedIds = groups.flatMap(DuplicateGroup::garmentIds).toSet()
     val deleteIds = markedIds.filter { id -> id in listedIds }
+    val groupsEmpty = groups.isEmpty()
+    val currentOnAllResolved by rememberUpdatedState(onAllResolved)
+    // Keyed on emptiness: the prune after a Delete arrives later from Room, so the finish waits for the empty groups.
+    LaunchedEffect(groupsEmpty) {
+        if (!groupsEmpty) sawGroups = true
+        if (!finished && shouldFinishDuplicateReview(wasNonEmpty = sawGroups, nowEmpty = groupsEmpty, userActed = userActed)) {
+            finished = true
+            currentOnAllResolved(removedCount)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         if (groups.isEmpty()) {
@@ -85,6 +110,7 @@ internal fun DuplicateReviewScreen(
                         markedIds = markedIds,
                         onToggle = { id -> markedIds = if (id in markedIds) markedIds - id else markedIds + id },
                         onNotDuplicates = {
+                            userActed = true
                             onNotDuplicates(group)
                             markedIds = markedIds - group.garmentIds.toSet()
                         },
@@ -112,6 +138,8 @@ internal fun DuplicateReviewScreen(
                 TextButton(
                     onClick = {
                         confirmDelete = false
+                        removedCount += deleteIds.size
+                        userActed = true
                         onDeleteItems(deleteIds)
                         markedIds = emptySet()
                     },
