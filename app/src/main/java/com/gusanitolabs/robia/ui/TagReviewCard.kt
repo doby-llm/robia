@@ -1,5 +1,9 @@
 package com.gusanitolabs.robia.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.suggestions.ReviewButton
@@ -272,6 +278,15 @@ internal fun ReviewLeftHeader(
     leftCount: Int,
     progress: Float,
 ) {
+    val reducedMotion = LocalReducedMotion.current
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = if (reducedMotion) {
+            snap()
+        } else {
+            tween(reviewProgressAnimationMillis(false), easing = FastOutSlowInEasing)
+        },
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = pluralStringResource(R.plurals.review_left, leftCount, leftCount),
@@ -280,7 +295,7 @@ internal fun ReviewLeftHeader(
             fontWeight = FontWeight.Bold,
         )
         LinearProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
+            progress = { animatedProgress },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp)

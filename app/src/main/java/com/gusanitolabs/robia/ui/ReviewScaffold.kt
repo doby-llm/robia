@@ -267,6 +267,12 @@ internal fun reviewScanProgress(done: Int, total: Int, scanning: Boolean): Float
     return done.coerceIn(0, total.coerceAtLeast(0)).toFloat() / total.coerceAtLeast(1)
 }
 
+/**
+ * The "N left" bar glides for 400 ms after a decision; reduced motion makes it jump (0 ms).
+ * Only `ReviewLeftHeader` uses it. The scan header never animates: its target moves every 16 to 40 ms.
+ */
+internal fun reviewProgressAnimationMillis(reducedMotion: Boolean): Int = if (reducedMotion) 0 else 400
+
 @Composable
 internal fun ReviewProgressHeader(
     title: String,
