@@ -52,6 +52,21 @@ class RobiaColorSchemeTest {
     }
 
     @Test
+    fun sparkIconTokenIsTheLightTintAndAFixedDarkValue() {
+        assertEquals(RobiaOnTertiaryContainer, RobiaLightExtras.sparkOnPrimary)
+        assertEquals(Color(0xFF6D390F), RobiaDarkExtras.sparkOnPrimary)
+    }
+
+    @Test
+    fun sparkIconReadsOnThePrimaryButtonInBothSchemes() {
+        val light = contrast(RobiaLightExtras.sparkOnPrimary, RobiaLightColorScheme.primary)
+        val dark = contrast(RobiaDarkExtras.sparkOnPrimary, RobiaDarkColorScheme.primary)
+
+        assertTrue("spark over light primary is $light, needs 3", light >= 3.0)
+        assertTrue("spark over dark primary is $dark, needs 3", dark >= 3.0)
+    }
+
+    @Test
     fun darkOutlineMeetsWcagContrastForEdges() {
         val ratio = contrast(RobiaDarkColorScheme.outline, RobiaDarkColorScheme.surface)
 

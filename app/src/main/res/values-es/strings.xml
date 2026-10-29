@@ -905,7 +905,6 @@
     <string name="review_got_it">Entendido</string>
     <string name="review_all_skipped">Todos los cambios saltados: la prenda se queda como está.</string>
     <string name="review_none_left_occ">Después de esto, la prenda no tendrá ocasiones.</string>
-    <string name="review_hint_changes">Toca un cambio para saltarlo y luego aplica o rechaza. Las prendas revisadas salen de la lista.</string>
     <plurals name="review_left">
         <item quantity="one">Queda 1</item>
         <item quantity="other">Quedan %1$d</item>
