@@ -283,7 +283,7 @@ internal fun bulkBodyAddsOnly(plan: BulkPlan): Boolean = plan.tagsRemoved == 0
  */
 internal fun reviewCardKey(garmentId: String, returns: Int): String = if (returns == 0) garmentId else "$garmentId#$returns"
 
-/** What a decision says in the undo snackbar and in the Reviewed section: changes written (a swap counts as one), or kept as it was. */
+/** What a decision says in the Reviewed section: changes written (a swap counts as one), or kept as it was. */
 internal sealed interface ReviewOutcome {
     data class Changes(val units: Int) : ReviewOutcome
 
@@ -291,10 +291,10 @@ internal sealed interface ReviewOutcome {
 }
 
 /**
- * The undo snackbar: the outcome of the latest decision (null for Got it, which says nothing). [serial] makes each decision a new one.
- * A bulk snackbar ([bulk] set) says how many garments were written and undoes its whole batch.
+ * The bulk undo snackbar of Apply all remaining: how many garments the batch write changed, and the whole batch to undo.
+ * [serial] makes each batch a new one. A single decision shows no snackbar.
  */
-private data class ReviewUndoSnack(val garmentId: String, val outcome: ReviewOutcome?, val serial: Int, val bulk: BulkUndo? = null)
+private data class ReviewUndoSnack(val serial: Int, val bulk: BulkUndo)
 
 /** What the bulk snackbar says and undoes: the garments really written, and every garment of the batch. */
 internal data class BulkUndo(val garments: Int, val batch: List<String>)
@@ -308,7 +308,7 @@ internal fun cardUnits(card: ReviewCardState): Int =
     }
 
 /**
- * The snackbar outcome of a decided card, or null when there is none: Got it writes nothing and changes nothing. A rejection,
+ * The outcome of a decided card, or null when there is none: Got it writes nothing and changes nothing. A rejection,
  * and an apply whose write found nothing to change (a null item, see [TagReviewSession.appliedResult]), is kept as it was.
  * An apply in flight counts its units already.
  */
@@ -576,7 +576,6 @@ internal fun TagReviewScreen(
     val applyFailedMessage = stringResource(R.string.review_apply_failed)
     val revertFailedMessage = stringResource(R.string.review_revert_failed)
     val undoLabel = stringResource(R.string.undo)
-    val keptMessage = stringResource(R.string.review_snack_kept)
     val gridState = rememberLazyGridState()
     val changeSet = request.changeSet
     val labelsById = remember(changeSet.id) {
@@ -612,7 +611,7 @@ internal fun TagReviewScreen(
     var modelUnavailable by remember(changeSet.id) { mutableStateOf(false) }
     var pickerGarmentId by remember(changeSet.id) { mutableStateOf<String?>(null) }
     var finished by remember(changeSet.id) { mutableStateOf(false) }
-    // Undo: the snackbar of the latest decision (null: none), the garments whose revert write is in flight, and the Reviewed section.
+    // Undo: the bulk snackbar (null: none), the garments whose revert write is in flight, and the Reviewed section.
     var undoSnack by remember(changeSet.id) { mutableStateOf<ReviewUndoSnack?>(null) }
     val revertingIds = remember(changeSet.id) { mutableStateListOf<String>() }
     var reviewedOpen by remember(changeSet.id) { mutableStateOf(false) }
@@ -679,13 +678,7 @@ internal fun TagReviewScreen(
         returns[garmentId] = (returns[garmentId] ?: 0) + 1
     }
 
-    // The undo snackbar of a decision: a new decision replaces the one up. A pending card has no decision to show.
-    fun showUndoSnack(garmentId: String, next: TagReviewSession) {
-        val card = next.cards.firstOrNull { cardState -> cardState.garmentId == garmentId } ?: return
-        if (card.decision == ReviewDecision.Pending) return
-        undoSnack = ReviewUndoSnack(garmentId, undoSnackOutcome(card), (undoSnack?.serial ?: 0) + 1)
-    }
-
+    // A single decision shows no snackbar: its Undo is "Review again" on the Reviewed rows, or "Edit changes" on the completion view.
     fun writeDecision(garmentIds: List<String>, delta: TagDelta) {
         scope.launch {
             val outcome = onApply(listOf(delta))
@@ -693,17 +686,10 @@ internal fun TagReviewScreen(
             val results = outcome.getOrNull()
             if (results != null) {
                 results.mapNotNullTo(writtenGarments) { result -> result.item }
-                // A write that found nothing to change turns the snackbar into "Kept as it was", and the Undo of it is gone.
-                garmentIds.forEach { garmentId -> if (undoSnack?.garmentId == garmentId) showUndoSnack(garmentId, session) }
             } else {
                 garmentIds.forEach { garmentId -> bringBack(garmentId) }
-                // The undo snackbar of this write says "changes applied", which is wrong now: it goes before the failure shows.
-                garmentIds.forEach { garmentId ->
-                    if (undoSnack?.garmentId == garmentId) {
-                        undoSnack = null
-                        snackbarHostState.currentSnackbarData?.dismiss()
-                    }
-                }
+                // A standing bulk snackbar is dismissed first, so the failure is not held behind its 4 s.
+                snackbarHostState.currentSnackbarData?.dismiss()
                 snackbarHostState.showSnackbar(applyFailedMessage)
             }
         }
@@ -752,11 +738,12 @@ internal fun TagReviewScreen(
                 results.mapNotNullTo(writtenGarments) { result -> result.item }
                 undoSnack = bulkUndoFor(batch, outcome)?.let { bulk ->
                     val serial = (undoSnack?.serial ?: 0) + 1
-                    ReviewUndoSnack(batch.batchIds.first(), outcome = null, serial = serial, bulk = bulk)
+                    ReviewUndoSnack(serial = serial, bulk = bulk)
                 }
             } else {
                 // Every card of the batch is back in the list, the kept ones too (see afterBulkWrite).
                 batch.batchIds.forEach { garmentId -> bringBack(garmentId) }
+                snackbarHostState.currentSnackbarData?.dismiss()
                 snackbarHostState.showSnackbar(applyFailedMessage)
             }
         }
@@ -787,22 +774,14 @@ internal fun TagReviewScreen(
         }
     }
 
-    // One undo snackbar at a time: a new decision restarts this effect, which replaces the one up. Undo acts on its garment, or its batch.
+    // One bulk snackbar at a time: a new batch restarts this effect, which replaces the one up. Its Undo takes back the whole batch.
     LaunchedEffect(undoSnack) {
         val snack = undoSnack ?: return@LaunchedEffect
-        val outcome = snack.outcome
         val bulk = snack.bulk
         snackbarHostState.currentSnackbarData?.dismiss()
-        if (outcome == null && bulk == null) return@LaunchedEffect
-        val message = when {
-            bulk != null -> context.resources.getQuantityString(R.plurals.review_snack_bulk, bulk.garments, bulk.garments)
-            outcome is ReviewOutcome.Changes -> context.resources.getQuantityString(R.plurals.review_snack_applied, outcome.units, outcome.units)
-            else -> keptMessage
-        }
+        val message = context.resources.getQuantityString(R.plurals.review_snack_bulk, bulk.garments, bulk.garments)
         val result = snackbarHostState.showSnackbar(message = message, actionLabel = undoLabel, duration = SnackbarDuration.Short)
-        if (result == SnackbarResult.ActionPerformed) {
-            if (bulk != null) undoBulk(bulk.batch) else undoDecision(snack.garmentId)
-        }
+        if (result == SnackbarResult.ActionPerformed) undoBulk(bulk.batch)
     }
 
     // The completion view holds the review open until Done: it is never shown over a write or revert in flight (see showsCompletion).
@@ -1000,13 +979,11 @@ internal fun TagReviewScreen(
                                         if (canDecideNow(card, chosen)) {
                                             val (next, delta) = session.apply(garmentId, afterTagIds)
                                             session = next
-                                            showUndoSnack(garmentId, next)
                                             if (delta != null) writeDecision(listOf(garmentId), delta)
                                         }
                                     },
                                     onReject = {
                                         session = session.reject(garmentId)
-                                        showUndoSnack(garmentId, session)
                                     },
                                 )
                             }
@@ -1087,9 +1064,9 @@ internal fun TagReviewScreen(
         ) { data ->
             val actionLabel = data.visuals.actionLabel
             val snack = undoSnack
-            // A bulk Undo waits for the batch write in flight; a bulk snackbar is enabled while any of its garments can be undone.
+            // A bulk Undo waits for the batch write in flight; the bulk snackbar is enabled while any of its garments can be undone.
             val undoEnabled = snack != null && !bulkInFlight &&
-                (snack.bulk?.batch ?: listOf(snack.garmentId)).any { garmentId -> canUndoNow(session, garmentId, revertingIds) }
+                snack.bulk.batch.any { garmentId -> canUndoNow(session, garmentId, revertingIds) }
             Snackbar(
                 action = {
                     if (actionLabel != null) {
