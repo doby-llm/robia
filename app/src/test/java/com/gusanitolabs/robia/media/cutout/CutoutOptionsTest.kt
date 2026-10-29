@@ -17,15 +17,33 @@ class CutoutOptionsTest {
     private val legacyKey = booleanPreferencesKey("precise_cutout_enabled")
     private val engineKey = stringPreferencesKey("cutout_engine")
 
+    /** V-FB3-CUT-NAMES-1: Standard never; Precise and Automatic only with the pack ready. */
     @Test
-    fun usePrecise_isOnlyTheAutomaticMethodWithAReadyPack() {
+    fun usePrecise_isNeverStandard_andPreciseAndAutomaticOnlyWithAReadyPack() {
         for (engine in CutoutEngineChoice.entries) {
             for (packReady in listOf(true, false)) {
                 val options = cutoutOptionsOf(RobiaSettings(cutoutEngine = engine), packReady)
 
-                assertEquals("engine=$engine pack=$packReady", engine == CutoutEngineChoice.Automatic && packReady, options.usePrecise)
+                assertEquals("engine=$engine pack=$packReady", engine != CutoutEngineChoice.Standard && packReady, options.usePrecise)
             }
         }
+    }
+
+    /** V-FB3-CUT-NAMES-1: the developer switch reads on for Precise and Automatic, off for Standard. */
+    @Test
+    fun preciseCutoutEnabled_isOnForPreciseAndAutomatic() {
+        assertEquals(false, RobiaSettings(cutoutEngine = CutoutEngineChoice.Standard).preciseCutoutEnabled)
+        assertEquals(true, RobiaSettings(cutoutEngine = CutoutEngineChoice.Precise).preciseCutoutEnabled)
+        assertEquals(true, RobiaSettings(cutoutEngine = CutoutEngineChoice.Automatic).preciseCutoutEnabled)
+    }
+
+    /** V-FB3-CUT-NAMES-1: stored names round-trip; an unknown stored name reads Automatic. */
+    @Test
+    fun storedEngineNames_roundTrip_andUnknownReadsAutomatic() {
+        for (engine in CutoutEngineChoice.entries) {
+            assertEquals(engine, mutablePreferencesOf(engineKey to engine.name).toRobiaSettings().cutoutEngine)
+        }
+        assertEquals(CutoutEngineChoice.Automatic, mutablePreferencesOf(engineKey to "Garbage").toRobiaSettings().cutoutEngine)
     }
 
     @Test
