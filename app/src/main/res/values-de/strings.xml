@@ -749,25 +749,25 @@
     <string name="account_mismatch_use_this">Dieses Konto verwenden</string>
     <string name="drive_disconnect">Trennen</string>
     <!-- SG2b -->
-    <string name="precise_cutout_title">Präziser Zuschnitt</string>
-    <string name="precise_cutout_body">Bessere Hintergrundentfernung bei Kleidung auf Bügeln oder vor ähnlich farbigem Hintergrund. Läuft auf deinem Telefon.</string>
+    <string name="precise_cutout_title">Zuschnitt-Paket</string>
+    <string name="precise_cutout_body">Benötigt von Präzise und Automatisch. Bessere Hintergrundentfernung bei Kleidung auf Bügeln oder vor ähnlich farbigem Hintergrund. Läuft auf deinem Telefon.</string>
     <string name="precise_cutout_download">Herunterladen (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Bereit · 91 MB</string>
     <string name="precise_cutout_mobile_body">Kein WLAN. Der Download verbraucht etwa 91 MB deines Datenvolumens.</string>
     <string name="precise_cutout_mobile_confirm">Daten nutzen (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Zuschnitt-Paket löschen</string>
     <string name="precise_cutout_delete_title">Zuschnitt-Paket löschen?</string>
-    <string name="precise_cutout_delete_body">Das Paket für präzisen Zuschnitt wird von diesem Telefon entfernt. Fotos behalten ihren aktuellen Zuschnitt.</string>
+    <string name="precise_cutout_delete_body">Das Zuschnitt-Paket wird von diesem Telefon entfernt. Fotos behalten ihren aktuellen Zuschnitt.</string>
     <string name="precise_cutout_value_downloading">Wird heruntergeladen %1$d %%</string>
     <!-- SG4 -->
     <string name="cutout_settings_title">Zuschnitt</string>
     <string name="cutout_method">Zuschnittmethode</string>
     <string name="cutout_method_automatic">Automatisch</string>
     <string name="cutout_method_standard">Standard</string>
-    <string name="cutout_method_automatic_hint">Verwendet präzisen Zuschnitt, wenn er heruntergeladen ist, sonst Standard.</string>
-    <string name="cutout_method_standard_hint">Nur Google ML Kit. Schneller, ohne Entfernen von Bügeln.</string>
+    <string name="cutout_method_automatic_hint">Nutzt Präzise, wenn das Paket geladen ist, sonst Standard.</string>
+    <string name="cutout_method_standard_hint">Schnell. Passt für die meisten Fotos. Entfernt keine Bügel.</string>
     <string name="cutout_remove_hangers">Bügel entfernen</string>
-    <string name="cutout_needs_precise">Präziser Zuschnitt nötig</string>
+    <string name="cutout_needs_precise">Braucht Präzise oder Automatisch und das Zuschnitt-Paket</string>
     <string name="cutout_hanger_detection">Bügelerkennung</string>
     <string name="cutout_hanger_normal">Normal</string>
     <string name="cutout_hanger_high">Hoch</string>
@@ -984,4 +984,7 @@
         <item quantity="other">%1$d blieben unverändert</item>
     </plurals>
     <string name="review_complete_edit">Änderungen bearbeiten</string>
+    <!-- FB3-CUT-NAMES -->
+    <string name="cutout_method_precise">Präzise</string>
+    <string name="cutout_method_precise_hint">Am besten bei Bügeln oder ähnlichem Hintergrund. Langsamer. Braucht das Zuschnitt-Paket.</string>
 </resources>

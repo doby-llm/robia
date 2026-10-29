@@ -749,25 +749,25 @@
     <string name="account_mismatch_use_this">Use this account</string>
     <string name="drive_disconnect">Disconnect</string>
     <!-- SG2b -->
-    <string name="precise_cutout_title">Precise cutout</string>
-    <string name="precise_cutout_body">Better background removal for garments on hangers or similar-coloured backgrounds. Runs on your phone.</string>
+    <string name="precise_cutout_title">Cutout pack</string>
+    <string name="precise_cutout_body">Needed by Precise and Automatic. Better background removal for garments on hangers or similar-coloured backgrounds. Runs on your phone.</string>
     <string name="precise_cutout_download">Download (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Ready · 91 MB</string>
     <string name="precise_cutout_mobile_body">No Wi-Fi. The download will use about 91 MB of your data plan.</string>
     <string name="precise_cutout_mobile_confirm">Use data (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Delete cutout pack</string>
     <string name="precise_cutout_delete_title">Delete cutout pack?</string>
-    <string name="precise_cutout_delete_body">The precise cutout pack is removed from this phone. Photos keep their current cutout.</string>
+    <string name="precise_cutout_delete_body">The cutout pack is removed from this phone. Photos keep their current cutout.</string>
     <string name="precise_cutout_value_downloading">Downloading %1$d %%</string>
     <!-- SG4 -->
     <string name="cutout_settings_title">Cutout</string>
     <string name="cutout_method">Cutout method</string>
     <string name="cutout_method_automatic">Automatic</string>
     <string name="cutout_method_standard">Standard</string>
-    <string name="cutout_method_automatic_hint">Uses precise cutout when downloaded, otherwise standard.</string>
-    <string name="cutout_method_standard_hint">Google ML Kit only. Faster, no hanger removal.</string>
+    <string name="cutout_method_automatic_hint">Uses Precise when the pack is downloaded, otherwise Standard.</string>
+    <string name="cutout_method_standard_hint">Fast. Works for most photos. Does not remove hangers.</string>
     <string name="cutout_remove_hangers">Remove hangers</string>
-    <string name="cutout_needs_precise">Needs precise cutout</string>
+    <string name="cutout_needs_precise">Needs Precise or Automatic and the cutout pack</string>
     <string name="cutout_hanger_detection">Hanger detection</string>
     <string name="cutout_hanger_normal">Normal</string>
     <string name="cutout_hanger_high">High</string>
@@ -984,4 +984,7 @@
         <item quantity="other">%1$d kept as they were</item>
     </plurals>
     <string name="review_complete_edit">Edit changes</string>
+    <!-- FB3-CUT-NAMES -->
+    <string name="cutout_method_precise">Precise</string>
+    <string name="cutout_method_precise_hint">Best for hangers and similar-coloured backgrounds. Slower. Needs the cutout pack.</string>
 </resources>
