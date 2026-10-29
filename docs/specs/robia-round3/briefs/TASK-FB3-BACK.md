@@ -1,0 +1,27 @@
+# TASK-FB3-BACK — Back-to-exit that can be tested and seen
+
+## Goal
+ui3 F28 (REQ-FB-28, R3-DEC-063). Manu: "Press back again to exit never works". NAV-BACK's tests passed because they fed the pure policy a hand-made time; nothing exercised the wiring. Make the behaviour a testable machine, give the hint an in-app form besides the toast, log every press, and make the exit rule hold on every root route that has no Back handler of its own.
+
+## Read first
+`artifacts/inv-f3-b.md` F28 (causes ranked); `R3-DEC-063`, `R3-DEC-048`; `briefs/TASK-NAV-BACK.md`; `ui/BackExitPolicy.kt` (`BackState`, `BackAction`, `decideBack`, `EXIT_WINDOW_MILLIS`); `BackExitPolicyTest`; `ui/RobiaApp.kt`: `routeStack` (`remember`, not saveable), `RobiaRoute` list, `replaceRoute` / `pushRoute` / `popRoute`, the stack handler (`BackHandler(enabled = restoreProgress != null || routeStack.size > 1)`), `backExitHintMessage`, `lastExitHintMs`, its `LaunchedEffect`, the root `BackHandler`, `findActivity()`; the child handlers `BackHandler` in `AddEditClothingScreen.kt`, `BatchAddClothingScreen.kt`, `TagReviewScreen.kt`, `ColorReviewScreen.kt`; `res/values/strings.xml` `back_exit_hint`.
+
+## Files
+new `ui/BackExitMachine.kt`; `ui/BackExitPolicy.kt` (only if the machine needs a small hook; `decideBack` and its test stay); `ui/RobiaApp.kt` (the back-exit block only: `lastExitHintMs`, its `LaunchedEffect`, the root `BackHandler`, the hint pill); new `app/src/test/java/com/gusanitolabs/robia/ui/BackExitMachineTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/BackExitPolicyTest.kt` (unchanged, must stay green).
+
+## Steps
+1. **Machine** (`BackExitMachine.kt`, pure Kotlin, no Android types): `class BackExitMachine(private val clock: () -> Long)` with the time of the last hint and the context key it was shown for. `fun onBack(state: BackState, contextKey: Any): BackAction`: it takes `now = clock()`; a stored hint whose key differs from `contextKey`, or whose time is later than `now` (clock going backwards), is forgotten first; it then calls `decideBack(state.copy(lastExitHintMs = storedHint), now)`; `ShowExitHint` stores `(now, contextKey)`; `Exit` clears it; every other action clears it too. `fun hintVisible(): Boolean` (a hint is stored and `clock() - hint <= EXIT_WINDOW_MILLIS`). The reset on a changed context is inside `onBack`; no `LaunchedEffect`.
+2. **Wiring.** `val backExit = remember { BackExitMachine { SystemClock.elapsedRealtime() } }`; delete `lastExitHintMs` and its `LaunchedEffect`. The context key is a data class (or `List`) of the route, `browseQuery`, `similarToGarmentId`, `browseFilters` and `selectedBrowseItemIds`. The root `BackHandler` is enabled when `routeStack.size == 1 && restoreProgress == null` for every route (no longer only Browse and Manage tags): routes with their own handler (add, batch add, tag review, colour review) keep priority because their handlers sit inside `RobiaNavHost`, composed after this one (verify, and list in the receipt every `replaceRoute` target with the handler that owns its Back; if you find a root route with no handler, say so). `onManage` stays `currentRoute == RobiaRoute.ManageTags`. Actions are applied as today (`ClearSelection`, `ClearSearchAndFilters`, `GoToBrowse`, `Exit` → `context.findActivity()?.finish()`).
+3. **Hint, two forms.** On `ShowExitHint` keep the `Toast` and also show an in-app pill: a bottom-aligned `Surface` over the content (theme tokens only, for example `inverseSurface` / `inverseOnSurface` as snackbars use), with the same `back_exit_hint` text, visible for `EXIT_WINDOW_MILLIS` then hidden; it hides at once on any other Back action; no animation under `LocalReducedMotion`. A small state (`exitHintSerial`) and one effect that delays and hides it is fine; the exit decision does not depend on it.
+4. **Log.** `Log.d("BackExit", ...)` at every branch of the handler: the action, the route's simple name, the milliseconds since the stored hint (or none), and boolean flags (selection, query, filters, similar-to). Never the search text. The next ADB session reads it with `adb logcat -s BackExit`.
+5. **Tests** (`BackExitMachineTest`, a fake clock): presses 1999 ms and 2000 ms apart → Exit; 2001 ms → `ShowExitHint` again; a different `contextKey` between the presses → `ShowExitHint` (starts over); the clock going backwards between the presses → never Exit; selection > 0 → `ClearSelection` and no hint is stored; search/filters → `ClearSearchAndFilters`; Manage → `GoToBrowse`; after `Exit` a new press shows the hint; `hintVisible` is true inside the window and false after it. `BackExitPolicyTest` stays unchanged and green.
+6. Receipt: the route/handler list of step 2; the `adb logcat -s BackExit` line format; the statement that the manifest and predictive back are untouched.
+
+## Tests
+V-FB3-BACK-1, -2 (CI); V-FB3-BACK-3 (independent review); V-FB3-BACK-D (Manu, with the open question: does the hint show on the first press, and on which screen).
+
+## Done when
+Rows pass; CI green; the independent review finds no BLOCKING item (the previous attempt passed CI and failed on the device: the reviewer checks the wiring, not only the pure tests).
+
+## Do not
+Add `android:enableOnBackInvokedCallback` or any predictive-back flag (excluded by NAV-BACK); change the `routeStack.size > 1` handler or a child handler; log the search text; change the order of the layers (selection, search/filters/similar-to, Manage → Browse, hint, exit).

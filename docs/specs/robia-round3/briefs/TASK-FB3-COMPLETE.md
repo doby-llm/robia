@@ -1,0 +1,27 @@
+# TASK-FB3-COMPLETE — A calm completion view that arrives like the overlay
+
+## Goal
+ui3 F26 (REQ-FB-26, R3-DEC-061). After the last garment is decided the tag review jumps to the completion view; the view shows too much; and Done sometimes plays the nice check-and-sparks transition (colour review always does) and sometimes not. Make the arrival smooth and the view minimal: keep the big check and what follows (title, tally, thumbnails, buttons).
+
+## Read first
+`artifacts/inv-f3-a.md` F26 (including "Why it feels abrupt"); `R3-DEC-061`, `R3-DEC-059`; `briefs/TASK-REV-DONE.md`; `ui/TagReviewScreen.kt`: `completionShown`, the `LaunchedEffect(completionShown)` that pre-hides every candidate, `hiddenIds`, the pinned header `Column`, the `if (completionShown) TagReviewCompletion(...) else LazyVerticalGrid(...)` swap, the bottom bar with Done; `ui/TagReviewComplete.kt` (`showsCompletion`, `TagReviewCompletion`, `ReviewEditState`); `ui/ReviewCompleteOverlay.kt` (`ReviewCompleteOverlay`, `REVIEW_COMPLETE_*`, `checkScale`); `ui/ReviewScaffold.kt` `ReviewAcceptedCard` and `REVIEW_ACCEPT_HIGHLIGHT_MILLIS` / `REVIEW_ACCEPT_EXIT_MILLIS` (the exit takes 200 + 250 ms); `core/designsystem/Motion.kt` `SparkleBurst`; `ui/RobiaApp.kt` `finishTagReview` (read only: why Done sometimes shows the overlay).
+
+## Files
+`ui/TagReviewScreen.kt` (the completion swap, the pinned header's visibility, the `LaunchedEffect(completionShown)` and the last-decision time only); `ui/TagReviewComplete.kt`; `ui/ReviewCompleteOverlay.kt` (extract the shared badge only; FB3-DUP-DONE has added a kind before you); `app/src/test/java/com/gusanitolabs/robia/ui/TagReviewCompleteTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/ReviewCompleteTextTest.kt` (only if a helper it covers changes).
+
+## Steps
+1. **Hide the header.** While the completion is up, do not compose the pinned header (`ReviewLeftHeader`, "N reviewed ▾", `TagReviewHeader`). "Edit changes" still reaches Reviewed (it sets `reviewedOpen`). Fade the header out with the list (same 300 ms as step 3) rather than cutting it.
+2. **Wait for the last exit.** A decided card needs `REVIEW_ACCEPT_HIGHLIGHT_MILLIS + REVIEW_ACCEPT_EXIT_MILLIS` (450 ms) to leave. Record the time of every decision (Apply, Reject, Keep as is, Got it, the bulk apply) in the screen (a non-saveable `Long?`, `SystemClock.elapsedRealtime()`). Add pure `internal fun completionWaitMillis(nowMs: Long, lastDecisionMs: Long?): Long`: the part of the 450 ms left, never negative, never above 450, 0 when there is no decision. The swap happens when `showsCompletion(...)` is true and that wait has passed (`completionReady`; use a `LaunchedEffect(completionShown)` that delays by `completionWaitMillis` and sets a state, and keep it false when `completionShown` turns false). Why time and not "no visible card left": a decided card that is off-screen in the `LazyVerticalGrid` is never composed, so it never calls `onGone`; counting hidden cards would never reach zero. The effect that adds every candidate to `hiddenIds` runs at the swap (`completionReady`), not at `completionShown`, so it cannot defeat the wait; it is still needed so that "Edit changes" shows the list without the decided cards reappearing.
+3. **Overlay look.** Extract the badge of `ReviewCompleteOverlay` (the 144 dp `Box` with `SparkleBurst(count = 7)` and the 72 dp `primaryContainer` circle whose check scales 0 to 1 over `REVIEW_COMPLETE_CHECK_SCALE_MILLIS`) into `internal fun ReviewCompleteBadge()` in the same file. `ReviewCompleteOverlay` calls it and keeps its look, text and timing exactly (it is still the colour review's finish). `TagReviewCompletion` replaces its static circle with `ReviewCompleteBadge()`; its title, tally, thumbnails and Edit changes button fade and slide in one after the other (250 ms steps), and the list cross-fades to the completion view (300 ms). Under `LocalReducedMotion`: no animation (`snap`), `SparkleBurst` already draws nothing, the badge shows at full scale.
+4. **Done is unchanged:** the bottom bar still calls `onFinish(emptyList())` at once (no delayed finish, no new race). `doneEnabled`, `doneFinishes`, `showsCompletion`, `shouldFinishTagReview` and the Edit-changes state machine are not edited. A bulk Undo that returns cards to Pending still hides the completion view, as now.
+5. **Explain "sometimes" in the receipt:** `finishTagReview` shows the overlay when `onFinish` gets at least one written garment, which happens when Done is the bottom bar but the completion view is not up (cards left that cannot be bulk-applied, or after Edit changes when nothing is pending); Done on the completion view passes an empty list on purpose. This task does not change that.
+6. **Tests** (`TagReviewCompleteTest`): `completionWaitMillis` (no decision → 0; right after a decision → 450; 250 ms later → 200; 450 ms and later → 0; a decision in the future of `nowMs` is clamped to 450); `completionReady` is false until the wait has passed even when `showsCompletion` is true; every existing test of the file is unchanged and green.
+
+## Tests
+V-FB3-COMPLETE-1 (CI); V-FB3-COMPLETE-2 (REV); V-FB3-COMPLETE-D (Manu). The motion is device-only.
+
+## Done when
+Rows pass; CI green; the receipt answers step 5 and states how the pre-hide effect was moved.
+
+## Do not
+Edit `RobiaApp.kt`, `finishTagReview`, the colour review's overlay (look or timing), the write paths or the finish guards; add a delayed `onFinish`; add strings; use a colour literal.
