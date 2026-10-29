@@ -24,7 +24,10 @@ class BackExitMachine(private val clock: () -> Long) {
         return action
     }
 
-    /** True while the hint is stored and still inside the exit window. Drives the in-app pill. */
+    /**
+     * True while the hint is stored and still inside the exit window (inclusive). The UI does not read this: the pill
+     * is driven by `exitHintVisible` in `RobiaApp`, which hides itself after [EXIT_WINDOW_MILLIS].
+     */
     fun hintVisible(): Boolean {
         val hint = hintMs ?: return false
         return clock() - hint in 0L..EXIT_WINDOW_MILLIS

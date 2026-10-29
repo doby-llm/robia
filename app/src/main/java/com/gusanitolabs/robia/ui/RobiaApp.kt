@@ -145,6 +145,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -1769,6 +1770,8 @@ private fun RobiaShell(
     }
 
     val backExitHintMessage = stringResource(R.string.back_exit_hint)
+    // LocalContext is a localized ContextImpl, not a ContextWrapper, so it cannot reach the Activity; the view's context can.
+    val activity = LocalView.current.context.findActivity()
     val backExit = remember { BackExitMachine { SystemClock.elapsedRealtime() } }
     var exitHintVisible by remember { mutableStateOf(false) }
     var exitHintSerial by remember { mutableIntStateOf(0) }
@@ -1812,7 +1815,11 @@ private fun RobiaShell(
                 exitHintVisible = true
                 exitHintSerial++
             }
-            BackAction.Exit -> context.findActivity()?.finish()
+            BackAction.Exit -> {
+                Log.d("BackExit", "finish activity=${activity != null}")
+                if (activity == null) Log.w("BackExit", "finish skipped: no activity behind the view context")
+                activity?.finish()
+            }
         }
     }
 

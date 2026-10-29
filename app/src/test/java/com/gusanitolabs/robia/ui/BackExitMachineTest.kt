@@ -144,6 +144,21 @@ class BackExitMachineTest {
     }
 
     @Test
+    fun hintVisibleBoundaryIsInclusiveAtTheWindowEnd() {
+        assertEquals(BackAction.ShowExitHint, machine.onBack(plainBrowse, browseKey))
+
+        now += 1_999L
+        assertTrue(machine.hintVisible())
+
+        // decideBack uses <= too, so 2000 ms is still inside the window.
+        now += 1L
+        assertTrue(machine.hintVisible())
+
+        now += 1L
+        assertFalse(machine.hintVisible())
+    }
+
+    @Test
     fun hintVisibleInsideWindowOnly() {
         assertFalse(machine.hintVisible())
 
