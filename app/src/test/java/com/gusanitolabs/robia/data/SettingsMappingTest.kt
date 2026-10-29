@@ -44,6 +44,12 @@ class SettingsMappingTest {
         assertEquals(CutoutEngineChoice.Automatic to false, migratedCutoutEngine(CutoutEngineChoice.Automatic, flagApplied = true))
     }
 
+    /** V-FB3-CUT-NAMES-1: the K00 migration leaves a stored Precise alone once the flag is written. */
+    @Test
+    fun migration_flagAppliedAndPrecise_staysPrecise() {
+        assertEquals(CutoutEngineChoice.Precise to false, migratedCutoutEngine(CutoutEngineChoice.Precise, flagApplied = true))
+    }
+
     @Test
     fun migration_flagAppliedAndStandard_staysStandard() {
         assertEquals(CutoutEngineChoice.Standard to false, migratedCutoutEngine(CutoutEngineChoice.Standard, flagApplied = true))

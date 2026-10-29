@@ -748,25 +748,25 @@
     <string name="account_mismatch_use_this">Usar esta cuenta</string>
     <string name="drive_disconnect">Desconectar</string>
     <!-- SG2b -->
-    <string name="precise_cutout_title">Recorte preciso</string>
-    <string name="precise_cutout_body">Mejor eliminación de fondo en prendas colgadas en perchas o sobre fondos de color parecido. Funciona en tu teléfono.</string>
+    <string name="precise_cutout_title">Paquete de recorte</string>
+    <string name="precise_cutout_body">Lo necesitan Preciso y Automático. Mejor eliminación de fondo en prendas colgadas en perchas o sobre fondos de color parecido. Funciona en tu teléfono.</string>
     <string name="precise_cutout_download">Descargar (≈ 91 MB)</string>
     <string name="precise_cutout_ready">Listo · 91 MB</string>
     <string name="precise_cutout_mobile_body">No hay Wi-Fi. La descarga usará unos 91 MB de tu tarifa de datos.</string>
     <string name="precise_cutout_mobile_confirm">Usar datos (≈ 91 MB)</string>
     <string name="precise_cutout_delete">Borrar paquete de recorte</string>
     <string name="precise_cutout_delete_title">¿Borrar paquete de recorte?</string>
-    <string name="precise_cutout_delete_body">El paquete de recorte preciso se borra de este teléfono. Las fotos conservan su recorte actual.</string>
+    <string name="precise_cutout_delete_body">El paquete de recorte se borra de este teléfono. Las fotos conservan su recorte actual.</string>
     <string name="precise_cutout_value_downloading">Descargando %1$d %%</string>
     <!-- SG4 -->
     <string name="cutout_settings_title">Recorte</string>
     <string name="cutout_method">Método de recorte</string>
     <string name="cutout_method_automatic">Automático</string>
     <string name="cutout_method_standard">Estándar</string>
-    <string name="cutout_method_automatic_hint">Usa el recorte preciso cuando está descargado; si no, el estándar.</string>
-    <string name="cutout_method_standard_hint">Solo Google ML Kit. Más rápido, sin quitar perchas.</string>
+    <string name="cutout_method_automatic_hint">Usa Preciso si el paquete está descargado; si no, Estándar.</string>
+    <string name="cutout_method_standard_hint">Rápido. Sirve para la mayoría de fotos. No quita perchas.</string>
     <string name="cutout_remove_hangers">Quitar perchas</string>
-    <string name="cutout_needs_precise">Necesita recorte preciso</string>
+    <string name="cutout_needs_precise">Necesita Preciso o Automático y el paquete de recorte</string>
     <string name="cutout_hanger_detection">Detección de perchas</string>
     <string name="cutout_hanger_normal">Normal</string>
     <string name="cutout_hanger_high">Alta</string>
@@ -977,6 +977,9 @@
         <item quantity="other">%1$d se quedaron igual</item>
     </plurals>
     <string name="review_complete_edit">Editar cambios</string>
+    <!-- FB3-CUT-NAMES -->
+    <string name="cutout_method_precise">Preciso</string>
+    <string name="cutout_method_precise_hint">Ideal con perchas o fondos parecidos. Más lento. Necesita el paquete de recorte.</string>
     <!-- FB3-DUP-DONE -->
     <plurals name="review_complete_duplicates">
         <item quantity="one">%1$d duplicado eliminado</item>
