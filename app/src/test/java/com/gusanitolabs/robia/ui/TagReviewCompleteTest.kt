@@ -188,6 +188,30 @@ class TagReviewCompleteTest {
         assertTrue(completionThumbnails(review, listOf(garment("r"))).isEmpty())
     }
 
+    // FB3-COMPLETE: the swap waits for the last decided card to leave, even when the completion is already due.
+
+    @Test
+    fun completionWaitMillisIsTheLeaveTimeStillToWaitSinceTheLastDecision() {
+        // Kills: a wait counted from the write rather than the decision, a wait below 0 or above the leave time, and a wait that
+        // ignores a decision (no decision: nothing to wait for).
+        assertEquals(450L, REVIEW_CARD_LEAVE_MILLIS)
+        assertEquals(0L, completionWaitMillis(nowMs = 1_000, lastDecisionMs = null))
+        assertEquals(450L, completionWaitMillis(nowMs = 1_000, lastDecisionMs = 1_000))
+        assertEquals(200L, completionWaitMillis(nowMs = 1_250, lastDecisionMs = 1_000))
+        assertEquals(0L, completionWaitMillis(nowMs = 1_450, lastDecisionMs = 1_000))
+        assertEquals(0L, completionWaitMillis(nowMs = 9_000, lastDecisionMs = 1_000))
+        assertEquals(450L, completionWaitMillis(nowMs = 1_000, lastDecisionMs = 1_500))
+    }
+
+    @Test
+    fun theCompletionWaitsForTheLastCardToLeaveEvenWhenItIsDue() {
+        // Kills: a swap at the last write, which cuts the last card mid-exit. The view is due at once, but the wait holds it.
+        val review = session(card("a", ReviewChange.Add("casual"))).landed("a", added = setOf("casual"))
+        assertTrue(showsCompletion(review, isScanning = false, revertsInFlight = false, edit = ReviewEditState.Off))
+        assertTrue(completionWaitMillis(nowMs = 1_000, lastDecisionMs = 1_000) > 0L)
+        assertEquals(0L, completionWaitMillis(nowMs = 1_450, lastDecisionMs = 1_000))
+    }
+
     // Fixtures
 
     private fun session(vararg cards: ReviewCardState): TagReviewSession =
