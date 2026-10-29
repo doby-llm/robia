@@ -977,4 +977,9 @@
         <item quantity="other">%1$d kept as they were</item>
     </plurals>
     <string name="review_complete_edit">Edit changes</string>
+    <!-- FB3-DUP-DONE -->
+    <plurals name="review_complete_duplicates">
+        <item quantity="one">%1$d duplicate removed</item>
+        <item quantity="other">%1$d duplicates removed</item>
+    </plurals>
 </resources>
