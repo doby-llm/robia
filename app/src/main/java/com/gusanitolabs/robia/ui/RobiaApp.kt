@@ -18,6 +18,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -162,6 +164,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
+import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 import com.gusanitolabs.robia.core.designsystem.resolveDarkTheme
 import com.gusanitolabs.robia.core.model.BrowseLayout
@@ -1766,26 +1769,37 @@ private fun RobiaShell(
     }
 
     val backExitHintMessage = stringResource(R.string.back_exit_hint)
-    var lastExitHintMs by remember { mutableStateOf<Long?>(null) }
-    // A new route, search, filter or selection starts the exit window over.
-    LaunchedEffect(currentRoute, browseQuery, similarToGarmentId, browseFilters, selectedBrowseItemIds) {
-        lastExitHintMs = null
+    val backExit = remember { BackExitMachine { SystemClock.elapsedRealtime() } }
+    var exitHintVisible by remember { mutableStateOf(false) }
+    var exitHintSerial by remember { mutableIntStateOf(0) }
+    // Only hides the pill; the exit decision is in backExit and does not read it.
+    LaunchedEffect(exitHintSerial) {
+        if (exitHintSerial == 0) return@LaunchedEffect
+        delay(EXIT_WINDOW_MILLIS)
+        exitHintVisible = false
     }
     // Tabs use replaceRoute, so Browse and Manage sit alone on the stack; this root handler peels them one layer per press.
-    BackHandler(
-        enabled = routeStack.size == 1 && restoreProgress == null &&
-            (currentRoute == RobiaRoute.Browse || currentRoute == RobiaRoute.ManageTags),
-    ) {
-        val nowMs = SystemClock.elapsedRealtime()
+    // Add, batch add, tag review and colour review have their own BackHandler composed later, so they win while shown.
+    BackHandler(enabled = routeStack.size == 1 && restoreProgress == null) {
+        val contextKey = listOf<Any?>(currentRoute, browseQuery, similarToGarmentId, browseFilters, selectedBrowseItemIds)
         val state = BackState(
             onManage = currentRoute == RobiaRoute.ManageTags,
             selectionCount = selectedBrowseItemIds.size,
             hasQuery = searchActive,
             hasSimilarTo = similarToGarmentId != null,
             hasFilters = browseFilters.hasActiveFilters,
-            lastExitHintMs = lastExitHintMs,
+            lastExitHintMs = null, // the machine supplies the stored hint
         )
-        when (decideBack(state, nowMs)) {
+        val sinceHintMs = backExit.liveHintAgeMs(contextKey)
+        val action = backExit.onBack(state, contextKey)
+        Log.d(
+            "BackExit",
+            "action=$action route=${currentRoute.javaClass.simpleName} sinceHintMs=${sinceHintMs ?: "none"} " +
+                "selection=${state.selectionCount > 0} query=${state.hasQuery} " +
+                "similarTo=${state.hasSimilarTo} filters=${state.hasFilters}",
+        )
+        if (action != BackAction.ShowExitHint) exitHintVisible = false
+        when (action) {
             BackAction.ClearSelection -> selectedBrowseItemIds = emptySet()
             BackAction.ClearSearchAndFilters -> {
                 browseQuery = ""
@@ -1795,7 +1809,8 @@ private fun RobiaShell(
             BackAction.GoToBrowse -> replaceRoute(RobiaRoute.Browse)
             BackAction.ShowExitHint -> {
                 Toast.makeText(context, backExitHintMessage, Toast.LENGTH_SHORT).show()
-                lastExitHintMs = nowMs
+                exitHintVisible = true
+                exitHintSerial++
             }
             BackAction.Exit -> context.findActivity()?.finish()
         }
@@ -2094,6 +2109,7 @@ private fun RobiaShell(
                 )
             }
         },
+        snackbarHost = { BackExitHintPill(visible = exitHintVisible, text = backExitHintMessage) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         RobiaNavHost(
@@ -2934,6 +2950,29 @@ internal val com.gusanitolabs.robia.core.model.DriveBackupDeletionState.statusRe
         com.gusanitolabs.robia.core.model.DriveBackupDeletionState.Complete -> R.string.drive_backup_deletion_status_complete
         com.gusanitolabs.robia.core.model.DriveBackupDeletionState.NeedsAttention -> R.string.drive_backup_deletion_status_attention
     }
+
+@Composable
+private fun BackExitHintPill(visible: Boolean, text: String) {
+    val reducedMotion = LocalReducedMotion.current
+    AnimatedVisibility(
+        visible = visible,
+        enter = if (reducedMotion) EnterTransition.None else fadeIn(),
+        exit = if (reducedMotion) ExitTransition.None else fadeOut(),
+    ) {
+        Surface(
+            modifier = Modifier.padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
 
 @Composable
 private fun RobiaBottomBar(
