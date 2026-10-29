@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +40,7 @@ import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
 import com.gusanitolabs.robia.suggestions.DuplicateTier
 
@@ -173,6 +175,16 @@ private fun DuplicateGroupCard(
 
 @Composable
 private fun DuplicateGarmentRow(item: ClothingItem, deleting: Boolean, onToggle: () -> Unit) {
+    val context = LocalContext.current
+    val collator = remember { browseCollator() }
+    val line = duplicateRowLine(
+        name = item.name,
+        tags = item.tags.map { tag -> UiTag(tag.id, tag.categoryId, tag.localizedTagLabel(context)) },
+        colourLabel = item.colorMetrics.primaryDisplayLabel
+            ?.takeUnless { label -> label == DisplayColorLabel.Unknown }
+            ?.let { label -> stringResource(label.colorStringRes()) },
+        collator = collator,
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -180,12 +192,14 @@ private fun DuplicateGarmentRow(item: ClothingItem, deleting: Boolean, onToggle:
     ) {
         DuplicatePhoto(item = item, modifier = Modifier.size(72.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = item.name.ifBlank { stringResource(R.string.browse_similar_untitled) },
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            line?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = !deleting,
@@ -200,6 +214,23 @@ private fun DuplicateGarmentRow(item: ClothingItem, deleting: Boolean, onToggle:
             }
         }
     }
+}
+
+/** The colour names the add flow uses (AddEditClothingScreen): the same strings, so a colour reads the same here. */
+private fun DisplayColorLabel.colorStringRes(): Int = when (this) {
+    DisplayColorLabel.Black -> R.string.color_black
+    DisplayColorLabel.Blue -> R.string.color_blue
+    DisplayColorLabel.Brown -> R.string.color_brown
+    DisplayColorLabel.Gray -> R.string.color_gray
+    DisplayColorLabel.Green -> R.string.color_green
+    DisplayColorLabel.Orange -> R.string.color_orange
+    DisplayColorLabel.Pink -> R.string.color_pink
+    DisplayColorLabel.Purple -> R.string.color_purple
+    DisplayColorLabel.Red -> R.string.color_red
+    DisplayColorLabel.White -> R.string.color_white
+    DisplayColorLabel.Yellow -> R.string.color_yellow
+    DisplayColorLabel.Multicolor -> R.string.color_multicolor
+    DisplayColorLabel.Unknown -> R.string.color_unknown
 }
 
 /** A garment photo for the duplicate screens; a garment without a photo shows the Browse placeholder icon. */
