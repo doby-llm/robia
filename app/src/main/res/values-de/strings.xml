@@ -790,8 +790,6 @@
     <string name="cutout_method_experimental_hint">Kann Teile des Kleidungsstücks entfernen. Jedes Ergebnis prüfen.</string>
     <!-- ED1 -->
     <string name="editor_smart_whole_garment">Damit wird das ganze Kleidungsstück ausgewählt. Tippe auf den Hintergrund oder die Bügelteile oder nutze den Pinsel.</string>
-    <!-- GPU -->
-    <string name="dev_model_benchmark_gpu">Modell-Benchmark (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Abbrechen</string>
     <!-- ED2 -->

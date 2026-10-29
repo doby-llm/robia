@@ -790,8 +790,6 @@
     <string name="cutout_method_experimental_hint">Puede quitar partes de la prenda. Revisa cada resultado.</string>
     <!-- ED1 -->
     <string name="editor_smart_whole_garment">Eso selecciona toda la prenda. Toca el fondo o las piezas de la percha, o usa el pincel.</string>
-    <!-- GPU -->
-    <string name="dev_model_benchmark_gpu">Prueba del modelo (GPU)</string>
     <!-- BAT2 -->
     <string name="cutout_pack_cancel">Cancelar</string>
     <!-- ED2 -->
