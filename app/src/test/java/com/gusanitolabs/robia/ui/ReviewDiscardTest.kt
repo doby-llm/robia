@@ -296,12 +296,60 @@ class ReviewDiscardTest {
         assertTrue(written)
     }
 
-    private fun deleteChangeSet() = TagChangeSet(
+    // A deleted tag that no active garment holds has nothing to review: no offer, and the deletion still lands once.
+
+    @Test
+    fun offerIsNotMadeForADeletedTagNobodyHolds() = runBlocking {
+        var writes = 0
+
+        val request = offerTagReviewRequest(
+            changeSet = deleteChangeSet(),
+            readGarments = { listOf(garment("g1", tags = emptyList())) },
+            write = { writes += 1 },
+        )
+
+        assertNull(request)
+        assertEquals(1, writes)
+    }
+
+    @Test
+    fun offerIsNotMadeForADeletedOccasionHeldOnlyByAnArchivedGarment() = runBlocking {
+        var writes = 0
+
+        val request = offerTagReviewRequest(
+            changeSet = deleteChangeSet(occasion),
+            readGarments = { listOf(garment("g1", isArchived = true, tags = listOf(occasion))) },
+            write = { writes += 1 },
+        )
+
+        assertNull(request)
+        assertEquals(1, writes)
+    }
+
+    @Test
+    fun offerIsMadeForADeletedOccasionHeldByAnActiveGarment() = runBlocking {
+        val changeSet = deleteChangeSet(occasion)
+        val snapshot = listOf(garment("g1", tags = listOf(occasion)))
+
+        assertEquals(TagReviewRequest(changeSet, snapshot), offerTagReviewRequest(changeSet, readGarments = { snapshot }, write = {}))
+    }
+
+    @Test
+    fun offerIsMadeForAnAddedTagWhateverTheGarmentsHold() = runBlocking {
+        val changeSet = deleteChangeSet().copy(operation = TagOperation.Added)
+        val snapshot = listOf(garment("g1", tags = emptyList()))
+
+        assertEquals(TagReviewRequest(changeSet, snapshot), offerTagReviewRequest(changeSet, readGarments = { snapshot }, write = {}))
+    }
+
+    private val occasion = GarmentTag(id = "occasion-party", categoryId = "occasion", name = "Party", sortOrder = 0)
+
+    private fun deleteChangeSet(tag: GarmentTag = category) = TagChangeSet(
         id = "delete",
         operation = TagOperation.Deleted,
-        categoryId = "category",
-        touchedTagIds = setOf(category.id),
-        beforeTags = listOf(category),
+        categoryId = tag.categoryId,
+        touchedTagIds = setOf(tag.id),
+        beforeTags = listOf(tag),
         afterTags = emptyList(),
     )
 
@@ -311,11 +359,12 @@ class ReviewDiscardTest {
         primary: String? = null,
         secondary: String? = null,
         isArchived: Boolean = false,
+        tags: List<GarmentTag> = listOf(category),
     ) = ClothingItem(
         id = id,
         name = id,
         photoUri = photo,
-        tags = listOf(category),
+        tags = tags,
         colorMetrics = ClothingColorMetrics(
             primaryPaletteColorId = primary,
             secondaryPaletteColorId = secondary,

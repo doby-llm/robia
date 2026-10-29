@@ -1,5 +1,6 @@
 package com.gusanitolabs.robia.ui
 
+import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.TagChangeSet
@@ -105,4 +106,66 @@ class TagReviewScanTest {
     fun actionStartsWhenIdle() {
         assertTrue(canStartTagReviewAction(offerInFlight = false, promptPending = false))
     }
+
+    // A deletion needs an active garment that holds the deleted tag; the other operations always pass.
+
+    @Test
+    fun deletedCategoryHeldByNoGarmentHasNothingToReview() {
+        assertFalse(hasAffectedGarments(deleted(dresses), listOf(garment("a", polos))))
+        assertFalse(hasAffectedGarments(deleted(dresses), emptyList()))
+    }
+
+    @Test
+    fun deletedOccasionHeldOnlyByAnArchivedGarmentHasNothingToReview() {
+        assertFalse(hasAffectedGarments(deleted(dresses), listOf(garment("a", dresses, isArchived = true))))
+    }
+
+    @Test
+    fun deletedTagHeldByAnActiveGarmentIsReviewed() {
+        assertTrue(hasAffectedGarments(deleted(dresses), listOf(garment("a", dresses))))
+    }
+
+    @Test
+    fun deletedTagHeldByAnActiveAndAnArchivedGarmentIsReviewed() {
+        assertTrue(
+            hasAffectedGarments(
+                deleted(dresses),
+                listOf(garment("a", dresses, isArchived = true), garment("b", dresses)),
+            ),
+        )
+    }
+
+    @Test
+    fun addedRenamedAndRestoredAlwaysPassTheCheck() {
+        val changeSet = TagChangeSet(
+            id = "change",
+            operation = TagOperation.Added,
+            categoryId = "category",
+            touchedTagIds = setOf("category-dresses"),
+            beforeTags = emptyList(),
+            afterTags = listOf(dresses),
+        )
+        for (operation in listOf(TagOperation.Added, TagOperation.Renamed, TagOperation.RestoredDefault)) {
+            assertTrue(hasAffectedGarments(changeSet.copy(operation = operation), emptyList()))
+            assertTrue(hasAffectedGarments(changeSet.copy(operation = operation), listOf(garment("a", polos))))
+        }
+    }
+
+    private fun deleted(tag: GarmentTag) = TagChangeSet(
+        id = "delete",
+        operation = TagOperation.Deleted,
+        categoryId = "category",
+        touchedTagIds = setOf(tag.id),
+        beforeTags = listOf(tag),
+        afterTags = emptyList(),
+    )
+
+    private fun garment(id: String, vararg tags: GarmentTag, isArchived: Boolean = false) = ClothingItem(
+        id = id,
+        name = id,
+        tags = tags.toList(),
+        isArchived = isArchived,
+        createdAtEpochMillis = 0,
+        updatedAtEpochMillis = 0,
+    )
 }

@@ -114,6 +114,15 @@ internal fun affectedGarmentCount(changeSet: TagChangeSet, garments: List<Clothi
         proposalCount
     }
 
+/**
+ * Whether the change leaves garments to review. A deletion needs an active garment that still carries a deleted tag (the
+ * scan reads active garments only, and an archived one has no review card). Add, rename and restore need the scan to tell,
+ * so they always pass here.
+ */
+internal fun hasAffectedGarments(changeSet: TagChangeSet, garments: List<ClothingItem>): Boolean =
+    changeSet.operation != TagOperation.Deleted ||
+        garments.any { garment -> !garment.isArchived && garment.tags.any { tag -> tag.id in changeSet.touchedTagIds } }
+
 /** Picker label for a tag: the localized label, else the stored name, else the id, never blank. */
 internal fun tagPickerLabel(tagId: String, name: String, labelsById: Map<String, String>): String =
     labelsById[tagId]?.takeIf(String::isNotBlank) ?: name.takeIf(String::isNotBlank) ?: tagId
@@ -350,7 +359,7 @@ internal fun MutableList<ClothingItem>.removeWritten(garmentId: String) {
 /**
  * Snapshot, then write, in one coroutine. The snapshot is read after the previous review write's database part, never its
  * sync (RobiaApp), and the write always lands. Returns the request to offer: null when there is no change set, when the
- * snapshot failed, or when no active garment would be reviewed.
+ * snapshot failed, when no active garment would be reviewed, or when a deletion leaves no active garment holding the tag.
  */
 internal suspend fun offerTagReviewRequest(
     changeSet: TagChangeSet?,
@@ -367,7 +376,10 @@ internal suspend fun offerTagReviewRequest(
         null
     }
     write()
-    if (changeSet == null || garments == null || !hasReviewableGarments(garments, ReviewKind.Tag)) return null
+    if (
+        changeSet == null || garments == null ||
+        !hasReviewableGarments(garments, ReviewKind.Tag) || !hasAffectedGarments(changeSet, garments)
+    ) return null
     return TagReviewRequest(changeSet, garments)
 }
 
