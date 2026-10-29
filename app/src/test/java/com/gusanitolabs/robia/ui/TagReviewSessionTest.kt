@@ -434,6 +434,107 @@ class TagReviewSessionTest {
         assertEquals(ReviewTallies(garmentsUpdated = 1, tagsAdded = 1, tagsRemoved = 0, garmentsKept = 1), withNothing.tallies())
     }
 
+    // V-FB3-CHIP-PICK-2: replaceChip (R3-DEC-060): the old key leaves skipped, the guards, and what the writes use
+
+    @Test
+    fun replaceChipPutsTheNewTagInPlaceAndTheOldKeyLeavesSkipped() {
+        val formal = add("occasion-formal")
+        val session = sessionOf(card("g1", formal, add("occasion-everyday"), offered = setOf("occasion-evening")))
+            .toggle("g1", formal.key)
+        val replaced = session.replaceChip("g1", formal.key, "occasion-evening")
+        assertEquals(listOf(add("occasion-evening"), add("occasion-everyday")), replaced.stateOf("g1").changes.changes)
+        assertEquals(emptySet<String>(), replaced.stateOf("g1").skipped)
+        assertEquals(ReviewButton.Apply(2), replaced.buttonFor("g1"))
+    }
+
+    @Test
+    fun replaceChipIsRefusedForATagOutsideTheOfferedOnesOrUsedByAnotherChip() {
+        val session = sessionOf(
+            card("g1", add("occasion-formal"), add("occasion-everyday"), offered = setOf("occasion-evening", "occasion-everyday")),
+        )
+        assertEquals(session, session.replaceChip("g1", add("occasion-formal").key, "occasion-casual"))
+        assertEquals(session, session.replaceChip("g1", add("occasion-formal").key, "occasion-everyday"))
+    }
+
+    @Test
+    fun replaceChipIsRefusedForARemovalALockedChipAndAnUnknownKey() {
+        val locked = ReviewChange.Remove("occasion-gone", locked = true)
+        val session = sessionOf(card("g1", add("occasion-formal"), remove("occasion-everyday"), locked, offered = setOf("occasion-evening")))
+        assertEquals(session, session.replaceChip("g1", remove("occasion-everyday").key, "occasion-evening"))
+        assertEquals(session, session.replaceChip("g1", locked.key, "occasion-evening"))
+        assertEquals(session, session.replaceChip("g1", "add:occasion-unknown", "occasion-evening"))
+    }
+
+    @Test
+    fun replaceChipIsRefusedOnADecidedCard() {
+        val session = sessionOf(card("g1", add("occasion-formal"), remove("occasion-everyday"), offered = setOf("occasion-evening")))
+        val rejected = session.reject("g1")
+        assertEquals(rejected, rejected.replaceChip("g1", add("occasion-formal").key, "occasion-evening"))
+        val applied = session.apply("g1", EXISTING).first
+        assertEquals(applied, applied.replaceChip("g1", add("occasion-formal").key, "occasion-evening"))
+    }
+
+    @Test
+    fun replaceChipOfASwapKeepsTheLockedFromHalf() {
+        val swap = ReviewChange.Swap(fromId = "category-old", toId = "category-dresses", fromLocked = true)
+        val session = sessionOf(card("g1", swap, offered = setOf("category-skirts")))
+        val replaced = session.replaceChip("g1", swap.key, "category-skirts")
+        assertEquals(listOf(ReviewChange.Swap("category-old", "category-skirts", fromLocked = true)), replaced.stateOf("g1").changes.changes)
+        assertEquals(TagDelta("g1", emptySet(), setOf("category-skirts")), replaced.apply("g1", EXISTING).second)
+    }
+
+    @Test
+    fun theChosenTagOfAChooserStillChangesThroughChooseOnly() {
+        val chooser = sessionOf(card("c", needsChoice = true, offered = setOf("category-skirts", "category-dresses")))
+            .choose("c", "category-skirts")
+        assertEquals(chooser, chooser.replaceChip("c", ReviewChange.Add("category-skirts").key, "category-dresses"))
+        val changed = chooser.choose("c", "category-dresses")
+        assertEquals("category-dresses", changed.stateOf("c").chosenTagId)
+        assertEquals(TagDelta("c", emptySet(), setOf("category-dresses")), changed.apply("c", EXISTING).second)
+    }
+
+    @Test
+    fun theBulkPlanUsesTheReplacedTag() {
+        val session = sessionOf(
+            card("g1", add("occasion-formal"), offered = setOf("occasion-evening")),
+            card("g2", add("occasion-casual")),
+        ).replaceChip("g1", add("occasion-formal").key, "occasion-evening")
+        val expected = listOf(
+            TagDelta("g1", emptySet(), setOf("occasion-evening")),
+            TagDelta("g2", emptySet(), setOf("occasion-casual")),
+        )
+        assertEquals(expected, session.bulkPlan(EXISTING).deltas)
+        assertEquals(expected, session.applyBulk(EXISTING).second)
+    }
+
+    @Test
+    fun replacedTagIsWrittenRevertedAndWrittenAgainOnce() {
+        val existingTags = listOf(
+            tag("occasion-everyday", "occasion"),
+            tag("occasion-evening", "occasion"),
+            tag("occasion-formal", "occasion"),
+        )
+        val live = garment("g1", existingTags[0])
+        val session = sessionOf(card("g1", add("occasion-formal"), offered = setOf("occasion-formal", "occasion-evening")))
+            .replaceChip("g1", add("occasion-formal").key, "occasion-evening")
+
+        val (inFlight, delta) = session.apply("g1", EXISTING)
+        assertEquals(TagDelta("g1", emptySet(), setOf("occasion-evening")), delta)
+        val written = applyDelta(live, checkNotNull(delta), existingTags, "occasion", now = 2L)
+        assertEquals(setOf("occasion-everyday", "occasion-evening"), written.item?.tags?.mapTo(mutableSetOf<String>()) { it.id })
+
+        val (reverted, toReverse) = inFlight.appliedResult("g1", written).revert("g1")
+        val undone = revertDelta(written.item, checkNotNull(toReverse), existingTags, "occasion", now = 3L)
+        assertEquals(listOf("occasion-everyday"), undone.item?.tags?.map { it.id })
+
+        val (again, redelta) = reverted.apply("g1", EXISTING)
+        assertEquals(delta, redelta)
+        assertEquals(ReviewDecision.Pending, reverted.stateOf("g1").decision)
+        val rewritten = applyDelta(undone.item, checkNotNull(redelta), existingTags, "occasion", now = 4L)
+        assertEquals(1, rewritten.item?.tags?.count { it.id == "occasion-evening" })
+        assertEquals(ReviewButton.Apply(1), again.buttonFor("g1"))
+    }
+
     // Helpers
 
     private fun add(tagId: String): ReviewChange = ReviewChange.Add(tagId)

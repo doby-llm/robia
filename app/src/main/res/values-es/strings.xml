@@ -985,4 +985,6 @@
         <item quantity="one">%1$d duplicado eliminado</item>
         <item quantity="other">%1$d duplicados eliminados</item>
     </plurals>
+    <!-- FB3-CHIP-PICK -->
+    <string name="review_chip_choose_another">Elegir otra etiqueta</string>
 </resources>

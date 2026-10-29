@@ -606,6 +606,57 @@ class ReviewChangesTest {
         assertNull(result.item)
     }
 
+    // ---- replaceTag and tagIdsExcept (V-FB3-CHIP-PICK-1, R3-DEC-060)
+
+    @Test
+    fun replaceTagTurnsAnAddIntoTheNewTagAtTheSamePosition() {
+        val formalAdd = ReviewChange.Add(formal.id)
+        val changes = ReviewChanges(listOf(formalAdd, ReviewChange.Add(everyday.id)), needsChoice = false)
+        val replaced = changes.replaceTag(formalAdd.key, evening.id)
+        assertEquals(ReviewChanges(listOf(ReviewChange.Add(evening.id), ReviewChange.Add(everyday.id)), needsChoice = false), replaced)
+        assertEquals(ReviewChange.Add(evening.id).key, replaced?.changes?.first()?.key)
+    }
+
+    @Test
+    fun replaceTagKeepsTheFromHalfOfASwapAndItsLock() {
+        val swap = ReviewChange.Swap(fromId = dresses.id, toId = skirts.id, fromLocked = false)
+        val replaced = ReviewChanges(listOf(swap), needsChoice = false).replaceTag(swap.key, knitwear.id)
+        assertEquals(listOf(ReviewChange.Swap(dresses.id, knitwear.id, fromLocked = false)), replaced?.changes)
+        assertEquals("swap:${dresses.id}:${knitwear.id}", replaced?.changes?.single()?.key)
+
+        val lockedSwap = ReviewChange.Swap(fromId = ghostCategory, toId = skirts.id, fromLocked = true)
+        val lockedReplaced = ReviewChanges(listOf(lockedSwap), needsChoice = false).replaceTag(lockedSwap.key, knitwear.id)
+        assertEquals(listOf(ReviewChange.Swap(ghostCategory, knitwear.id, fromLocked = true)), lockedReplaced?.changes)
+    }
+
+    @Test
+    fun replaceTagChangesNothingForARemovalAnUnknownKeyOrTheSameTag() {
+        val lockedRemoval = ReviewChange.Remove(ghostOccasion, locked = true)
+        val unlockedRemoval = ReviewChange.Remove(everyday.id, locked = false)
+        val changes = ReviewChanges(listOf(lockedRemoval, unlockedRemoval, ReviewChange.Add(formal.id)), needsChoice = false)
+        assertNull(changes.replaceTag(lockedRemoval.key, formal.id))
+        assertNull(changes.replaceTag(unlockedRemoval.key, formal.id))
+        assertNull(changes.replaceTag("add:occasion-unknown", formal.id))
+        assertNull(changes.replaceTag(ReviewChange.Add(formal.id).key, formal.id))
+    }
+
+    @Test
+    fun replaceTagKeepsTheChooserFlag() {
+        val chooser = ReviewChanges(listOf(ReviewChange.Add(skirts.id)), needsChoice = true)
+        assertTrue(chooser.replaceTag(ReviewChange.Add(skirts.id).key, dresses.id)?.needsChoice == true)
+    }
+
+    @Test
+    fun tagIdsExceptNamesTheAddsAndSwapTargetsOfTheOtherChips() {
+        val swap = ReviewChange.Swap(dresses.id, skirts.id, fromLocked = false)
+        val changes = ReviewChanges(
+            listOf(ReviewChange.Add(formal.id), swap, ReviewChange.Remove(everyday.id, locked = false)),
+            needsChoice = false,
+        )
+        assertEquals(setOf(skirts.id), changes.tagIdsExcept(ReviewChange.Add(formal.id).key))
+        assertEquals(setOf(formal.id, skirts.id), changes.tagIdsExcept(null))
+    }
+
     // ---- helpers
 
     private fun tag(id: String, categoryId: String, name: String) = GarmentTag(id = id, categoryId = categoryId, name = name, sortOrder = 0)

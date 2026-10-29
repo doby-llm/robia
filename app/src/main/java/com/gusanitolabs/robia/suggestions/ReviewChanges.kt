@@ -103,6 +103,34 @@ fun reviewChangesFor(
 }
 
 /**
+ * Replaces the tag of the unit [key] in place (R3-DEC-060): an [ReviewChange.Add] becomes an add of [newTagId] at the same
+ * position, a [ReviewChange.Swap] keeps its `from` half (and its lock) and takes [newTagId] as its `to`. Null, so nothing
+ * changes, for an unknown key, for a [ReviewChange.Remove] (locked or not), and for [newTagId] already the tag of that unit.
+ * It does not check the group or the garment: [TagReviewSession.replaceChip] does.
+ */
+fun ReviewChanges.replaceTag(key: String, newTagId: String): ReviewChanges? {
+    val index = changes.indexOfFirst { change -> change.key == key }
+    if (index < 0) return null
+    val replaced: ReviewChange = when (val change = changes[index]) {
+        is ReviewChange.Add -> if (change.tagId == newTagId) return null else ReviewChange.Add(newTagId)
+        is ReviewChange.Swap -> if (change.toId == newTagId) return null else change.copy(toId = newTagId)
+        is ReviewChange.Remove -> return null
+    }
+    return copy(changes = changes.toMutableList().apply { set(index, replaced) })
+}
+
+/** The tags the other chips of these changes use: each Add, and the `to` half of each Swap, except the unit [key]. */
+fun ReviewChanges.tagIdsExcept(key: String?): Set<String> = changes
+    .filter { change -> change.key != key }
+    .mapNotNullTo(mutableSetOf<String>()) { change ->
+        when (change) {
+            is ReviewChange.Add -> change.tagId
+            is ReviewChange.Swap -> change.toId
+            is ReviewChange.Remove -> null
+        }
+    }
+
+/**
  * The primary button. Units are each Add, each unlocked Remove, each Swap, and the chosen tag of a card that needs a choice.
  * A unit is on unless its key is in [skipped]. Locked removals are never counted.
  */

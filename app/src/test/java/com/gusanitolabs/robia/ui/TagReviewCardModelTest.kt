@@ -4,6 +4,7 @@ import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.suggestions.ProposalKind
 import com.gusanitolabs.robia.suggestions.ReviewChange
+import com.gusanitolabs.robia.suggestions.ReviewChanges
 import com.gusanitolabs.robia.suggestions.ReviewProposal
 import com.gusanitolabs.robia.suggestions.TagChangeSet
 import com.gusanitolabs.robia.suggestions.TagDelta
@@ -303,6 +304,50 @@ class TagReviewCardModelTest {
 
         assertTrue(allChangesSkipped(allLeftOut, chosenTagId = null))
         assertFalse(allChangesSkipped(card, chosenTagId = null))
+    }
+
+    // V-FB3-CHIP-PICK-3: which chips take a long press, and what the picker offers (R3-DEC-060)
+
+    @Test
+    fun replaceableChipsAreTheAddsAndSwapHalvesOfAPendingCard() {
+        val card = occasionCard(garment("g1", "occ-everyday", "occ-old"), occasionProposal())
+        assertFalse(replaceableChip(card, ReviewChange.Remove("occ-old", locked = false)))
+        assertFalse(replaceableChip(card, ReviewChange.Remove("occ-gone", locked = true)))
+        assertTrue(replaceableChip(card, ReviewChange.Add("occ-new")))
+        assertTrue(replaceableChip(card, ReviewChange.Swap("category-coats", "category-deleted", fromLocked = true)))
+        val applied = card.copy(decision = ReviewDecision.Applied(TagDelta("g1", emptySet(), setOf("occ-new")), null))
+        assertFalse(replaceableChip(applied, ReviewChange.Add("occ-new")))
+        assertFalse(replaceableChip(card.copy(decision = ReviewDecision.Rejected()), ReviewChange.Add("occ-new")))
+    }
+
+    @Test
+    fun pickerOffersTheOfferedTagsMinusTheOtherChipsAndKeepsThePressedTag() {
+        val card = occasionCard(garment("g1", "occ-everyday", "occ-old"), occasionProposal())
+        assertEquals(setOf("occ-new", "occ-formal"), card.offeredTagIds)
+        assertEquals(setOf("occ-new"), replacementOptions(card, chosenTagId = null, key = ReviewChange.Add("occ-new").key))
+        assertEquals(setOf("occ-formal"), replacementOptions(card, chosenTagId = null, key = ReviewChange.Add("occ-formal").key))
+    }
+
+    @Test
+    fun pickerOfAChooserOffersItsOfferedTagsAndTheChosenOneStaysIn() {
+        val chooser = ReviewCardState(
+            garmentId = "g2",
+            changes = ReviewChanges(listOf(ReviewChange.Remove("category-deleted", locked = true)), needsChoice = true),
+            liveGroupTagIds = emptySet(),
+            offeredTagIds = setOf("category-coats"),
+        )
+        assertEquals(setOf("category-coats"), replacementOptions(chooser, chosenTagId = null, key = null))
+        assertEquals(setOf("category-coats"), replacementOptions(chooser, chosenTagId = "category-coats", key = null))
+    }
+
+    @Test
+    fun theLongPressLabelIsInEveryLocale() {
+        val en = resource("app/src/main/res/values/strings.xml")
+        val es = resource("app/src/main/res/values-es/strings.xml")
+        val de = resource("app/src/main/res/values-de/strings.xml")
+        assertEquals("Choose another tag", stringValue(en, "review_chip_choose_another"))
+        assertEquals("Elegir otra etiqueta", stringValue(es, "review_chip_choose_another"))
+        assertEquals("Anderes Tag wählen", stringValue(de, "review_chip_choose_another"))
     }
 
     @Test

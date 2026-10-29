@@ -8,6 +8,8 @@ import com.gusanitolabs.robia.suggestions.ReviewChanges
 import com.gusanitolabs.robia.suggestions.TagDelta
 import com.gusanitolabs.robia.suggestions.deltaFor
 import com.gusanitolabs.robia.suggestions.primaryButtonFor
+import com.gusanitolabs.robia.suggestions.replaceTag
+import com.gusanitolabs.robia.suggestions.tagIdsExcept
 
 /**
  * What the user decided for one card. [Applied.applied] is null while the write is in flight. [Rejected.nothingApplied] is a
@@ -87,6 +89,26 @@ internal data class TagReviewSession(
             card
         } else {
             card.copy(chosenTagId = tagId)
+        }
+    }
+
+    /**
+     * Replaces the tag of one chip of a Pending card: the long press of R3-DEC-060. Refused, and the card unchanged, unless
+     * [newTagId] is offered by the card and no other chip of the card has it (the chosen tag included). A decided card, a
+     * Remove, a locked chip and an unknown key are refused as well. The old key leaves [ReviewCardState.skipped]: the replaced
+     * chip is on. The chosen tag of a card that needs a choice goes through [choose], not here.
+     */
+    fun replaceChip(garmentId: String, key: String, newTagId: String): TagReviewSession = updateCard(garmentId) { card ->
+        val usedElsewhere = newTagId in card.changes.tagIdsExcept(key) || newTagId == card.chosenTagId
+        val replaced = if (card.decision is ReviewDecision.Pending && newTagId in card.offeredTagIds && !usedElsewhere) {
+            card.changes.replaceTag(key, newTagId)
+        } else {
+            null
+        }
+        if (replaced == null) {
+            card
+        } else {
+            normalized(card.copy(changes = replaced, skipped = card.skipped - key))
         }
     }
 

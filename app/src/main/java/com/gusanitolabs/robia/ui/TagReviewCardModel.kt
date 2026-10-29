@@ -10,6 +10,7 @@ import com.gusanitolabs.robia.suggestions.TagOperation
 import com.gusanitolabs.robia.suggestions.deltaFor
 import com.gusanitolabs.robia.suggestions.primaryButtonFor
 import com.gusanitolabs.robia.suggestions.reviewChangesFor
+import com.gusanitolabs.robia.suggestions.tagIdsExcept
 import java.text.Collator
 
 /** The three chip families of a review card. */
@@ -149,6 +150,24 @@ internal fun chosenTagOf(card: ReviewCardState, existingTagIds: Set<String>): St
 /** The chips in reading order: the changes as REV-MODEL orders them, then the chosen tag as a "+" chip. */
 internal fun chipsOf(card: ReviewCardState, chosenTagId: String?): List<ReviewChange> =
     card.changes.changes + listOfNotNull(chosenTagId?.let { tagId -> ReviewChange.Add(tagId) })
+
+/**
+ * Whether a long press on a chip asks for another tag (R3-DEC-060): an Add (the chosen tag of a card that needs a choice is one),
+ * and the "+" half of a swap, also when its "−" half is locked. Never a Remove (a "−" or a locked chip), and never on a card that
+ * is not Pending.
+ */
+internal fun replaceableChip(card: ReviewCardState, change: ReviewChange): Boolean = card.decision is ReviewDecision.Pending &&
+    change !is ReviewChange.Remove
+
+/**
+ * The tags the picker offers for the chip [key]: the card's offered tags minus the tags of its other chips (the chosen tag
+ * included), so a tag already on the card is not offered twice. The pressed chip's own tag stays in: it is the original proposal.
+ * [key] null is the chooser of a card that needs a choice, opened by its "Choose" button or by its chosen chip.
+ */
+internal fun replacementOptions(card: ReviewCardState, chosenTagId: String?, key: String?): Set<String> {
+    val otherTags = card.changes.tagIdsExcept(key) + listOfNotNull(chosenTagId.takeIf { key != null })
+    return card.offeredTagIds - otherTags
+}
 
 /** The button of a card, with the chosen tag already validated. */
 internal fun buttonOf(card: ReviewCardState, chosenTagId: String?): ReviewButton =
