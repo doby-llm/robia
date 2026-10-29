@@ -317,7 +317,6 @@ class TagReviewCardModelTest {
             "review_got_it",
             "review_all_skipped",
             "review_none_left_occ",
-            "review_hint_changes",
             "review_now",
             "review_none",
         )

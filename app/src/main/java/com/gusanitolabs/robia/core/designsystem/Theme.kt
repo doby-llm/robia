@@ -113,6 +113,8 @@ data class RobiaExtras(
     val addColors: RobiaChangeColors,
     /** Red "−" chips of the review: removed tags (REQ-FB-21). */
     val removeColors: RobiaChangeColors,
+    /** The sparkle icon on a filled primary button, such as the review prompts (ui3 F21, R3-DEC-057). */
+    val sparkOnPrimary: Color,
 )
 
 internal val RobiaLightExtras = RobiaExtras(
@@ -133,6 +135,7 @@ internal val RobiaLightExtras = RobiaExtras(
         onContainer = RobiaOnRemoveContainer,
         border = RobiaRemoveBorder,
     ),
+    sparkOnPrimary = RobiaOnTertiaryContainer,
 )
 internal val RobiaDarkExtras = RobiaExtras(
     isDark = true,
@@ -152,6 +155,7 @@ internal val RobiaDarkExtras = RobiaExtras(
         onContainer = RobiaDarkOnRemoveContainer,
         border = RobiaDarkRemoveBorder,
     ),
+    sparkOnPrimary = RobiaDarkSparkOnPrimary,
 )
 
 val LocalRobiaExtras = staticCompositionLocalOf { RobiaLightExtras }
