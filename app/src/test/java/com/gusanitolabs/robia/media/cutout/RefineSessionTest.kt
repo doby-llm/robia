@@ -86,6 +86,20 @@ class RefineSessionTest {
     }
 
     @Test
+    fun remove_hardMask_undoRestoresTheAlphaExactly_andRedoReappliesIt() {
+        val base = filled(1f)
+        val session = RefineSession(w, h, base)
+        session.apply(RefineSession.Mode.Remove, pointMask(6, 6), hard = true)
+        val removed = session.currentAlpha().copyOf()
+        assertEquals(0f, session.alphaAt(6, 6), 0f)
+
+        session.undo()
+        assertArrayEquals(base, session.currentAlpha(), 0f)
+        session.redo()
+        assertArrayEquals(removed, session.currentAlpha(), 0f)
+    }
+
+    @Test
     fun remove_softMask_scalesAlphaByOneMinusMask() {
         val session = RefineSession(w, h, filled(1f))
 
