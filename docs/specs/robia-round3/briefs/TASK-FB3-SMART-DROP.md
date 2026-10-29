@@ -1,0 +1,27 @@
+# TASK-FB3-SMART-DROP — Remove the smart eraser; the brush is the only tool
+
+## Goal
+ui3 F32 (REQ-FB-32, R3-DEC-067, R3-DEC-043). V-UI-SMART-D failed on the device, so Manu's own rule applies: remove the smart tool, no second fix. In the photo editor's Cutout tab the brush becomes the only gesture; Keep or Remove selects what the stroke does; the "Brush" chip goes.
+
+## Read first
+`artifacts/inv-f3-c.md` F32 (the "Still present" and "Must stay" lists); `R3-DEC-043`, `R3-DEC-067`; `briefs/TASK-UI-SMART.md` and `TASK-ED1.md` (what is being undone); `ui/PhotoEditorScreen.kt` (all the symbols below); `media/cutout/SelectionClip.kt`; `media/cutout/InteractiveSelector.kt`, `PreciseCutoutEngine.kt`, `MaskOps.kt` (read only); `RefineSession.kt` (read only); tests `SelectionClipTest`, `SmartGestureTest`, `SmartRemoveUndoTest`, `PhotoEditorMappingTest`, `RefineSessionTest`.
+
+## Files
+`ui/PhotoEditorScreen.kt`; delete `media/cutout/SelectionClip.kt`; delete `app/src/test/java/com/gusanitolabs/robia/media/cutout/SelectionClipTest.kt`, `app/src/test/java/com/gusanitolabs/robia/ui/SmartGestureTest.kt`, `app/src/test/java/com/gusanitolabs/robia/media/cutout/SmartRemoveUndoTest.kt`; `app/src/test/java/com/gusanitolabs/robia/ui/PhotoEditorMappingTest.kt` (the three `selectPixelOf` tests only); `app/src/test/java/com/gusanitolabs/robia/media/cutout/RefineSessionTest.kt` (only to keep one `apply(..., hard = true)` apply/undo/redo case if no other test covers it); the three `strings.xml`.
+
+## Steps
+1. **Remove in `PhotoEditorScreen.kt`** (grep each symbol before and after; paste the "after" result, zero hits, in the receipt): the `brush` state and its `rememberSaveable`; the `FilterChip` "Brush" in `CutoutControls` and the `brush` / `onBrushChange` parameters of `CutoutControls` and their arguments at the call; `SMART_MAX_POINTS`, `SMART_TRAIL_DASH_DP`, `SMART_TRAIL_GAP_DP`, `SMART_SNAP_DP`, `PULSE_MS`, `PULSE_RADIUS_DP`, `PulseMark`, the `pulse` state, its `LaunchedEffect(pulse)` and its `Canvas` drawing (and `RobiaPrimary` if only the pulse used it); `runSmartSelection`; the smart branch of `finishGesture` and its `moved` parameter if nothing else reads it (`touchSlop` and the `moved` flag of the pointer loop go with it only if unused); `selectPixelOf`, `smartSelectionPoints`, `samplePath`; the `onDiagnostic("refine_component_tap ...")` line; the `wholeGarmentMessage` and `keepHintMessage` values; the dashed-trail branch (the trail is the solid, round-capped brush trail: `StrokeCap.Round`, no `pathEffect`); `brush` in the `pointerInput(tab, brush, mode, photo)` keys; the imports the compiler reports unused (`componentsToRemove`, `snapRadiusPhotoPx`, `smartTapOutcome`, `SmartTapOutcome`, `PathEffect` if unused, `Dispatchers` / `withContext` only if unused); the KDoc sentence about smart tap/swipe.
+2. **Gesture.** `finishGesture` always calls `commitStroke(photoPath, current, fit)`. A tap is a one-point stroke and paints one dot, as with the Brush chip on today. Multi-touch zoom and pan are unchanged.
+3. **Delete** `media/cutout/SelectionClip.kt` (`ComponentPick`, `componentsToRemove`, `componentAt`, `snapRadiusPhotoPx`, `SmartTapOutcome`, `smartTapOutcome`, `removesMostOfGarment`, `SELECTION_THRESHOLD`) after `grep -rn` shows no other user (`labelComponents` is in `MaskOps.kt` and stays); delete `SelectionClipTest`, `SmartGestureTest`, `SmartRemoveUndoTest`; in `PhotoEditorMappingTest` delete only the three tests of `selectPixelOf`. `SmartRemoveUndoTest` covered `RefineSession.apply(Remove, mask, hard = true)` with undo/redo: before deleting it check that `RefineSessionTest` has a `hard = true` apply/undo/redo case; if not, add one there (rewritten without `SelectionClip` helpers).
+4. **Strings.** Delete `refine_brush`, `editor_smart_whole_garment`, `editor_smart_keep_hint` in the three locales. Reword `refine_hint` (still shown under the buttons): EN "Paint over a part to keep or remove it.", ES "Pinta sobre una parte para mantenerla o quitarla.", DE "Male über einen Teil, um ihn zu behalten oder zu entfernen." Check `refine_keep`, `refine_remove`, `redo_cutout`, `refine_undo`, `refine_redo`, `refine_reset` stay.
+5. **Must stay** (grep result for each in the receipt): `media/cutout/InteractiveSelector.kt` (`MediaPipeInteractiveSelector`), `PreciseCutoutEngine.kt`, `InteractiveSelectorContractTest`, `InteractiveSelectionSeamTest`; `MaskOps.labelComponents` (its own use in `MaskOps.kt`); `RefineSession.apply(..., hard)`, `hardSelection`, `EditOp.Hard` (history replay and format; they may become test-only: leave them); `applyBrush`, `commitStroke`, `brushRadiusPx`, `BRUSH_RADIUS_DP`, `BRUSH_FEATHER_DP`; the Keep/Remove segmented control, Undo, Redo, Reset, "Cut out again", the OR3 Keep-from-original brush.
+6. Do not run Android builds on the Pi (rule 3); the many imports are the main compile risk, so use the CI log. Docs are updated by the planner, not here.
+
+## Tests
+V-FB3-SMART-DROP-1 (independent review: grep tables), V-FB3-SMART-DROP-2 (CI), V-FB3-SMART-DROP-3 (independent review: must-stay and gesture); V-FB3-SMART-DROP-D (Manu).
+
+## Done when
+Rows pass; CI green; the independent review confirms every removed symbol is gone, every must-stay symbol is present and untouched, a drag and a tap both reach `commitStroke`, and no file outside Files changed.
+
+## Do not
+Touch `RefineSession`, `EditHistory`, `MaskOps`, the engines, the Light tab or the Keep-from-original logic; remove `hard` support; add a new tool; change the brush radius or feather.
