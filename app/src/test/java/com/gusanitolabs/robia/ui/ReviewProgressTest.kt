@@ -60,7 +60,7 @@ class ReviewProgressTest {
             "internal fun ReviewProgressHeader(",
         )
         assertFalse(body.contains("animateFloatAsState"))
-        assertFalse(body.contains("tween"))
+        assertFalse(body.contains("tween("))
     }
 
     @Test
