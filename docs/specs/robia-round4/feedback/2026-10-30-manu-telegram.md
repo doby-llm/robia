@@ -1,0 +1,28 @@
+# Manu, Telegram, 2026-10-30 (verbatim, Spanish)
+
+Para Robia app, quiero que funciones unicamente como el planner. Usa la skill spec driven development. Crearias un planning que luego un coordinador ejecutaria usando workers Haikuu 5.5 high
+- He recibido una notificacion que dice:
+Google publicó el 26 de octubre de 2026 la primera versión de su API de embeddings para Android. La documentación oficial se actualizó el 27 de octubre.
+Esto supone un cambio importante respecto a nuestra última comprobación: ya puedes integrar EmbeddingGemma 2 sin distribuir tú mismo los aproximadamente 300 MB del modelo dentro del AP
+
+Esto nos afecta? Si buscamos publicar nuestra app en la play store, recomendarias esto?
+- SDD space: Se ha estado trabajando por largo tiempo en Robia. Esto habra acumulado muchos worktrees, caches, potenciales containers... Quiero que se haga un cleanup de todo lo que no este en uso
+- collection new feature en Robia: el usuario puede crear colecciones de ropa arbitrarias. La idea es que en la pantalla manage creemos una nueva entry con "collections" la cual inicialmente esta vacia. Habria varias maneras de interactuar: cuando se edita un garment, al igual que podemos cambiar category o occasion, tambien podremos cambiar collection. Por otro lado, desde la screen "manage": ahi podremos crear nuestras propias collection (o erase). Me gustaria añadir una funcionalidad que no solo aplicaria a collections. La idea es un boton general que aplicaria a cada sub-categoria dentro de manage. Es decir, ahora mismo si vamos a la categoria "Socks", vemos de izquierda a derecha un lapiz y una papelera. Creo que a la izquierda del lapiz, podriamos añadir un icono de +- el cual nos permita añadir o eliminar ropa de esa categoria (incluido para collections). Una vez pulsado, no tengo muy claro cómo luciria la pantalla: estaria bien una muy similar a Browse (con filtros, semantic search...). A partir de ahi no lo tengo muy claro y cada sub-category (cattegory, occasion, collection) seria ligeramnte diferente, ya que hay algunos que pueden estar en varios sitios a la vez (como collections) pero otros como Category (e.g socks) solo admiten una opcion. Por lo tanto esta screen debe ser capaz de no solo hacer drag para seleccionar multiples ropas, si no tambien la logica necesaria (UX/UI y tambien codigo) para indicar que, en Category, una ropa ya tiene otra categoria y si quieres sobreescrbirla. De nuevo, otras sub-categorias como Collections no tiene esta constraint. Tendras que diseñar tu la pantalla y funcionalidades para esto. Si lo consideras, on mockup HTML que me enseñes podria ayudar. Ademas de esto, otras opciones transverslaes como los embedding, el Drive y demas puede que necesiten considerar las collections too. Piensa si hay algo mas. Acabo de cambiar de opinion. Para reducir complejidad, este nuevo boton +- solo aplicaria a las subcategories de "Collections" lo que implica que cada garment puede tener varias collections y por lo tanto no hace falta que esta nueva screen tenga que tener cuidado con overlaps, ya que cada garment puede tener 1 o mas collection asociada
+
+(mid-turn) continua trabajando de manera autonoma. Para ahorrar usage, no dudes en delegar a modelos Haikuu siempre y cuando no haya deterioro de la calidad. Dado que tu modelo consume mucho, para no perder progreso, no olvides ir escribiendo en disco
+
+# Manu, Telegram, 2026-11-01 (verbatim)
+
+Te quedaste sin uso pero ya deberías de tener. sigue por donde lo dejaste a no ser que se haya perdido el progreso. Entonces dímelo. Además, en caso de que no hubiese quedado claro desde la primera petición, dado que quiero publicar esto en la Play Store, quiero que veas si nuestra app puede tener algún problema con ello (e.g descarga de modelos de huggingface o cosas así)
+
+# Manu, Telegram, 2026-11-01 — answers to the planning questions (verbatim)
+
+Para las preguntas que me has dado:
+
+1. A
+2. A, B, C (siempre y cuando no interfieran en la planificación actual) y E
+3. a
+4. Por si acaso ponlo en un repositorio aparte en caso de que robia vaya en privado (creo que como ejemplo analogo está packly)
+5. Ya tenemos una que se llama GusanitoLabs (the.gusanito.lab@gmail.com). Por el momento no sé si recomiendas empezar a trabajar en ello. Inicialmente te comenté esto como un audit inicial para luego ponerlo en play store (aun así hay cosas que tengo que cambiar como por ejemplo los screenshots y colores de la app) aunque sí que es verdad que el resto estaría ya prácticamente listo. Además para esto la idea sería que yo diese control autónomo al navegador con la cuenta de the.gusanito.lab@gmail.com
+
+Actualiza el plan si así consideras necesario y enviame el prompt del coordinador si es que ha cambiado. Si no uso el anterior
