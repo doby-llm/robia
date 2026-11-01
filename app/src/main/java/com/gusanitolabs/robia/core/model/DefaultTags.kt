@@ -6,6 +6,7 @@ object DefaultTags {
         TagCategory(id = "season", name = "Season", sortOrder = 20, isSystem = true),
         TagCategory(id = "occasion", name = "Occasion", sortOrder = 40, isSystem = true),
         TagCategory(id = "location", name = "Location", sortOrder = 50, isSystem = true),
+        TagCategory(id = COLLECTION_CATEGORY_ID, name = "Collections", sortOrder = 60, isSystem = true),
     )
 
     val tags = listOf(
