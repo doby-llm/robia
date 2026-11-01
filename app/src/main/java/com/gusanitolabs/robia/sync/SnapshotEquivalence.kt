@@ -1,11 +1,14 @@
 package com.gusanitolabs.robia.sync
 
+import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DismissedPair
 import com.gusanitolabs.robia.core.model.GarmentColorMappingRecord
 import com.gusanitolabs.robia.core.model.GarmentPhotoRecord
 import com.gusanitolabs.robia.core.model.GarmentSyncRecord
 import com.gusanitolabs.robia.core.model.GarmentTagMappingRecord
 import com.gusanitolabs.robia.core.model.SyncTombstoneRecord
+import com.gusanitolabs.robia.core.model.TagCategorySyncRecord
+import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
 
@@ -61,7 +64,9 @@ private data class SnapshotEquivalenceKey(
 private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
     val sorted = sortedDeterministically()
     return SnapshotEquivalenceKey(
-        taxonomies = sorted.taxonomies,
+        taxonomies = sorted.taxonomies.copy(
+            categories = sorted.taxonomies.categories.filterNot { category -> isIgnorableEmptyDefault(category, sorted.taxonomies.tags) },
+        ),
         garments = sorted.garments.map { garment -> garment.copy(embeddings = emptyList()) },
         garmentTags = sorted.garmentTags,
         garmentColors = sorted.garmentColors,
@@ -70,6 +75,16 @@ private fun WardrobeSyncSnapshot.equivalenceKey(): SnapshotEquivalenceKey {
             compareBy(DismissedPair::garmentA, DismissedPair::garmentB),
         ),
     )
+}
+
+/** An upgrade seeds new empty default categories; they are not a user difference. */
+private fun isIgnorableEmptyDefault(category: TagCategorySyncRecord, tags: List<TagSyncRecord>): Boolean {
+    val default = DefaultTags.categories.firstOrNull { defaultCategory -> defaultCategory.id == category.id } ?: return false
+    return category.name == default.name &&
+        category.sortOrder == default.sortOrder &&
+        category.isSystem == default.isSystem &&
+        !category.isArchived &&
+        tags.none { tag -> tag.categoryId == category.id }
 }
 
 /** A pair is the same pair whichever id comes first: the key orders the two ids, so a reversed pair compares equal. */

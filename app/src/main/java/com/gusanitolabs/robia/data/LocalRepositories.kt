@@ -205,6 +205,13 @@ class LocalTagRepository(
         )
     }
 
+    override suspend fun setTagMembership(
+        tagId: String,
+        addGarmentIds: Set<String>,
+        removeGarmentIds: Set<String>,
+        nowEpochMillis: Long,
+    ): Int = tagDao.setTagMembership(tagId, addGarmentIds, removeGarmentIds, nowEpochMillis)
+
     override suspend fun deleteCustomTag(id: String) {
         tagDao.deleteEditableTagAndReferences(
             id = id,

@@ -15,9 +15,17 @@ class DefaultTagsTest {
     @Test
     fun manageTaxonomyUsesCurrentEditableGroups() {
         val categoryIds = DefaultTags.categories.map(TagCategory::id)
-        assertEquals(listOf("category", "season", "occasion", "location"), categoryIds)
+        assertEquals(listOf("category", "season", "occasion", "location", "collection"), categoryIds)
         assertFalse(categoryIds.contains("care"))
         assertFalse(categoryIds.contains("fit"))
+    }
+
+    @Test
+    fun collectionCategoryIsASeededSystemCategoryWithNoDefaultTags() {
+        val collection = DefaultTags.categories.single { category -> category.id == COLLECTION_CATEGORY_ID }
+
+        assertEquals(TagCategory(id = "collection", name = "Collections", sortOrder = 60, isSystem = true), collection)
+        assertFalse(DefaultTags.tags.any { tag -> tag.categoryId == COLLECTION_CATEGORY_ID })
     }
 
     @Test

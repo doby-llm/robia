@@ -75,6 +75,13 @@ interface TagRepository {
         deleteColorIds: List<String>,
         updatedItems: List<ClothingItem>,
     )
+    /** Changes only this tag's links to the given garments; returns how many links changed. */
+    suspend fun setTagMembership(
+        tagId: String,
+        addGarmentIds: Set<String>,
+        removeGarmentIds: Set<String>,
+        nowEpochMillis: Long,
+    ): Int
     suspend fun deleteCustomTag(id: String)
     suspend fun deleteMainColor(id: String)
     suspend fun restoreDefaultTags(categoryId: String): Set<String>

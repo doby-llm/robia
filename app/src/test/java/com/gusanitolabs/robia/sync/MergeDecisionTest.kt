@@ -6,6 +6,7 @@ import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.TagSyncRecord
 import com.gusanitolabs.robia.core.model.WardrobeSyncSnapshot
 import com.gusanitolabs.robia.core.model.WardrobeTaxonomySnapshot
+import com.gusanitolabs.robia.data.local.TagCategoryEntity
 import com.gusanitolabs.robia.sync.fakes.FAKE_DEVICE_ID
 import com.gusanitolabs.robia.sync.fakes.OTHER_DEVICE_ID
 import com.gusanitolabs.robia.sync.fakes.SECOND_OTHER_DEVICE_ID
@@ -315,6 +316,41 @@ class MergeDecisionTest {
             .let { backup -> backup.copy(photos = backup.photos.map { it.copy(contentHash = "hash-a") }) }
         assertNotEquals(MergeDecision.RecordBase, decide(local, remote))
     }
+
+    // V-C01-5 (R4-D03, REQ-COL-05): the upgrade adds an empty `collection` row to a phone whose Drive backup predates it.
+
+    @Test
+    fun upgradeWithAnEmptyCollectionRowRecordsTheBaseWithoutAProposal() {
+        val local = exportedSnapshot(garmentEntity("a"), garmentEntity("b"), categories = listOf(collectionCategory()))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), OTHER_DEVICE_ID, 50L)
+
+        assertEquals(MergeDecision.RecordBase, decide(local, remote))
+        assertEquals(MergeDecision.UploadLocal, decide(local, remote, pending = true))
+    }
+
+    @Test
+    fun upgradeWithAnEmptyCollectionRowTakesAnUnrelatedRemoteChangeSilently() {
+        val local = exportedSnapshot(garmentEntity("a"), garmentEntity("b"), categories = listOf(collectionCategory()))
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b"), garmentEntity("c")), OTHER_DEVICE_ID, 60L)
+
+        assertEquals(MergeDecision.FastForward, decide(local, remote, lastKnown = 50L))
+    }
+
+    @Test
+    fun aRealLocalCollectionIsNotOverwrittenSilently() {
+        val local = exportedSnapshot(
+            garmentEntity("a"),
+            garmentEntity("b"),
+            categories = listOf(collectionCategory()),
+            tags = listOf(garmentTagEntity("trips", categoryId = "collection")),
+            tagRefs = listOf(garmentTagRef("a", "trips")),
+        )
+        val remote = driveBackup(exportedSnapshot(garmentEntity("a"), garmentEntity("b")), OTHER_DEVICE_ID, 50L)
+
+        assertEquals(MergeDecision.Propose, decide(local, remote))
+    }
+
+    private fun collectionCategory(): TagCategoryEntity = TagCategoryEntity(id = "collection", name = "Collections", sortOrder = 60, isSystem = true)
 
     private fun pair(a: String, b: String, dismissedAt: Long) = DismissedPair(a, b, dismissedAtEpochMillis = dismissedAt)
 

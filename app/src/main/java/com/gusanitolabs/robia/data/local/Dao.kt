@@ -10,6 +10,7 @@ import com.gusanitolabs.robia.core.model.DedupeTag
 import com.gusanitolabs.robia.core.model.GarmentSyncStatus
 import com.gusanitolabs.robia.core.model.TagDedupePlanner
 import com.gusanitolabs.robia.core.model.TagMerge
+import com.gusanitolabs.robia.core.model.planTagMembership
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -513,6 +514,42 @@ interface TagDao {
                 },
             )
         }
+    }
+
+    /** Deletes only the links of [tagId] to [itemIds]; the garments' other tags stay (unlike [clearTagsForItems]). */
+    @Query("DELETE FROM clothing_item_tags WHERE tag_id = :tagId AND clothing_item_id IN (:itemIds)")
+    suspend fun deleteTagRefsForItems(tagId: String, itemIds: List<String>)
+
+    /** Queues only garments that still exist and are not archived; `updated_at` is not touched, so Browse order holds (R4-D04). */
+    @Query(
+        """
+        UPDATE clothing_items
+        SET sync_status = 'Queued', sync_revision = :now, sync_dirty_at_epoch_millis = :now, sync_failure_message = NULL
+        WHERE id IN (:itemIds) AND is_archived = 0
+        """,
+    )
+    suspend fun touchItemsForMembershipSync(itemIds: List<String>, now: Long)
+
+    @Query("SELECT id FROM clothing_items WHERE id IN (:ids) AND is_archived = 0")
+    suspend fun activeItemIds(ids: List<String>): List<String>
+
+    /**
+     * Changes the links of one tag only: [add] and [remove] are restricted to live garments, the plan is computed from the
+     * current members, and the changed garments are queued. Returns the number of links that changed.
+     */
+    @Transaction
+    suspend fun setTagMembership(tagId: String, add: Set<String>, remove: Set<String>, now: Long): Int {
+        if (add.isEmpty() && remove.isEmpty()) return 0
+        val members = itemRefsForTag(tagId).map(ClothingItemTagCrossRef::clothingItemId).toSet()
+        val plan = planTagMembership(
+            currentMembers = members,
+            add = if (add.isEmpty()) emptySet() else activeItemIds(add.toList()).toSet(),
+            remove = if (remove.isEmpty()) emptySet() else activeItemIds(remove.toList()).toSet(),
+        )
+        if (plan.add.isNotEmpty()) insertItemTagRefs(plan.add.map { itemId -> ClothingItemTagCrossRef(itemId, tagId) })
+        if (plan.remove.isNotEmpty()) deleteTagRefsForItems(tagId, plan.remove)
+        if (plan.changed.isNotEmpty()) touchItemsForMembershipSync(plan.changed, now)
+        return plan.changed.size
     }
 
     @Transaction
