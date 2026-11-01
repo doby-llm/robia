@@ -5,7 +5,7 @@
 | File | Purpose |
 |---|---|
 | `SPEC.md` | Decisions (R4-D*), requirements (REQ-COL-*), Play audit and blockers (§7), ML Kit decision (§8), cleanup scope (§9) |
-| `tasks.md` | Worker rules, graph, hot-file order, per-task Files/acceptance (14 tasks: C01–C05, P01–P05, CHK, CLN + gates) |
+| `tasks.md` | Worker rules, graph, hot-file order, per-task Files/acceptance (12 tasks: C01–C05, P01–P05, CHK, CLN; plus gates) |
 | `verification-matrix.md` | V- rows (CI / REV / DEV / REC) |
 | `briefs/` | One brief per task (`TASK-<ID>.md`) + shared facts |
 | `PROMPT_COORDINATOR.md`, `PROMPT_WORKER.md`, `PROMPT_REVIEW.md` | Copy-paste prompts |
