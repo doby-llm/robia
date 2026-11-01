@@ -1024,4 +1024,6 @@
     <string name="collection_members_discard">Discard changes</string>
     <string name="collection_members_keep_editing">Keep editing</string>
     <string name="collection_members_empty_view">No garments in this view.</string>
+    <!-- P02 -->
+    <string name="settings_privacy_policy">Privacy policy</string>
 </resources>
