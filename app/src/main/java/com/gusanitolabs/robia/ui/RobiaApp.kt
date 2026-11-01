@@ -185,6 +185,7 @@ import com.gusanitolabs.robia.core.model.RobiaSettings
 import com.gusanitolabs.robia.core.model.TagCategory
 import com.gusanitolabs.robia.core.model.ThemeMode
 import com.gusanitolabs.robia.data.EmbeddingRepository
+import com.gusanitolabs.robia.data.GarmentVectors
 import com.gusanitolabs.robia.data.SettingsRepository
 import com.gusanitolabs.robia.data.TagRepository
 import com.gusanitolabs.robia.data.WardrobeRepository
@@ -355,6 +356,10 @@ private sealed interface RobiaRoute {
 
     data class Export(val itemId: String) : RobiaRoute {
         override val titleRes = R.string.export_title
+    }
+
+    data class CollectionMembers(val tagId: String) : RobiaRoute {
+        override val titleRes = R.string.manage_tab_collections
     }
 }
 
@@ -585,6 +590,12 @@ fun RobiaApp(
                         .map(GarmentTag::id)
                         .toSet()
                     listOf(WardrobeSyncOperation.UpsertTags(restoredTagIds + mergedTagIds))
+                }
+            },
+            onSaveCollectionMembership = { tagId, add, remove ->
+                launchReviewWrite {
+                    tagRepository.setTagMembership(tagId, add, remove, System.currentTimeMillis())
+                    (add + remove).map { id -> WardrobeSyncOperation.UpsertItem(id) }
                 }
             },
             onTagReviewWrite = ::writeTagReview,
@@ -947,6 +958,7 @@ private fun RobiaShell(
     onDeleteCustomTag: (GarmentTag) -> Unit,
     onDeleteMainColor: (MainColor) -> Unit,
     onRestoreDefaultTags: (TagCategory) -> Unit,
+    onSaveCollectionMembership: (tagId: String, add: Set<String>, remove: Set<String>) -> Unit = { _, _, _ -> },
     onCommitMainColorChange: (ColorPaletteChangeSet, List<ClothingItem>) -> Unit,
     readGarmentsForReview: suspend () -> List<ClothingItem>,
     onTagReviewWrite: suspend (categoryId: String, changes: List<TagReviewChange>) -> Result<List<ApplyResult>> = { _, _ ->
@@ -1031,7 +1043,7 @@ private fun RobiaShell(
     val browseAttentions = syncState.attention
         .filter { attention -> attention.kind != SyncAttentionKind.MergeConfirmation }
         .take(MAX_BROWSE_ATTENTION_CARDS)
-    val needsWardrobeUiModels = currentRoute is RobiaRoute.Export || currentRoute in WardrobeUiModelRoutes
+    val needsWardrobeUiModels = currentRoute is RobiaRoute.Export || currentRoute is RobiaRoute.CollectionMembers || currentRoute in WardrobeUiModelRoutes
     // Keyed on the connection status, the only sync input the items read: other sync emissions keep the list.
     val items = remember(context, clothingItems, syncState.connectionStatus, online, needsWardrobeUiModels) {
         if (needsWardrobeUiModels) clothingItems.toUiWardrobeItems(syncState, online, context) else emptyList()
@@ -1998,8 +2010,8 @@ private fun RobiaShell(
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
-            // AdvancedFilters draws its own top bar (Close, title, Reset).
-            if (currentRoute != RobiaRoute.AdvancedFilters) CenterAlignedTopAppBar(
+            // AdvancedFilters and the members screen draw their own top bars (Close, title, Reset / back, name, count).
+            if (currentRoute != RobiaRoute.AdvancedFilters && currentRoute !is RobiaRoute.CollectionMembers) CenterAlignedTopAppBar(
                 navigationIcon = {
                     if (currentRoute == RobiaRoute.Browse && selectedBrowseItemIds.isNotEmpty()) {
                         IconButton(onClick = { selectedBrowseItemIds = emptySet() }) {
@@ -2106,7 +2118,8 @@ private fun RobiaShell(
                 currentRoute != RobiaRoute.DuplicateReview &&
                 currentRoute != RobiaRoute.DuplicateCalibration &&
                 currentRoute != RobiaRoute.Analytics &&
-                currentRoute !is RobiaRoute.Export
+                currentRoute !is RobiaRoute.Export &&
+                currentRoute !is RobiaRoute.CollectionMembers
             ) {
                 RobiaBottomBar(
                     currentRoute = currentRoute,
@@ -2161,6 +2174,8 @@ private fun RobiaShell(
                 pushRoute(route)
             },
             onBack = ::popRoute,
+            onSaveCollectionMembership = onSaveCollectionMembership,
+            vectors = vectors,
             onItemSelected = { item ->
                 selectedItemId = item.id
                 pushRoute(RobiaRoute.ItemDetail)
@@ -3113,6 +3128,8 @@ private fun RobiaNavHost(
     exportOptions: ExportOptions,
     onOpenExport: (String) -> Unit,
     onExportOptionsChange: (ExportOptions) -> Unit,
+    onSaveCollectionMembership: (tagId: String, add: Set<String>, remove: Set<String>) -> Unit,
+    vectors: Map<String, GarmentVectors>,
 ) {
     when (currentRoute) {
         RobiaRoute.Browse -> BrowseWardrobeScreen(
@@ -3176,7 +3193,30 @@ private fun RobiaNavHost(
                     .groupingBy { id -> id }
                     .eachCount()
             },
+            onEditMembers = { tag -> onRouteSelected(RobiaRoute.CollectionMembers(tag.id)) },
         )
+        is RobiaRoute.CollectionMembers -> availableTags.firstOrNull { tag -> tag.id == currentRoute.tagId }?.let { collection ->
+            CollectionMembersScreen(
+                innerPadding = innerPadding,
+                collection = collection,
+                items = allItems,
+                domainItems = domainItems,
+                availableTags = availableTags,
+                mainColors = mainColors,
+                vectors = vectors,
+                modelState = modelState,
+                isInitialLoading = wardrobeItemsLoading,
+                browseLayout = browseLayout,
+                columns = browseColumns,
+                signInBannerShown = browseAttentions.any { attention -> attention.kind == SyncAttentionKind.SignInRequired },
+                onOpenSettings = onOpenSettings,
+                onSave = { add, remove -> onSaveCollectionMembership(collection.id, add, remove) },
+                onClose = onBack,
+            )
+        } ?: LaunchedEffect(Unit) {
+            // The collection was deleted here or on another phone while the screen was open: close without writing.
+            onBack()
+        }
         RobiaRoute.ColorReview -> colorReviewChangeSet?.let { changeSet ->
             ColorReviewScreen(
                 innerPadding = innerPadding,
