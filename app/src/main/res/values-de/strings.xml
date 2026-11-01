@@ -1004,4 +1004,20 @@
         <item quantity="other">Die %d Kleidungsstücke bleiben in deiner Garderobe. Nur die Sammlung und die Zugehörigkeit werden entfernt.</item>
     </plurals>
     <string name="collection_delete_confirm">Sammlung löschen</string>
+    <!-- C05 -->
+    <string name="collection_members_count">%d in der Sammlung</string>
+    <string name="collection_members_count_changed">%1$d → %2$d in der Sammlung</string>
+    <string name="collection_members_view_all">Alle</string>
+    <string name="collection_members_view_in">In der Sammlung</string>
+    <string name="collection_members_view_out">Nicht drin</string>
+    <string name="collection_members_hint">Tippen zum Hinzufügen oder Entfernen. Gedrückt halten und ziehen, um mehrere zu wählen.</string>
+    <string name="collection_members_added_badge">hinzugefügt</string>
+    <string name="collection_members_removed_badge">entfernt</string>
+    <string name="collection_members_undo_all">Alles rückgängig</string>
+    <string name="collection_members_save">Speichern</string>
+    <string name="collection_members_leave_title">Änderungen an „%1$s“ speichern?</string>
+    <string name="collection_members_leave_body">%1$d Kleidungsstücke werden hinzugefügt und %2$d entfernt. Die Kleidungsstücke selbst bleiben unverändert.</string>
+    <string name="collection_members_discard">Änderungen verwerfen</string>
+    <string name="collection_members_keep_editing">Weiter bearbeiten</string>
+    <string name="collection_members_empty_view">Keine Kleidungsstücke in dieser Ansicht.</string>
 </resources>

@@ -1004,4 +1004,20 @@
         <item quantity="other">Las %d prendas siguen en tu armario. Solo se eliminan la colección y la pertenencia a ella.</item>
     </plurals>
     <string name="collection_delete_confirm">Eliminar colección</string>
+    <!-- C05 -->
+    <string name="collection_members_count">%d en la colección</string>
+    <string name="collection_members_count_changed">%1$d → %2$d en la colección</string>
+    <string name="collection_members_view_all">Todas</string>
+    <string name="collection_members_view_in">En la colección</string>
+    <string name="collection_members_view_out">Fuera</string>
+    <string name="collection_members_hint">Toca para añadir o quitar. Mantén pulsado y arrastra para elegir varias.</string>
+    <string name="collection_members_added_badge">añadida</string>
+    <string name="collection_members_removed_badge">quitada</string>
+    <string name="collection_members_undo_all">Deshacer todo</string>
+    <string name="collection_members_save">Guardar</string>
+    <string name="collection_members_leave_title">¿Guardar los cambios en «%1$s»?</string>
+    <string name="collection_members_leave_body">Se añadirán %1$d prendas y se quitarán %2$d. Las prendas en sí no cambian.</string>
+    <string name="collection_members_discard">Descartar cambios</string>
+    <string name="collection_members_keep_editing">Seguir editando</string>
+    <string name="collection_members_empty_view">No hay prendas en esta vista.</string>
 </resources>

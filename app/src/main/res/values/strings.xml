@@ -1004,4 +1004,20 @@
         <item quantity="other">The %d garments stay in your wardrobe. Only the collection and their membership in it are removed.</item>
     </plurals>
     <string name="collection_delete_confirm">Delete collection</string>
+    <!-- C05 -->
+    <string name="collection_members_count">%d in collection</string>
+    <string name="collection_members_count_changed">%1$d → %2$d in collection</string>
+    <string name="collection_members_view_all">All</string>
+    <string name="collection_members_view_in">In collection</string>
+    <string name="collection_members_view_out">Not in</string>
+    <string name="collection_members_hint">Tap to add or remove. Long-press and drag to select many.</string>
+    <string name="collection_members_added_badge">added</string>
+    <string name="collection_members_removed_badge">removed</string>
+    <string name="collection_members_undo_all">Undo all</string>
+    <string name="collection_members_save">Save</string>
+    <string name="collection_members_leave_title">Save changes to “%1$s”?</string>
+    <string name="collection_members_leave_body">%1$d garments will be added and %2$d removed. Garments themselves are not changed.</string>
+    <string name="collection_members_discard">Discard changes</string>
+    <string name="collection_members_keep_editing">Keep editing</string>
+    <string name="collection_members_empty_view">No garments in this view.</string>
 </resources>

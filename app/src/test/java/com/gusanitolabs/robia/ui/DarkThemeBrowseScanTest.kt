@@ -9,6 +9,7 @@ class DarkThemeBrowseScanTest {
         val violations = ThemeSourceScan.scan(
             listOf(
                 "app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt",
+                "app/src/main/java/com/gusanitolabs/robia/ui/CollectionMembersScreen.kt",
                 "app/src/main/java/com/gusanitolabs/robia/ui/BrowseFilterBar.kt",
                 "app/src/main/java/com/gusanitolabs/robia/ui/AdvancedFiltersScreen.kt",
                 "app/src/main/java/com/gusanitolabs/robia/ui/ItemDetailScreen.kt",

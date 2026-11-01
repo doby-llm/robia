@@ -578,7 +578,7 @@ private fun DuplicatesBanner(groupCount: Int, onReview: () -> Unit) {
 
 /** Photos-only tile (default Browse layout): the photo box alone, with title and metadata kept for TalkBack. */
 @Composable
-private fun GarmentPhotoTile(
+internal fun GarmentPhotoTile(
     item: UiWardrobeItem,
     isSelected: Boolean,
     onClick: () -> Unit,
@@ -607,7 +607,7 @@ private fun GarmentPhotoTile(
 }
 
 @Composable
-private fun GarmentGridCard(
+internal fun GarmentGridCard(
     item: UiWardrobeItem,
     isSelected: Boolean,
     isSelectionMode: Boolean,

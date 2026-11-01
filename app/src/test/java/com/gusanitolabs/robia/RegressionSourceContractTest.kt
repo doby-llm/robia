@@ -779,7 +779,7 @@ class RegressionSourceContractTest {
         val hasMissing = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
             .substringAfter("val UiWardrobeItem.hasMissingRestoredPhoto")
             .substringBefore("@Composable\ninternal fun EmptyFiltersCard")
-        val gridCard = app.substringAfter("private fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
+        val gridCard = app.substringAfter("internal fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
 
         assertTrue(models.contains("val photoRestoreState: PhotoRestoreState"))
         assertTrue(app.contains("val photoRestoreState: PhotoRestoreState"))
@@ -987,7 +987,7 @@ class RegressionSourceContractTest {
         assertTrue(!boundedImage.contains("setImageURI"))
         assertTrue(boundedImage.contains("ImageTargetBounds"))
 
-        val gridCard = app.substringAfter("private fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
+        val gridCard = app.substringAfter("internal fun GarmentGridCard(").substringBefore("@Composable\nprivate fun GarmentCloudStatusBadge")
         val detailMedia = app.substringAfter("private fun DetailMediaCard(").substringBefore("@Composable\nprivate fun ColorMetricsCard")
         assertTrue(gridCard.contains("GRID_THUMBNAIL_MAX_EDGE_PX"))
         assertTrue(app.contains("DETAIL_DISPLAY_MAX_EDGE_PX = 512"))
