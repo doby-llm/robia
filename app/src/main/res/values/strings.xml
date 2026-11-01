@@ -1004,4 +1004,8 @@
         <item quantity="other">The %d garments stay in your wardrobe. Only the collection and their membership in it are removed.</item>
     </plurals>
     <string name="collection_delete_confirm">Delete collection</string>
+    <!-- C03 -->
+    <string name="metadata_collections">Collections</string>
+    <string name="filter_collection">Collections</string>
+    <string name="filter_collection_none">Not in any</string>
 </resources>
