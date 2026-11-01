@@ -125,6 +125,7 @@ internal fun AdvancedFiltersScreen(
     val seasonTags = availableTags.filter { it.categoryId == "season" }
     val occasionTags = availableTags.filter { it.categoryId == "occasion" }
     val locationTags = availableTags.filter { it.categoryId == "location" }
+    val collectionTags = availableTags.filter { it.categoryId == "collection" }
 
     Scaffold(
         modifier = Modifier
@@ -215,6 +216,18 @@ internal fun AdvancedFiltersScreen(
                     filters = filters,
                     onFiltersChange = onFiltersChange,
                 )
+            }
+            if (showsCollectionFilterCard(collectionTags.size)) {
+                item {
+                    TagFilterCard(
+                        categoryId = "collection",
+                        title = stringResource(R.string.filter_collection),
+                        tags = collectionTags,
+                        filters = filters,
+                        onFiltersChange = onFiltersChange,
+                        notSetLabelRes = R.string.filter_collection_none,
+                    )
+                }
             }
             item {
                 FilterCard(
@@ -313,6 +326,7 @@ private fun TagFilterCard(
     tags: List<GarmentTag>,
     filters: BrowseFilterState,
     onFiltersChange: (BrowseFilterState) -> Unit,
+    notSetLabelRes: Int = R.string.filters_not_set,
 ) {
     FilterCard(
         title = title,
@@ -324,6 +338,7 @@ private fun TagFilterCard(
             categoryId = categoryId,
             selectedTagIds = filters.selectedTagIds,
             selectedUnsetTagCategoryIds = filters.selectedUnsetTagCategoryIds,
+            notSetLabelRes = notSetLabelRes,
             onTagToggled = { tag -> onFiltersChange(filters.toggleTag(tag)) },
             onUnsetToggled = { onFiltersChange(filters.toggleUnsetCategory(categoryId)) },
         )
@@ -359,6 +374,7 @@ private fun FilterTagChips(
     categoryId: String,
     selectedTagIds: Set<String>,
     selectedUnsetTagCategoryIds: Set<String>,
+    notSetLabelRes: Int,
     onTagToggled: (GarmentTag) -> Unit,
     onUnsetToggled: () -> Unit,
 ) {
@@ -392,7 +408,7 @@ private fun FilterTagChips(
                     FilterChip(
                         selected = notSetSelected,
                         onClick = onUnsetToggled,
-                        label = { Text(stringResource(R.string.filters_not_set)) },
+                        label = { Text(stringResource(notSetLabelRes)) },
                         leadingIcon = if (notSetSelected) {
                             { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
                         } else {
