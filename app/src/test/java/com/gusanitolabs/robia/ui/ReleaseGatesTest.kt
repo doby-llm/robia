@@ -41,7 +41,7 @@ class ReleaseGatesTest {
             .substringBefore("SettingsGroup(label = stringResource(R.string.settings_group_about))")
 
         assertTrue(general.contains("title = stringResource(R.string.settings_privacy_policy)"))
-        assertTrue(general.contains("Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))"))
+        assertTrue(general.contains("(view.context.findActivity() ?: context).startActivity(externalLinkIntent(PRIVACY_POLICY_URL))"))
         assertTrue(general.contains("catch (_: ActivityNotFoundException)"))
     }
 
