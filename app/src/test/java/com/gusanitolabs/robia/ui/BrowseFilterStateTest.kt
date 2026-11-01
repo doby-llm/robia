@@ -24,6 +24,20 @@ class BrowseFilterStateTest {
     private val red = MainColor(id = "color-red", name = "Red", hex = "#C0392B", sortOrder = 0)
     private val black = MainColor(id = "color-black", name = "Black", hex = "#000000", sortOrder = 1)
     private val colors = listOf(red, black)
+    private val lisbon = GarmentTag(
+        id = "collection-lisbon",
+        categoryId = "collection",
+        name = "Lisbon trip",
+        sortOrder = 0,
+    )
+    private val workCapsule = GarmentTag(
+        id = "collection-work",
+        categoryId = "collection",
+        name = "Work capsule",
+        sortOrder = 1,
+    )
+    private val casual = GarmentTag(id = "occasion-casual", categoryId = "occasion", name = "Casual", sortOrder = 0)
+    private val formal = GarmentTag(id = "occasion-formal", categoryId = "occasion", name = "Formal", sortOrder = 1)
 
     @Before
     fun useSpanishCollation() {
@@ -260,6 +274,52 @@ class BrowseFilterStateTest {
     fun resetStateHasNoFitSelectionAndNoActiveFilters() {
         assertTrue(BrowseFilterState().fit.isEmpty())
         assertFalse(BrowseFilterState().hasActiveFilters)
+    }
+
+    @Test
+    fun collectionFilterMatchesOnlyGarmentsInThatCollection() {
+        val filters = BrowseFilterState().selectTags(lisbon)
+
+        assertTrue(filters.matches(item(listOf(lisbon)), colors))
+        assertFalse(filters.matches(item(listOf(workCapsule)), colors))
+        assertFalse(filters.matches(item(), colors))
+    }
+
+    @Test
+    fun twoCollectionsMatchAGarmentInEitherOfThem() {
+        val filters = BrowseFilterState().selectTags(lisbon, workCapsule)
+
+        assertTrue(filters.matches(item(listOf(lisbon)), colors))
+        assertTrue(filters.matches(item(listOf(workCapsule)), colors))
+        assertFalse(filters.matches(item(listOf(dresses)), colors))
+    }
+
+    @Test
+    fun notInAnyMatchesOnlyGarmentsWithoutACollection() {
+        val filters = BrowseFilterState().toggleUnsetCategory("collection")
+
+        assertTrue(filters.matches(item(), colors))
+        assertTrue(filters.matches(item(listOf(dresses)), colors))
+        assertFalse(filters.matches(item(listOf(lisbon)), colors))
+    }
+
+    @Test
+    fun collectionAndOccasionAreAndedAcrossCategoriesAndOredWithin() {
+        val filters = BrowseFilterState().selectTags(lisbon, workCapsule, casual)
+
+        assertTrue(filters.matches(item(listOf(workCapsule, casual)), colors))
+        assertFalse(filters.matches(item(listOf(workCapsule, formal)), colors))
+        assertFalse(filters.matches(item(listOf(casual)), colors))
+    }
+
+    @Test
+    fun notInAnyAndAnOccasionFilterCombine() {
+        val filters = BrowseFilterState().toggleUnsetCategory("collection").selectTags(casual)
+
+        assertTrue(filters.matches(item(listOf(casual)), colors))
+        assertFalse(filters.matches(item(listOf(casual, lisbon)), colors))
+        assertFalse(filters.matches(item(listOf(dresses)), colors))
+        assertEquals(2, filters.activeFilterCount)
     }
 
     private fun BrowseFilterState.selectTags(vararg tags: GarmentTag): BrowseFilterState =

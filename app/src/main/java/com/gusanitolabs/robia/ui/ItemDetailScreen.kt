@@ -550,6 +550,15 @@ private fun DetailFieldRows(item: UiWardrobeItem) {
                 aiSuggested = false,
                 onClick = null,
             )
+            if (showsCollectionDetailRow(item.tags.count { tag -> tag.categoryId == "collection" })) {
+                GarmentFieldRow(
+                    icon = categoryIconFor("collection"),
+                    label = stringResource(R.string.metadata_collections),
+                    value = valueIn("collection"),
+                    aiSuggested = false,
+                    onClick = null,
+                )
+            }
             GarmentFieldRow(
                 icon = categoryIconFor("season"),
                 label = stringResource(R.string.metadata_season),

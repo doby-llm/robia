@@ -1006,7 +1006,7 @@ fun AddEditClothingScreen(
                     enabled = canSaveItem,
                     onClick = {
                         val now = System.currentTimeMillis()
-                        val selectedTags = availableTags.filter { it.id in selectedTagIds }
+                        val selectedTags = savedGarmentTags(availableTags, selectedTagIds)
                         ClothingImageStore.registerPhotoFilesForRelease(context, canonicalPhotoUri.orEmpty(), supersededPhotoFiles())
                         onSave(
                             ClothingItem(
@@ -1124,6 +1124,7 @@ private fun GarmentFieldRowsCard(
         none = none,
     ) { tag -> tag.localizedTagLabel(context) }
 
+    val availableCollectionCount = availableTags.count { tag -> tag.categoryId == "collection" }
     val fits = fitValue.indicatesFits()
     val colorValue = colorFieldValueText(primary = primaryColor?.name, secondary = secondaryColor?.name, none = none)
     val colorSwatches = listOfNotNull(primaryColor?.hex?.toComposeColor(), secondaryColor?.hex?.toComposeColor())
@@ -1148,6 +1149,15 @@ private fun GarmentFieldRowsCard(
                 aiSuggested = isSuggested("occasion"),
                 onClick = { openCategoryId = "occasion" },
             )
+            if (showsCollectionRow(availableCollectionCount, selectedIn("collection").size)) {
+                GarmentFieldRow(
+                    icon = categoryIconFor("collection"),
+                    label = stringResource(R.string.metadata_collections),
+                    value = valueIn("collection"),
+                    aiSuggested = false,
+                    onClick = { openCategoryId = "collection" },
+                )
+            }
             GarmentFieldRow(
                 icon = categoryIconFor("season"),
                 label = stringResource(R.string.metadata_season),
@@ -1188,12 +1198,13 @@ private fun GarmentFieldRowsCard(
                     "category" -> R.string.choose_category
                     "location" -> R.string.choose_location
                     "occasion" -> R.string.metadata_occasions
+                    "collection" -> R.string.metadata_collections
                     else -> R.string.metadata_season
                 },
             ),
             tags = availableTags.forCategory(categoryId),
             selectedIds = selectedTagIds,
-            multi = categoryId == "occasion" || categoryId == "season",
+            multi = isMultiSelectCategory(categoryId),
             suggestedIds = modelOwnedTagIds.toSet(),
             onSelectedIdsChange = onSelectedTagIdsChange,
             onDismiss = { openCategoryId = null },

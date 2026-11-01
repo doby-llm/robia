@@ -576,11 +576,12 @@ private fun ActiveFilterChip(label: String, onRemove: () -> Unit, swatch: Color?
     )
 }
 
-private fun categoryTitleRes(categoryId: String): Int? = when (categoryId) {
+internal fun categoryTitleRes(categoryId: String): Int? = when (categoryId) {
     "category" -> R.string.filter_category
     "season" -> R.string.filter_season
     "occasion" -> R.string.filter_occasion
     "location" -> R.string.filter_location
+    "collection" -> R.string.filter_collection
     else -> null
 }
 
