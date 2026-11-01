@@ -260,6 +260,7 @@ private fun sectionTitle(group: WardrobeStatsGroup): String = when (group.sectio
     WardrobeStatsSection.Seasons -> stringResource(R.string.analytics_section_seasons)
     WardrobeStatsSection.Fit -> stringResource(R.string.analytics_section_fit)
     WardrobeStatsSection.Locations -> stringResource(R.string.analytics_section_locations)
+    WardrobeStatsSection.Collections -> stringResource(R.string.analytics_section_collections)
     WardrobeStatsSection.Custom -> group.customName.orEmpty()
 }
 

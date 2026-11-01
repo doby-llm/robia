@@ -21,6 +21,11 @@ class WardrobeStatsTest {
     private val red = MainColor(id = "color-red", name = "Red", hex = "#C0392B", sortOrder = 0)
     private val black = MainColor(id = "color-black", name = "Black", hex = "#000000", sortOrder = 1)
     private val customCategory = TagCategory(id = "custom-1", name = "Trips", sortOrder = 9)
+    private val collectionCategory =
+        TagCategory(id = "collection", name = "Collections", sortOrder = 60, isSystem = true)
+    private val trip = GarmentTag(id = "collection-trip", categoryId = "collection", name = "Trip", sortOrder = 0)
+    private val beach = GarmentTag(id = "collection-beach", categoryId = "collection", name = "Beach", sortOrder = 1)
+    private val gifts = GarmentTag(id = "collection-gifts", categoryId = "collection", name = "Gifts", sortOrder = 2)
     private val collator = Collator.getInstance(Locale.ENGLISH).apply { strength = Collator.PRIMARY }
 
     private fun stats(items: List<ClothingItem>, categories: List<TagCategory> = emptyList()) = wardrobeStats(
@@ -249,5 +254,84 @@ class WardrobeStatsTest {
         )
         // Browse has no "no colour" filter, so that bar is not tappable.
         assertNull(WardrobeStatsKey.NoColour.toBrowseFilterState())
+    }
+
+    @Test
+    fun collectionBarsCountAGarmentOncePerCollectionAndSortLikeOtherTagGroups() {
+        val result = stats(
+            listOf(
+                garment("a", tags = listOf(trip, beach)),
+                garment("b", tags = listOf(trip)),
+                garment("c"),
+                garment("d", tags = listOf(gifts)),
+                garment("e", tags = listOf(trip, gifts), isArchived = true),
+            ),
+            categories = listOf(collectionCategory),
+        )
+
+        assertEquals(4, result.activeCount)
+        assertEquals(
+            listOf(
+                WardrobeStatsBar(WardrobeStatsKey.Tag("collection-trip", "collection"), "Trip", 2),
+                WardrobeStatsBar(WardrobeStatsKey.Tag("collection-beach", "collection"), "Beach", 1),
+                WardrobeStatsBar(WardrobeStatsKey.Tag("collection-gifts", "collection"), "Gifts", 1),
+                WardrobeStatsBar(WardrobeStatsKey.NotSet("collection"), "", 1),
+            ),
+            group(result, WardrobeStatsSection.Collections).bars,
+        )
+    }
+
+    @Test
+    fun collectionGroupIsLeftOutWhileNoActiveGarmentIsInACollection() {
+        val noCollectionUsed = stats(
+            listOf(garment("a", tags = listOf(dress)), garment("b")),
+            categories = listOf(collectionCategory),
+        )
+        val onlyArchivedInACollection = stats(
+            listOf(garment("a", tags = listOf(dress)), garment("b", tags = listOf(trip), isArchived = true)),
+            categories = listOf(collectionCategory),
+        )
+
+        assertTrue(noCollectionUsed.groups.none { it.section == WardrobeStatsSection.Collections })
+        assertTrue(onlyArchivedInACollection.groups.none { it.section == WardrobeStatsSection.Collections })
+    }
+
+    @Test
+    fun collectionSectionFollowsLocationsAndTheCollectionCategoryIsNotACustomGroup() {
+        val result = stats(
+            listOf(garment("a", tags = listOf(trip, travel, summer, closet))),
+            categories = listOf(collectionCategory, customCategory),
+        )
+
+        assertEquals(
+            listOf(
+                WardrobeStatsSection.Categories,
+                WardrobeStatsSection.Colours,
+                WardrobeStatsSection.Occasions,
+                WardrobeStatsSection.Seasons,
+                WardrobeStatsSection.Fit,
+                WardrobeStatsSection.Locations,
+                WardrobeStatsSection.Collections,
+                WardrobeStatsSection.Custom,
+            ),
+            result.groups.map(WardrobeStatsGroup::section),
+        )
+        val customGroups = result.groups.filter { group -> group.section == WardrobeStatsSection.Custom }
+        assertEquals(listOf("Trips"), customGroups.map(WardrobeStatsGroup::customName))
+    }
+
+    @Test
+    fun tapMapsCollectionBarsToTheSameBrowseFilterAsOtherTags() {
+        assertEquals(
+            BrowseFilterState(
+                selectedTagIds = setOf("collection-trip"),
+                selectedTagCategories = mapOf("collection-trip" to "collection"),
+            ),
+            WardrobeStatsKey.Tag("collection-trip", "collection").toBrowseFilterState(),
+        )
+        assertEquals(
+            BrowseFilterState(selectedUnsetTagCategoryIds = setOf("collection")),
+            WardrobeStatsKey.NotSet("collection").toBrowseFilterState(),
+        )
     }
 }
