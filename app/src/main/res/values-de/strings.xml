@@ -234,7 +234,7 @@
     <string name="color_multicolor">Mehrfarbig</string>
     <string name="color_unknown">Unbekannt</string>
     <string name="manage_tags_title">Tags verwalten</string>
-    <string name="manage_tags_body">Erstelle und organisiere Garderobenkategorien, Orte, Anlässe, Jahreszeiten und die Hauptfarbpalette.</string>
+    <string name="manage_tags_body">Erstelle und organisiere Garderobenkategorien, Orte, Anlässe, Jahreszeiten, Sammlungen und die Hauptfarbpalette.</string>
     <string name="add_edit_title">Kleidung hinzufügen oder bearbeiten</string>
     <string name="edit_clothing_title">Kleidungsstück bearbeiten</string>
     <string name="add_edit_body">Erfasse ein Foto, bewahre manuelle Farbwerte und füge Tags zur lokalen Garderobe hinzu.</string>
@@ -987,4 +987,21 @@
     </plurals>
     <!-- FB3-CHIP-PICK -->
     <string name="review_chip_choose_another">Anderes Tag wählen</string>
+    <!-- C02 -->
+    <string name="manage_tab_collections">Sammlungen</string>
+    <string name="collections_empty_title">Noch keine Sammlungen</string>
+    <string name="collections_empty_body">Gruppiere Kleidungsstücke, wie du willst: eine Reise, eine Capsule-Garderobe, eine Geschenkliste. Ein Kleidungsstück kann in mehreren Sammlungen sein.</string>
+    <string name="collections_new">Neue Sammlung</string>
+    <plurals name="collection_garment_count">
+        <item quantity="one">%d Kleidungsstück</item>
+        <item quantity="other">%d Kleidungsstücke</item>
+    </plurals>
+    <string name="content_edit_collection_members">Kleidungsstücke hinzufügen oder entfernen</string>
+    <string name="collection_edit_title">Sammlung bearbeiten</string>
+    <string name="collection_delete_title">„%1$s“ löschen?</string>
+    <plurals name="collection_delete_body">
+        <item quantity="one">Das %d Kleidungsstück bleibt in deiner Garderobe. Nur die Sammlung und die Zugehörigkeit dazu werden entfernt.</item>
+        <item quantity="other">Die %d Kleidungsstücke bleiben in deiner Garderobe. Nur die Sammlung und die Zugehörigkeit werden entfernt.</item>
+    </plurals>
+    <string name="collection_delete_confirm">Sammlung löschen</string>
 </resources>

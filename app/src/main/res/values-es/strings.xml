@@ -234,7 +234,7 @@
     <string name="color_multicolor">Multicolor</string>
     <string name="color_unknown">Desconocido</string>
     <string name="manage_tags_title">Gestionar etiquetas</string>
-    <string name="manage_tags_body">Crea y organiza categorías del armario, ubicaciones, ocasiones, estaciones y la paleta de color principal.</string>
+    <string name="manage_tags_body">Crea y organiza categorías del armario, ubicaciones, ocasiones, estaciones, colecciones y la paleta de color principal.</string>
     <string name="add_edit_title">Añadir o editar ropa</string>
     <string name="edit_clothing_title">Editar prenda</string>
     <string name="add_edit_body">Captura una foto de la prenda, conserva colores manuales y añade etiquetas al armario local.</string>
@@ -987,4 +987,21 @@
     </plurals>
     <!-- FB3-CHIP-PICK -->
     <string name="review_chip_choose_another">Elegir otra etiqueta</string>
+    <!-- C02 -->
+    <string name="manage_tab_collections">Colecciones</string>
+    <string name="collections_empty_title">Aún no hay colecciones</string>
+    <string name="collections_empty_body">Agrupa prendas como quieras: un viaje, un armario cápsula, una lista de regalos. Una prenda puede estar en varias colecciones.</string>
+    <string name="collections_new">Nueva colección</string>
+    <plurals name="collection_garment_count">
+        <item quantity="one">%d prenda</item>
+        <item quantity="other">%d prendas</item>
+    </plurals>
+    <string name="content_edit_collection_members">Añadir o quitar prendas</string>
+    <string name="collection_edit_title">Editar colección</string>
+    <string name="collection_delete_title">¿Eliminar «%1$s»?</string>
+    <plurals name="collection_delete_body">
+        <item quantity="one">La %d prenda sigue en tu armario. Solo se eliminan la colección y su pertenencia a ella.</item>
+        <item quantity="other">Las %d prendas siguen en tu armario. Solo se eliminan la colección y la pertenencia a ella.</item>
+    </plurals>
+    <string name="collection_delete_confirm">Eliminar colección</string>
 </resources>

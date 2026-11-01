@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -53,12 +54,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
+import com.gusanitolabs.robia.core.model.COLLECTION_CATEGORY_ID
 import com.gusanitolabs.robia.core.model.GarmentTag
 import com.gusanitolabs.robia.core.model.MainColor
 import com.gusanitolabs.robia.core.model.TagCategory
@@ -117,6 +121,8 @@ fun ManageTagsScreen(
     onRestoreDefaultMainColors: () -> Unit,
     selectedTabId: String?,
     onSelectedTabIdChange: (String?) -> Unit,
+    collectionMemberCounts: Map<String, Int> = emptyMap(),
+    onEditMembers: ((GarmentTag) -> Unit)? = null,
 ) {
     var editorState by remember { mutableStateOf<TagEditorState?>(null) }
     var colorEditorState by remember { mutableStateOf<ColorEditorState?>(null) }
@@ -220,6 +226,8 @@ fun ManageTagsScreen(
                 onEditTag = { categoryId, tag -> editorState = TagEditorState(categoryId = categoryId, existingTag = tag) },
                 onDeleteTag = onDeleteTag,
                 onRestoreTags = { category -> pendingRestoreDefault = RestoreDefaultTarget.Tags(category) },
+                collectionMemberCounts = collectionMemberCounts,
+                onEditMembers = onEditMembers,
             )
         }
     }
@@ -292,11 +300,14 @@ private fun ManageTabPage(
     onEditTag: (String, GarmentTag) -> Unit,
     onDeleteTag: (GarmentTag) -> Unit,
     onRestoreTags: (TagCategory) -> Unit,
+    collectionMemberCounts: Map<String, Int>,
+    onEditMembers: ((GarmentTag) -> Unit)?,
 ) {
     val isColorsTab = tabId == ColorsTabId
     val activeCategory = visibleCategories.firstOrNull { category -> category.id == tabId }
     val activeTags = tagsByCategory[tabId].orEmpty().sortedAlphabetically(label = { tag -> labelsById[tag.id] ?: tag.name })
     val sortedColors = mainColors.sortedAlphabetically(label = MainColor::name)
+    var pendingCollectionDelete by remember { mutableStateOf<GarmentTag?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -335,7 +346,11 @@ private fun ManageTabPage(
                     },
                 )
             }
-            if (activeTags.isEmpty()) {
+            if (activeTags.isEmpty() && activeCategory.id == COLLECTION_CATEGORY_ID) {
+                item(key = "section-empty:${activeCategory.id}") {
+                    CollectionsEmptyState(onNewCollection = { onAddTag(activeCategory.id) })
+                }
+            } else if (activeTags.isEmpty()) {
                 item(key = "section-empty:${activeCategory.id}") {
                     Text(
                         text = stringResource(R.string.no_tags_in_category),
@@ -349,13 +364,65 @@ private fun ManageTabPage(
                         TagListRow(
                             tag = tag,
                             label = labelsById[tag.id] ?: tag.name,
+                            memberCount = collectionMemberCounts[tag.id] ?: 0,
                             canEdit = true,
                             onEdit = { onEditTag(activeCategory.id, tag) },
-                            onDelete = { onDeleteTag(tag) },
+                            onDelete = {
+                                if (needsDeleteConfirmation(tag)) pendingCollectionDelete = tag else onDeleteTag(tag)
+                            },
+                            onEditMembers = onEditMembers?.let { editMembers -> { editMembers(tag) } },
                         )
                     }
                 }
             }
+        }
+    }
+
+    pendingCollectionDelete?.let { tag ->
+        CollectionDeleteConfirmationDialog(
+            name = labelsById[tag.id] ?: tag.name,
+            memberCount = collectionMemberCounts[tag.id] ?: 0,
+            onDismiss = { pendingCollectionDelete = null },
+            onConfirm = {
+                onDeleteTag(tag)
+                pendingCollectionDelete = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun CollectionsEmptyState(onNewCollection: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = categoryIconFor(COLLECTION_CATEGORY_ID),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(40.dp),
+        )
+        Text(
+            text = stringResource(R.string.collections_empty_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = stringResource(R.string.collections_empty_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Button(
+            onClick = onNewCollection,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            Text(stringResource(R.string.collections_new))
         }
     }
 }
@@ -412,12 +479,16 @@ private fun TagCategoryHeader(
 private fun TagListRow(
     tag: GarmentTag,
     label: String,
+    memberCount: Int,
     canEdit: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onEditMembers: (() -> Unit)?,
 ) {
     val editDescription = stringResource(R.string.content_edit_tag)
     val deleteDescription = stringResource(R.string.content_delete_tag)
+    val membersDescription = stringResource(R.string.content_edit_collection_members)
+    val membersAction = if (showsMembersAction(tag.categoryId, hasCallback = onEditMembers != null)) onEditMembers else null
 
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -436,12 +507,42 @@ private fun TagListRow(
                     .clip(CircleShape)
                     .background(tag.dotColor()),
             )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (tag.categoryId == COLLECTION_CATEGORY_ID) {
+                    Text(
+                        text = pluralStringResource(R.plurals.collection_garment_count, memberCount, memberCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (canEdit) {
+                membersAction?.let { openMembers ->
+                    IconButton(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .semantics { contentDescription = membersDescription },
+                        onClick = openMembers,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlaylistAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
                 IconButton(
                     modifier = Modifier
                         .size(40.dp)
@@ -602,6 +703,7 @@ private fun TagEditorDialog(
     var suggestOccasions by remember(state) { mutableStateOf(state.existingTag?.suggestOccasions ?: true) }
     val trimmedName = name.trim()
     val editingTagId = state.existingTag?.id
+    val isCollection = state.categoryId == COLLECTION_CATEGORY_ID
     val context = LocalContext.current
     val siblingLabels = remember(categoryTags, editingTagId) {
         categoryTags
@@ -621,7 +723,12 @@ private fun TagEditorDialog(
         title = {
             Text(
                 text = stringResource(
-                    if (state.existingTag == null) R.string.add_tag_title else R.string.edit_tag_title,
+                    when {
+                        isCollection && state.existingTag == null -> R.string.collections_new
+                        isCollection -> R.string.collection_edit_title
+                        state.existingTag == null -> R.string.add_tag_title
+                        else -> R.string.edit_tag_title
+                    },
                 ),
             )
         },
@@ -636,29 +743,31 @@ private fun TagEditorDialog(
                         label = { Text(stringResource(R.string.tag_name_label)) },
                         supportingText = nameSupportingText,
                     )
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it.take(TagDescriptionMaxLength) },
-                        minLines = 2,
-                        label = { Text(stringResource(R.string.tag_description_label)) },
-                        // Helper wraps instead of truncating; the counter is inset from the field's edge.
-                        supportingText = {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(
-                                    text = stringResource(R.string.tag_description_helper),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
-                                )
-                                Text(
-                                    text = stringResource(R.string.tag_description_counter, description.length),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(end = 4.dp),
-                                )
-                            }
-                        },
-                    )
+                    if (showsDescriptionField(state.categoryId)) {
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it.take(TagDescriptionMaxLength) },
+                            minLines = 2,
+                            label = { Text(stringResource(R.string.tag_description_label)) },
+                            // Helper wraps instead of truncating; the counter is inset from the field's edge.
+                            supportingText = {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(
+                                        text = stringResource(R.string.tag_description_helper),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.tag_description_counter, description.length),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 4.dp),
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
                 if (state.categoryId == "category") {
                     Row(
@@ -697,7 +806,11 @@ private fun TagEditorDialog(
                             name = trimmedName,
                             sortOrder = existing?.sortOrder ?: categoryTags.nextTagSortOrder(),
                             isSystem = existing?.isSystem ?: false,
-                            description = storedTagDescription(description, defaultDescription),
+                            description = if (showsDescriptionField(state.categoryId)) {
+                                storedTagDescription(description, defaultDescription)
+                            } else {
+                                null
+                            },
                             suggestOccasions = suggestOccasions,
                         ),
                     )
@@ -970,11 +1083,39 @@ private fun DeleteColorConfirmationDialog(
 }
 
 @Composable
+private fun CollectionDeleteConfirmationDialog(
+    name: String,
+    memberCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.collection_delete_title, name)) },
+        text = { Text(pluralStringResource(R.plurals.collection_delete_body, memberCount, memberCount)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.collection_delete_confirm),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun TagCategory.localizedName(): String = when (id) {
     "category" -> stringResource(R.string.category_category)
     "season" -> stringResource(R.string.category_season)
     "occasion" -> stringResource(R.string.category_occasion)
     "location" -> stringResource(R.string.category_location)
+    "collection" -> stringResource(R.string.manage_tab_collections)
     else -> name
 }
 
@@ -984,6 +1125,7 @@ private fun GarmentTag.dotColor(): Color = when (categoryId) {
     "season" -> MaterialTheme.colorScheme.secondaryContainer
     "occasion" -> MaterialTheme.colorScheme.outline
     "location" -> MaterialTheme.colorScheme.inversePrimary
+    "collection" -> MaterialTheme.colorScheme.tertiary
     else -> MaterialTheme.colorScheme.surfaceVariant
 }
 
