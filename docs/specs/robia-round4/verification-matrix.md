@@ -47,3 +47,12 @@ checks by reading · **DEV** = Manu on the phone (CHK checklist, plain Spanish) 
 | V-P04-3 | P04 | CI | Debug/staging builds unchanged (same task list, still green). |
 | V-CHK-1 | CHK | REC | Checklist file exists, uses current main UI labels, staging link + signer of the latest main run. |
 | V-POL-1 | POL | REV | Coordinator diff-checks the policy PR against `artifacts/privacy-policy-changes.md` items 1–5 (and the data-safety cross-check of item 3); the URL in `ReleaseGates.PRIVACY_POLICY_URL` opens the updated page. |
+| V-FT1-1 | FT1 | CI | Change labels: pure/contract test that `ChangeLabel` text uses `maxLines = 1` and `softWrap = false` and the removed label is struck through; ES/DE strings unchanged in meaning. |
+| V-FT1-2 | FT1 | CI | `externalLinkIntent(url)` has action VIEW, the URL as data and `FLAG_ACTIVITY_NEW_TASK`; contract: every `ACTION_VIEW` start in SettingsScreen.kt/RobiaApp.kt goes through it or sets the flag. |
+| V-FT1-3 | FT1 | CI | Settings › General has no licences row; the About version row opens `OpenSourceLicensesDialog` (contract test); the dialog is still reachable from Settings only. |
+| V-FT1-4 | FT1 | CI | `third_party.md` lists magic_touch as Apache License 2.0 with the model-card URL; no "unresolved" left for it; `LicensesAssetTest` stays green. |
+| V-FT1-D | FT1 | DEV | Remove a member on the members screen: the label "quitada" fits on one line in 3 and 4 columns; Settings › Privacy policy opens the browser (no crash); the sync-storage link works; Settings › About: tapping the version opens the licences list; General has no licences row. |
+| V-FT2-1 | FT2 | CI | `wardrobeStats`: garments in 2 collections count once in each bar; bars sorted count desc then label; "Not set" last = garments in no collection; archived garments not counted. |
+| V-FT2-2 | FT2 | CI | With no collection in `tagCategories`/tags the Collections group is absent; the custom groups never contain the collection category. |
+| V-FT2-3 | FT2 | CI | A collection bar maps to `BrowseFilterState(selectedTagIds=setOf(id), …)` via `toBrowseFilterState()`; section title wired for the new section; ES/DE strings present. |
+| V-FT2-D | FT2 | DEV | Stats shows a Collections card with one bar per collection and the right counts; tapping a bar opens Browse filtered by it. |
