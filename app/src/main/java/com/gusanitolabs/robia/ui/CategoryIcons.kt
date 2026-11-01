@@ -3,6 +3,7 @@ package com.gusanitolabs.robia.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checkroom
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -16,5 +17,6 @@ fun categoryIconFor(categoryId: String): ImageVector = when (categoryId) {
     "season" -> Icons.Outlined.CalendarMonth
     "occasion" -> Icons.Outlined.Event
     "location" -> Icons.Outlined.FolderOpen
+    "collection" -> Icons.Outlined.CollectionsBookmark
     else -> Icons.Outlined.Checkroom
 }

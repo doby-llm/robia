@@ -234,7 +234,7 @@
     <string name="color_multicolor">Multicolor</string>
     <string name="color_unknown">Unknown</string>
     <string name="manage_tags_title">Manage tags</string>
-    <string name="manage_tags_body">Create and organize wardrobe categories, locations, occasions, seasons, and the main color palette.</string>
+    <string name="manage_tags_body">Create and organize wardrobe categories, locations, occasions, seasons, collections, and the main color palette.</string>
     <string name="add_edit_title">Add or edit clothing</string>
     <string name="edit_clothing_title">Edit clothing</string>
     <string name="add_edit_body">Capture a garment photo, preserve manual colors, and add tags for the local wardrobe.</string>
@@ -987,4 +987,21 @@
     </plurals>
     <!-- FB3-CHIP-PICK -->
     <string name="review_chip_choose_another">Choose another tag</string>
+    <!-- C02 -->
+    <string name="manage_tab_collections">Collections</string>
+    <string name="collections_empty_title">No collections yet</string>
+    <string name="collections_empty_body">Group garments any way you like: a trip, a capsule wardrobe, a gift list. A garment can be in several collections.</string>
+    <string name="collections_new">New collection</string>
+    <plurals name="collection_garment_count">
+        <item quantity="one">%d garment</item>
+        <item quantity="other">%d garments</item>
+    </plurals>
+    <string name="content_edit_collection_members">Add or remove garments</string>
+    <string name="collection_edit_title">Edit collection</string>
+    <string name="collection_delete_title">Delete “%1$s”?</string>
+    <plurals name="collection_delete_body">
+        <item quantity="one">The %d garment stays in your wardrobe. Only the collection and its membership in it are removed.</item>
+        <item quantity="other">The %d garments stay in your wardrobe. Only the collection and their membership in it are removed.</item>
+    </plurals>
+    <string name="collection_delete_confirm">Delete collection</string>
 </resources>

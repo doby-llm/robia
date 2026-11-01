@@ -169,6 +169,7 @@ import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.RobiaTheme
 import com.gusanitolabs.robia.core.designsystem.resolveDarkTheme
 import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.COLLECTION_CATEGORY_ID
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DefaultTags
@@ -3168,6 +3169,13 @@ private fun RobiaNavHost(
             onRestoreDefaultMainColors = onRestoreDefaultMainColors,
             selectedTabId = manageTagsTabId,
             onSelectedTabIdChange = onManageTagsTabIdChange,
+            // domainItems holds active garments only (observeActiveItems), so archived ones never count.
+            collectionMemberCounts = remember(domainItems) {
+                domainItems
+                    .flatMap { item -> item.tags.filter { tag -> tag.categoryId == COLLECTION_CATEGORY_ID }.map { tag -> tag.id } }
+                    .groupingBy { id -> id }
+                    .eachCount()
+            },
         )
         RobiaRoute.ColorReview -> colorReviewChangeSet?.let { changeSet ->
             ColorReviewScreen(
