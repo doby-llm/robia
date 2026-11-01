@@ -156,3 +156,25 @@ C03 and C04 touch no hot file except strings.xml, so they can run in parallel wi
 
 ## CLN — Workspace cleanup (coordinator, host only, no PR)
 - **Predecessors:** G-CLN — passed 2026-11-01 (approved categories A, B, C, E; D = remote branches NOT approved) · Brief: `briefs/TASK-CLN.md`.
+
+---
+
+## Round 4b — device-test fine tuning (R4-DEC-017). Worker rules, Graph rules and leases as above; independent review: none (UI wording/wiring, no data writes).
+
+## FT1 — Chip wrap, privacy-link crash, licences entry, magic_touch licence text
+- **Predecessors:** none (all of round 4 merged) · **Parallel with:** FT2 (disjoint files except strings.xml).
+- **Files:** `ui/CollectionMembersScreen.kt` (`ChangeLabel`/`MemberChangeBadge` only); `ui/SettingsScreen.kt`; `ui/RobiaApp.kt` (ONLY `openSyncStorage`); `assets/licenses/third_party.md`; `docs/specs/robia-round4/artifacts/data-safety.md` (magic_touch lines only); tests: `…/ui/LicensesAssetTest.kt`, `…/ui/ReleaseGatesTest.kt` (anchors that pin the old Settings rows, equal strength), `…/ui/CollectionMembersWiringContractTest.kt` (add cases), new tests.
+- **In scope:**
+  1. The red "removed" label (and "+ added") must never break inside a word at 3–4 columns and in ES/DE: single line (`maxLines = 1`, `softWrap = false`), smaller style (`labelSmall`) and tighter padding; keep strike-through and the "+ " prefix of the added label; if it still cannot fit, it ellipsizes instead of wrapping.
+  2. Crash: `context.startActivity` from `LocalContext` (a configuration-wrapped context, not an Activity, R3 lesson) throws `AndroidRuntimeException`. Fix the Privacy-policy row and `openSyncStorage`: resolve the Activity from `LocalView.current.context` (ContextWrapper chain) when available, and ALWAYS add `Intent.FLAG_ACTIVITY_NEW_TASK`; catch `ActivityNotFoundException` as before. Pure helper `externalLinkIntent(url)` (flag included) with a unit test; contract test that no `startActivity(Intent(Intent.ACTION_VIEW` in `SettingsScreen.kt`/`RobiaApp.kt` omits it.
+  3. Licences: remove the dedicated "Open-source licences" row from Settings › General; tapping the app-version row in Settings › About opens the existing `OpenSourceLicensesDialog`. The version row keeps showing the version; no hint text. String `settings_open_source_licenses` may stay unused only if the dialog title uses it (check; otherwise remove from all three locales and from `LicensesAssetTest`).
+  4. `third_party.md` and `data-safety.md`: magic_touch licence = Apache License 2.0, source = the official model card URL of R4-DEC-016, authors, SHA-256; remove "unresolved" for that item only (transitive-library and telemetry items stay).
+- **Out of scope:** any other Settings row; the privacy text; `DuplicateCalibrationScreen.kt` (dev-only chooser has the same flaw: record as follow-up).
+- **Acceptance:** V-FT1-1 … V-FT1-5.
+
+## FT2 — Collections in the Analytics (stats) screen
+- **Predecessors:** none · **Parallel with:** FT1.
+- **Files:** `core/model/WardrobeStats.kt`; `ui/AnalyticsScreen.kt`; tests: `…/core/model/WardrobeStatsTest.kt` (add cases; existing assertions keep strength).
+- **In scope:** new `WardrobeStatsSection.Collections` (after `Locations`, before custom groups); built with `tagGroup(…, "collection", …)` so each collection is one bar (count of active garments in it, counted once each; sorted by count desc then collator; "Not set" bar = garments in no collection, last). The group is omitted when NO collection exists (a lone "Not set" bar is not shown) and archived garments are not counted (already so). Title string `analytics_section_collections` (EN "Collections", ES "Colecciones", DE "Sammlungen"). Bar tap filters Browse by that collection through the existing `toBrowseFilterState()` (Tag key; NotSet key already supported). The custom-group list keeps excluding system categories (the collection category is a system category, so it is not duplicated).
+- **Out of scope:** colours, other sections, empty-state copy, Browse changes.
+- **Acceptance:** V-FT2-1 … V-FT2-3.
