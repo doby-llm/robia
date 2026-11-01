@@ -104,19 +104,25 @@ private val membersSessionSaver = listSaver<CollectionMembersSession, String>(
     restore = { saved -> CollectionMembersSession.fromSaveable(saved) },
 )
 
-/** The long-pressed garment and the draft before that press: the anchor of one paint-drag. */
+/**
+ * The long-pressed garment, the draft before that press, and the grid order at that press. The order is frozen so the
+ * anchor stays in the range even when the press makes it leave the current view (In collection / Not in).
+ */
 private class MembersDragArm {
     var anchorId: String? = null
     var before: Set<String> = emptySet()
+    var orderedIds: List<String> = emptyList()
 
-    fun arm(id: String, draftBefore: Set<String>) {
+    fun arm(id: String, draftBefore: Set<String>, ids: List<String>) {
         anchorId = id
         before = draftBefore
+        orderedIds = ids
     }
 
     fun disarm() {
         anchorId = null
         before = emptySet()
+        orderedIds = emptyList()
     }
 }
 
@@ -327,7 +333,7 @@ internal fun CollectionMembersScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding)
-                    .membersDragPaint(gridState, paintArm, visibleIds) { draft ->
+                    .membersDragPaint(gridState, paintArm) { draft ->
                         if (draft != session.draft) {
                             session = session.withDraft(draft)
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -384,7 +390,7 @@ internal fun CollectionMembersScreen(
                 items(visibleItems, key = { item -> item.id }, contentType = { browseCellFor(browseLayout) }) { item ->
                     val onLongClick = {
                         // The long-press toggles the garment; a drag that follows paints the range to the same state.
-                        paintArm.arm(item.id, session.draft)
+                        paintArm.arm(item.id, session.draft, visibleIds)
                         toggleMember(item.id)
                     }
                     Box(modifier = Modifier.animateItem()) {
@@ -621,10 +627,8 @@ private fun MembersMessage(text: String) {
 private fun Modifier.membersDragPaint(
     gridState: LazyGridState,
     arm: MembersDragArm,
-    orderedIds: List<String>,
     onDraftChange: (Set<String>) -> Unit,
 ): Modifier {
-    val currentIds by rememberUpdatedState(orderedIds)
     val currentOnDraftChange by rememberUpdatedState(onDraftChange)
     val scope = rememberCoroutineScope()
     return pointerInput(gridState, arm) {
@@ -633,13 +637,13 @@ private fun Modifier.membersDragPaint(
         awaitEachGesture {
             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             var paint: DragPaint? = null
+            var order: List<String> = emptyList()
             var pinched = false
             var pointer = Offset.Zero
             var autoscroll: Job? = null
             fun track(active: DragPaint) {
-                val ids = currentIds
-                gridState.membersItemIdAt(pointer, ids.toHashSet())?.let(active::moveTo)
-                currentOnDraftChange(active.draft(ids))
+                gridState.membersItemIdAt(pointer, order.toHashSet())?.let(active::moveTo)
+                currentOnDraftChange(active.draft(order))
             }
             try {
                 do {
@@ -655,6 +659,7 @@ private fun Modifier.membersDragPaint(
                         if (change != null && paint == null && anchorId != null) {
                             val started = DragPaint(anchorId, arm.before)
                             paint = started
+                            order = arm.orderedIds
                             autoscroll = scope.launch {
                                 while (true) {
                                     delay(PAINT_FRAME_MS)
