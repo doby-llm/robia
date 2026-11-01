@@ -1026,4 +1026,7 @@
     <string name="collection_members_empty_view">Keine Kleidungsstücke in dieser Ansicht.</string>
     <!-- P02 -->
     <string name="settings_privacy_policy">Datenschutzerklärung</string>
+    <!-- P03 -->
+    <string name="settings_open_source_licenses">Open-Source-Lizenzen</string>
+    <string name="open_source_licenses_close">Schließen</string>
 </resources>

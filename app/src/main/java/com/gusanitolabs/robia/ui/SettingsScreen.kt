@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
@@ -155,6 +156,7 @@ internal fun SettingsScreen(
     var benchmarkRunning by remember { mutableStateOf(false) }
     var showBrowseLayoutDialog by rememberSaveable { mutableStateOf(false) }
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
+    var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
     val cutoutSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val cutoutPackState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
     var cutoutBenchmarkText by remember { mutableStateOf<String?>(null) }
@@ -235,6 +237,12 @@ internal fun SettingsScreen(
                         }
                     },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null) },
+                )
+                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                SettingsNavRow(
+                    icon = Icons.Rounded.Description,
+                    title = stringResource(R.string.settings_open_source_licenses),
+                    onClick = { showOpenSourceLicenses = true },
                 )
             }
         }
@@ -450,6 +458,9 @@ internal fun SettingsScreen(
             },
             onDismiss = { showThemeDialog = false },
         )
+    }
+    if (showOpenSourceLicenses) {
+        OpenSourceLicensesDialog(onDismiss = { showOpenSourceLicenses = false })
     }
 }
 
