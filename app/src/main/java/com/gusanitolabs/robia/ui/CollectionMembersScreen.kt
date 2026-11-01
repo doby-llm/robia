@@ -498,12 +498,16 @@ private fun ChangeLabel(
         color = containerColor,
         contentColor = contentColor,
     ) {
+        // One line only: a word must never break across lines in a narrow cell; if it still does not fit, it ellipsizes.
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             textDecoration = if (strikeThrough) TextDecoration.LineThrough else null,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

@@ -45,7 +45,6 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
@@ -86,6 +85,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -149,6 +149,7 @@ internal fun SettingsScreen(
     onDuplicateCalibrationClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val app = context.applicationContext as RobiaApplication
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -231,27 +232,23 @@ internal fun SettingsScreen(
                     title = stringResource(R.string.settings_privacy_policy),
                     onClick = {
                         try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+                            (view.context.findActivity() ?: context).startActivity(externalLinkIntent(PRIVACY_POLICY_URL))
                         } catch (_: ActivityNotFoundException) {
                             // No app can open a web page: the row does nothing.
                         }
                     },
                     trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null) },
                 )
-                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
-                SettingsNavRow(
-                    icon = Icons.Rounded.Description,
-                    title = stringResource(R.string.settings_open_source_licenses),
-                    onClick = { showOpenSourceLicenses = true },
-                )
             }
         }
         item {
             SettingsGroup(label = stringResource(R.string.settings_group_about)) {
+                // The version row opens the licences list (R4-DEC-017); it has no chevron or hint on purpose.
                 SettingsNavRow(
                     icon = Icons.Rounded.Info,
                     title = stringResource(R.string.app_name),
                     value = BuildConfig.VERSION_NAME,
+                    onClick = { showOpenSourceLicenses = true },
                     trailing = null,
                 )
             }
@@ -677,6 +674,18 @@ private val ThemeMode.labelRes: Int
         ThemeMode.Dark -> R.string.settings_theme_dark
         ThemeMode.System -> R.string.settings_theme_system
     }
+
+/** What opening a web link needs. Pure, so the JVM test can check it without the Android runtime. */
+internal data class ExternalLinkRequest(val action: String, val url: String, val flags: Int)
+
+/** VIEW of [url] with NEW_TASK always set: a start from a non-Activity context (R3 lesson) throws without it. */
+internal fun externalLinkRequest(url: String): ExternalLinkRequest =
+    ExternalLinkRequest(action = Intent.ACTION_VIEW, url = url, flags = Intent.FLAG_ACTIVITY_NEW_TASK)
+
+internal fun externalLinkIntent(url: String): Intent {
+    val request = externalLinkRequest(url)
+    return Intent(request.action, Uri.parse(request.url)).addFlags(request.flags)
+}
 
 /** Sub-screen behind Settings > Smart suggestions: the existing model section, moved here without changes. */
 @Composable

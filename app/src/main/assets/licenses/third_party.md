@@ -51,9 +51,10 @@ Robia uses the components below. Models marked "downloaded at runtime" are fetch
 - Used for: precise cutout (tap to select an object)
 - Status: bundled
 - Version: SHA-256 e24338a717c1b7ad8d159666677ef400babb7f33b8ad60c4d96db4ecf694cd25, identical to the MediaPipe file below
-- Licence: unresolved — needs Manu
-- Upstream source: https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite
-- Documentation: https://ai.google.dev/edge/mediapipe/solutions/vision/interactive_segmenter (states no licence for this model file)
+- Licence: Apache License 2.0 (official model card: "LICENSED UNDER Apache License, Version 2.0")
+- Authors: Valentin Bazarevsky and Ben Hahn (Google), model card dated 13 Mar 2023
+- Upstream source: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf (model card); model file: https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite
+- Documentation: https://ai.google.dev/edge/mediapipe/solutions/vision/interactive_segmenter (its page states no licence for the model file; the licence above comes from the model card)
 
 ## LiteRT-LM 0.18.0
 - Licence: Apache License 2.0

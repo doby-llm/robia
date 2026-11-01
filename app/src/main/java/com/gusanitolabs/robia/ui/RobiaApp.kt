@@ -1668,9 +1668,11 @@ private fun RobiaShell(
         pushRoute(RobiaRoute.ItemDetail)
     }
 
+    // Read here, not inside the local fun: a composable read cannot happen in it (and `activity` is declared further down).
+    val syncStorageView = LocalView.current
     fun openSyncStorage() {
         runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SYNC_STORAGE_URL)))
+            (syncStorageView.context.findActivity() ?: context).startActivity(externalLinkIntent(SYNC_STORAGE_URL))
         }
     }
 

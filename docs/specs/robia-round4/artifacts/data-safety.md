@@ -17,9 +17,9 @@ Tags: **[C]** = read from code, a manifest, or a live HTTP response · **[H]** =
 | u2netp.onnx (rembg v0.0.0) | downloaded | MIT for the rembg project (`LICENSE.txt`, Copyright 2020 Daniel Gatis) [C]; model from U-2-Net, Apache-2.0 (`xuebinqin/U-2-Net` LICENSE) [C] | https://github.com/xuebinqin/U-2-Net, https://github.com/danielgatis/rembg | Yes. The weights' own licence is not stated in the file [H]. |
 | **D-FINE** dfine_s_obj365 ONNX (commit a61e4cd) | downloaded | **Apache-2.0**: upstream `Peterande/D-FINE` LICENSE [C]; base card `ustc-community/dfine_s_obj365` has `license: apache-2.0` [C]. The ONNX card has no licence field [C]. | https://github.com/Peterande/D-FINE, https://huggingface.co/ustc-community/dfine_s_obj365 | **Resolved: Apache-2.0.** Training-data terms of the COCO/Objects365 weights were not checked [H]. |
 | MobileSAM encoder and mask decoder (commit 0d3b403) | downloaded | MIT on the `Acly/MobileSAM` card [C]. Upstream `ChaoningZhang/MobileSAM` LICENSE is **Apache-2.0** [C]. | https://github.com/ChaoningZhang/MobileSAM, https://huggingface.co/Acly/MobileSAM | Yes. Both are permissive; the register lists both. Manu may pick one for the notice. |
-| **magic_touch.tflite** (bundled, 6,227,884 bytes) | bundled | **unresolved — needs Manu.** | https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite | Provenance **resolved** [C]: sha256 `e24338a717c1b7ad8d159666677ef400babb7f33b8ad60c4d96db4ecf694cd25` matches the bundled file. Licence not stated on the MediaPipe Interactive Segmenter page (its CC-BY/Apache-2.0 notice covers the documentation and code samples) [C]. |
+| **magic_touch.tflite** (bundled, 6,227,884 bytes) | bundled | **Apache-2.0**: official MediaPipe model card "LICENSED UNDER Apache License, Version 2.0" (authors Valentin Bazarevsky and Ben Hahn, 13 Mar 2023; https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf) [C]. | https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite | **Resolved (R4-DEC-016).** Provenance: sha256 `e24338a717c1b7ad8d159666677ef400babb7f33b8ad60c4d96db4ecf694cd25` matches the bundled file [C]. The Interactive Segmenter docs page states no licence for the model file; the model card is the licence source [C]. |
 
-Note for Manu: `media/cutout/InteractiveSelector.kt:19` says `magic_touch` is "Apache-2.0". No source found in this round supports that statement. Do not rely on it until Manu confirms [C].
+Note: `media/cutout/InteractiveSelector.kt:19` says `magic_touch` is "Apache-2.0". Since R4-DEC-016 the official model card supports that statement [C].
 
 ## 3. Libraries that ship in the APK (from `gradle/libs.versions.toml`)
 
@@ -74,7 +74,7 @@ Draft only. Each row says what the code does, then what Manu should check.
 
 ## 6. Open items (for Manu)
 
-1. **magic_touch.tflite licence — unresolved — needs Manu.** Provenance is confirmed; the licence is not.
+1. **magic_touch.tflite licence — resolved (Apache-2.0, R4-DEC-016).** Provenance and licence are both confirmed.
 2. **EmbeddingGemma: Gemma Prohibited Use Policy — unresolved — needs Manu.** Whether the app must show it or link to it.
 3. **Transitive libraries not listed in the licence asset — unresolved — needs Manu.**
 4. **MobileSAM: MIT card vs Apache-2.0 upstream.** Both permissive. Manu chooses the notice wording.

@@ -1,6 +1,7 @@
 package com.gusanitolabs.robia.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
@@ -25,23 +26,35 @@ class LicensesAssetTest {
     @Test
     fun bundledMagicTouchModelIsListedWithItsStatus() {
         val asset = source("app/src/main/assets/licenses/third_party.md")
+        val magicTouch = asset
+            .substringAfter("## magic_touch.tflite (interactive segmenter model)")
+            .substringBefore("## LiteRT-LM")
 
         assertTrue(asset.contains("## magic_touch.tflite (interactive segmenter model)"))
-        assertTrue(asset.contains("- Status: bundled"))
-        assertTrue(asset.contains("unresolved — needs Manu"))
+        assertTrue(magicTouch.contains("- Status: bundled"))
+        assertTrue(magicTouch.contains("- Licence: Apache License 2.0"))
+        assertTrue(magicTouch.contains("https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf"))
+        assertTrue(magicTouch.contains("Valentin Bazarevsky and Ben Hahn"))
+        assertFalse(magicTouch.contains("unresolved"))
     }
 
     @Test
-    fun settingsGeneralOpensTheLicenceDialogWithoutANewRoute() {
+    fun settingsGeneralHasNoLicenceRowAndTheAboutVersionRowOpensTheDialog() {
         val settings = source("app/src/main/java/com/gusanitolabs/robia/ui/SettingsScreen.kt")
         val general = settings
             .substringAfter("SettingsGroup(label = stringResource(R.string.settings_group_general))")
             .substringBefore("SettingsGroup(label = stringResource(R.string.settings_group_about))")
+        val about = settings
+            .substringAfter("SettingsGroup(label = stringResource(R.string.settings_group_about))")
+            .substringBefore("if (developerModeUnlocked)")
 
-        assertTrue(general.contains("title = stringResource(R.string.settings_open_source_licenses)"))
-        assertTrue(general.contains("onClick = { showOpenSourceLicenses = true }"))
+        assertFalse(general.contains("settings_open_source_licenses"))
+        assertFalse(general.contains("showOpenSourceLicenses = true"))
+        assertTrue(about.contains("title = stringResource(R.string.app_name)"))
+        assertTrue(about.contains("value = BuildConfig.VERSION_NAME"))
+        assertTrue(about.contains("onClick = { showOpenSourceLicenses = true }"))
         assertTrue(settings.contains("OpenSourceLicensesDialog(onDismiss = { showOpenSourceLicenses = false })"))
-        assertTrue(!source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt").contains("OpenSourceLicenses"))
+        assertFalse(source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt").contains("OpenSourceLicenses"))
     }
 
     @Test

@@ -63,6 +63,21 @@ class CollectionMembersWiringContractTest {
     }
 
     @Test
+    fun ft1_1_changeLabelsStayOnOneLineAndTheRemovedLabelIsStruckThrough() {
+        val label = screen.substringAfter("private fun ChangeLabel(").substringBefore("@OptIn")
+        assertTrue(label.contains("maxLines = 1"))
+        assertTrue(label.contains("softWrap = false"))
+        assertTrue(label.contains("overflow = TextOverflow.Ellipsis"))
+        assertTrue(label.contains("style = MaterialTheme.typography.labelSmall"))
+        assertTrue(label.contains("if (strikeThrough) TextDecoration.LineThrough else null"))
+
+        val badge = screen.substringAfter("private fun MemberChangeBadge(").substringBefore("@Composable\nprivate fun ChangeLabel(")
+        assertTrue(badge.contains("text = \"+ \" + stringResource(R.string.collection_members_added_badge)"))
+        assertTrue(badge.contains("text = stringResource(R.string.collection_members_removed_badge)"))
+        assertTrue(badge.contains("strikeThrough = true"))
+    }
+
+    @Test
     fun grid_cardsAreReusedButBrowseBehaviourIsUnchanged() {
         val browseGrid = source("app/src/main/java/com/gusanitolabs/robia/ui/BrowseGrid.kt")
         assertTrue(browseGrid.contains("internal fun GarmentPhotoTile("))
