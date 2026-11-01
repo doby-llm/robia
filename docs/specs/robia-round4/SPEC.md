@@ -1,4 +1,4 @@
-# Robia round 4 — SPEC (planning package, status: PROPOSED)
+# Robia round 4 — SPEC (planning package, status: APPROVED 2026-11-01)
 
 Planner: Claude Opus 5.5 (planning only). Execution: coordinator + workers per `PROMPT_COORDINATOR.md`.
 Source request: `feedback/2026-10-30-manu-telegram.md` (verbatim). Base: `main` @ `0ceb916`.
@@ -8,7 +8,7 @@ Mockup: `mockups/collections.html` (captions ES, UI copy EN, copy table EN/ES/DE
 
 Scope of the round:
 - **A. Collections** (feature) — §1–§6, tasks C01–C05.
-- **B. Play Store readiness** — §7, tasks P01–P0n (blockers before the first Play upload).
+- **B. Play Store readiness** — §7, tasks P01–P04 + POL now; Play Console upload (G-PLAY, P05) deferred (R4-DEC-014).
 - **C. ML Kit Embeddings API** — §8, decision only, no task.
 - **D. Workspace cleanup** (host, not app) — §9, task CLN (coordinator-run, closed allowlist).
 - Device validation — task CHK.
@@ -94,7 +94,7 @@ Play for On-device AI guide, Play size limits (answer 9859372).
 | ID | Item | Mechanism | Task |
 |---|---|---|---|
 | PLAY-B1 | `targetSdk = 35`, `compileSdk = 35` (`app/build.gradle.kts:48,53`) | Since 2026-08-31 new apps and updates must target **API 36**; uploads are refused otherwise. Raising target changes Android 16 behaviour (edge-to-edge enforced, predictive back on by default, 16 KB pages, orientation/resizability ignored on large screens) | P01 |
-| PLAY-B2 | No privacy policy URL; no link in the app | Play Console requires one for apps that handle personal data (photos, Google account) | P02 (copy) + Manu (hosting) |
+| PLAY-B2 | No privacy-policy link in the app; the public policy repo `doby-llm/robia-privacy-policy` (Aug 2026) misses model downloads/collections and its deletion page promises a deletion we cannot perform | Play Console requires a policy URL for apps that handle personal data; the deletion page must be accurate | P02 (in-app link) + POL (policy repo edits) |
 | PLAY-M1 | Release AAB never built; release signing secrets `ANDROID_KEYSTORE_*` not set in the repo (only `ROBIA_DEBUG_*` exist) | `release-aab` job (`android-apk.yml:130-188`) fails without them | P04 + Manu (create upload key, add 4 secrets) |
 | PLAY-M2 | Drive sign-in on Play builds | Play re-signs with the **App Signing key**: an Android OAuth client with that SHA-1 must exist in Cloud Console, and the OAuth consent screen must be **In production** (testing mode = 100 test users, 7-day tokens). `drive.appdata` is a **non-sensitive** scope → no Google verification/CASA needed | Manu (Console steps in P04 brief) |
 | PLAY-M3 | `versionCode = 1` hard-coded | Each upload needs a higher code | P04 (CI-supplied `versionCode`) |
@@ -103,6 +103,15 @@ Play for On-device AI guide, Play size limits (answer 9859372).
 | PLAY-S3 | Staging shares the release applicationId | A staging APK could be mistaken for release; same id blocks side-by-side | **Not changed** (Manu's phone runs staging with that id and local data; a suffix = new app, data lost). Follow-up F-R4-PLAY-2 |
 | PLAY-S4 | No R8 mapping uploaded for release | Crash stack traces unreadable in Play Console | P04 (upload `mapping.txt` as CI artifact) |
 | OK | Permissions: only INTERNET (+ WorkManager); photos via SAF/system camera; no media permission; `allowBackup=false`; no cleartext; 16 KB alignment passes for all six arm64 `.so` in the staging APK; APK 82.8 MB; no analytics/ads SDK | | — |
+
+### 7.2b Timing (Manu 2026-11-01, R4-DEC-014)
+Code-side items (P01–P04, POL) are done in this round because they are independent of the visual refresh. The Play
+Console work (G-PLAY, P05: app setup, store listing, Data safety, upload, testing tracks) waits until Manu has the new
+screenshots/colours and says go; it may then be run by a browser agent on the GusanitoLabs account
+(the.gusanito.lab@gmail.com) — that will be its own small plan (authenticated browser, vault for credentials, no
+secrets in chat). If the GusanitoLabs account is a **personal** account created after 2023-11-13, production access
+requires a **closed test with ≥12 testers opted in for 14 consecutive days**; that test is the longest lead time and can
+start with provisional screenshots (they can be replaced later).
 
 ### 7.3 Data safety form (facts for Manu; no task)
 Photos and garment data stay on the device; optional backup to the user's **own** Google Drive app-data folder
@@ -121,8 +130,7 @@ on the precision dataset). Not a Play blocker either way.
 ## 9. Workspace cleanup (D) — host only, task CLN
 Inventory (host paths, kept outside the public repo): `~/.local/share/robia-planning/r4/inventory/cleanup.md`
 (+ `worktrees.tsv`, `workers.tsv`, `branches_local.tsv`). Classes: DELETE-SAFE (evidence: clean + merged/pushed, no
-live process), ASK (Manu decides per item), KEEP. CLN runs only the categories Manu approves (questions in the
-delivery message), re-verifying each target immediately before deletion (`git status`, `git cherry`, `pgrep`/`lsof`),
+live process), ASK (Manu decides per item), KEEP. CLN runs only the categories Manu approved on 2026-11-01: **A** (clean/pushed worker clones, worktrees, merged branches), **B** (old APK copies and the stale adb process), **C** (benchmark/research data and venvs) — only where they do not interfere with this plan — and **E** (archive each unique-work worktree as a patch, then remove). **D (remote branches) is NOT approved**, re-verifying each target immediately before deletion (`git status`, `git cherry`, `pgrep`/`lsof`),
 and never touches: personal photos (`precision-data/photos_raw`, `r3/feedback-assets`), state/feedback/decision
 files, `r4/`, the main checkout, remote branches (unless approved), shared caches beyond the approved Gradle
 version, anything outside Robia.

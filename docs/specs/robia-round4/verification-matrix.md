@@ -46,3 +46,4 @@ checks by reading · **DEV** = Manu on the phone (CHK checklist, plain Spanish) 
 | V-P04-2 | P04 | REC | Without secrets the release job fails at "Configure release signing key" with the existing message (unchanged); with secrets (after G-PLAY) it produces `robia-release-aab` + `robia-release-mapping` artifacts, versionCode = run_number+100, arm64-only `.so`, and the 16 KB check passes. |
 | V-P04-3 | P04 | CI | Debug/staging builds unchanged (same task list, still green). |
 | V-CHK-1 | CHK | REC | Checklist file exists, uses current main UI labels, staging link + signer of the latest main run. |
+| V-POL-1 | POL | REV | Coordinator diff-checks the policy PR against `artifacts/privacy-policy-changes.md` items 1–5 (and the data-safety cross-check of item 3); the URL in `ReleaseGates.PRIVACY_POLICY_URL` opens the updated page. |

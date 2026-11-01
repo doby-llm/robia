@@ -14,3 +14,15 @@ Esto nos afecta? Si buscamos publicar nuestra app en la play store, recomendaria
 # Manu, Telegram, 2026-11-01 (verbatim)
 
 Te quedaste sin uso pero ya deberías de tener. sigue por donde lo dejaste a no ser que se haya perdido el progreso. Entonces dímelo. Además, en caso de que no hubiese quedado claro desde la primera petición, dado que quiero publicar esto en la Play Store, quiero que veas si nuestra app puede tener algún problema con ello (e.g descarga de modelos de huggingface o cosas así)
+
+# Manu, Telegram, 2026-11-01 — answers to the planning questions (verbatim)
+
+Para las preguntas que me has dado:
+
+1. A
+2. A, B, C (siempre y cuando no interfieran en la planificación actual) y E
+3. a
+4. Por si acaso ponlo en un repositorio aparte en caso de que robia vaya en privado (creo que como ejemplo analogo está packly)
+5. Ya tenemos una que se llama GusanitoLabs (the.gusanito.lab@gmail.com). Por el momento no sé si recomiendas empezar a trabajar en ello. Inicialmente te comenté esto como un audit inicial para luego ponerlo en play store (aun así hay cosas que tengo que cambiar como por ejemplo los screenshots y colores de la app) aunque sí que es verdad que el resto estaría ya prácticamente listo. Además para esto la idea sería que yo diese control autónomo al navegador con la cuenta de the.gusanito.lab@gmail.com
+
+Actualiza el plan si así consideras necesario y enviame el prompt del coordinador si es que ha cambiado. Si no uso el anterior

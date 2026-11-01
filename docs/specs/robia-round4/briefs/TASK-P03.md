@@ -31,7 +31,7 @@ SPEC §7.1, §7.3; `artifacts/inv-r4-play-readiness.md` §3, §6, §9; `suggesti
    assert each URL appears in `third_party.md`.
 
 ## Done when
-V-P03-1 green; V-P03-2 evidence in the receipt; V-P03-D for Manu.
+`artifacts/data-safety.md` exists (POL reads it). V-P03-1 green; V-P03-2 evidence in the receipt; V-P03-D for Manu.
 
 ## Do not
 Add a licence-plugin dependency; change downloads; add a route.

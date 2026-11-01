@@ -1,6 +1,6 @@
 # Tasks — robia-round4
 
-**Status: proposed (planning PR).** G-APPROVAL = Manu writes APROBADO on the planning PR and it is merged. A task is
+**Status: APPROVED 2026-11-01 (G-APPROVAL passed when the planning PR merges).** A task is
 Ready when G-APPROVAL passed and every predecessor (tasks and gates) is merged/passed. Spec: `SPEC.md`. Paths are
 relative to `app/src/main/java/com/gusanitolabs/robia/` unless they start with `app/`, `.github/` or `docs/`.
 
@@ -35,8 +35,10 @@ C01 -> C02 -> C03
 C02, C04 -> C05
 C05 -> P02          (RobiaApp.kt lease)
 P01 -> P02 -> P03   (SettingsScreen.kt lease)
-P02 -> P04 -> G-PLAY (Manu: upload key secrets + Console) -> P05
+P02 -> P04 -> G-PLAY (DEFERRED: Manu decides when; upload key secrets + Console) -> P05
+P03 -> POL          (policy repo, uses the data-safety facts)
 C03, C05, P03 -> CHK
+G-CLN passed (Manu 2026-11-01: categories A, B, C, E) -> CLN (coordinator, can start in wave 1)
 CLN: independent, coordinator-run, after Manu's cleanup answers (G-CLN)
 ```
 Shared hot files and their order (one live writer at a time):
@@ -136,8 +138,14 @@ C03 and C04 touch no hot file except strings.xml, so they can run in parallel wi
 - **Out of scope:** uploading to Play; Play Console; changing staging/debug.
 - **Acceptance:** V-P04-1 … V-P04-3.
 
-## P05 — First internal-testing upload (Manu + coordinator)
-- **Predecessors:** G-PLAY · **Successors:** —
+## POL — Update the public privacy policy repo
+- **Predecessors:** P03 · **Successors:** — · **Repo:** `doby-llm/robia-privacy-policy` (NOT robia; own clone, branch `docs/robia-round4`, PR, merge on review by coordinator — that repo has no CI)
+- **Files:** `README.md`, `DELETE_ACCOUNT.md` of that repo only.
+- **In scope:** exactly the edits in `artifacts/privacy-policy-changes.md`. **Out of scope:** any other wording, a website, GitHub Pages.
+- **Acceptance:** V-POL-1.
+
+## P05 — First internal-testing upload (Manu + coordinator) — DEFERRED
+- **Predecessors:** G-PLAY (deferred until Manu has new screenshots/colours and says go) · **Successors:** —
 - **Not a worker task.** Coordinator triggers `release-aab` (workflow_dispatch `release=true`), downloads the AAB,
   gives Manu the steps in the P04 brief §"Manu steps"; Manu uploads to Internal testing and confirms Drive sign-in on
   the Play-installed build. Result recorded in the tracking issue.
@@ -147,4 +155,4 @@ C03 and C04 touch no hot file except strings.xml, so they can run in parallel wi
 - Latest main `robia-staging-apk` link + signer check, plain-Spanish steps for every V-*-D row, destructive steps last.
 
 ## CLN — Workspace cleanup (coordinator, host only, no PR)
-- **Predecessors:** G-CLN (Manu's answers to the cleanup questions) · Brief: `briefs/TASK-CLN.md`.
+- **Predecessors:** G-CLN — passed 2026-11-01 (approved categories A, B, C, E; D = remote branches NOT approved) · Brief: `briefs/TASK-CLN.md`.

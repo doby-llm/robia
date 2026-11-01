@@ -11,7 +11,7 @@ SPEC §7.2; `ui/SettingsScreen.kt:128-300` (groups, `developerModeUnlocked` :134
 
 ## Steps
 1. New `ui/ReleaseGates.kt`:
-   `const val PRIVACY_POLICY_URL = "https://doby-llm.github.io/robia/privacy.html"`
+   `const val PRIVACY_POLICY_URL = "https://github.com/doby-llm/robia-privacy-policy/blob/main/README.md"` (public repo `doby-llm/robia-privacy-policy`, R4-DEC-013)
    `fun developerModeAllowed(buildType: String): Boolean = buildType != "release"`.
 2. `RobiaApp.kt` `handleSettingsClick`: return before counting taps when `!developerModeAllowed(BuildConfig.BUILD_TYPE)`.
    Where developer mode is read for UI (`settings.developerModeUnlocked`/`developerModeEnabled` passed to screens),
@@ -25,5 +25,4 @@ SPEC §7.2; `ui/SettingsScreen.kt:128-300` (groups, `developerModeUnlocked` :134
 V-P02-1, V-P02-2 green; V-P02-D for Manu.
 
 ## Do not
-Write the policy text (Manu publishes the page; draft in `artifacts/privacy-policy-draft.md`, coordinator task in
-P04's Manu steps); change debug/staging behaviour.
+Edit the policy text (task POL owns `doby-llm/robia-privacy-policy`); change debug/staging behaviour.

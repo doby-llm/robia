@@ -26,7 +26,8 @@ SPEC §7.2; `app/build.gradle.kts:19-120`; `.github/workflows/android-apk.yml` (
 ## Done when
 V-P04-1 (coordinator runs `python3 scripts/check_aab_16kb.py --self-test`), V-P04-3 green; V-P04-2 after G-PLAY.
 
-## Manu steps (the coordinator sends these in Spanish at G-PLAY; ~30–45 min total)
+## Manu steps (G-PLAY — DEFERRED until Manu says the visuals are ready, R4-DEC-014; ~30–45 min; later possibly done by a browser agent with the GusanitoLabs account)
+0. Check whether the GusanitoLabs Play account is **personal** (created after 2023-11-13 → production needs a closed test with ≥12 testers opted in for 14 consecutive days) or **organization** (no such test).
 1. Play Console: create the app "Robia" (package `com.gusanitolabs.robia`), enrol in **Play App Signing**.
 2. Create an **upload key** on your computer (`keytool -genkeypair -v -keystore robia-upload.jks -keyalg RSA -keysize 4096 -validity 10000 -alias robia-upload`),
    keep it safe (backup outside the Pi), then add the four GitHub secrets in doby-llm/robia › Settings › Secrets ›
@@ -36,7 +37,7 @@ V-P04-1 (coordinator runs `python3 scripts/check_aab_16kb.py --self-test`), V-P0
    `com.gusanitolabs.robia` with the **App signing key SHA-1** shown in Play Console › Setup › App integrity (and
    optionally the upload key SHA-1); set the OAuth consent screen to **In production** (scope `drive.appdata` is
    non-sensitive: no verification needed, only the app name/logo/privacy URL).
-4. Publish the privacy policy at `https://doby-llm.github.io/robia/privacy.html` (draft provided by the coordinator).
+4. Privacy policy: already public at `https://github.com/doby-llm/robia-privacy-policy/blob/main/README.md` (updated by task POL); enter that URL in Play Console.
 5. Play Console app content: privacy policy URL, Data safety (from `artifacts/data-safety.md`), content rating
    questionnaire, target audience (adults), ads = none, app access (no login needed; Drive optional).
 6. Internal testing: upload the `robia-release-aab` artifact, install from the Play link, test Drive sign-in.

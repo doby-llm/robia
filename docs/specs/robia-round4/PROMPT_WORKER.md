@@ -19,4 +19,4 @@ Plan: docs/specs/robia-round4/
 Notes for Manu / the coordinator
 - One task per run, fresh clone per task under `~/.local/share/robia-planning/workers/r4-<task>/` (git user doby-llm).
 - Independent review (separate read-only run, `PROMPT_REVIEW.md`): **C01, C05** only.
-- P05, CHK and CLN are coordinator tasks (no worker).
+- P05, CHK and CLN are coordinator tasks (no worker). POL runs in the separate repo doby-llm/robia-privacy-policy (no CI): its brief overrides steps 1–4 and 7 of the prompt for repo, CI and receipt.
