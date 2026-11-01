@@ -1029,4 +1029,6 @@
     <!-- P03 -->
     <string name="settings_open_source_licenses">Open-source licences</string>
     <string name="open_source_licenses_close">Close</string>
+    <!-- FT2 -->
+    <string name="analytics_section_collections">Collections</string>
 </resources>

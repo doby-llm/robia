@@ -3,7 +3,7 @@ package com.gusanitolabs.robia.core.model
 import java.text.Collator
 
 /** Groups of the Analytics screen, in display order: the system groups, then user-created tag categories. */
-enum class WardrobeStatsSection { Categories, Colours, Occasions, Seasons, Fit, Locations, Custom }
+enum class WardrobeStatsSection { Categories, Colours, Occasions, Seasons, Fit, Locations, Collections, Custom }
 
 /** What one bar stands for. Browse is filtered by exactly this entry when the bar is tapped. */
 sealed interface WardrobeStatsKey {
@@ -59,6 +59,7 @@ fun wardrobeStats(
         tagGroup(WardrobeStatsSection.Seasons, garments, "season", labelOf, collator),
         fitGroup(garments),
         tagGroup(WardrobeStatsSection.Locations, garments, "location", labelOf, collator),
+        collectionGroup(garments, labelOf, collator),
     )
     val customGroups = tagCategories
         .filterNot(TagCategory::isSystem)
@@ -100,6 +101,20 @@ private fun tagGroup(
     }
     val notSet = taggedPerGarment.count(List<GarmentTag>::isEmpty)
     return WardrobeStatsGroup(section, customName, ranked(bars, collator, notSetBar(categoryId, notSet)))
+}
+
+/**
+ * One bar per collection, counted like the other tag groups. Left out (no bars) while no active garment is in a
+ * collection: the "Not set" bar would then be a lone bar covering every garment.
+ */
+private fun collectionGroup(
+    garments: List<ClothingItem>,
+    labelOf: (GarmentTag) -> String,
+    collator: Collator,
+): WardrobeStatsGroup {
+    val group = tagGroup(WardrobeStatsSection.Collections, garments, "collection", labelOf, collator)
+    val anyInCollection = group.bars.any { bar -> bar.key is WardrobeStatsKey.Tag }
+    return if (anyInCollection) group else group.copy(bars = emptyList())
 }
 
 private fun colourGroup(
