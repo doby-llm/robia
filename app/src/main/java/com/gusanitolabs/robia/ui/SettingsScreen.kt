@@ -1,5 +1,7 @@
 package com.gusanitolabs.robia.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloat
@@ -46,7 +48,9 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
@@ -218,6 +222,19 @@ internal fun SettingsScreen(
                     title = stringResource(R.string.settings_browse_layout),
                     value = stringResource(browseLayout.labelRes),
                     onClick = { showBrowseLayoutDialog = true },
+                )
+                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                SettingsNavRow(
+                    icon = Icons.Rounded.PrivacyTip,
+                    title = stringResource(R.string.settings_privacy_policy),
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+                        } catch (_: ActivityNotFoundException) {
+                            // No app can open a web page: the row does nothing.
+                        }
+                    },
+                    trailing = { Icon(Icons.Rounded.OpenInNew, contentDescription = null) },
                 )
             }
         }

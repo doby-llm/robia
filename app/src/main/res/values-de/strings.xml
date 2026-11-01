@@ -1024,4 +1024,6 @@
     <string name="collection_members_discard">Änderungen verwerfen</string>
     <string name="collection_members_keep_editing">Weiter bearbeiten</string>
     <string name="collection_members_empty_view">Keine Kleidungsstücke in dieser Ansicht.</string>
+    <!-- P02 -->
+    <string name="settings_privacy_policy">Datenschutzerklärung</string>
 </resources>

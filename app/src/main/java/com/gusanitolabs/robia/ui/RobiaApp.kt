@@ -461,7 +461,10 @@ fun RobiaApp(
 
     LocalizedRobiaContent(settings.languagePreference) {
         RobiaTheme(darkTheme = resolveDarkTheme(themeMode, isSystemInDarkTheme())) {
-        val displaySettings = settings.copy(driveSyncConnectionStatus = displaySyncState.connectionStatus)
+        val displaySettings = settings.copy(
+            driveSyncConnectionStatus = displaySyncState.connectionStatus,
+            developerModeUnlocked = settings.developerModeUnlocked && developerModeAllowed(BuildConfig.BUILD_TYPE),
+        )
         RobiaShell(
             suggestionService = suggestionService,
             settings = displaySettings,
@@ -1630,6 +1633,7 @@ private fun RobiaShell(
 
     fun handleSettingsClick() {
         if (currentRoute != RobiaRoute.Settings) pushRoute(RobiaRoute.Settings)
+        if (!developerModeAllowed(BuildConfig.BUILD_TYPE)) return
         if (settings.developerModeUnlocked) return
 
         val now = SystemClock.elapsedRealtime()
