@@ -51,7 +51,7 @@ android {
         applicationId = "com.gusanitolabs.robia"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        versionCode = (System.getenv("ROBIA_VERSION_CODE")?.toIntOrNull() ?: 1)
         versionName = "0.1.0"
 
         vectorDrawables {
@@ -94,6 +94,9 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
