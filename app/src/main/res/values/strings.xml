@@ -1026,4 +1026,7 @@
     <string name="collection_members_empty_view">No garments in this view.</string>
     <!-- P02 -->
     <string name="settings_privacy_policy">Privacy policy</string>
+    <!-- P03 -->
+    <string name="settings_open_source_licenses">Open-source licences</string>
+    <string name="open_source_licenses_close">Close</string>
 </resources>
