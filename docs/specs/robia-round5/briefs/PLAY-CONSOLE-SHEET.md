@@ -291,6 +291,6 @@ Play Console steps:
 17. **Production application answers.** Real feedback, real crash and ANR figures, and the character limit (about 300, unverified).
 18. **Users and permissions.** The App permissions tab, the exact permission labels, and whether an uploaded APK is needed first (third-party guide).
 19. **Signing key SHA-1.** Menu path (two variants seen). The OAuth client is created in Google Cloud Console, not Play Console.
-20. **targetSdk 35.** [PR] B1 says Play requires API 36 for updates from 2026-08-31 ([PR]:14). That date is from the round 4 audit and was not re-verified here. If the upload is rejected, stop. The fix is in `app/build.gradle.kts:53` and is out of scope for this sheet.
-21. **Release AAB.** Not built or verified ([PR] B3). The closed test upload needs it, and Play App Signing enrolment happens on that first upload.
+20. **targetSdk.** Resolved: main targets API 36 (round 4 P01).
+21. **Release AAB.** Built and verified by PL2 (round 5) before PB2.
 22. **Create app is hard to undo.** Manu confirms the name "Robia" and the developer account before the button is clicked.
