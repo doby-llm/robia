@@ -39,7 +39,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
-import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.ClothingItem
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
@@ -285,7 +284,7 @@ internal fun DuplicatePhoto(item: ClothingItem, modifier: Modifier = Modifier) {
                 imageVector = Icons.Rounded.Style,
                 contentDescription = null,
                 // The well is light in both themes, so its ink comes from the light scheme (R3-DEC-045).
-                tint = RobiaLightColorScheme.outline,
+                tint = MaterialTheme.extras.wellScheme.outline,
                 modifier = Modifier.size(32.dp),
             )
         }

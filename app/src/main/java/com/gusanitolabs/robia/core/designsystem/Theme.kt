@@ -2,6 +2,7 @@ package com.gusanitolabs.robia.core.designsystem
 
 import android.provider.Settings
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
@@ -14,6 +15,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.gusanitolabs.robia.core.model.ColorPalette
 import com.gusanitolabs.robia.core.model.ThemeMode
 
 internal val RobiaLightColorScheme = lightColorScheme(
@@ -115,6 +117,8 @@ data class RobiaExtras(
     val removeColors: RobiaChangeColors,
     /** The sparkle icon on a filled primary button, such as the review prompts (ui3 F21, R3-DEC-057). */
     val sparkOnPrimary: Color,
+    /** Light scheme of the active palette; ink on the always-light photo well, in both modes (round 5). */
+    val wellScheme: ColorScheme,
 )
 
 internal val RobiaLightExtras = RobiaExtras(
@@ -136,6 +140,7 @@ internal val RobiaLightExtras = RobiaExtras(
         border = RobiaRemoveBorder,
     ),
     sparkOnPrimary = RobiaOnTertiaryContainer,
+    wellScheme = RobiaLightColorScheme,
 )
 internal val RobiaDarkExtras = RobiaExtras(
     isDark = true,
@@ -156,6 +161,7 @@ internal val RobiaDarkExtras = RobiaExtras(
         border = RobiaDarkRemoveBorder,
     ),
     sparkOnPrimary = RobiaDarkSparkOnPrimary,
+    wellScheme = RobiaLightColorScheme,
 )
 
 val LocalRobiaExtras = staticCompositionLocalOf { RobiaLightExtras }
@@ -164,6 +170,18 @@ val MaterialTheme.extras: RobiaExtras
     @Composable
     @ReadOnlyComposable
     get() = LocalRobiaExtras.current
+
+/** The colour scheme of [palette] in the requested mode (REQ-TH-2). */
+fun robiaColorScheme(palette: ColorPalette, dark: Boolean): ColorScheme = when (palette) {
+    ColorPalette.EarthSteel -> if (dark) RobiaDarkColorScheme else RobiaLightColorScheme
+    ColorPalette.TobaccoBordeaux -> if (dark) TobaccoDarkColorScheme else TobaccoLightColorScheme
+}
+
+/** The [RobiaExtras] of [palette] in the requested mode (REQ-TH-2). */
+fun robiaExtras(palette: ColorPalette, dark: Boolean): RobiaExtras = when (palette) {
+    ColorPalette.EarthSteel -> if (dark) RobiaDarkExtras else RobiaLightExtras
+    ColorPalette.TobaccoBordeaux -> if (dark) TobaccoDarkExtras else TobaccoLightExtras
+}
 
 /** Light unless the choice is Dark, or Follow system on a system in dark mode (REQ-FB-14). */
 fun resolveDarkTheme(mode: ThemeMode, systemDark: Boolean): Boolean = when (mode) {
@@ -183,17 +201,21 @@ val RobiaShapes = Shapes(
 internal fun isReducedMotion(scale: Float): Boolean = scale == 0f
 
 @Composable
-fun RobiaTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
+fun RobiaTheme(
+    darkTheme: Boolean = false,
+    palette: ColorPalette = ColorPalette.TobaccoBordeaux,
+    content: @Composable () -> Unit,
+) {
     val resolver = LocalContext.current.contentResolver
     val reducedMotion = remember {
         isReducedMotion(Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f))
     }
     CompositionLocalProvider(
         LocalReducedMotion provides reducedMotion,
-        LocalRobiaExtras provides if (darkTheme) RobiaDarkExtras else RobiaLightExtras,
+        LocalRobiaExtras provides robiaExtras(palette, darkTheme),
     ) {
         MaterialTheme(
-            colorScheme = if (darkTheme) RobiaDarkColorScheme else RobiaLightColorScheme,
+            colorScheme = robiaColorScheme(palette, darkTheme),
             typography = RobiaTypography,
             shapes = RobiaShapes,
             content = content,

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.ColorPalette
 import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.core.model.ThemeMode
 import kotlinx.coroutines.flow.first
@@ -19,6 +20,7 @@ class SettingsMappingTest {
     private val browseLayoutKey = stringPreferencesKey("browse_layout")
     private val browseColumnsKey = intPreferencesKey("browse_columns")
     private val themeModeKey = stringPreferencesKey("theme_mode")
+    private val colorPaletteKey = stringPreferencesKey("color_palette")
 
     @get:Rule
     val folder = TemporaryFolder()
@@ -118,6 +120,37 @@ class SettingsMappingTest {
     @Test
     fun unknownThemeMode_fallsBackToLight() {
         assertEquals(ThemeMode.Light, mutablePreferencesOf(themeModeKey to "Garbage").toRobiaSettings().themeMode)
+    }
+
+    /** V-TH1-3: absent color_palette reads as Tobacco & Bordeaux, so every install switches on update (REQ-TH-1). */
+    @Test
+    fun absentColorPalette_defaultsToTobaccoBordeaux() {
+        assertEquals(ColorPalette.TobaccoBordeaux, mutablePreferencesOf().toRobiaSettings().colorPalette)
+    }
+
+    @Test
+    fun storedColorPalettes_areRead() {
+        assertEquals(ColorPalette.EarthSteel, mutablePreferencesOf(colorPaletteKey to "earth_steel").toRobiaSettings().colorPalette)
+        assertEquals(ColorPalette.TobaccoBordeaux, mutablePreferencesOf(colorPaletteKey to "tobacco_bordeaux").toRobiaSettings().colorPalette)
+    }
+
+    @Test
+    fun unknownColorPalette_fallsBackToTobaccoBordeaux() {
+        assertEquals(ColorPalette.TobaccoBordeaux, mutablePreferencesOf(colorPaletteKey to "Garbage").toRobiaSettings().colorPalette)
+    }
+
+    @Test
+    fun colorPaletteRoundTripsThroughTheStore() {
+        runBlocking {
+            val store = PreferenceDataStoreFactory.create(produceFile = { File(folder.root, "palette.preferences_pb") })
+            val repository = DataStoreSettingsRepository(store)
+
+            assertEquals(ColorPalette.TobaccoBordeaux, repository.colorPalette.first())
+            ColorPalette.entries.forEach { palette ->
+                repository.setColorPalette(palette)
+                assertEquals(palette, repository.colorPalette.first())
+            }
+        }
     }
 
     /** V-DARK1-1: each choice is written through setThemeMode and read back from the store. */

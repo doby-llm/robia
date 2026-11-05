@@ -109,7 +109,6 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
-import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.designsystem.pressScale
 import com.gusanitolabs.robia.core.model.BrowseLayout
@@ -818,8 +817,8 @@ internal fun GarmentPhotoPlaceholder(
                     modifier = Modifier
                         .size(96.dp)
                         .clip(MaterialTheme.shapes.large)
-                        .background(RobiaLightColorScheme.surfaceContainerLowest.copy(alpha = 0.72f))
-                        .border(1.dp, RobiaLightColorScheme.outlineVariant, MaterialTheme.shapes.large),
+                        .background(MaterialTheme.extras.wellScheme.surfaceContainerLowest.copy(alpha = 0.72f))
+                        .border(1.dp, MaterialTheme.extras.wellScheme.outlineVariant, MaterialTheme.shapes.large),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -833,7 +832,7 @@ internal fun GarmentPhotoPlaceholder(
                     Text(
                         text = stringResource(R.string.cloud_restore_photo_missing_message),
                         style = MaterialTheme.typography.labelSmall,
-                        color = RobiaLightColorScheme.error,
+                        color = MaterialTheme.extras.wellScheme.error,
                         textAlign = TextAlign.Center,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.gusanitolabs.robia.core.model.BatchCutoutMode
 import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.ColorPalette
 import com.gusanitolabs.robia.core.model.CutoutEdges
 import com.gusanitolabs.robia.core.model.CutoutEngineChoice
 import com.gusanitolabs.robia.core.model.DriveBackupDeletionState
@@ -82,6 +83,10 @@ interface SettingsRepository {
     val themeMode: Flow<ThemeMode> get() = flowOf(ThemeMode.Light)
     /** Writes the theme choice; default no-op for fakes that do not model it. */
     suspend fun setThemeMode(mode: ThemeMode) {}
+    /** Settings > Appearance > Colour palette (round 5); default Tobacco & Bordeaux for fakes that do not model it. */
+    val colorPalette: Flow<ColorPalette> get() = flowOf(ColorPalette.TobaccoBordeaux)
+    /** Writes the palette choice; default no-op for fakes that do not model it. */
+    suspend fun setColorPalette(palette: ColorPalette) {}
 }
 
 class DataStoreSettingsRepository(
@@ -179,6 +184,14 @@ class DataStoreSettingsRepository(
 
     override suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { preferences -> preferences[themeModeKey] = mode.storageValue }
+    }
+
+    override val colorPalette: Flow<ColorPalette> = dataStore.data.map { preferences ->
+        ColorPalette.fromStorage(preferences[colorPaletteKey])
+    }
+
+    override suspend fun setColorPalette(palette: ColorPalette) {
+        dataStore.edit { preferences -> preferences[colorPaletteKey] = palette.storageValue }
     }
 
     override suspend fun pauseSyncForDriveBackupDeletion() {
@@ -295,6 +308,7 @@ internal fun Preferences.toRobiaSettings(): RobiaSettings {
         driveAuthorizedAccountEmail = preferences[driveAuthorizedAccountEmailKey]?.takeIf(String::isNotBlank),
         exportOptions = exportOptions(),
         themeMode = ThemeMode.fromStorage(preferences[themeModeKey]),
+        colorPalette = ColorPalette.fromStorage(preferences[colorPaletteKey]),
     )
 }
 
@@ -384,3 +398,4 @@ private val exportFormatKey = stringPreferencesKey("export_format")
 private val exportFieldsKey = stringSetPreferencesKey("export_fields")
 private val exportFrameKey = booleanPreferencesKey("export_frame")
 private val themeModeKey = stringPreferencesKey("theme_mode")
+private val colorPaletteKey = stringPreferencesKey("color_palette")

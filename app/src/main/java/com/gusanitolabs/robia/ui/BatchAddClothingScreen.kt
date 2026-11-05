@@ -74,7 +74,6 @@ import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.PopIn
-import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.model.CanvasOffset
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
@@ -525,7 +524,7 @@ private fun BatchPhotoPreview(
             Icon(
                 imageVector = Icons.Rounded.Style,
                 contentDescription = null,
-                tint = RobiaLightColorScheme.secondary,
+                tint = MaterialTheme.extras.wellScheme.secondary,
                 modifier = Modifier.size(56.dp),
             )
         }

@@ -228,6 +228,18 @@ enum class ThemeMode(val storageValue: String) {
     }
 }
 
+/** Settings > Appearance > Colour palette (round 5). Device-local: not part of any snapshot. */
+enum class ColorPalette(val storageValue: String) {
+    EarthSteel("earth_steel"),
+    TobaccoBordeaux("tobacco_bordeaux"),
+    ;
+
+    companion object {
+        /** Absent or unknown stored values read as Tobacco & Bordeaux, the default (R5-DEC-D04). */
+        fun fromStorage(value: String?): ColorPalette = entries.firstOrNull { it.storageValue == value } ?: TobaccoBordeaux
+    }
+}
+
 data class RobiaSettings(
     val languagePreference: LanguagePreference = LanguagePreference.System,
     val developerModeUnlocked: Boolean = false,
@@ -254,6 +266,8 @@ data class RobiaSettings(
     val exportOptions: ExportOptions = ExportOptions(),
     /** Settings > Appearance > Theme; Light until the user chooses otherwise (REQ-FB-14). */
     val themeMode: ThemeMode = ThemeMode.Light,
+    /** Settings > Appearance > Colour palette; Tobacco & Bordeaux until the user chooses otherwise (round 5). */
+    val colorPalette: ColorPalette = ColorPalette.TobaccoBordeaux,
 ) {
     /** The Developer switch's view of [cutoutEngine]: on when the method is Precise or Automatic. */
     val preciseCutoutEnabled: Boolean
