@@ -222,7 +222,55 @@ jobs:
             echo "No release AAB found" >&2
             exit 1
           fi
-          jarsigner -verify -strict -certs "${aab_path}"
+          # The upload key is self-signed, so jarsigner reports self-signed/PKIX findings
+          # (exit 0 without -strict, exit 4 with it). Accept only that; unsigned, invalid
+          # or otherwise broken jars must fail.
+          verify_log="${RUNNER_TEMP}/jarsigner-verify.log"
+          set +e
+          jarsigner -verify -certs "${aab_path}" > "${verify_log}" 2>&1
+          verify_rc=$?
+          set -e
+          cat "${verify_log}"
+          verify_ok=1
+          if [ "${verify_rc}" -ne 0 ] && [ "${verify_rc}" -ne 4 ]; then
+            verify_ok=0
+          fi
+          if ! grep -q '^jar verified' "${verify_log}"; then
+            verify_ok=0
+          fi
+          if grep -Eiq 'jar is unsigned|no manifest|unsigned entries|digest error' "${verify_log}"; then
+            verify_ok=0
+          fi
+          if grep -i 'invalid' "${verify_log}" | grep -qv '^This jar contains entries whose certificate chain is invalid\. Reason: PKIX path building failed: '; then
+            verify_ok=0
+          fi
+          unexpected_errors="$(awk '/^Error:/ {in_error = 1; next} /^$/ || /^(Warning:|Re-run with)/ {in_error = 0} in_error' "${verify_log}" \
+            | grep -Ev '^This jar contains entries whose signer certificate is self-signed\.$|^This jar contains entries whose certificate chain is invalid\. Reason: PKIX path building failed: ' || true)"
+          if [ -n "${unexpected_errors}" ]; then
+            echo "Unexpected jarsigner error(s):" >&2
+            echo "${unexpected_errors}" >&2
+            verify_ok=0
+          fi
+          if [ "${verify_ok}" -ne 1 ]; then
+            echo "jarsigner verification failed (exit ${verify_rc}); only self-signed upload-key findings are accepted" >&2
+            exit 1
+          fi
+          echo "jarsigner accepted the AAB: only self-signed upload-key findings (exit ${verify_rc})"
+
+          # The AAB must be signed by the upload key in the keystore, not by any other certificate.
+          aab_sha256="$(keytool -printcert -jarfile "${aab_path}" | sed -n 's/^[[:space:]]*SHA256: //p')"
+          key_sha256="$(keytool -list -keystore "${ANDROID_KEYSTORE_PATH}" -alias "${ANDROID_KEY_ALIAS}" -storepass:env ANDROID_KEYSTORE_PASSWORD -noprompt | sed -n 's/^Certificate fingerprint (SHA-256): //p')"
+          sha256_re='^([0-9A-F]{2}:){31}[0-9A-F]{2}$'
+          if ! [[ "${aab_sha256}" =~ ${sha256_re} ]] || ! [[ "${key_sha256}" =~ ${sha256_re} ]]; then
+            echo "Could not read exactly one SHA-256 signer fingerprint from the AAB and the upload key" >&2
+            exit 1
+          fi
+          if [ "${aab_sha256}" != "${key_sha256}" ]; then
+            echo "AAB signer SHA-256 ${aab_sha256} does not match upload key SHA-256 ${key_sha256}" >&2
+            exit 1
+          fi
+          echo "AAB signed by upload key, SHA-256: ${aab_sha256}"
+
           sha256sum "${aab_path}" > "${aab_path}.sha256"
           version_name="$(python - <<'PY'
           import pathlib, re
