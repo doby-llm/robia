@@ -1,0 +1,182 @@
+[
+ {
+  "locale": "en",
+  "shot": "B",
+  "file": "en/clips/B.mp4",
+  "kind": "clip",
+  "seconds": 11.4,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "B",
+  "file": "en/stills/B.png",
+  "kind": "still",
+  "seconds": 0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "H",
+  "file": "en/clips/H.mp4",
+  "kind": "clip",
+  "seconds": 13.9,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "H",
+  "file": "en/stills/H.png",
+  "kind": "still",
+  "seconds": 0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "D",
+  "file": "en/clips/D.mp4",
+  "kind": "clip",
+  "seconds": 19.9,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "D",
+  "file": "en/stills/D.png",
+  "kind": "still",
+  "seconds": 0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "L",
+  "file": "en/clips/L.mp4",
+  "kind": "clip",
+  "seconds": 8.5,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "M",
+  "file": "en/clips/M.mp4",
+  "kind": "clip",
+  "seconds": 11.6,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "M",
+  "file": "en/stills/M.png",
+  "kind": "still",
+  "seconds": 0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "G",
+  "file": "en/clips/G.mp4",
+  "kind": "clip",
+  "seconds": 13.6,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "J",
+  "file": "en/clips/J.mp4",
+  "kind": "clip",
+  "seconds": 15.6,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "K",
+  "file": "en/clips/K.mp4",
+  "kind": "clip",
+  "seconds": 8.3,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "K",
+  "file": "en/stills/K.png",
+  "kind": "still",
+  "seconds": 0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "A2",
+  "file": "en/clips/A2.mp4",
+  "kind": "clip",
+  "seconds": 68.7,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "C",
+  "file": "en/clips/C.mp4",
+  "kind": "clip",
+  "seconds": 30.0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "E",
+  "file": "en/clips/E.mp4",
+  "kind": "clip",
+  "seconds": 23.3,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "F",
+  "file": "en/clips/F.mp4",
+  "kind": "clip",
+  "seconds": 21.2,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "F",
+  "file": "en/stills/F.png",
+  "kind": "still",
+  "seconds": 0,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "I",
+  "file": "en/clips/I.mp4",
+  "kind": "clip",
+  "seconds": 10.9,
+  "width": 1080,
+  "height": 2400
+ },
+ {
+  "locale": "en",
+  "shot": "I2",
+  "file": "en/clips/I2.mp4",
+  "kind": "clip",
+  "seconds": 9.4,
+  "width": 1080,
+  "height": 2400
+ }
+]

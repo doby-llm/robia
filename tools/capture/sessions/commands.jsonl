@@ -1,0 +1,1189 @@
+{"kind": "marker", "shot": "setup", "locale": "en", "cmd": "BEGIN en/setup", "delay": 0.0}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "settings put global sysui_demo_allowed 1", "delay": 0.0}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command enter", "delay": 0.052}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command clock -e hhmm 1000", "delay": 0.112}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command battery -e level 100 -e plugged false", "delay": 0.057}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command network -e wifi show -e level 4 -e fully true", "delay": 0.05}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command network -e mobile hide", "delay": 0.064}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command notifications -e visible false", "delay": 0.054}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "am broadcast -a com.android.systemui.demo -e command bluetooth hide", "delay": 0.043}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "settings put system screen_off_timeout 1800000", "delay": 0.049}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "cmd notification set_dnd on", "delay": 0.064}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.035}
+{"kind": "marker", "shot": "setup", "locale": "en", "cmd": "BEGIN en/setup", "delay": 0.0}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "input tap 970 399", "delay": 2.299}
+{"kind": "sleep", "shot": "setup", "locale": "en", "cmd": 1.5, "delay": 0.075}
+{"kind": "adb", "shot": "setup", "locale": "en", "cmd": ["exec-out", "screencap", "-p"], "delay": 1.5}
+{"kind": "marker", "shot": "setup", "locale": "en", "cmd": "BEGIN en/setup", "delay": 0.0}
+{"kind": "shell", "shot": "setup", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "marker", "shot": "explore", "locale": "en", "cmd": "BEGIN en/explore", "delay": 0.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input tap 907 2186", "delay": 2.281}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1.5, "delay": 0.052}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.52}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input tap 540 553", "delay": 2.818}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1.5, "delay": 0.054}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.513}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input tap 172 2186", "delay": 2.237}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1, "delay": 0.055}
+{"kind": "marker", "shot": "explore", "locale": "en", "cmd": "BEGIN en/explore", "delay": 0.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input swipe 900 718 150 718 300", "delay": 0.0}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1, "delay": 0.352}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.029}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.023}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.026}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.253}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1.5, "delay": 2.225}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "marker", "shot": "explore", "locale": "en", "cmd": "BEGIN en/explore", "delay": 0.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input tap 907 2186", "delay": 2.224}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1.5, "delay": 0.053}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input swipe 900 718 150 718 300", "delay": 1.5}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1, "delay": 0.352}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "input tap 598 717", "delay": 2.247}
+{"kind": "sleep", "shot": "explore", "locale": "en", "cmd": 1.5, "delay": 0.058}
+{"kind": "shell", "shot": "explore", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "marker", "shot": "setup-collections", "locale": "en", "cmd": "BEGIN en/setup-collections", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 540 1532", "delay": 2.199}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 1.2, "delay": 0.055}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input text Weekend%s", "delay": 2.21}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.15, "delay": 0.478}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input text trip", "delay": 0.151}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.15, "delay": 0.073}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.151}
+{"kind": "marker", "shot": "setup-collections", "locale": "en", "cmd": "BEGIN en/setup-collections", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 806 1011", "delay": 2.185}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 1.2, "delay": 0.049}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 948 883", "delay": 2.183}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 1.0, "delay": 0.061}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input text Work%s", "delay": 1.0}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.15, "delay": 0.296}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input text week", "delay": 0.15}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.15, "delay": 0.088}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.4, "delay": 0.15}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.4}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 806 1011", "delay": 2.165}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 1.2, "delay": 0.059}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 948 883", "delay": 2.199}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 1.0, "delay": 0.053}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input text Winter", "delay": 1.001}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.15, "delay": 0.195}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.4, "delay": 0.15}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.4}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 806 1011", "delay": 2.217}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 1.2, "delay": 0.06}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "marker", "shot": "setup-collections", "locale": "en", "cmd": "BEGIN en/setup-collections", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 678 1037", "delay": 2.207}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 2, "delay": 0.058}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "marker", "shot": "setup-collections", "locale": "en", "cmd": "BEGIN en/setup-collections", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 200 1090", "delay": 0.0}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.044}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 540 1090", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.05}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 880 1090", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.042}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 200 1510", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.052}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 540 1510", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.052}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.5}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.295}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 928 2167", "delay": 2.271}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 2, "delay": 0.059}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "marker", "shot": "setup-collections", "locale": "en", "cmd": "BEGIN en/setup-collections", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 678 1345", "delay": 2.22}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 2, "delay": 0.054}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 200 1510", "delay": 2.0}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.043}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 540 1510", "delay": 0.501}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.046}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 880 1510", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.048}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 200 1930", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.054}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 540 1930", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.053}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 880 1930", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.051}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.5}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.306}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 928 2167", "delay": 2.336}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 2, "delay": 0.05}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 678 1191", "delay": 2.201}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 2, "delay": 0.051}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 200 1090", "delay": 2.0}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.061}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 540 1090", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.048}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 880 1090", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.057}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 200 1510", "delay": 0.5}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 0.5, "delay": 0.043}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.5}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.315}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "input tap 928 2167", "delay": 2.304}
+{"kind": "sleep", "shot": "setup-collections", "locale": "en", "cmd": 2, "delay": 0.053}
+{"kind": "shell", "shot": "setup-collections", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 172 2186", "delay": 2.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.061}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.263}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.252}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.252}
+{"kind": "marker", "shot": "B", "locale": "en", "cmd": "BEGIN en/B", "delay": 0.301}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 1.0, "delay": 0.044}
+{"kind": "record_start", "shot": "B", "locale": "en", "cmd": "/sdcard/r5/en/B.mp4", "delay": 1.0, "seconds": 12}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 1, "delay": 0.0}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 1800 540 700 500", "delay": 1.0}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.2, "delay": 0.562}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 1800 540 700 500", "delay": 0.2}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.2, "delay": 0.544}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 1800 540 700 500", "delay": 0.2}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.2, "delay": 0.552}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 1, "delay": 0.2}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 1800 540 700 1200", "delay": 1.0}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.8, "delay": 1.258}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 700 540 2000 150", "delay": 0.8}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.1, "delay": 0.211}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 700 540 2000 150", "delay": 0.1}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.1, "delay": 0.201}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 700 540 2000 150", "delay": 0.1}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.1, "delay": 0.201}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 700 540 2000 150", "delay": 0.1}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.1, "delay": 0.202}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "input swipe 540 700 540 2000 150", "delay": 0.1}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 0.1, "delay": 0.205}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 1, "delay": 0.1}
+{"kind": "shell", "shot": "B", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.0}
+{"kind": "sleep", "shot": "B", "locale": "en", "cmd": 1.5, "delay": 0.078}
+{"kind": "marker", "shot": "B", "locale": "en", "cmd": "END en/B", "delay": 1.702}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.5, "delay": 0.322}
+{"kind": "marker", "shot": "B-still", "locale": "en", "cmd": "BEGIN en/B-still", "delay": 0.501}
+{"kind": "screencap", "shot": "B-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/B.png", "delay": 0.0}
+{"kind": "marker", "shot": "B-still", "locale": "en", "cmd": "END en/B-still", "delay": 0.555}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.302}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.256}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.239}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.245}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "BEGIN en/D", "delay": 0.3}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.0, "delay": 0.022}
+{"kind": "record_start", "shot": "D", "locale": "en", "cmd": "/sdcard/r5/en/D.mp4", "delay": 1.0, "seconds": 20}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1, "delay": 0.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input tap 414 399", "delay": 2.243}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.8, "delay": 0.058}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text something%s", "delay": 0.8}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.407}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text warm%s", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.234}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text for%s", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.167}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text a%s", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.114}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text wedding", "delay": 0.151}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.151}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.0, "delay": 0.15}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 4", "delay": 1.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 3, "delay": 0.058}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input swipe 540 1900 540 1100 900", "delay": 3.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.2, "delay": 0.953}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.2}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.5, "delay": 0.059}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "END en/D", "delay": 1.586}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 1100 540 1900 300", "delay": 0.18}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.348}
+{"kind": "marker", "shot": "D-still", "locale": "en", "cmd": "BEGIN en/D-still", "delay": 0.8}
+{"kind": "screencap", "shot": "D-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/D.png", "delay": 0.0}
+{"kind": "marker", "shot": "D-still", "locale": "en", "cmd": "END en/D-still", "delay": 0.482}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.169}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 970 399", "delay": 2.245}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.054}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 539 168", "delay": 2.248}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.2, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.263}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.249}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.255}
+{"kind": "marker", "shot": "H", "locale": "en", "cmd": "BEGIN en/H", "delay": 0.3}
+{"kind": "shell", "shot": "H", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "H", "locale": "en", "cmd": 1.0, "delay": 0.026}
+{"kind": "record_start", "shot": "H", "locale": "en", "cmd": "/sdcard/r5/en/H.mp4", "delay": 1.0, "seconds": 14}
+{"kind": "sleep", "shot": "H", "locale": "en", "cmd": 0.8, "delay": 0.0}
+{"kind": "shell", "shot": "H", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": "H", "locale": "en", "cmd": "input tap 407 575", "delay": 2.221}
+{"kind": "sleep", "shot": "H", "locale": "en", "cmd": 2.5, "delay": 0.053}
+{"kind": "shell", "shot": "H", "locale": "en", "cmd": "input swipe 540 1800 540 900 1100", "delay": 2.5}
+{"kind": "sleep", "shot": "H", "locale": "en", "cmd": 2, "delay": 1.151}
+{"kind": "shell", "shot": "H", "locale": "en", "cmd": "input swipe 540 1800 540 900 1100", "delay": 2.0}
+{"kind": "sleep", "shot": "H", "locale": "en", "cmd": 1.5, "delay": 1.151}
+{"kind": "shell", "shot": "H", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.5}
+{"kind": "sleep", "shot": "H", "locale": "en", "cmd": 1.5, "delay": 0.05}
+{"kind": "marker", "shot": "H", "locale": "en", "cmd": "END en/H", "delay": 1.577}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 1900 300", "delay": 0.184}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.347}
+{"kind": "marker", "shot": "H-still", "locale": "en", "cmd": "BEGIN en/H-still", "delay": 0.8}
+{"kind": "screencap", "shot": "H-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/H.png", "delay": 0.0}
+{"kind": "marker", "shot": "H-still", "locale": "en", "cmd": "END en/H-still", "delay": 0.324}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.177}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.24}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.258}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.244}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.256}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "BEGIN en/D", "delay": 0.3}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.0, "delay": 0.025}
+{"kind": "record_start", "shot": "D", "locale": "en", "cmd": "/sdcard/r5/en/D.mp4", "delay": 1.0, "seconds": 20}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1, "delay": 0.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input tap 414 399", "delay": 2.261}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.8, "delay": 0.053}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text something%s", "delay": 0.8}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.403}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text warm%s", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.164}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text for%s", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.145}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text a%s", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.114}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text wedding", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.131}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.6, "delay": 0.15}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.6}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 4", "delay": 2.33}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 3, "delay": 0.056}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input swipe 540 1900 540 1100 900", "delay": 3.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.2, "delay": 0.958}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.2}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.5, "delay": 0.056}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "END en/D", "delay": 1.586}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 1100 540 1900 300", "delay": 0.203}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.355}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 970 399", "delay": 2.23}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.047}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "BEGIN en/D", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.0, "delay": 0.032}
+{"kind": "record_start", "shot": "D", "locale": "en", "cmd": "/sdcard/r5/en/D.mp4", "delay": 1.001, "seconds": 20}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1, "delay": 0.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input tap 414 399", "delay": 2.193}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.8, "delay": 0.048}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text something%s", "delay": 0.8}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.3, "delay": 0.339}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text warm%s", "delay": 0.3}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.3, "delay": 0.171}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text for%s", "delay": 0.3}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.3, "delay": 0.233}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text a%s", "delay": 0.301}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.3, "delay": 0.165}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text wedding", "delay": 0.3}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.3, "delay": 0.175}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.6, "delay": 0.3}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.6}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 4", "delay": 2.44}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 3, "delay": 0.059}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input swipe 540 1900 540 1100 900", "delay": 3.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.2, "delay": 0.952}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.2}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.5, "delay": 0.063}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "END en/D", "delay": 1.587}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 1100 540 1900 300", "delay": 0.181}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.346}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 970 399", "delay": 2.268}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.042}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "BEGIN en/D", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.0, "delay": 0.029}
+{"kind": "record_start", "shot": "D", "locale": "en", "cmd": "/sdcard/r5/en/D.mp4", "delay": 1.0, "seconds": 20}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1, "delay": 0.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input tap 414 399", "delay": 2.277}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.8, "delay": 0.054}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text something%s", "delay": 0.8}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.5, "delay": 0.485}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text warm%s", "delay": 0.5}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.5, "delay": 0.17}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text for%s", "delay": 0.5}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.5, "delay": 0.195}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text a%s", "delay": 0.5}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.5, "delay": 0.111}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text wedding", "delay": 0.501}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.5, "delay": 0.158}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.6, "delay": 0.5}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.6}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 4", "delay": 2.27}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 3, "delay": 0.073}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input swipe 540 1900 540 1100 900", "delay": 3.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.2, "delay": 0.954}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.2}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.5, "delay": 0.055}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "END en/D", "delay": 1.609}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 1100 540 1900 300", "delay": 0.18}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.349}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 970 399", "delay": 2.288}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.044}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.264}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.052}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.259}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.301}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.24}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.247}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "BEGIN en/D", "delay": 0.3}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.0, "delay": 0.026}
+{"kind": "record_start", "shot": "D", "locale": "en", "cmd": "/sdcard/r5/en/D.mp4", "delay": 1.0, "seconds": 20}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1, "delay": 0.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input tap 414 399", "delay": 2.21}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.8, "delay": 0.052}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text s", "delay": 0.8}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.048}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text o", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.058}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text m", "delay": 0.121}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.048}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text e", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.068}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text t", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.061}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text h", "delay": 0.121}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.06}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text i", "delay": 0.121}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.053}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text n", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.058}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text g", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.051}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.053}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text w", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.092}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text a", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.071}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text r", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.054}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text m", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.049}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.062}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text f", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.074}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text o", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.063}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text r", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.059}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.064}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text a", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.07}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.15, "delay": 0.049}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text w", "delay": 0.15}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.089}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text e", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.059}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text d", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.057}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text d", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.069}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text i", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.076}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text n", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.058}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input text g", "delay": 0.12}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.12, "delay": 0.067}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 0.6, "delay": 0.12}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.601}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input keyevent 4", "delay": 2.258}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 3, "delay": 0.057}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "input swipe 540 1900 540 1100 900", "delay": 3.0}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.2, "delay": 0.952}
+{"kind": "shell", "shot": "D", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.2}
+{"kind": "sleep", "shot": "D", "locale": "en", "cmd": 1.5, "delay": 0.054}
+{"kind": "marker", "shot": "D", "locale": "en", "cmd": "END en/D", "delay": 1.622}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 1100 540 1900 300", "delay": 0.2}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.348}
+{"kind": "marker", "shot": "D-still", "locale": "en", "cmd": "BEGIN en/D-still", "delay": 0.8}
+{"kind": "screencap", "shot": "D-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/D.png", "delay": 0.0}
+{"kind": "marker", "shot": "D-still", "locale": "en", "cmd": "END en/D-still", "delay": 0.597}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.165}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 970 399", "delay": 2.293}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.008}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.212}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 907 2186", "delay": 2.265}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.064}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 900 718 150 718 300", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.8, "delay": 0.357}
+{"kind": "marker", "shot": "G", "locale": "en", "cmd": "BEGIN en/G", "delay": 0.8}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.033}
+{"kind": "record_start", "shot": "G", "locale": "en", "cmd": "/sdcard/r5/en/G.mp4", "delay": 1.0, "seconds": 16}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 0.5, "delay": 0.0}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.5}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 598 717", "delay": 2.213}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.8, "delay": 0.062}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.8}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 678 1037", "delay": 2.21}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 2, "delay": 0.046}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 869 798", "delay": 2.27}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.2, "delay": 0.051}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 200 1090", "delay": 1.2}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 0.6, "delay": 0.056}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 540 1090", "delay": 0.6}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.061}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.001}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 661 2167", "delay": 2.244}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.042}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.5, "delay": 0.046}
+{"kind": "marker", "shot": "G", "locale": "en", "cmd": "END en/G", "delay": 1.622}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.199}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.052}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.198}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 172 2186", "delay": 2.218}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 539 168", "delay": 2.257}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.2, "delay": 0.053}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.245}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.254}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.246}
+{"kind": "marker", "shot": "L", "locale": "en", "cmd": "BEGIN en/L", "delay": 0.3}
+{"kind": "shell", "shot": "L", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "L", "locale": "en", "cmd": 1.0, "delay": 0.029}
+{"kind": "record_start", "shot": "L", "locale": "en", "cmd": "/sdcard/r5/en/L.mp4", "delay": 1.0, "seconds": 10}
+{"kind": "sleep", "shot": "L", "locale": "en", "cmd": 0.8, "delay": 0.0}
+{"kind": "shell", "shot": "L", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": "L", "locale": "en", "cmd": "input tap 209 575", "delay": 2.22}
+{"kind": "sleep", "shot": "L", "locale": "en", "cmd": 1.5, "delay": 0.08}
+{"kind": "shell", "shot": "L", "locale": "en", "cmd": "input swipe 540 1700 540 1000 500", "delay": 1.502}
+{"kind": "sleep", "shot": "L", "locale": "en", "cmd": 0.8, "delay": 0.572}
+{"kind": "shell", "shot": "L", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 0.801}
+{"kind": "sleep", "shot": "L", "locale": "en", "cmd": 1.5, "delay": 0.069}
+{"kind": "marker", "shot": "L", "locale": "en", "cmd": "END en/L", "delay": 1.544}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.285}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 986 248", "delay": 2.218}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.048}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.06}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 539 168", "delay": 2.225}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.2, "delay": 0.061}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.258}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.257}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.25}
+{"kind": "marker", "shot": "M", "locale": "en", "cmd": "BEGIN en/M", "delay": 0.3}
+{"kind": "shell", "shot": "M", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "M", "locale": "en", "cmd": 1.0, "delay": 0.04}
+{"kind": "record_start", "shot": "M", "locale": "en", "cmd": "/sdcard/r5/en/M.mp4", "delay": 1.001, "seconds": 8}
+{"kind": "shell", "shot": "M", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.001}
+{"kind": "shell", "shot": "M", "locale": "en", "cmd": "input tap 1003 168", "delay": 2.215}
+{"kind": "sleep", "shot": "M", "locale": "en", "cmd": 1.5, "delay": 0.063}
+{"kind": "shell", "shot": "M", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": "M", "locale": "en", "cmd": "input tap 439 477", "delay": 2.183}
+{"kind": "sleep", "shot": "M", "locale": "en", "cmd": 3, "delay": 0.059}
+{"kind": "shell", "shot": "M", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 3.0}
+{"kind": "sleep", "shot": "M", "locale": "en", "cmd": 1.5, "delay": 0.062}
+{"kind": "marker", "shot": "M", "locale": "en", "cmd": "END en/M", "delay": 1.535}
+{"kind": "marker", "shot": "M-still", "locale": "en", "cmd": "BEGIN en/M-still", "delay": 0.395}
+{"kind": "screencap", "shot": "M-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/M.png", "delay": 0.001}
+{"kind": "marker", "shot": "M-still", "locale": "en", "cmd": "END en/M-still", "delay": 0.289}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.381}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.056}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.056}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.22}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 900 718 150 718 300", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.8, "delay": 0.358}
+{"kind": "marker", "shot": "G", "locale": "en", "cmd": "BEGIN en/G", "delay": 0.8}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.032}
+{"kind": "record_start", "shot": "G", "locale": "en", "cmd": "/sdcard/r5/en/G.mp4", "delay": 1.0, "seconds": 16}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 0.5, "delay": 0.0}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.5}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 598 717", "delay": 2.201}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.8, "delay": 0.058}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.8}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 678 1037", "delay": 2.153}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 2, "delay": 0.048}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 2.0}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.267}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 869 798", "delay": 2.96}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.4, "delay": 0.036}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.4}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 200 1090", "delay": 2.192}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 0.6, "delay": 0.054}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 540 1090", "delay": 0.6}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.044}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 661 2167", "delay": 2.226}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.053}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.5, "delay": 0.062}
+{"kind": "marker", "shot": "G", "locale": "en", "cmd": "END en/G", "delay": 1.621}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.225}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.057}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.225}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 172 2186", "delay": 2.207}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.042}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.257}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.055}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.266}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.253}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.256}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.3}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 907 2186", "delay": 2.206}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 900 718 150 718 300", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.8, "delay": 0.361}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 598 717", "delay": 2.18}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.8, "delay": 0.053}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.8}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 678 1037", "delay": 2.45}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 2, "delay": 0.056}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 4", "delay": 2.236}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.0, "delay": 0.053}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 172 2186", "delay": 2.207}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.0, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.241}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.067}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.201}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.26}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.262}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.25}
+{"kind": "marker", "shot": "G", "locale": "en", "cmd": "BEGIN en/G", "delay": 0.3}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.0, "delay": 0.033}
+{"kind": "record_start", "shot": "G", "locale": "en", "cmd": "/sdcard/r5/en/G.mp4", "delay": 1.0, "seconds": 22}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 907 2186", "delay": 0.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.2, "delay": 0.068}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input swipe 900 718 150 718 300", "delay": 1.2}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 0.8, "delay": 0.354}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 598 717", "delay": 0.8}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.8, "delay": 0.045}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 678 1037", "delay": 1.8}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 2.0, "delay": 0.051}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 869 798", "delay": 2.0}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.4, "delay": 0.049}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 200 1090", "delay": 1.4}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 0.7, "delay": 0.053}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 540 1090", "delay": 0.7}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.2, "delay": 0.046}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "input tap 661 2167", "delay": 1.2}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.2, "delay": 0.058}
+{"kind": "shell", "shot": "G", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.2}
+{"kind": "sleep", "shot": "G", "locale": "en", "cmd": 1.5, "delay": 0.052}
+{"kind": "marker", "shot": "G", "locale": "en", "cmd": "END en/G", "delay": 1.628}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.2}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.0, "delay": 0.047}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.777}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 172 2186", "delay": 2.196}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.264}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.051}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.257}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.24}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.259}
+{"kind": "marker", "shot": "J", "locale": "en", "cmd": "BEGIN en/J", "delay": 0.3}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 1.0, "delay": 0.032}
+{"kind": "record_start", "shot": "J", "locale": "en", "cmd": "/sdcard/r5/en/J.mp4", "delay": 1.0, "seconds": 14}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 0.8, "delay": 0.0}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "input tap 200 1090", "delay": 0.8}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 2.0, "delay": 0.04}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.074}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.052}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 3.056}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 1.5, "delay": 0.056}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.246}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.045}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.264}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.253}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.244}
+{"kind": "marker", "shot": "J", "locale": "en", "cmd": "BEGIN en/J", "delay": 0.301}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 1.0, "delay": 0.029}
+{"kind": "record_start", "shot": "J", "locale": "en", "cmd": "/sdcard/r5/en/J.mp4", "delay": 1.0, "seconds": 14}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 0.8, "delay": 0.0}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "input tap 198 867", "delay": 0.8}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 2.0, "delay": 0.05}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "input tap 942 532", "delay": 2.195}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 2.2, "delay": 0.046}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 1.5, "delay": 2.2}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "input tap 192 465", "delay": 2.212}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 0.9, "delay": 0.057}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "input tap 192 465", "delay": 0.9}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 1.0, "delay": 0.052}
+{"kind": "shell", "shot": "J", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.0}
+{"kind": "sleep", "shot": "J", "locale": "en", "cmd": 1.5, "delay": 0.056}
+{"kind": "marker", "shot": "J", "locale": "en", "cmd": "END en/J", "delay": 1.524}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.189}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.046}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.202}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 1003 168", "delay": 2.208}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.5, "delay": 0.054}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 313 1207", "delay": 2.18}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.2, "delay": 0.056}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.157}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 296 1141", "delay": 2.178}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.5, "delay": 0.058}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.045}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.067}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 539 168", "delay": 2.268}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.2, "delay": 0.054}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.26}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.241}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.3, "delay": 0.238}
+{"kind": "marker", "shot": "K", "locale": "en", "cmd": "BEGIN en/K", "delay": 0.3}
+{"kind": "shell", "shot": "K", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "K", "locale": "en", "cmd": 1.0, "delay": 0.037}
+{"kind": "record_start", "shot": "K", "locale": "en", "cmd": "/sdcard/r5/en/K.mp4", "delay": 1.0, "seconds": 10}
+{"kind": "sleep", "shot": "K", "locale": "en", "cmd": 2, "delay": 0.0}
+{"kind": "shell", "shot": "K", "locale": "en", "cmd": "input swipe 540 1800 540 900 1200", "delay": 2.0}
+{"kind": "sleep", "shot": "K", "locale": "en", "cmd": 1, "delay": 1.247}
+{"kind": "shell", "shot": "K", "locale": "en", "cmd": "input swipe 540 900 540 1800 400", "delay": 1.0}
+{"kind": "sleep", "shot": "K", "locale": "en", "cmd": 1, "delay": 0.455}
+{"kind": "shell", "shot": "K", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.0}
+{"kind": "sleep", "shot": "K", "locale": "en", "cmd": 1.5, "delay": 0.058}
+{"kind": "marker", "shot": "K", "locale": "en", "cmd": "END en/K", "delay": 1.558}
+{"kind": "marker", "shot": "K-still", "locale": "en", "cmd": "BEGIN en/K-still", "delay": 0.183}
+{"kind": "screencap", "shot": "K-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/K.png", "delay": 0.0}
+{"kind": "marker", "shot": "K-still", "locale": "en", "cmd": "END en/K-still", "delay": 0.545}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.175}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 1003 168", "delay": 2.242}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.5, "delay": 0.048}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.501}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 313 1207", "delay": 2.166}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.2, "delay": 0.054}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.186}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 298 1008", "delay": 2.15}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.5, "delay": 0.041}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.043}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input keyevent 4", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 0.8, "delay": 0.056}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 302 591", "delay": 2.164}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.8, "delay": 0.059}
+{"kind": "marker", "shot": "A2", "locale": "en", "cmd": "BEGIN en/A2", "delay": 0.8}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.0, "delay": 0.058}
+{"kind": "record_start", "shot": "A2", "locale": "en", "cmd": "/sdcard/r5/en/A2.mp4", "delay": 1.0, "seconds": 45}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 2, "delay": 0.0}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 4.327}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.501}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.762}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.223}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.202}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.303}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.179}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 3.315}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.86}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.168}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.199}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.2}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.511}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.582}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 2.248}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 3, "delay": 1.5}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "input swipe 540 1800 540 900 1500", "delay": 3.0}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 2.5, "delay": 1.559}
+{"kind": "shell", "shot": "A2", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 2.5}
+{"kind": "sleep", "shot": "A2", "locale": "en", "cmd": 1.5, "delay": 0.053}
+{"kind": "marker", "shot": "A2", "locale": "en", "cmd": "END en/A2", "delay": 1.612}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.177}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 4", "delay": 2.21}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1, "delay": 0.106}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.174}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 760 1301", "delay": 2.166}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1, "delay": 0.057}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.248}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.231}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 540 2186", "delay": 2.249}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.3, "delay": 0.062}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.3}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 409 1473", "delay": 2.181}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 2.5, "delay": 0.083}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 882 146", "delay": 2.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.0, "delay": 0.08}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text B", "delay": 1.0}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.09}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text 0", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.056}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 2, "delay": 0.15}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 529 145", "delay": 2.388}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.059}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 273 993", "delay": 0.6}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 273 792", "delay": 0.6}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.068}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 273 1194", "delay": 0.6}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.049}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 273 1596", "delay": 0.6}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.057}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 273 1395", "delay": 0.6}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.083}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 273 591", "delay": 0.6}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.121}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.6}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 860 146", "delay": 3.161}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 0.048}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "marker", "shot": "C", "locale": "en", "cmd": "BEGIN en/C", "delay": 2.436}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 1.0, "delay": 0.041}
+{"kind": "record_start", "shot": "C", "locale": "en", "cmd": "/sdcard/r5/en/C.mp4", "delay": 1.0, "seconds": 75}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 3, "delay": 0.0}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.0}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 1.5, "delay": 4.97}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 1.5, "delay": 3.515}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 1.5, "delay": 2.573}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 1.5, "delay": 2.503}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 2.5, "delay": 2.326}
+{"kind": "shell", "shot": "C", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 2.5}
+{"kind": "sleep", "shot": "C", "locale": "en", "cmd": 1.5, "delay": 0.061}
+{"kind": "marker", "shot": "C", "locale": "en", "cmd": "END en/C", "delay": 1.655}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.167}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 4", "delay": 0.0}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.113}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.178}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.152}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 815 1329", "delay": 2.16}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.057}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.238}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.264}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 540 2186", "delay": 2.242}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.3, "delay": 0.065}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.3}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 409 1473", "delay": 2.191}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 2.5, "delay": 0.08}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 882 146", "delay": 2.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.0, "delay": 0.051}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text d", "delay": 1.0}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.082}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text u", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.06}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text p", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.052}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text _", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.065}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 66", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 2, "delay": 0.068}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 327 591", "delay": 2.234}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.8, "delay": 0.062}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.206}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.18}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.207}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.186}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.155}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.184}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.197}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.187}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.194}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.194}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.212}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.188}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.266}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.196}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.205}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.202}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.181}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.204}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.178}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.19}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.192}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.191}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.191}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.959}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 2.164}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 924 751", "delay": 2.239}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 2.5, "delay": 0.054}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.5}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.188}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 4", "delay": 0.0}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.5, "delay": 0.058}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "marker", "shot": "E", "locale": "en", "cmd": "BEGIN en/E", "delay": 2.241}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.0, "delay": 0.028}
+{"kind": "record_start", "shot": "E", "locale": "en", "cmd": "/sdcard/r5/en/E.mp4", "delay": 1.0, "seconds": 40}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.2, "delay": 0.0}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 924 751", "delay": 2.171}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 2.2, "delay": 0.045}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.2}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.174}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 401 621", "delay": 2.171}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.0, "delay": 0.055}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 610 853", "delay": 1.0}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.2, "delay": 0.053}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 581 2127", "delay": 2.188}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.5, "delay": 0.061}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.129}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.746}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.981}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 3.069}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.5, "delay": 0.052}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.153}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 437 1373", "delay": 2.174}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1, "delay": 0.051}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 4", "delay": 2.163}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.051}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.209}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.24}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.206}
+{"kind": "marker", "shot": "E", "locale": "en", "cmd": "BEGIN en/E", "delay": 2.257}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.0, "delay": 0.024}
+{"kind": "record_start", "shot": "E", "locale": "en", "cmd": "/sdcard/r5/en/E.mp4", "delay": 1.0, "seconds": 40}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.2, "delay": 0.0}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 924 751", "delay": 2.215}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 2.2, "delay": 0.058}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.2}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.159}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 401 621", "delay": 2.177}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.0, "delay": 0.044}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 610 853", "delay": 1.0}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.2, "delay": 0.058}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.2}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 581 2127", "delay": 2.175}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.5, "delay": 0.055}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.5}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "input tap 733 1373", "delay": 2.196}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 2.5, "delay": 0.055}
+{"kind": "shell", "shot": "E", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 2.5}
+{"kind": "sleep", "shot": "E", "locale": "en", "cmd": 1.5, "delay": 0.051}
+{"kind": "marker", "shot": "E", "locale": "en", "cmd": "END en/E", "delay": 1.558}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.171}
+{"kind": "adb", "shot": null, "locale": null, "cmd": ["shell", "cmd", "connectivity", "airplane-mode", "enable"], "delay": 0.0}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 3, "delay": 0.063}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "settings get global airplane_mode_on", "delay": 3.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.044}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 539 168", "delay": 2.886}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1.2, "delay": 0.085}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 1.2}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.246}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.301}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.236}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input swipe 540 900 540 2000 200", "delay": 0.3}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.3, "delay": 0.245}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.3}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 414 399", "delay": 2.361}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.8, "delay": 0.047}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text s", "delay": 0.8}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.122}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text o", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.04}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text m", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.059}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text e", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.058}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text t", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.053}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text h", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.048}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text i", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.044}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text n", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.054}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text g", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.052}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.051}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text f", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.068}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text o", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.05}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text r", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.067}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.048}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text a", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.083}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.055}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text r", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.099}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text a", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.052}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text i", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.061}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text n", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.053}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text y", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.055}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.15, "delay": 0.053}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text d", "delay": 0.15}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.074}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text a", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.046}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input text y", "delay": 0.12}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.12, "delay": 0.057}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 0.6, "delay": 0.12}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.6}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input keyevent 4", "delay": 2.291}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 3, "delay": 0.066}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.0}
+{"kind": "shell", "shot": null, "locale": null, "cmd": "input tap 970 399", "delay": 2.267}
+{"kind": "sleep", "shot": null, "locale": null, "cmd": 1, "delay": 0.064}
+{"kind": "marker", "shot": "F", "locale": "en", "cmd": "BEGIN en/F", "delay": 1.0}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 1.0, "delay": 0.026}
+{"kind": "record_start", "shot": "F", "locale": "en", "cmd": "/sdcard/r5/en/F.mp4", "delay": 1.0, "seconds": 30}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 2.0, "delay": 0.0}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.0}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input tap 414 399", "delay": 2.259}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.8, "delay": 0.052}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text s", "delay": 0.8}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.099}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text o", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.06}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text m", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.054}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text e", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.044}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text t", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.057}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text h", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.053}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text i", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.06}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text n", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.064}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text g", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.061}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.15, "delay": 0.053}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text f", "delay": 0.15}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.083}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text o", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.062}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text r", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.064}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.15, "delay": 0.046}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text a", "delay": 0.151}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.07}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.15, "delay": 0.063}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text r", "delay": 0.15}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.094}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text a", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.066}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text i", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.052}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text n", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.048}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text y", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.045}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input keyevent 62", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.15, "delay": 0.044}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text d", "delay": 0.15}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.065}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text a", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.08}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input text y", "delay": 0.12}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.12, "delay": 0.057}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 0.6, "delay": 0.12}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.6}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input keyevent 4", "delay": 2.234}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 3.5, "delay": 0.055}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "input swipe 540 1900 540 1200 900", "delay": 3.5}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 1.5, "delay": 0.944}
+{"kind": "shell", "shot": "F", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 1.5}
+{"kind": "sleep", "shot": "F", "locale": "en", "cmd": 1.5, "delay": 0.053}
+{"kind": "marker", "shot": "F", "locale": "en", "cmd": "END en/F", "delay": 1.61}
+{"kind": "marker", "shot": "F-still", "locale": "en", "cmd": "BEGIN en/F-still", "delay": 0.197}
+{"kind": "screencap", "shot": "F-still", "locale": "en", "cmd": "capture-sessions/s1-20261105/en/stills/F.png", "delay": 0.0}
+{"kind": "marker", "shot": "F-still", "locale": "en", "cmd": "END en/F-still", "delay": 0.609}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "settings get global airplane_mode_on", "delay": 0.168}
+{"kind": "adb", "shot": null, "locale": "en", "cmd": ["shell", "cmd", "connectivity", "airplane-mode", "disable"], "delay": 0.044}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 3, "delay": 0.042}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "settings get global airplane_mode_on", "delay": 3.0}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.12}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 6.505}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 3.514}
+{"kind": "marker", "shot": "I", "locale": "en", "cmd": "BEGIN en/I", "delay": 0.0}
+{"kind": "shell", "shot": "I", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "I", "locale": "en", "cmd": 1.0, "delay": 0.054}
+{"kind": "record_start", "shot": "I", "locale": "en", "cmd": "/sdcard/r5/en/I.mp4", "delay": 1.0, "seconds": 20}
+{"kind": "sleep", "shot": "I", "locale": "en", "cmd": 2.5, "delay": 0.0}
+{"kind": "shell", "shot": "I", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.5}
+{"kind": "shell", "shot": "I", "locale": "en", "cmd": "input tap 581 2127", "delay": 2.741}
+{"kind": "sleep", "shot": "I", "locale": "en", "cmd": 3.0, "delay": 0.07}
+{"kind": "shell", "shot": "I", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 3.0}
+{"kind": "sleep", "shot": "I", "locale": "en", "cmd": 1.5, "delay": 0.059}
+{"kind": "marker", "shot": "I", "locale": "en", "cmd": "END en/I", "delay": 1.54}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.186}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.673}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.176}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.191}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.157}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.953}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.945}
+{"kind": "marker", "shot": "I2", "locale": "en", "cmd": "BEGIN en/I2", "delay": 0.0}
+{"kind": "shell", "shot": "I2", "locale": "en", "cmd": "mkdir -p /sdcard/r5/en", "delay": 0.0}
+{"kind": "sleep", "shot": "I2", "locale": "en", "cmd": 1.0, "delay": 0.034}
+{"kind": "record_start", "shot": "I2", "locale": "en", "cmd": "/sdcard/r5/en/I2.mp4", "delay": 1.0, "seconds": 15}
+{"kind": "sleep", "shot": "I2", "locale": "en", "cmd": 1.0, "delay": 0.0}
+{"kind": "shell", "shot": "I2", "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 1.0}
+{"kind": "shell", "shot": "I2", "locale": "en", "cmd": "input tap 798 1329", "delay": 2.258}
+{"kind": "sleep", "shot": "I2", "locale": "en", "cmd": 3.5, "delay": 0.092}
+{"kind": "shell", "shot": "I2", "locale": "en", "cmd": "pkill -2 screenrecord", "delay": 3.5}
+{"kind": "sleep", "shot": "I2", "locale": "en", "cmd": 1.5, "delay": 0.055}
+{"kind": "marker", "shot": "I2", "locale": "en", "cmd": "END en/I2", "delay": 1.544}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 0.171}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "uiautomator dump /sdcard/ui.xml >/dev/null 2>&1", "delay": 2.184}
+{"kind": "shell", "shot": null, "locale": "en", "cmd": "input tap 581 2127", "delay": 2.36}
+{"kind": "sleep", "shot": null, "locale": "en", "cmd": 1.5, "delay": 0.054}
