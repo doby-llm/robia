@@ -18,6 +18,7 @@ GitHub Actions builds Android artifacts on GitHub-hosted runners:
 
 - Pull requests to `main` and pushes to `main` build a safe debug APK artifact named `robia-debug-apk`.
 - The same run builds `robia-staging-apk`: an optimized, release-like APK (minified, not debuggable) for performance checks. It installs over the debug APK when signed with the CI debug key.
+- The same run builds `robia-capture-apk`: a demo build with its own application id for screenshots and videos; never uploaded to Play.
 - Signed Play release bundles are produced only by the release job. The artifact is named `robia-release-aab` and contains:
   - the signed `.aab` file from `app/build/outputs/bundle/release/`
   - a `.sha256` checksum file
