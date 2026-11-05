@@ -52,7 +52,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = (System.getenv("ROBIA_VERSION_CODE")?.toIntOrNull() ?: 1)
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -113,6 +113,20 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+            matchingFallbacks += listOf("release")
+        }
+
+        create("capture") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".capture"
+            versionNameSuffix = "-capture"
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isDebuggable = false
+            signingConfig = if (hasRobiaCiDebugSigning) signingConfigs.getByName("robiaCiDebug") else signingConfigs.getByName("debug")
             ndk {
                 abiFilters += "arm64-v8a"
             }

@@ -78,8 +78,22 @@ jobs:
           ROBIA_DEBUG_KEY_ALIAS: ${{ secrets.ROBIA_DEBUG_KEY_ALIAS }}
           ROBIA_DEBUG_KEY_PASSWORD: ${{ secrets.ROBIA_DEBUG_KEY_PASSWORD }}
 
-      - name: Build debug and staging APKs
-        run: gradle --no-daemon testDebugUnitTest assembleDebug assembleStaging
+      - name: Build debug, staging and capture APKs
+        run: gradle --no-daemon testDebugUnitTest assembleDebug assembleStaging assembleCapture
+
+      - name: Check capture APK package name
+        run: |
+          set -euo pipefail
+          build_tools_dir="$(find "${ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
+          apk_path="$(find app/build/outputs/apk/capture -name '*.apk' -type f | sort | head -n 1)"
+          if [ -z "${apk_path}" ]; then
+            echo "No capture APK found" >&2
+            exit 1
+          fi
+          badging="$("${build_tools_dir}/aapt2" dump badging "${apk_path}")"
+          package_line="$(grep -m 1 '^package:' <<< "${badging}")"
+          echo "${package_line}"
+          grep -q "name='com.gusanitolabs.robia.capture'" <<< "${package_line}"
 
       - name: Print APK signing certificate fingerprints
         run: |
@@ -87,7 +101,7 @@ jobs:
           build_tools_dir="$(find "${ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
           echo "This fingerprint is safe to publish, but the default GitHub Actions debug signing key can change between runs."
           echo "For Google OAuth, use this only for the exact debug APK/build you are testing; use Play/release signing fingerprints for production."
-          for apk_dir in app/build/outputs/apk/debug app/build/outputs/apk/staging; do
+          for apk_dir in app/build/outputs/apk/debug app/build/outputs/apk/staging app/build/outputs/apk/capture; do
             apk_path="$(find "${apk_dir}" -name '*.apk' -type f | sort | head -n 1)"
             if [ -z "${apk_path}" ]; then
               echo "No APK found in ${apk_dir} for signing certificate inspection" >&2
@@ -110,6 +124,13 @@ jobs:
         with:
           name: robia-staging-apk
           path: app/build/outputs/apk/staging/*.apk
+          if-no-files-found: error
+
+      - name: Upload capture APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: robia-capture-apk
+          path: app/build/outputs/apk/capture/*.apk
           if-no-files-found: error
 
       - name: Upload staging R8 mapping
