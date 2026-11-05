@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -43,6 +44,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridView
@@ -99,7 +101,10 @@ import androidx.compose.ui.unit.dp
 import com.gusanitolabs.robia.BuildConfig
 import com.gusanitolabs.robia.R
 import com.gusanitolabs.robia.RobiaApplication
+import com.gusanitolabs.robia.core.designsystem.extras
+import com.gusanitolabs.robia.core.designsystem.robiaColorScheme
 import com.gusanitolabs.robia.core.model.BrowseLayout
+import com.gusanitolabs.robia.core.model.ColorPalette
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.LanguagePreference
 import com.gusanitolabs.robia.core.model.RobiaSettings
@@ -126,6 +131,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.Collator
 import java.text.DateFormat
 import java.util.Date
 
@@ -157,6 +163,7 @@ internal fun SettingsScreen(
     var benchmarkRunning by remember { mutableStateOf(false) }
     var showBrowseLayoutDialog by rememberSaveable { mutableStateOf(false) }
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
+    var showPaletteDialog by rememberSaveable { mutableStateOf(false) }
     var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
     val cutoutSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val cutoutPackState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
@@ -208,6 +215,13 @@ internal fun SettingsScreen(
                     title = stringResource(R.string.settings_theme),
                     value = stringResource(cutoutSettings.themeMode.labelRes),
                     onClick = { showThemeDialog = true },
+                )
+                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                SettingsNavRow(
+                    icon = Icons.Rounded.ColorLens,
+                    title = stringResource(R.string.settings_color_palette),
+                    value = stringResource(cutoutSettings.colorPalette.labelRes),
+                    onClick = { showPaletteDialog = true },
                 )
             }
         }
@@ -456,6 +470,16 @@ internal fun SettingsScreen(
             onDismiss = { showThemeDialog = false },
         )
     }
+    if (showPaletteDialog) {
+        PaletteDialog(
+            current = cutoutSettings.colorPalette,
+            onSelected = { palette ->
+                showPaletteDialog = false
+                scope.launch { app.settingsRepository.setColorPalette(palette) }
+            },
+            onDismiss = { showPaletteDialog = false },
+        )
+    }
     if (showOpenSourceLicenses) {
         OpenSourceLicensesDialog(onDismiss = { showOpenSourceLicenses = false })
     }
@@ -675,6 +699,19 @@ private val ThemeMode.labelRes: Int
         ThemeMode.System -> R.string.settings_theme_system
     }
 
+private val ColorPalette.labelRes: Int
+    get() = paletteLabelRes(this)
+
+/** Name of each palette. Pure, so [PaletteLabelTest] can check that the names stay distinct. */
+internal fun paletteLabelRes(palette: ColorPalette): Int = when (palette) {
+    ColorPalette.EarthSteel -> R.string.palette_earth_steel
+    ColorPalette.TobaccoBordeaux -> R.string.palette_tobacco_bordeaux
+}
+
+/** Palettes in the order of their labels under [collator] (alphabetical in the app locale, Manu's rule). */
+internal fun sortedPalettes(labels: Map<ColorPalette, String>, collator: Collator): List<ColorPalette> =
+    labels.entries.sortedWith { a, b -> collator.compare(a.value, b.value) }.map { it.key }
+
 /** What opening a web link needs. Pure, so the JVM test can check it without the Android runtime. */
 internal data class ExternalLinkRequest(val action: String, val url: String, val flags: Int)
 
@@ -801,6 +838,63 @@ private fun ThemeModeDialog(
                         RadioButton(selected = mode == current, onClick = null)
                         Text(
                             text = stringResource(mode.labelRes),
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+/** Single choice like [ThemeModeDialog], with a three-dot swatch of each palette before its name. */
+@Composable
+private fun PaletteDialog(
+    current: ColorPalette,
+    onSelected: (ColorPalette) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val labels = ColorPalette.entries.associateWith { palette -> stringResource(palette.labelRes) }
+    val collator = remember { browseCollator() }
+    val isDark = MaterialTheme.extras.isDark
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_color_palette)) },
+        text = {
+            Column {
+                sortedPalettes(labels, collator).forEach { palette ->
+                    val label = labels.getValue(palette)
+                    val scheme = robiaColorScheme(palette, isDark)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = palette == current,
+                                onClick = { onSelected(palette) },
+                                role = Role.RadioButton,
+                            )
+                            .semantics { contentDescription = label }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = palette == current, onClick = null)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf(scheme.primary, scheme.secondaryContainer, scheme.tertiary).forEach { swatch ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(swatch)
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                                ) {}
+                            }
+                        }
+                        Text(
+                            text = label,
                             modifier = Modifier.padding(start = 8.dp),
                         )
                     }

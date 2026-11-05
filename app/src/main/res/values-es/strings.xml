@@ -1031,4 +1031,8 @@
     <string name="open_source_licenses_close">Cerrar</string>
     <!-- FT2 -->
     <string name="analytics_section_collections">Colecciones</string>
+    <!-- TH2 -->
+    <string name="settings_color_palette">Paleta de colores</string>
+    <string name="palette_earth_steel">Tierra y acero</string>
+    <string name="palette_tobacco_bordeaux">Tabaco y burdeos</string>
 </resources>
