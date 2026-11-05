@@ -1,0 +1,17 @@
+[project]
+name = "robia-play"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "google-api-python-client>=2.201.0",
+    "google-auth>=2.62.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
