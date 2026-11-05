@@ -99,7 +99,6 @@ import com.gusanitolabs.robia.core.color.PaletteColorMatch
 import com.gusanitolabs.robia.core.color.RgbColor
 import com.gusanitolabs.robia.core.designsystem.LocalReducedMotion
 import com.gusanitolabs.robia.core.designsystem.PopIn
-import com.gusanitolabs.robia.core.designsystem.RobiaLightColorScheme
 import com.gusanitolabs.robia.core.designsystem.SparkleBurst
 import com.gusanitolabs.robia.core.designsystem.extras
 import com.gusanitolabs.robia.core.designsystem.sparkleBurstAfterProcessing
@@ -1697,13 +1696,13 @@ private fun PhotoPreview(
                     Icon(
                         imageVector = Icons.Rounded.Style,
                         contentDescription = null,
-                        tint = RobiaLightColorScheme.secondary,
+                        tint = MaterialTheme.extras.wellScheme.secondary,
                         modifier = Modifier.size(56.dp),
                     )
                     Text(
                         text = stringResource(R.string.photo_placeholder),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = RobiaLightColorScheme.onSurfaceVariant,
+                        color = MaterialTheme.extras.wellScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1711,7 +1710,7 @@ private fun PhotoPreview(
                         Text(
                             text = stringResource(R.string.photo_placeholder_tap_camera),
                             style = MaterialTheme.typography.bodySmall,
-                            color = RobiaLightColorScheme.onSurfaceVariant,
+                            color = MaterialTheme.extras.wellScheme.onSurfaceVariant,
                         )
                     }
                 }

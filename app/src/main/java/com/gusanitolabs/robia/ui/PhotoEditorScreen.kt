@@ -623,7 +623,7 @@ fun PhotoEditorScreen(
                             )
                         }
                         // The stroke sits on the light checkerboard in both themes, so it uses the light roles and stays visible.
-                        val overlayColor = (if (mode == RefineSession.Mode.Keep) RobiaPrimary else RobiaError).copy(alpha = 0.35f)
+                        val overlayColor = (if (mode == RefineSession.Mode.Keep) RobiaPrimary else RobiaError).copy(alpha = 0.35f) // theme-fixed: drawn over the photo, same in every palette
                         if (strokeScreen.size > 1) {
                             Canvas(Modifier.fillMaxSize()) {
                                 val strokePath = Path().apply {
@@ -1170,7 +1170,7 @@ private fun QuickEditTemperaturePreset(
     val swatchColor = when (value) {
         -1f -> Color(0xFF0B4FB3) // theme-fixed: temperature preset swatch (cool end), same in both themes
         -0.5f -> Color(0xFF5FA8FF) // theme-fixed: temperature preset swatch (cool), same in both themes
-        0f -> RobiaSurfaceContainerHigh
+        0f -> RobiaSurfaceContainerHigh // theme-fixed: drawn over the photo, same in every palette
         0.5f -> Color(0xFFFFB36B) // theme-fixed: temperature preset swatch (warm), same in both themes
         else -> Color(0xFFE56A1F) // theme-fixed: temperature preset swatch (warm end), same in both themes
     }

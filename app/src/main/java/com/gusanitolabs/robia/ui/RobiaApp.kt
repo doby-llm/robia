@@ -172,6 +172,7 @@ import com.gusanitolabs.robia.core.model.BrowseLayout
 import com.gusanitolabs.robia.core.model.COLLECTION_CATEGORY_ID
 import com.gusanitolabs.robia.core.model.ClothingColorMetrics
 import com.gusanitolabs.robia.core.model.ClothingItem
+import com.gusanitolabs.robia.core.model.ColorPalette
 import com.gusanitolabs.robia.core.model.DefaultTags
 import com.gusanitolabs.robia.core.model.DisplayColorLabel
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
@@ -388,6 +389,7 @@ fun RobiaApp(
     performanceFixtureUris: List<String> = emptyList(),
     performanceBatch: Boolean = false,
     themeMode: ThemeMode = ThemeMode.Light,
+    colorPalette: ColorPalette = ColorPalette.TobaccoBordeaux,
 ) {
     val persistedSettings by settingsRepository.settings.collectAsState(initial = null)
     val settingsLoaded = persistedSettings != null
@@ -460,7 +462,7 @@ fun RobiaApp(
     }
 
     LocalizedRobiaContent(settings.languagePreference) {
-        RobiaTheme(darkTheme = resolveDarkTheme(themeMode, isSystemInDarkTheme())) {
+        RobiaTheme(darkTheme = resolveDarkTheme(themeMode, isSystemInDarkTheme()), palette = colorPalette) {
         val displaySettings = settings.copy(
             driveSyncConnectionStatus = displaySyncState.connectionStatus,
             developerModeUnlocked = settings.developerModeUnlocked && developerModeAllowed(BuildConfig.BUILD_TYPE),

@@ -20,9 +20,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.lifecycleScope
-import com.gusanitolabs.robia.core.designsystem.RobiaBackground
-import com.gusanitolabs.robia.core.designsystem.RobiaDarkBackground
 import com.gusanitolabs.robia.core.designsystem.resolveDarkTheme
+import com.gusanitolabs.robia.core.designsystem.robiaColorScheme
+import com.gusanitolabs.robia.core.model.ColorPalette
 import com.gusanitolabs.robia.core.model.DriveSyncConnectionStatus
 import com.gusanitolabs.robia.core.model.ThemeMode
 import com.gusanitolabs.robia.data.SettingsRepository
@@ -69,6 +69,8 @@ class MainActivity : ComponentActivity() {
         // Read once before the first frame, bounded; Light when the stored choice is not read in time (R3-DEC-045).
         val earlyThemeMode = runBlocking { withTimeoutOrNull(THEME_READ_TIMEOUT_MS) { settingsRepository.themeMode.first() } }
             ?: ThemeMode.Light
+        val earlyPalette = runBlocking { withTimeoutOrNull(THEME_READ_TIMEOUT_MS) { settingsRepository.colorPalette.first() } }
+            ?: ColorPalette.TobaccoBordeaux
         val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val earlyDark = resolveDarkTheme(earlyThemeMode, systemDark)
         if (earlyDark) setTheme(R.style.Theme_Robia_Dark)
@@ -83,13 +85,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by settingsRepository.themeMode.collectAsState(initial = earlyThemeMode)
+            val palette by settingsRepository.colorPalette.collectAsState(initial = earlyPalette)
             val dark = resolveDarkTheme(themeMode, isSystemInDarkTheme())
-            DisposableEffect(dark) {
+            DisposableEffect(dark, palette) {
                 enableEdgeToEdge(
                     statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
                     navigationBarStyle = SystemBarStyle.auto(NAVIGATION_LIGHT_SCRIM, NAVIGATION_DARK_SCRIM) { dark },
                 )
-                window.setBackgroundDrawable(ColorDrawable((if (dark) RobiaDarkBackground else RobiaBackground).toArgb()))
+                window.setBackgroundDrawable(ColorDrawable(robiaColorScheme(palette, dark).background.toArgb()))
                 onDispose {}
             }
             RobiaApp(
@@ -101,6 +104,7 @@ class MainActivity : ComponentActivity() {
                 performanceFixtureUris = performanceFixtureUris(),
                 performanceBatch = intent.getBooleanExtra(EXTRA_PERFORMANCE_BATCH, false),
                 themeMode = themeMode,
+                colorPalette = palette,
             )
         }
         // Debug-only cutout stage dump (K01); release and staging builds never start it.
