@@ -1031,4 +1031,8 @@
     <string name="open_source_licenses_close">Close</string>
     <!-- FT2 -->
     <string name="analytics_section_collections">Collections</string>
+    <!-- TH2 -->
+    <string name="settings_color_palette">Colour palette</string>
+    <string name="palette_earth_steel">Earth &amp; Steel</string>
+    <string name="palette_tobacco_bordeaux">Tobacco &amp; Bordeaux</string>
 </resources>
