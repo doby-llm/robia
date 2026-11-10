@@ -17,7 +17,6 @@
     <string name="cloud_setup_recommended_summary">Recommended before adding garments</string>
     <string name="cloud_setup_late_blocked_summary">Drive will be checked before local upload</string>
     <string name="cloud_setup_configured_summary">Tap to view the current Drive status</string>
-    <string name="cloud_setup_configured_status">Google Drive setup is configured. Full sync management is coming soon.</string>
     <string name="cloud_sync_started">Checking Google Drive before uploading local changes…</string>
     <string name="drive_backup_delete_menu">Delete backup from Google Drive</string>
     <string name="drive_backup_delete_title">Delete backup from Google Drive?</string>
@@ -35,6 +34,7 @@
     <string name="cloud_setup_cancelled">Google Drive setup was cancelled. Choose Set up to try again.</string>
     <string name="cloud_setup_missing_result">Google Drive setup did not return a usable result. Try again.</string>
     <string name="cloud_setup_parse_failed">Google Drive setup returned an unreadable result. Check Google Play services and try again.</string>
+    <string name="cloud_setup_failed_with_code">Google Drive setup failed (code %1$d). Check Google Play services and try again.</string>
     <string name="cloud_setup_scope_denied">Google Drive app data access was not granted. Grant Drive access to enable cloud backup.</string>
     <string name="cloud_setup_token_missing">Google Drive did not return an access token. Try setup again.</string>
     <string name="cloud_setup_late_blocked_title">Cloud setup is locked</string>

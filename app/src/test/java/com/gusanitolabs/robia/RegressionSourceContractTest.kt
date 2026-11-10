@@ -148,7 +148,7 @@ class RegressionSourceContractTest {
         assertTrue(resolver.contains(".onFailure {"))
         assertTrue(resolver.contains("\"parse_error\""))
         assertTrue(resolver.contains("R.string.cloud_setup_parse_failed"))
-        assertTrue(resolver.contains("settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)"))
+        assertTrue(resolver.contains("recordFailedAuthorization()"))
 
         assertIncreasing(
             resolver.indexOf("if (data == null)"),
@@ -163,14 +163,14 @@ class RegressionSourceContractTest {
         val mainActivity = source("app/src/main/java/com/gusanitolabs/robia/MainActivity.kt")
         val persister = mainActivity
             .substringAfter("private fun persistDriveAuthorizationResult(")
-            .substringBefore("private fun showCloudSetupLaunchFailure()")
+            .substringBefore("private fun showCloudSetupLaunchFailure(")
 
         assertTrue(persister.contains("val grantedDriveScope = result.grantedScopes.any"))
         assertTrue(persister.contains("scope == DRIVE_APPDATA_SCOPE"))
         assertTrue(persister.contains("val tokenPresent = !result.accessToken.isNullOrBlank()"))
         assertTrue(persister.contains("val authorized = grantedDriveScope && tokenPresent"))
         assertTrue(persister.contains("if (authorized) {\n                    DriveSyncConnectionStatus.Connected"))
-        assertTrue(persister.contains("DriveSyncConnectionStatus.Disconnected"))
+        assertTrue(persister.contains("statusAfterFailedAuthorization(settingsRepository.settings.first().driveSyncConnectionStatus)"))
         assertTrue(persister.contains("if (authorized) {\n                syncGateway.enqueue(WardrobeSyncOperation.ImportFullSnapshot(sourceRevision = 0L))"))
         assertTrue(persister.contains("R.string.cloud_setup_token_missing"))
         assertTrue(persister.contains("R.string.cloud_setup_scope_denied"))
@@ -197,6 +197,8 @@ class RegressionSourceContractTest {
         assertTrue(diagnostics.contains("grantedScopes"))
         assertTrue(diagnostics.contains("hasResolution"))
         assertTrue(diagnostics.contains("tokenPresent"))
+        assertTrue(diagnostics.contains("errorType"))
+        assertTrue(diagnostics.contains("statusCode"))
         assertTrue(!diagnostics.contains("accessToken"))
         assertTrue(!diagnostics.contains("account"))
         assertTrue(!diagnostics.contains("email"))
@@ -206,6 +208,7 @@ class RegressionSourceContractTest {
 
         listOf(
             "cloud_setup_cancelled",
+            "cloud_setup_failed_with_code",
             "cloud_setup_missing_result",
             "cloud_setup_parse_failed",
             "cloud_setup_scope_denied",
@@ -215,6 +218,42 @@ class RegressionSourceContractTest {
             assertTrue(stringsEs.contains("name=\"$name\""))
             assertTrue(stringsDe.contains("name=\"$name\""))
         }
+    }
+
+    @Test
+    fun driveAuthorizationFailures_surfaceApiStatusCodeAndNeverClaimConnected() {
+        val mainActivity = source("app/src/main/java/com/gusanitolabs/robia/MainActivity.kt")
+        val failureLauncher = mainActivity
+            .substringAfter("private fun requestGoogleDriveAuthorization()")
+            .substringBefore("private fun handleDriveAuthorizationResolution(")
+        val resolver = mainActivity
+            .substringAfter("private fun handleDriveAuthorizationResolution(")
+            .substringBefore("private fun recordFailedAuthorization()")
+
+        assertTrue(failureLauncher.contains(".addOnFailureListener { throwable ->"))
+        assertTrue(failureLauncher.contains("showCloudSetupLaunchFailure(throwable as? ApiException)"))
+        assertTrue(resolver.contains(".onFailure { throwable ->"))
+        assertTrue(resolver.contains("throwable as? ApiException"))
+        assertTrue(resolver.contains("showCloudSetupFailureWithCode(apiError.statusCode)"))
+        assertTrue(mainActivity.contains("private fun showCloudSetupFailureWithCode(statusCode: Int)"))
+        assertTrue(mainActivity.contains("R.string.cloud_setup_failed_with_code, statusCode"))
+        assertTrue(mainActivity.contains("statusAfterFailedAuthorization(previous)"))
+        assertTrue(mainActivity.contains("settingsRepository.settings.first().driveSyncConnectionStatus"))
+        assertTrue(!mainActivity.contains("setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)"))
+    }
+
+    @Test
+    fun cloudSetupTap_startsSetupInsteadOfClaimingConfigured() {
+        val app = source("app/src/main/java/com/gusanitolabs/robia/ui/RobiaApp.kt")
+        val requestSetup = app
+            .substringAfter("fun requestCloudSetup() {")
+            .substringBefore("fun openFirstGuardedGarment()")
+
+        assertTrue(!app.contains("cloud_setup_configured_status"))
+        assertTrue(!app.contains("cloudSetupConfiguredMessage"))
+        assertTrue(requestSetup.contains("cloudSetupTapAction(settings.driveSyncConnectionStatus)"))
+        assertTrue(requestSetup.contains("CloudSetupTapAction.StartSetup -> onRequestCloudSetup()"))
+        assertTrue(requestSetup.contains("CloudSetupTapAction.ManualSync -> {"))
     }
 
     @Test
