@@ -31,11 +31,13 @@ import com.gusanitolabs.robia.sync.WardrobeSyncOperation
 import com.gusanitolabs.robia.sync.WardrobeSyncOutboxProcessor
 import com.gusanitolabs.robia.sync.authorizedEmailAfterLookup
 import com.gusanitolabs.robia.sync.fetchDriveAccountEmail
+import com.gusanitolabs.robia.sync.statusAfterFailedAuthorization
 import com.gusanitolabs.robia.ui.RobiaApp
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -176,7 +178,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            .addOnFailureListener { showCloudSetupLaunchFailure() }
+            .addOnFailureListener { throwable ->
+                logDriveAuthorizationOutcome(
+                    outcome = "launch_failed",
+                    errorType = throwable.javaClass.simpleName,
+                    statusCode = (throwable as? ApiException)?.statusCode,
+                )
+                showCloudSetupLaunchFailure(throwable as? ApiException)
+            }
     }
 
     private fun handleDriveAuthorizationResolution(resultCode: Int, data: Intent?) {
@@ -188,9 +197,7 @@ class MainActivity : ComponentActivity() {
                 resultCode = resultCode,
                 dataPresent = false,
             )
-            lifecycleScope.launch {
-                settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)
-            }
+            recordFailedAuthorization()
             showCloudSetupFailure(
                 if (resultCode == Activity.RESULT_CANCELED) {
                     R.string.cloud_setup_cancelled
@@ -213,17 +220,31 @@ class MainActivity : ComponentActivity() {
                 )
                 persistDriveAuthorizationResult(result)
             }
-            .onFailure {
+            .onFailure { throwable ->
+                // ApiException carries the Play services status code; only its type and code are logged, never its message.
+                val apiError = throwable as? ApiException
                 logDriveAuthorizationOutcome(
                     outcome = "parse_error",
                     resultCode = resultCode,
                     dataPresent = true,
+                    errorType = throwable.javaClass.simpleName,
+                    statusCode = apiError?.statusCode,
                 )
-                lifecycleScope.launch {
-                    settingsRepository.setDriveSyncConnectionStatus(DriveSyncConnectionStatus.Disconnected)
+                recordFailedAuthorization()
+                if (apiError != null) {
+                    showCloudSetupFailureWithCode(apiError.statusCode)
+                } else {
+                    showCloudSetupFailure(R.string.cloud_setup_parse_failed)
                 }
-                showCloudSetupFailure(R.string.cloud_setup_parse_failed)
             }
+    }
+
+    /** Keeps a first setup retryable (NotConfigured) and marks an existing account as sign-in required. */
+    private fun recordFailedAuthorization() {
+        lifecycleScope.launch {
+            val previous = settingsRepository.settings.first().driveSyncConnectionStatus
+            settingsRepository.setDriveSyncConnectionStatus(statusAfterFailedAuthorization(previous))
+        }
     }
 
     /**
@@ -261,7 +282,7 @@ class MainActivity : ComponentActivity() {
                 if (authorized) {
                     DriveSyncConnectionStatus.Connected
                 } else {
-                    DriveSyncConnectionStatus.Disconnected
+                    statusAfterFailedAuthorization(settingsRepository.settings.first().driveSyncConnectionStatus)
                 },
             )
             if (authorized) {
@@ -279,9 +300,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun showCloudSetupLaunchFailure() {
+    private fun showCloudSetupLaunchFailure(apiError: ApiException? = null) {
         setCloudAuthorizationInFlight(false)
-        showCloudSetupFailure(R.string.cloud_setup_launch_failed)
+        if (apiError != null) {
+            showCloudSetupFailureWithCode(apiError.statusCode)
+        } else {
+            showCloudSetupFailure(R.string.cloud_setup_launch_failed)
+        }
     }
 
     private fun setCloudAuthorizationInFlight(inFlight: Boolean) {
@@ -296,6 +321,10 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, messageRes, Toast.LENGTH_LONG).show()
     }
 
+    private fun showCloudSetupFailureWithCode(statusCode: Int) {
+        Toast.makeText(this, getString(R.string.cloud_setup_failed_with_code, statusCode), Toast.LENGTH_LONG).show()
+    }
+
     private fun logDriveAuthorizationOutcome(
         outcome: String,
         resultCode: Int? = null,
@@ -303,6 +332,8 @@ class MainActivity : ComponentActivity() {
         grantedScopes: Iterable<String> = emptyList(),
         hasResolution: Boolean? = null,
         tokenPresent: Boolean? = null,
+        errorType: String? = null,
+        statusCode: Int? = null,
     ) {
         Log.i(
             DRIVE_AUTH_LOG_TAG,
@@ -314,6 +345,8 @@ class MainActivity : ComponentActivity() {
                 if (scopeNames.isNotEmpty()) append(" grantedScopes=").append(scopeNames.joinToString(","))
                 hasResolution?.let { append(" hasResolution=").append(it) }
                 tokenPresent?.let { append(" tokenPresent=").append(it) }
+                errorType?.let { append(" errorType=").append(it) }
+                statusCode?.let { append(" statusCode=").append(it) }
             },
         )
     }

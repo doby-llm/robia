@@ -17,7 +17,6 @@
     <string name="cloud_setup_recommended_summary">Empfohlen, bevor du Kleidung hinzufügst</string>
     <string name="cloud_setup_late_blocked_summary">Drive wird vor dem lokalen Upload geprüft</string>
     <string name="cloud_setup_configured_summary">Tippe, um den aktuellen Drive-Status zu sehen</string>
-    <string name="cloud_setup_configured_status">Google Drive ist eingerichtet. Die vollständige Synchronisierungsverwaltung kommt später.</string>
     <string name="cloud_sync_started">Google Drive wird geprüft, bevor lokale Änderungen hochgeladen werden…</string>
     <string name="drive_backup_delete_menu">Google-Drive-Sicherung löschen</string>
     <string name="drive_backup_delete_title">Google-Drive-Sicherung löschen?</string>
@@ -35,6 +34,7 @@
     <string name="cloud_setup_cancelled">Die Google-Drive-Einrichtung wurde abgebrochen. Wähle Einrichten, um es erneut zu versuchen.</string>
     <string name="cloud_setup_missing_result">Die Google-Drive-Einrichtung hat kein nutzbares Ergebnis zurückgegeben. Versuche es erneut.</string>
     <string name="cloud_setup_parse_failed">Die Google-Drive-Einrichtung hat ein unlesbares Ergebnis zurückgegeben. Prüfe Google Play Dienste und versuche es erneut.</string>
+    <string name="cloud_setup_failed_with_code">Die Google-Drive-Einrichtung ist fehlgeschlagen (Code %1$d). Prüfe Google Play Dienste und versuche es erneut.</string>
     <string name="cloud_setup_scope_denied">Der Zugriff auf Google-Drive-App-Daten wurde nicht gewährt. Erlaube Drive-Zugriff, um die Cloud-Sicherung zu aktivieren.</string>
     <string name="cloud_setup_token_missing">Google Drive hat kein Zugriffstoken zurückgegeben. Wiederhole die Einrichtung.</string>
     <string name="cloud_setup_late_blocked_title">Cloud-Einrichtung ist gesperrt</string>
