@@ -984,7 +984,6 @@ private fun RobiaShell(
     val online by app.online.collectAsState()
     val cloudAuthorizationInFlight by app.cloudAuthorizationInFlight.collectAsState()
     val developerModeUnlockedMessage = stringResource(R.string.developer_mode_unlocked)
-    val cloudSetupConfiguredMessage = stringResource(R.string.cloud_setup_configured_status)
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var browseFilters by remember { mutableStateOf(BrowseFilterState()) }
     var browseQuery by rememberSaveable { mutableStateOf("") }
@@ -1649,18 +1648,12 @@ private fun RobiaShell(
     }
 
     fun requestCloudSetup() {
-        if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Connected ||
-            settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.NeedsAttention
-        ) {
-            onRequestCloudManualSync()
-            Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
-        } else if (settings.driveSyncConnectionStatus == DriveSyncConnectionStatus.Disabled) {
-            onRequestCloudManualSync()
-            Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
-        } else if (settings.driveSyncConnectionStatus != DriveSyncConnectionStatus.NotConfigured) {
-            Toast.makeText(context, cloudSetupConfiguredMessage, Toast.LENGTH_SHORT).show()
-        } else {
-            onRequestCloudSetup()
+        when (cloudSetupTapAction(settings.driveSyncConnectionStatus)) {
+            CloudSetupTapAction.ManualSync -> {
+                onRequestCloudManualSync()
+                Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
+            }
+            CloudSetupTapAction.StartSetup -> onRequestCloudSetup()
         }
     }
 
