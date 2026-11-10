@@ -1653,6 +1653,8 @@ private fun RobiaShell(
                 onRequestCloudManualSync()
                 Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
             }
+            CloudSetupTapAction.SyncInProgress ->
+                Toast.makeText(context, context.getString(R.string.cloud_sync_started), Toast.LENGTH_SHORT).show()
             CloudSetupTapAction.StartSetup -> onRequestCloudSetup()
         }
     }

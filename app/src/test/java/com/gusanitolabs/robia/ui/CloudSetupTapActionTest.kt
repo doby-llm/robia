@@ -15,8 +15,12 @@ class CloudSetupTapActionTest {
     fun activeOrDisabledDriveRunsManualSync() {
         assertEquals(CloudSetupTapAction.ManualSync, cloudSetupTapAction(DriveSyncConnectionStatus.Connected))
         assertEquals(CloudSetupTapAction.ManualSync, cloudSetupTapAction(DriveSyncConnectionStatus.NeedsAttention))
-        assertEquals(CloudSetupTapAction.ManualSync, cloudSetupTapAction(DriveSyncConnectionStatus.Syncing))
         assertEquals(CloudSetupTapAction.ManualSync, cloudSetupTapAction(DriveSyncConnectionStatus.Disabled))
+    }
+
+    @Test
+    fun runningSyncOnlyReportsProgress() {
+        assertEquals(CloudSetupTapAction.SyncInProgress, cloudSetupTapAction(DriveSyncConnectionStatus.Syncing))
     }
 
     @Test
@@ -26,7 +30,7 @@ class CloudSetupTapActionTest {
             DriveSyncConnectionStatus.NotConfigured to CloudSetupTapAction.StartSetup,
             DriveSyncConnectionStatus.Disconnected to CloudSetupTapAction.StartSetup,
             DriveSyncConnectionStatus.Connected to CloudSetupTapAction.ManualSync,
-            DriveSyncConnectionStatus.Syncing to CloudSetupTapAction.ManualSync,
+            DriveSyncConnectionStatus.Syncing to CloudSetupTapAction.SyncInProgress,
             DriveSyncConnectionStatus.NeedsAttention to CloudSetupTapAction.ManualSync,
         )
         assertEquals(DriveSyncConnectionStatus.values().toSet(), expected.keys)
