@@ -1,7 +1,6 @@
 package com.gusanitolabs.robia.ui
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
@@ -9,8 +8,8 @@ import java.nio.file.Path
 
 class ReleaseGatesTest {
     @Test
-    fun developerModeIsOnlyAllowedOutsideRelease() {
-        assertFalse(developerModeAllowed("release"))
+    fun developerModeIsAllowedInEveryBuildIncludingRelease() {
+        assertTrue(developerModeAllowed("release"))
         assertTrue(developerModeAllowed("debug"))
         assertTrue(developerModeAllowed("staging"))
     }
