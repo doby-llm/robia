@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +59,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -1372,17 +1374,33 @@ private fun PhotoCaptureCardWithLaunchers(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+    /** Copies done and total while a multi-pick is copied; null otherwise. Gallery and camera stay disabled meanwhile. */
+    var importProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isEmpty()) {
             onCaptureStatusChange("")
             return@rememberLauncherForActivityResult
         }
+        val startedAt = SystemClock.elapsedRealtime()
+        if (uris.size > 1) importProgress = 0 to uris.size
         scope.launch {
-            val storedUris = withContext(Dispatchers.IO) {
-                uris.mapNotNull { uri ->
-                    runCatching { ClothingImageStore.copyContentUriToPrivateStorage(context, uri).toString() }.getOrNull()
+            val storedUris = try {
+                withContext(Dispatchers.IO) {
+                    copyPickedPhotos(
+                        picked = uris,
+                        copy = { uri -> ClothingImageStore.copyContentUriToPrivateStorage(context, uri).toString() },
+                        deleteCopies = { copies -> ClothingImageStore.deleteBatchDraftFiles(context, copies) },
+                        onProgress = { done, total -> importProgress = done to total },
+                    )
                 }
+            } finally {
+                importProgress = null
+            }
+            if (uris.size > 1) {
+                BatchTelemetry.log(
+                    "import copied=${storedUris.size} failed=${uris.size - storedUris.size} ms=${SystemClock.elapsedRealtime() - startedAt}",
+                )
             }
             when {
                 storedUris.size > 1 && onBatchPhotosSelected != null -> onBatchPhotosSelected(storedUris)
@@ -1402,37 +1420,71 @@ private fun PhotoCaptureCardWithLaunchers(
         pendingCameraUri = null
     }
 
-    PhotoCaptureCard(
-        photoUri = photoUri,
-        photoAspectRatio = photoAspectRatio,
-        captureStatus = captureStatus,
-        backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
-        isPhotoProcessing = isPhotoProcessing,
-        processingStage = processingStage,
-        rawSourceUri = rawSourceUri,
-        foregroundUri = foregroundUri,
-        primaryColor = primaryColor,
-        secondaryColor = secondaryColor,
-        onRetryPhotoProcessing = onRetryPhotoProcessing,
-        onQuickEditClick = onQuickEditClick,
-        quickEditStatus = quickEditStatus,
-        onGalleryClick = {
-            runCatching { galleryLauncher.launch(arrayOf("image/*")) }
-                .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
-        },
-        onCameraClick = {
-            runCatching {
-                val cameraUri = ClothingImageStore.createCaptureUri(context)
-                pendingCameraUri = cameraUri.toString()
-                cameraLauncher.launch(cameraUri)
-            }.onFailure {
-                pendingCameraUri = null
-                onCaptureStatusChange(PhotoStatus.MediaUnavailable)
+    val photoImporting = importProgress != null
+    val openGallery: () -> Unit = {
+        runCatching { galleryLauncher.launch(arrayOf("image/*")) }
+            .onFailure { onCaptureStatusChange(PhotoStatus.MediaUnavailable) }
+    }
+    val openCamera: () -> Unit = {
+        runCatching {
+            val cameraUri = ClothingImageStore.createCaptureUri(context)
+            pendingCameraUri = cameraUri.toString()
+            cameraLauncher.launch(cameraUri)
+        }.onFailure {
+            pendingCameraUri = null
+            onCaptureStatusChange(PhotoStatus.MediaUnavailable)
+        }
+    }
+
+    Box {
+        PhotoCaptureCard(
+            photoUri = photoUri,
+            photoAspectRatio = photoAspectRatio,
+            captureStatus = captureStatus,
+            backgroundFallbackModuleMissing = backgroundFallbackModuleMissing,
+            isPhotoProcessing = isPhotoProcessing,
+            processingStage = processingStage,
+            rawSourceUri = rawSourceUri,
+            foregroundUri = foregroundUri,
+            primaryColor = primaryColor,
+            secondaryColor = secondaryColor,
+            onRetryPhotoProcessing = onRetryPhotoProcessing,
+            onQuickEditClick = onQuickEditClick,
+            quickEditStatus = quickEditStatus,
+            onGalleryClick = if (photoImporting) null else openGallery,
+            onCameraClick = if (photoImporting) null else openCamera,
+            galleryLabelRes = if (isEditing) R.string.gallery else R.string.gallery_multi,
+            showBatchHint = batchHintVisible(isEditing, hasPhoto = !photoUri.isNullOrBlank()),
+        )
+        importProgress?.let { (done, total) ->
+            Column(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(CardDefaults.shape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.94f))
+                    // Swallows taps so nothing under the scrim reacts while the copy runs.
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {},
+                    )
+                    .padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = stringResource(R.string.batch_import_preparing, done, total),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = { done.toFloat() / total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-        },
-        galleryLabelRes = if (isEditing) R.string.gallery else R.string.gallery_multi,
-        showBatchHint = batchHintVisible(isEditing, hasPhoto = !photoUri.isNullOrBlank()),
-    )
+        }
+    }
 }
 
 /** Edit photo exists only once a usable photo does; while one is processing it stays shown, disabled by the caller. */
