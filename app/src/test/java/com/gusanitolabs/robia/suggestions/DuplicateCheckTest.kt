@@ -198,8 +198,23 @@ class DuplicateCheckTest {
 
         val result = forced.await()
         assertEquals(DuplicateCheckStatus.Idle, result?.checkStatus())
-        assertEquals(emptyList<DuplicateGroup>(), DuplicateSession.groups.value)
+        assertEquals(listOf(pair).keepingActive(setOf("a")), DuplicateSession.groups.value)
         assertEquals("old", DuplicateScanHistory.lastSignature)
+    }
+
+    @Test
+    fun aSupersededForcedScanKeepsTheShownGroupsAndTheSignature() = runTest {
+        reset(previousSignature = "L")
+        DuplicateSession.replaceGroups(listOf(pair))
+        val items = listOf(garment("a"), garment("c"))
+
+        val result = publishDuplicateScan("F", items, force = true, isCurrent = { false }, loadStoredDismissals = noDismissals) { _, _ ->
+            report(groups = listOf(pair))
+        }
+
+        assertEquals(DuplicateScanOutcome.Superseded, result?.outcome)
+        assertEquals(listOf(pair), DuplicateSession.groups.value)
+        assertEquals("L", DuplicateScanHistory.lastSignature)
     }
 
     @Test

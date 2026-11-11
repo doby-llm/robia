@@ -392,13 +392,13 @@ fun nextDuplicateScanSignature(previous: String?, signature: String, outcome: Du
 
 /**
  * The groups to show after a scan: a Success or an Incomplete replaces [current]; a Failed keeps them; a Superseded
- * publishes none, since its garments are no longer the wardrobe.
+ * keeps them too: keepActive already pruned the gone garments.
  */
 fun DuplicateScanOutcome.groupsAfter(current: List<DuplicateGroup>): List<DuplicateGroup> = when (this) {
     is DuplicateScanOutcome.Success -> groups
     is DuplicateScanOutcome.Incomplete -> groups
     DuplicateScanOutcome.Failed -> current
-    DuplicateScanOutcome.Superseded -> emptyList()
+    DuplicateScanOutcome.Superseded -> current
 }
 
 /**
