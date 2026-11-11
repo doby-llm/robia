@@ -1045,4 +1045,6 @@
         <item quantity="one">%d Kleidungsstück ist noch nicht bereit zum Vergleich</item>
         <item quantity="other">%d Kleidungsstücke sind noch nicht bereit zum Vergleich</item>
     </plurals>
+    <!-- BI1 -->
+    <string name="batch_import_preparing">Fotos werden vorbereitet… %1$d von %2$d</string>
 </resources>
