@@ -1223,34 +1223,6 @@ private fun RobiaShell(
             }
         }
     }
-    // Settings › Check for duplicates (DU1): a scan now, whatever the signature. It runs in the app scope, so leaving Settings does not
-    // cancel it. A tap while another scan holds the lock is ignored by publishDuplicateScan.
-    val startDuplicateCheck: () -> Unit = {
-        val items = clothingItems
-        if (!wardrobeItemsLoading) {
-            app.appScope.launch {
-                val report = publishDuplicateScan(
-                    signature = duplicateScanSignature(items),
-                    items = items,
-                    force = true,
-                    loadStoredDismissals = loadStoredDuplicateDismissals,
-                    scan = { scanItems, dismissed ->
-                        DuplicateSession.setCheck(DuplicateCheckStatus.Running(done = 0, total = 0))
-                        scanDuplicates(context, scanItems, duplicateRepository, dismissed) { done, total ->
-                            DuplicateSession.setCheck(DuplicateCheckStatus.Running(done, total))
-                        }
-                    },
-                ) ?: return@launch
-                val status = report.checkStatus()
-                DuplicateSession.setCheck(status)
-                withContext(Dispatchers.Main) {
-                    if (duplicateCheckOpensReview(status, onSettings = routeStack.lastOrNull() == RobiaRoute.Settings)) {
-                        pushRoute(RobiaRoute.DuplicateReview)
-                    }
-                }
-            }
-        }
-    }
     val firstRunInputs = FirstRunPromptInputs(
         settingsLoaded = settingsLoaded,
         cloudAuthorizationInFlight = cloudAuthorizationInFlight,
@@ -1315,6 +1287,35 @@ private fun RobiaShell(
 
     fun popRoute() {
         if (routeStack.size > 1) routeStack.removeAt(routeStack.lastIndex)
+    }
+
+    // Settings › Check for duplicates (DU1): a scan now, whatever the signature. It runs in the app scope, so leaving Settings does not
+    // cancel it. A tap while another scan holds the lock is ignored by publishDuplicateScan.
+    val startDuplicateCheck: () -> Unit = {
+        val items = clothingItems
+        if (!wardrobeItemsLoading) {
+            app.appScope.launch {
+                val report = publishDuplicateScan(
+                    signature = duplicateScanSignature(items),
+                    items = items,
+                    force = true,
+                    loadStoredDismissals = loadStoredDuplicateDismissals,
+                    scan = { scanItems, dismissed ->
+                        DuplicateSession.setCheck(DuplicateCheckStatus.Running(done = 0, total = 0))
+                        scanDuplicates(context, scanItems, duplicateRepository, dismissed) { done, total ->
+                            DuplicateSession.setCheck(DuplicateCheckStatus.Running(done, total))
+                        }
+                    },
+                ) ?: return@launch
+                val status = report.checkStatus()
+                DuplicateSession.setCheck(status)
+                withContext(Dispatchers.Main) {
+                    if (duplicateCheckOpensReview(status, onSettings = routeStack.lastOrNull() == RobiaRoute.Settings)) {
+                        pushRoute(RobiaRoute.DuplicateReview)
+                    }
+                }
+            }
+        }
     }
 
     fun closeAddEdit() {
