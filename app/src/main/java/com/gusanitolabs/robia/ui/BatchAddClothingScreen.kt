@@ -122,6 +122,18 @@ internal data class BatchDraftItem(
     val originalRecipe: CutoutRecipe? = null,
     /** The engine's subject file of the cutout, kept until the garment is saved; null when no subject was made. */
     val subjectUri: String? = null,
+    /** Tags the model put into the selection and the user has not changed since (the AI mark); in memory only, never saved. */
+    val modelOwnedTagIds: List<String> = emptyList(),
+    /** The primary and secondary colour came from the palette extraction (the AI mark); in memory only, never saved. */
+    val modelPrimaryColor: Boolean = false,
+    val modelSecondaryColor: Boolean = false,
+)
+
+/** The AI marks an editor opens with, as in single add. Null (the default) opens the editor with none. */
+data class AiMarks(
+    val modelOwnedTagIds: List<String> = emptyList(),
+    val primaryColor: Boolean = false,
+    val secondaryColor: Boolean = false,
 )
 
 internal enum class BatchDraftStatus(@StringRes val labelRes: Int) {
@@ -715,25 +727,12 @@ internal suspend fun suggestStage(
         null
     }
     val ready = suggestion as? SuggestionOutcome.Ready
-    draft.copy(
-        photoUri = cutout.croppedUri,
-        photoAspectRatio = cutout.displayAspectRatio,
-        originalUri = cutout.originalUri,
-        originalRecipe = cutout.originalRecipe,
-        subjectUri = cutout.subjectUri,
+    draft.withSuggestion(
+        cutout = cutout,
+        ready = ready,
+        availableTags = availableTags,
         status = resolvedStatus,
-        selectedPrimaryColorId = cutout.primaryColorId,
-        selectedSecondaryColorId = cutout.secondaryColorId,
-        selectedTagIds = if (ready == null) {
-            draft.selectedTagIds
-        } else {
-            mergePredictedTags(draft.selectedTagIds, ready.predictedTagIds, availableTags)
-        },
-        suggestionCapture = ready?.let { outcome ->
-            SuggestionCapture(cutout.croppedUri, outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
-        },
-        errorMessage = resolvedMessage,
-        backgroundFallback = cutout.usedFallback,
+        message = resolvedMessage,
     )
 } catch (throwable: CancellationException) {
     throw throwable
@@ -745,6 +744,44 @@ internal suspend fun suggestStage(
     draft.copy(
         status = BatchDraftStatus.Failed,
         errorMessage = throwable.message?.takeIf { it.isNotBlank() },
+    )
+}
+
+/**
+ * The draft after its suggestion stage. A Ready [ready] merges its predicted tags, and the AI marks record exactly the
+ * tags that merge added and the colours the cutout set. Without a Ready suggestion the selection stays as it was.
+ */
+internal fun BatchDraftItem.withSuggestion(
+    cutout: CutoutStageResult.Ready,
+    ready: SuggestionOutcome.Ready?,
+    availableTags: List<GarmentTag>,
+    status: BatchDraftStatus,
+    message: String?,
+): BatchDraftItem {
+    val draftTagIds = selectedTagIds
+    val mergedTagIds = if (ready == null) {
+        draftTagIds
+    } else {
+        mergePredictedTags(draftTagIds, ready.predictedTagIds, availableTags)
+    }
+    return copy(
+        photoUri = cutout.croppedUri,
+        photoAspectRatio = cutout.displayAspectRatio,
+        originalUri = cutout.originalUri,
+        originalRecipe = cutout.originalRecipe,
+        subjectUri = cutout.subjectUri,
+        status = status,
+        selectedPrimaryColorId = cutout.primaryColorId,
+        selectedSecondaryColorId = cutout.secondaryColorId,
+        selectedTagIds = mergedTagIds,
+        modelOwnedTagIds = modelOwnedTagIds + mergedTagIds.filterNot { tagId -> tagId in draftTagIds },
+        modelPrimaryColor = cutout.primaryColorId != null,
+        modelSecondaryColor = cutout.secondaryColorId != null,
+        suggestionCapture = ready?.let { outcome ->
+            SuggestionCapture(cutout.croppedUri, outcome.imageVector, outcome.imageInputHash, outcome.durationMs)
+        },
+        errorMessage = message,
+        backgroundFallback = cutout.usedFallback,
     )
 }
 
@@ -795,6 +832,9 @@ internal fun BatchDraftItem.retryForBatch(): BatchDraftItem = if (isRetryableFor
         explicitlyAccepted = false,
         errorMessage = null,
         backgroundFallback = false,
+        modelOwnedTagIds = emptyList(),
+        modelPrimaryColor = false,
+        modelSecondaryColor = false,
     )
 } else {
     this
@@ -849,6 +889,12 @@ internal fun BatchDraftItem.toBatchEditItem(
     mainColors: List<MainColor>,
 ): ClothingItem = toEditingClothingItem(availableTags, mainColors)
 
+internal fun BatchDraftItem.toAiMarks(): AiMarks = AiMarks(
+    modelOwnedTagIds = modelOwnedTagIds,
+    primaryColor = modelPrimaryColor,
+    secondaryColor = modelSecondaryColor,
+)
+
 internal fun BatchDraftItem.toBatchEditPhotoReviewState(): AddEditPhotoReviewState? {
     if (originalPhotoUri.isBlank()) return null
     if (status != BatchDraftStatus.NeedsReview) return null
@@ -896,6 +942,29 @@ private fun List<MainColor>.colorForId(id: String?): MainColor? = firstOrNull { 
 private fun List<MainColor>.nearestColor(rawHex: String?): MainColor? {
     val rgb = RgbColor.fromHexOrNull(rawHex) ?: return null
     return PaletteColorClassifier.Default.nearestColor(this, rgb)?.color
+}
+
+/**
+ * Carries the AI marks of [previous] onto [updated], the draft the editor just saved. A tag category keeps its marks
+ * only while its selected tags are the same as in [previous]; a colour keeps its mark only while it is the same colour.
+ */
+internal fun carryBatchAiMarks(
+    previous: BatchDraftItem,
+    updated: BatchDraftItem,
+    availableTags: List<GarmentTag>,
+): BatchDraftItem {
+    val categoryIdByTagId = availableTags.associate { tag -> tag.id to tag.categoryId }
+    fun selectedIn(tagIds: List<String>, categoryId: String): Set<String> =
+        tagIds.filter { tagId -> categoryIdByTagId[tagId] == categoryId }.toSet()
+    val keptOwnedTagIds = previous.modelOwnedTagIds.filter { tagId ->
+        val categoryId = categoryIdByTagId[tagId] ?: return@filter false
+        selectedIn(previous.selectedTagIds, categoryId) == selectedIn(updated.selectedTagIds, categoryId)
+    }
+    return updated.copy(
+        modelOwnedTagIds = keptOwnedTagIds,
+        modelPrimaryColor = previous.modelPrimaryColor && previous.selectedPrimaryColorId == updated.selectedPrimaryColorId,
+        modelSecondaryColor = previous.modelSecondaryColor && previous.selectedSecondaryColorId == updated.selectedSecondaryColorId,
+    )
 }
 
 internal fun ClothingItem.toBatchDraftFromExisting(

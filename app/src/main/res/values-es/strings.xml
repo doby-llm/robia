@@ -1035,4 +1035,6 @@
     <string name="settings_color_palette">Paleta de colores</string>
     <string name="palette_earth_steel">Tierra y acero</string>
     <string name="palette_tobacco_bordeaux">Tabaco y burdeos</string>
+    <!-- BI1 -->
+    <string name="batch_import_preparing">Preparando fotos… %1$d de %2$d</string>
 </resources>
