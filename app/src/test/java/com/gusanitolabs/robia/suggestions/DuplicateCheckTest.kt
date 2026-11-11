@@ -55,10 +55,10 @@ class DuplicateCheckTest {
             report()
         }
 
-        assertNull(publishDuplicateScan("same", items, force = false, loadStoredDismissals = noDismissals, scan = scan))
+        assertNull(publishDuplicateScan("same", items, force = false, isCurrent = { true }, loadStoredDismissals = noDismissals, scan = scan))
         assertEquals(0, runs)
 
-        assertNotNull(publishDuplicateScan("same", items, force = true, loadStoredDismissals = noDismissals, scan = scan))
+        assertNotNull(publishDuplicateScan("same", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals, scan = scan))
         assertEquals(1, runs)
         assertEquals("same", DuplicateScanHistory.lastSignature)
     }
@@ -70,7 +70,7 @@ class DuplicateCheckTest {
         val gate = CompletableDeferred<Unit>()
         val runs = mutableListOf<String>()
         val automatic = async {
-            publishDuplicateScan("auto", items, force = false, loadStoredDismissals = noDismissals) { _, _ ->
+            publishDuplicateScan("auto", items, force = false, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
                 runs += "auto"
                 gate.await()
                 report(groups = listOf(pair))
@@ -79,7 +79,7 @@ class DuplicateCheckTest {
         runCurrent()
 
         assertNull(
-            publishDuplicateScan("forced", items, force = true, loadStoredDismissals = noDismissals) { _, _ ->
+            publishDuplicateScan("forced", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
                 runs += "forced"
                 report()
             },
@@ -99,7 +99,7 @@ class DuplicateCheckTest {
         val gate = CompletableDeferred<Unit>()
         val runs = mutableListOf<String>()
         val forced = async {
-            publishDuplicateScan("same", items, force = true, loadStoredDismissals = noDismissals) { _, _ ->
+            publishDuplicateScan("same", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
                 runs += "forced"
                 gate.await()
                 report(groups = listOf(pair))
@@ -107,7 +107,7 @@ class DuplicateCheckTest {
         }
         runCurrent()
         val automatic = async {
-            publishDuplicateScan("same", items, force = false, loadStoredDismissals = noDismissals) { _, _ ->
+            publishDuplicateScan("same", items, force = false, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
                 runs += "auto"
                 report()
             }
@@ -128,7 +128,7 @@ class DuplicateCheckTest {
         val items = listOf(garment("a"), garment("c"))
         val gate = CompletableDeferred<Unit>()
         val automatic = async {
-            publishDuplicateScan("new", items, force = false, loadStoredDismissals = noDismissals) { _, _ ->
+            publishDuplicateScan("new", items, force = false, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
                 gate.await()
                 report(groups = listOf(pair))
             }
@@ -139,7 +139,7 @@ class DuplicateCheckTest {
 
         assertEquals("old", DuplicateScanHistory.lastSignature)
         assertEquals(emptyList<DuplicateGroup>(), DuplicateSession.groups.value)
-        assertNotNull(publishDuplicateScan("new", items, force = true, loadStoredDismissals = noDismissals) { _, _ -> report() })
+        assertNotNull(publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ -> report() })
     }
 
     @Test
@@ -148,7 +148,7 @@ class DuplicateCheckTest {
         val items = listOf(garment("a"), garment("c"))
 
         try {
-            publishDuplicateScan("new", items, force = true, loadStoredDismissals = noDismissals) { _, _ ->
+            publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
                 throw CancellationException("cancelled")
             }
             fail("cancellation was swallowed")
@@ -156,7 +156,7 @@ class DuplicateCheckTest {
             assertEquals("cancelled", cancelled.message)
         }
 
-        assertNotNull(publishDuplicateScan("new", items, force = true, loadStoredDismissals = noDismissals) { _, _ -> report() })
+        assertNotNull(publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ -> report() })
     }
 
     @Test
@@ -165,7 +165,7 @@ class DuplicateCheckTest {
         DuplicateSession.replaceGroups(listOf(pair))
         val items = listOf(garment("a"), garment("c"))
 
-        val failed = publishDuplicateScan("new", items, force = true, loadStoredDismissals = noDismissals) { _, _ ->
+        val failed = publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
             error("database closed")
         }
 
@@ -173,7 +173,47 @@ class DuplicateCheckTest {
         assertEquals("old", DuplicateScanHistory.lastSignature)
         assertEquals(listOf(pair), DuplicateSession.groups.value)
         assertEquals(DuplicateCheckStatus.Failed, failed?.checkStatus())
-        assertNotNull(publishDuplicateScan("new", items, force = true, loadStoredDismissals = noDismissals) { _, _ -> report() })
+        assertNotNull(publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ -> report() })
+    }
+
+    @Test
+    fun aForcedScanWhoseGarmentsChangedWhileItRanPublishesNothingAndRecordsNoSignature() = runTest {
+        reset(previousSignature = "old")
+        DuplicateSession.replaceGroups(listOf(pair))
+        val items = listOf(garment("a"), garment("c"))
+        val gate = CompletableDeferred<Unit>()
+        var current = true
+        val forced = async {
+            publishDuplicateScan("new", items, force = true, isCurrent = { current }, loadStoredDismissals = noDismissals) { _, _ ->
+                gate.await()
+                report(groups = listOf(pair))
+            }
+        }
+        runCurrent()
+
+        // "c" is archived while the scan runs: the wardrobe no longer has the signature the scan started with.
+        DuplicateSession.keepActive(setOf("a"))
+        current = false
+        gate.complete(Unit)
+
+        val result = forced.await()
+        assertEquals(DuplicateCheckStatus.Idle, result?.checkStatus())
+        assertEquals(emptyList<DuplicateGroup>(), DuplicateSession.groups.value)
+        assertEquals("old", DuplicateScanHistory.lastSignature)
+    }
+
+    @Test
+    fun aForcedScanWhoseGarmentsStillMatchPublishesAndRecordsAsBefore() = runTest {
+        reset(previousSignature = "old")
+        val items = listOf(garment("a"), garment("c"))
+
+        val result = publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, _ ->
+            report(groups = listOf(pair))
+        }
+
+        assertEquals(DuplicateScanOutcome.Success(listOf(pair)), result?.outcome)
+        assertEquals(listOf(pair), DuplicateSession.groups.value)
+        assertEquals("new", DuplicateScanHistory.lastSignature)
     }
 
     @Test
@@ -185,7 +225,7 @@ class DuplicateCheckTest {
         val result = publishDuplicateScan(
             "new",
             listOf(garment("a"), garment("c")),
-            force = false,
+            force = false, isCurrent = { true },
             loadStoredDismissals = { error("database closed") },
         ) { _, _ ->
             scans++
@@ -213,7 +253,7 @@ class DuplicateCheckTest {
             onFailure = { failures += it },
         )
 
-        val result = publishDuplicateScan("new", items, force = false, loadStoredDismissals = noDismissals) { _, dismissed ->
+        val result = publishDuplicateScan("new", items, force = false, isCurrent = { true }, loadStoredDismissals = noDismissals) { _, dismissed ->
             scanNow(dismissed())
         }
 
@@ -250,7 +290,7 @@ class DuplicateCheckTest {
         val vectors = mapOf(entry("a", "h1"), entry("c", "h1"))
         val dismissed = setOf(DuplicatePairKey.of("a", "c"))
 
-        val result = publishDuplicateScan("new", items, force = true, loadStoredDismissals = { dismissed }) { scanItems, read ->
+        val result = publishDuplicateScan("new", items, force = true, isCurrent = { true }, loadStoredDismissals = { dismissed }) { scanItems, read ->
             collectDuplicateScanReport(
                 scanItems,
                 snapshot = { vectors },

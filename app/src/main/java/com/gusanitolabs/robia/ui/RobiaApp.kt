@@ -1182,6 +1182,7 @@ private fun RobiaShell(
     // with nothing left (settled); before that, remaining = 0 only means "not computed yet". Keyed on the signature, so a
     // change to the active garments during a scan restarts it.
     val duplicateSignature = remember(clothingItems) { duplicateScanSignature(clothingItems) }
+    val latestDuplicateSignature by rememberUpdatedState(duplicateSignature)
     // The stored "Not duplicates" pairs, read before every scan (automatic or forced), so a dismissed pair stays out after a restart.
     val loadStoredDuplicateDismissals: suspend () -> Set<DuplicatePairKey> = {
         duplicateDismissalDao.getAll().mapTo(HashSet()) { pair -> DuplicatePairKey.of(pair.garmentA, pair.garmentB) }
@@ -1194,6 +1195,7 @@ private fun RobiaShell(
             signature = duplicateSignature,
             items = clothingItems,
             force = false,
+            isCurrent = { true },
             loadStoredDismissals = loadStoredDuplicateDismissals,
             scan = { scanItems, dismissed -> scanDuplicates(context, scanItems, duplicateRepository, dismissed) },
         )
@@ -1294,11 +1296,14 @@ private fun RobiaShell(
     val startDuplicateCheck: () -> Unit = {
         val items = clothingItems
         if (!wardrobeItemsLoading) {
+            val signature = duplicateScanSignature(items)
             app.appScope.launch {
                 val report = publishDuplicateScan(
-                    signature = duplicateScanSignature(items),
+                    signature = signature,
                     items = items,
                     force = true,
+                    // A garment archived or deleted while the check runs changes the signature: its result is dropped.
+                    isCurrent = { latestDuplicateSignature == signature },
                     loadStoredDismissals = loadStoredDuplicateDismissals,
                     scan = { scanItems, dismissed ->
                         DuplicateSession.setCheck(DuplicateCheckStatus.Running(done = 0, total = 0))
@@ -1310,7 +1315,11 @@ private fun RobiaShell(
                 val status = report.checkStatus()
                 DuplicateSession.setCheck(status)
                 withContext(Dispatchers.Main) {
-                    if (duplicateCheckOpensReview(status, onSettings = routeStack.lastOrNull() == RobiaRoute.Settings)) {
+                    // The live groups, not the report: a prune after the publish must not open an empty review screen.
+                    if (
+                        duplicateCheckOpensReview(status, onSettings = routeStack.lastOrNull() == RobiaRoute.Settings) &&
+                        DuplicateSession.groups.value.isNotEmpty()
+                    ) {
                         pushRoute(RobiaRoute.DuplicateReview)
                     }
                 }

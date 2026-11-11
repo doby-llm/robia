@@ -90,12 +90,14 @@ data class CalibrationScan(val pairs: List<CalibrationPair>, val counts: Calibra
 /**
  * The result of one scan: [Success] with its groups; [Incomplete] when an active garment with a photo has no IMAGE vector
  * yet, so a later scan, after the backfill, can compare more (its groups still publish, but the signature is not recorded);
- * or [Failed] when the vectors or the photos could not be read.
+ * [Failed] when the vectors or the photos could not be read; or [Superseded] when the active garments changed while the scan
+ * ran, so its groups describe a wardrobe that is gone: nothing is published and no signature is recorded.
  */
 sealed interface DuplicateScanOutcome {
     data class Success(val groups: List<DuplicateGroup>) : DuplicateScanOutcome
     data class Incomplete(val groups: List<DuplicateGroup>) : DuplicateScanOutcome
     data object Failed : DuplicateScanOutcome
+    data object Superseded : DuplicateScanOutcome
 }
 
 /**
@@ -117,6 +119,7 @@ fun DuplicateScanReport.checkStatus(): DuplicateCheckStatus = when (val result =
     is DuplicateScanOutcome.Success -> DuplicateCheckStatus.Done(result.groups.size, notCompared)
     is DuplicateScanOutcome.Incomplete -> DuplicateCheckStatus.Done(result.groups.size, notCompared)
     DuplicateScanOutcome.Failed -> DuplicateCheckStatus.Failed
+    DuplicateScanOutcome.Superseded -> DuplicateCheckStatus.Idle
 }
 
 /**
@@ -384,14 +387,18 @@ fun duplicateScanDue(lastSignature: String?, signature: String): Boolean = lastS
 fun nextDuplicateScanSignature(previous: String?, signature: String, outcome: DuplicateScanOutcome): String? =
     when (outcome) {
         is DuplicateScanOutcome.Success -> signature
-        is DuplicateScanOutcome.Incomplete, DuplicateScanOutcome.Failed -> previous
+        is DuplicateScanOutcome.Incomplete, DuplicateScanOutcome.Failed, DuplicateScanOutcome.Superseded -> previous
     }
 
-/** The groups to show after a scan: a Success or an Incomplete replaces [current]; a Failed keeps them. */
+/**
+ * The groups to show after a scan: a Success or an Incomplete replaces [current]; a Failed keeps them; a Superseded
+ * publishes none, since its garments are no longer the wardrobe.
+ */
 fun DuplicateScanOutcome.groupsAfter(current: List<DuplicateGroup>): List<DuplicateGroup> = when (this) {
     is DuplicateScanOutcome.Success -> groups
     is DuplicateScanOutcome.Incomplete -> groups
     DuplicateScanOutcome.Failed -> current
+    DuplicateScanOutcome.Superseded -> emptyList()
 }
 
 /**
@@ -424,12 +431,15 @@ suspend fun scanDuplicates(
  * dismissals are read, [scan] runs, then the groups and [DuplicateScanHistory.lastSignature] are set, so two scans never publish
  * out of order. An automatic scan runs only when [signature] is due, checked under the lock: a forced scan may have recorded it
  * while this one waited. A forced scan skips that check and does not wait: while another scan holds the lock it returns null.
+ * [isCurrent] is read after [scan], under the lock: when it is false the garments changed while the scan ran, so the result is
+ * [DuplicateScanOutcome.Superseded] and publishes no groups and records no signature.
  * A cancelled scan publishes nothing and releases the lock; a failed read of the dismissals is a [DuplicateScanOutcome.Failed].
  */
 suspend fun publishDuplicateScan(
     signature: String,
     items: List<ClothingItem>,
     force: Boolean,
+    isCurrent: () -> Boolean,
     loadStoredDismissals: suspend () -> Set<DuplicatePairKey>,
     scan: suspend (items: List<ClothingItem>, dismissed: () -> Set<DuplicatePairKey>) -> DuplicateScanReport,
 ): DuplicateScanReport? {
@@ -437,14 +447,14 @@ suspend fun publishDuplicateScan(
     if (force) {
         if (!lock.tryLock()) return null
         return try {
-            scanAndPublish(signature, items, loadStoredDismissals, scan)
+            scanAndPublish(signature, items, isCurrent, loadStoredDismissals, scan)
         } finally {
             lock.unlock()
         }
     }
     return lock.withLock {
         if (duplicateScanDue(DuplicateScanHistory.lastSignature, signature)) {
-            scanAndPublish(signature, items, loadStoredDismissals, scan)
+            scanAndPublish(signature, items, isCurrent, loadStoredDismissals, scan)
         } else {
             null
         }
@@ -455,10 +465,11 @@ suspend fun publishDuplicateScan(
 private suspend fun scanAndPublish(
     signature: String,
     items: List<ClothingItem>,
+    isCurrent: () -> Boolean,
     loadStoredDismissals: suspend () -> Set<DuplicatePairKey>,
     scan: suspend (items: List<ClothingItem>, dismissed: () -> Set<DuplicatePairKey>) -> DuplicateScanReport,
 ): DuplicateScanReport {
-    val report = try {
+    val scanned = try {
         // The stored dismissals go in before the scan, so a pair dismissed in an earlier run does not come back.
         DuplicateSession.loadDismissals(loadStoredDismissals())
         scan(items) { DuplicateSession.dismissals.value }
@@ -467,6 +478,7 @@ private suspend fun scanAndPublish(
     } catch (failure: Exception) {
         DuplicateScanReport(DuplicateScanOutcome.Failed, notCompared = 0)
     }
+    val report = if (isCurrent()) scanned else DuplicateScanReport(DuplicateScanOutcome.Superseded, notCompared = 0)
     DuplicateSession.replaceGroups(report.outcome.groupsAfter(DuplicateSession.groups.value))
     DuplicateScanHistory.lastSignature = nextDuplicateScanSignature(DuplicateScanHistory.lastSignature, signature, report.outcome)
     return report
