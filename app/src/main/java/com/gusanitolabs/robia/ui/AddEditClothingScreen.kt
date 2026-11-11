@@ -160,6 +160,7 @@ fun AddEditClothingScreen(
     existingItem: ClothingItem?,
     developerModeEnabled: Boolean,
     initialPhotoReviewState: AddEditPhotoReviewState? = null,
+    initialAiMarks: AiMarks? = null,
     titleRes: Int? = null,
     bodyRes: Int = R.string.add_edit_body,
     saveButtonTextRes: Int = R.string.save_item,
@@ -676,7 +677,7 @@ fun AddEditClothingScreen(
         }
     }
 
-    LaunchedEffect(existingItem?.id, initialPhotoReviewState) {
+    LaunchedEffect(existingItem?.id, initialPhotoReviewState, initialAiMarks) {
         name = existingItem?.name.orEmpty()
         notes = existingItem?.notes.orEmpty()
         originalPhotoUri = existingItem?.photoUri
@@ -701,10 +702,10 @@ fun AddEditClothingScreen(
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.primaryPaletteColorHex ?: existingItem?.colorMetrics?.primaryRawValue)?.id
         selectedSecondaryColorId = existingItem?.colorMetrics?.secondaryPaletteColorId
             ?: mainColors.nearestColor(existingItem?.colorMetrics?.secondaryPaletteColorHex ?: existingItem?.colorMetrics?.secondaryRawValue)?.id
-        modelOwnedTagIds = emptyList()
+        modelOwnedTagIds = initialAiMarks?.modelOwnedTagIds.orEmpty()
         userOverriddenTagCategories = emptyList()
-        modelPrimaryColorGeneration = null
-        modelSecondaryColorGeneration = null
+        modelPrimaryColorGeneration = photoAnalysisGeneration.takeIf { initialAiMarks?.primaryColor == true }
+        modelSecondaryColorGeneration = photoAnalysisGeneration.takeIf { initialAiMarks?.secondaryColor == true }
         userPrimaryColorOverrideGeneration = null
         userSecondaryColorOverrideGeneration = null
         captureStatus = initialPhotoReviewState?.captureStatus.orEmpty()

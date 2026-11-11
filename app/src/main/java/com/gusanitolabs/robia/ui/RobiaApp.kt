@@ -2239,11 +2239,15 @@ private fun RobiaShell(
             onSaveBatchDraft = { item, acceptOriginalPhoto, capture ->
                 batchDrafts.firstOrNull { draft -> draft.id == item.id }?.let { previous ->
                     updateBatchDraft(
-                        item.toBatchDraftFromExisting(
+                        carryBatchAiMarks(
                             previous = previous,
-                            mainColors = mainColors,
-                            acceptOriginalPhoto = acceptOriginalPhoto,
-                        ).copy(suggestionCapture = capture ?: previous.suggestionCapture),
+                            updated = item.toBatchDraftFromExisting(
+                                previous = previous,
+                                mainColors = mainColors,
+                                acceptOriginalPhoto = acceptOriginalPhoto,
+                            ).copy(suggestionCapture = capture ?: previous.suggestionCapture),
+                            availableTags = availableTags,
+                        ),
                     )
                 }
                 popRoute()
@@ -3291,6 +3295,7 @@ private fun RobiaNavHost(
                 developerModeEnabled = developerModeEnabled,
                 suggestionService = suggestionService,
                 initialPhotoReviewState = draft.toBatchEditPhotoReviewState(),
+                initialAiMarks = draft.toAiMarks(),
                 titleRes = R.string.batch_edit_title,
                 bodyRes = R.string.batch_edit_body,
                 saveButtonTextRes = if (draft.status == BatchDraftStatus.NeedsReview) {
