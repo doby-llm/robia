@@ -1035,4 +1035,14 @@
     <string name="settings_color_palette">Colour palette</string>
     <string name="palette_earth_steel">Earth &amp; Steel</string>
     <string name="palette_tobacco_bordeaux">Tobacco &amp; Bordeaux</string>
+    <!-- DU1 -->
+    <string name="duplicate_check_title">Check for duplicates</string>
+    <string name="duplicate_check_summary">Find garments that may be the same</string>
+    <string name="duplicate_check_running">Checking… %1$d of %2$d</string>
+    <string name="duplicate_check_none">No possible duplicates found</string>
+    <string name="duplicate_check_failed">Couldn\'t check. Try again.</string>
+    <plurals name="duplicate_check_not_ready">
+        <item quantity="one">%d garment isn\'t ready to compare yet</item>
+        <item quantity="other">%d garments aren\'t ready to compare yet</item>
+    </plurals>
 </resources>

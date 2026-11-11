@@ -54,6 +54,7 @@ import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -88,6 +89,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -113,6 +115,7 @@ import com.gusanitolabs.robia.data.toDomain
 import com.gusanitolabs.robia.media.cutout.CutoutPackManifest
 import com.gusanitolabs.robia.media.cutout.PreciseCutoutEngine
 import com.gusanitolabs.robia.suggestions.CutoutBenchmark
+import com.gusanitolabs.robia.suggestions.DuplicateSession
 import com.gusanitolabs.robia.suggestions.DevBenchmark
 import com.gusanitolabs.robia.suggestions.garmentTextInput
 import com.gusanitolabs.robia.suggestions.rankSimilar
@@ -153,6 +156,7 @@ internal fun SettingsScreen(
     onBrowseLayoutChange: (BrowseLayout) -> Unit,
     onRestoreSyncLogClick: () -> Unit,
     onDuplicateCalibrationClick: () -> Unit,
+    onDuplicateCheckClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -167,6 +171,8 @@ internal fun SettingsScreen(
     var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
     val cutoutSettings by app.settingsRepository.settings.collectAsState(initial = RobiaSettings())
     val cutoutPackState by app.cutoutPack.state.collectAsState(initial = ModelState.NotDownloaded)
+    val modelState by app.modelStore.state.collectAsState()
+    val duplicateCheck by DuplicateSession.check.collectAsState()
     var cutoutBenchmarkText by remember { mutableStateOf<String?>(null) }
     var cutoutBenchmarkRunning by remember { mutableStateOf(false) }
     LazyColumn(
@@ -196,6 +202,30 @@ internal fun SettingsScreen(
                     },
                     onClick = onPreciseCutoutClick,
                 )
+                // Same rule as the other model features: the check needs the suggestion model (R6-DEC-007).
+                if (modelState is ModelState.Ready) {
+                    Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.surfaceContainerLow)
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.duplicate_check_title)) },
+                        supportingContent = {
+                            Column {
+                                duplicateCheckLines(duplicateCheck).forEach { line ->
+                                    Text(
+                                        text = when (line) {
+                                            is DuplicateCheckLine.Plain -> stringResource(line.id, *line.args.toTypedArray())
+                                            is DuplicateCheckLine.Counted -> pluralStringResource(line.id, line.count, line.count)
+                                        },
+                                    )
+                                }
+                            }
+                        },
+                        leadingContent = { Icon(Icons.Rounded.Style, contentDescription = null) },
+                        modifier = Modifier.clickable(
+                            enabled = duplicateCheckTapEnabled(duplicateCheck),
+                            onClick = onDuplicateCheckClick,
+                        ),
+                    )
+                }
             }
         }
         item {

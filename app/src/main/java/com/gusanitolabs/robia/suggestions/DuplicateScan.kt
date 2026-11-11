@@ -87,10 +87,36 @@ data class CalibrationCounts(val active: Int, val withVector: Int, val hashMatch
 /** The calibration pairs of one scan, with the counts that explain an empty list. */
 data class CalibrationScan(val pairs: List<CalibrationPair>, val counts: CalibrationCounts)
 
-/** The result of one scan: [Success] with its groups, or [Failed] when the vectors or the photos could not be read. */
+/**
+ * The result of one scan: [Success] with its groups; [Incomplete] when an active garment with a photo has no IMAGE vector
+ * yet, so a later scan, after the backfill, can compare more (its groups still publish, but the signature is not recorded);
+ * or [Failed] when the vectors or the photos could not be read.
+ */
 sealed interface DuplicateScanOutcome {
     data class Success(val groups: List<DuplicateGroup>) : DuplicateScanOutcome
+    data class Incomplete(val groups: List<DuplicateGroup>) : DuplicateScanOutcome
     data object Failed : DuplicateScanOutcome
+}
+
+/**
+ * A scan's [outcome] with [notCompared]: the active garments with a photo that were left out (no current IMAGE vector, or a
+ * stale hash). The count is not part of [DuplicateScanOutcome], so the outcomes keep comparing by their groups.
+ */
+data class DuplicateScanReport(val outcome: DuplicateScanOutcome, val notCompared: Int)
+
+/** What the Settings row "Check for duplicates" shows (R6-DEC-007). Process-wide, so leaving Settings does not lose it. */
+sealed interface DuplicateCheckStatus {
+    data object Idle : DuplicateCheckStatus
+    data class Running(val done: Int, val total: Int) : DuplicateCheckStatus
+    data class Done(val groupCount: Int, val notCompared: Int) : DuplicateCheckStatus
+    data object Failed : DuplicateCheckStatus
+}
+
+/** The row status after a forced check: groups or not, and how many garments were not compared. */
+fun DuplicateScanReport.checkStatus(): DuplicateCheckStatus = when (val result = outcome) {
+    is DuplicateScanOutcome.Success -> DuplicateCheckStatus.Done(result.groups.size, notCompared)
+    is DuplicateScanOutcome.Incomplete -> DuplicateCheckStatus.Done(result.groups.size, notCompared)
+    DuplicateScanOutcome.Failed -> DuplicateCheckStatus.Failed
 }
 
 /**
@@ -116,6 +142,15 @@ object DuplicateSession {
     /** The photo hashes the background scans of this process have read; see [PhotoHashCache]. */
     internal val photoHashes = PhotoHashCache()
 
+    /** Held by every scan, automatic or forced, from its start to its publish: see [publishDuplicateScan]. */
+    internal val scanLock = Mutex()
+    private val _check = MutableStateFlow<DuplicateCheckStatus>(DuplicateCheckStatus.Idle)
+    val check: StateFlow<DuplicateCheckStatus> = _check.asStateFlow()
+
+    internal fun setCheck(status: DuplicateCheckStatus) {
+        _check.value = status
+    }
+
     fun replaceGroups(scanned: List<DuplicateGroup>) {
         _groups.value = scanned
     }
@@ -140,6 +175,7 @@ object DuplicateSession {
     internal fun clear() {
         _groups.value = emptyList()
         _dismissals.value = emptySet()
+        _check.value = DuplicateCheckStatus.Idle
         photoHashes.clear()
     }
 }
@@ -341,16 +377,20 @@ fun duplicateScanSignature(items: List<ClothingItem>): String = items
 /** REQ-DU-04 (R3-DEC-051): a scan is due whenever the active garments differ from the last successful scan's. */
 fun duplicateScanDue(lastSignature: String?, signature: String): Boolean = lastSignature != signature
 
-/** The signature to remember after a scan: a Success records [signature]; a Failed keeps [previous], so the scan is retried. */
+/**
+ * The signature to remember after a scan: a Success records [signature]. An Incomplete or a Failed keeps [previous], so the
+ * scan is due again: the vectors that arrive later are compared, and a failed scan is retried.
+ */
 fun nextDuplicateScanSignature(previous: String?, signature: String, outcome: DuplicateScanOutcome): String? =
     when (outcome) {
         is DuplicateScanOutcome.Success -> signature
-        DuplicateScanOutcome.Failed -> previous
+        is DuplicateScanOutcome.Incomplete, DuplicateScanOutcome.Failed -> previous
     }
 
-/** The groups to show after a scan: a Success replaces [current]; a Failed keeps them. */
+/** The groups to show after a scan: a Success or an Incomplete replaces [current]; a Failed keeps them. */
 fun DuplicateScanOutcome.groupsAfter(current: List<DuplicateGroup>): List<DuplicateGroup> = when (this) {
     is DuplicateScanOutcome.Success -> groups
+    is DuplicateScanOutcome.Incomplete -> groups
     DuplicateScanOutcome.Failed -> current
 }
 
@@ -364,8 +404,9 @@ suspend fun scanDuplicates(
     items: List<ClothingItem>,
     embeddingRepository: EmbeddingRepository,
     dismissed: () -> Set<DuplicatePairKey>,
-): DuplicateScanOutcome = withContext(Dispatchers.IO) {
-    collectDuplicateScan(
+    onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+): DuplicateScanReport = withContext(Dispatchers.IO) {
+    collectDuplicateScanReport(
         items = items,
         snapshot = { embeddingRepository.snapshotVectors(EmbeddingRecipe.MODEL_ID, EmbeddingRecipe.RECIPE_ID) },
         hash = { uri -> currentPhotoHash(context, uri) },
@@ -374,7 +415,61 @@ suspend fun scanDuplicates(
             Log.w(DUPLICATE_LOG_TAG, "Duplicate scan failed: ${failure::class.java.simpleName}: ${failure.message}")
         },
         cache = DuplicateSession.photoHashes,
+        onProgress = onProgress,
     )
+}
+
+/**
+ * The one path that publishes a scan, automatic or forced (REQ-DU-04, R6-DEC-007). Under [DuplicateSession.scanLock] the stored
+ * dismissals are read, [scan] runs, then the groups and [DuplicateScanHistory.lastSignature] are set, so two scans never publish
+ * out of order. An automatic scan runs only when [signature] is due, checked under the lock: a forced scan may have recorded it
+ * while this one waited. A forced scan skips that check and does not wait: while another scan holds the lock it returns null.
+ * A cancelled scan publishes nothing and releases the lock; a failed read of the dismissals is a [DuplicateScanOutcome.Failed].
+ */
+suspend fun publishDuplicateScan(
+    signature: String,
+    items: List<ClothingItem>,
+    force: Boolean,
+    loadStoredDismissals: suspend () -> Set<DuplicatePairKey>,
+    scan: suspend (items: List<ClothingItem>, dismissed: () -> Set<DuplicatePairKey>) -> DuplicateScanReport,
+): DuplicateScanReport? {
+    val lock = DuplicateSession.scanLock
+    if (force) {
+        if (!lock.tryLock()) return null
+        return try {
+            scanAndPublish(signature, items, loadStoredDismissals, scan)
+        } finally {
+            lock.unlock()
+        }
+    }
+    return lock.withLock {
+        if (duplicateScanDue(DuplicateScanHistory.lastSignature, signature)) {
+            scanAndPublish(signature, items, loadStoredDismissals, scan)
+        } else {
+            null
+        }
+    }
+}
+
+/** The body of [publishDuplicateScan], run under the lock. Any failure except cancellation is a [DuplicateScanOutcome.Failed]. */
+private suspend fun scanAndPublish(
+    signature: String,
+    items: List<ClothingItem>,
+    loadStoredDismissals: suspend () -> Set<DuplicatePairKey>,
+    scan: suspend (items: List<ClothingItem>, dismissed: () -> Set<DuplicatePairKey>) -> DuplicateScanReport,
+): DuplicateScanReport {
+    val report = try {
+        // The stored dismissals go in before the scan, so a pair dismissed in an earlier run does not come back.
+        DuplicateSession.loadDismissals(loadStoredDismissals())
+        scan(items) { DuplicateSession.dismissals.value }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        DuplicateScanReport(DuplicateScanOutcome.Failed, notCompared = 0)
+    }
+    DuplicateSession.replaceGroups(report.outcome.groupsAfter(DuplicateSession.groups.value))
+    DuplicateScanHistory.lastSignature = nextDuplicateScanSignature(DuplicateScanHistory.lastSignature, signature, report.outcome)
+    return report
 }
 
 /**
@@ -388,17 +483,51 @@ internal suspend fun collectDuplicateScan(
     dismissed: () -> Set<DuplicatePairKey>,
     onFailure: (Exception) -> Unit,
     cache: PhotoHashCache = PhotoHashCache(),
-): DuplicateScanOutcome = try {
+): DuplicateScanOutcome = collectDuplicateScanReport(items, snapshot, hash, dismissed, onFailure, cache).outcome
+
+/** [collectDuplicateScan] with the count of garments left out. [onProgress] reports the photo hashing, see [resolvePhotoHashes]. */
+internal suspend fun collectDuplicateScanReport(
+    items: List<ClothingItem>,
+    snapshot: suspend () -> Map<String, GarmentVectors>,
+    hash: suspend (uri: String) -> String?,
+    dismissed: () -> Set<DuplicatePairKey>,
+    onFailure: (Exception) -> Unit,
+    cache: PhotoHashCache = PhotoHashCache(),
+    onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+): DuplicateScanReport = try {
     val vectors = snapshot()
-    val currentHashes = resolvePhotoHashes(scanHashCandidates(items, vectors), items, hash = hash, cache = cache)
+    val currentHashes = resolvePhotoHashes(scanHashCandidates(items, vectors), items, hash = hash, onProgress = onProgress, cache = cache)
     cache.retainOnly(activePhotos(items))
-    DuplicateScanOutcome.Success(scan(items, vectors, currentHashes, dismissed()))
+    val groups = scan(items, vectors, currentHashes, dismissed())
+    DuplicateScanReport(
+        outcome = if (hasMissingVector(items, vectors)) DuplicateScanOutcome.Incomplete(groups) else DuplicateScanOutcome.Success(groups),
+        notCompared = notComparedCount(items, vectors, currentHashes),
+    )
 } catch (cancelled: CancellationException) {
     throw cancelled
 } catch (failure: Exception) {
     onFailure(failure)
-    DuplicateScanOutcome.Failed
+    DuplicateScanReport(DuplicateScanOutcome.Failed, notCompared = 0)
 }
+
+/**
+ * Whether an active garment with a photo has no IMAGE vector yet. The backfill adds it later, so a scan made now is incomplete.
+ * A stale vector is not here: the backfill never repairs one, so a rescan would not change the result.
+ */
+internal fun hasMissingVector(items: List<ClothingItem>, vectors: Map<String, GarmentVectors>): Boolean =
+    items.any { item -> !item.isArchived && item.hasPhoto() && vectors[item.id]?.image == null }
+
+/** The active garments with a photo that [eligibleGarments] left out: no IMAGE vector, or a stale hash (R6, DU0 cause 3). */
+internal fun notComparedCount(
+    items: List<ClothingItem>,
+    vectors: Map<String, GarmentVectors>,
+    currentPhotoHashes: Map<String, String>,
+): Int {
+    val compared = eligibleGarments(items, vectors, currentPhotoHashes).mapTo(HashSet(), Eligible::id)
+    return items.count { item -> !item.isArchived && item.hasPhoto() && item.id !in compared }
+}
+
+private fun ClothingItem.hasPhoto(): Boolean = !photoUri.isNullOrBlank()
 
 /**
  * The calibration list (G-DUP): every active garment is checked, because same-category pairs are not limited to a shared
