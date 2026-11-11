@@ -130,7 +130,7 @@ internal data class BatchDraftItem(
 )
 
 /** The AI marks an editor opens with, as in single add. Null (the default) opens the editor with none. */
-internal data class AiMarks(
+data class AiMarks(
     val modelOwnedTagIds: List<String> = emptyList(),
     val primaryColor: Boolean = false,
     val secondaryColor: Boolean = false,
