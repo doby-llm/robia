@@ -1035,6 +1035,16 @@
     <string name="settings_color_palette">Farbpalette</string>
     <string name="palette_earth_steel">Erde &amp; Stahl</string>
     <string name="palette_tobacco_bordeaux">Tabak &amp; Bordeaux</string>
+    <!-- DU1 -->
+    <string name="duplicate_check_title">Nach Duplikaten suchen</string>
+    <string name="duplicate_check_summary">Findet Kleidungsstücke, die gleich sein könnten</string>
+    <string name="duplicate_check_running">Wird geprüft… %1$d von %2$d</string>
+    <string name="duplicate_check_none">Keine möglichen Duplikate gefunden</string>
+    <string name="duplicate_check_failed">Prüfung fehlgeschlagen. Bitte erneut versuchen.</string>
+    <plurals name="duplicate_check_not_ready">
+        <item quantity="one">%d Kleidungsstück ist noch nicht bereit zum Vergleich</item>
+        <item quantity="other">%d Kleidungsstücke sind noch nicht bereit zum Vergleich</item>
+    </plurals>
     <!-- BI1 -->
     <string name="batch_import_preparing">Fotos werden vorbereitet… %1$d von %2$d</string>
 </resources>

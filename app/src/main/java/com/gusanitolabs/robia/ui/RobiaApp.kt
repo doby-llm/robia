@@ -209,9 +209,10 @@ import com.gusanitolabs.robia.media.ImageTargetBounds
 import com.gusanitolabs.robia.media.PhotoBackgroundRemover
 import com.gusanitolabs.robia.media.SegmentationModuleGates
 import com.gusanitolabs.robia.suggestions.DevBenchmark
+import com.gusanitolabs.robia.suggestions.DuplicateCheckStatus
 import com.gusanitolabs.robia.suggestions.DuplicateGroup
 import com.gusanitolabs.robia.suggestions.DuplicatePairKey
-import com.gusanitolabs.robia.suggestions.DuplicateScanHistory
+import com.gusanitolabs.robia.suggestions.DuplicateScanReport
 import com.gusanitolabs.robia.suggestions.DuplicateSession
 import com.gusanitolabs.robia.suggestions.AppliedDelta
 import com.gusanitolabs.robia.suggestions.ApplyResult
@@ -219,10 +220,9 @@ import com.gusanitolabs.robia.suggestions.EmbeddingRecipe
 import com.gusanitolabs.robia.suggestions.TagDelta
 import com.gusanitolabs.robia.suggestions.applyDelta
 import com.gusanitolabs.robia.suggestions.revertDelta
-import com.gusanitolabs.robia.suggestions.duplicateScanDue
+import com.gusanitolabs.robia.suggestions.checkStatus
 import com.gusanitolabs.robia.suggestions.duplicateScanSignature
-import com.gusanitolabs.robia.suggestions.groupsAfter
-import com.gusanitolabs.robia.suggestions.nextDuplicateScanSignature
+import com.gusanitolabs.robia.suggestions.publishDuplicateScan
 import com.gusanitolabs.robia.suggestions.scanDuplicates
 import com.gusanitolabs.robia.suggestions.QueryEmbedding
 import com.gusanitolabs.robia.suggestions.SavedExample
@@ -1182,21 +1182,23 @@ private fun RobiaShell(
     // with nothing left (settled); before that, remaining = 0 only means "not computed yet". Keyed on the signature, so a
     // change to the active garments during a scan restarts it.
     val duplicateSignature = remember(clothingItems) { duplicateScanSignature(clothingItems) }
+    val latestDuplicateSignature by rememberUpdatedState(duplicateSignature)
+    // The stored "Not duplicates" pairs, read before every scan (automatic or forced), so a dismissed pair stays out after a restart.
+    val loadStoredDuplicateDismissals: suspend () -> Set<DuplicatePairKey> = {
+        duplicateDismissalDao.getAll().mapTo(HashSet()) { pair -> DuplicatePairKey.of(pair.garmentA, pair.garmentB) }
+    }
     LaunchedEffect(duplicateSignature, currentRoute, duplicateBackfill.remaining, duplicateBackfill.settled, wardrobeItemsLoading) {
         if (wardrobeItemsLoading || currentRoute != RobiaRoute.Browse) return@LaunchedEffect
         if (!duplicateBackfill.settled || duplicateBackfill.remaining > 0) return@LaunchedEffect
-        if (!duplicateScanDue(DuplicateScanHistory.lastSignature, duplicateSignature)) return@LaunchedEffect
-        // The stored dismissals go in before the scan, so a pair dismissed in an earlier run does not come back. A failed read
-        // skips this scan: the signature is not recorded, so the next Browse visit retries it.
-        val stored = try {
-            duplicateDismissalDao.getAll()
-        } catch (failure: Exception) {
-            return@LaunchedEffect
-        }
-        DuplicateSession.loadDismissals(stored.mapTo(HashSet()) { pair -> DuplicatePairKey.of(pair.garmentA, pair.garmentB) })
-        val outcome = scanDuplicates(context, clothingItems, duplicateRepository) { DuplicateSession.dismissals.value }
-        DuplicateSession.replaceGroups(outcome.groupsAfter(DuplicateSession.groups.value))
-        DuplicateScanHistory.lastSignature = nextDuplicateScanSignature(DuplicateScanHistory.lastSignature, duplicateSignature, outcome)
+        // Due-ness is checked under the scan lock inside publishDuplicateScan. A failed read publishes nothing and records nothing.
+        publishDuplicateScan(
+            signature = duplicateSignature,
+            items = clothingItems,
+            force = false,
+            isCurrent = { true },
+            loadStoredDismissals = loadStoredDuplicateDismissals,
+            scan = { scanItems, dismissed -> scanDuplicates(context, scanItems, duplicateRepository, dismissed) },
+        )
     }
     // Every route that archives or deletes a garment (Browse, review, item detail) changes clothingItems, so groups drop it here.
     // Not while the wardrobe is loading: an empty list would drop every group.
@@ -1287,6 +1289,42 @@ private fun RobiaShell(
 
     fun popRoute() {
         if (routeStack.size > 1) routeStack.removeAt(routeStack.lastIndex)
+    }
+
+    // Settings › Check for duplicates (DU1): a scan now, whatever the signature. It runs in the app scope, so leaving Settings does not
+    // cancel it. A tap while another scan holds the lock is ignored by publishDuplicateScan.
+    val startDuplicateCheck: () -> Unit = {
+        val items = clothingItems
+        if (!wardrobeItemsLoading) {
+            val signature = duplicateScanSignature(items)
+            app.appScope.launch {
+                val report = publishDuplicateScan(
+                    signature = signature,
+                    items = items,
+                    force = true,
+                    // A garment archived or deleted while the check runs changes the signature: its result is dropped.
+                    isCurrent = { latestDuplicateSignature == signature },
+                    loadStoredDismissals = loadStoredDuplicateDismissals,
+                    scan = { scanItems, dismissed ->
+                        DuplicateSession.setCheck(DuplicateCheckStatus.Running(done = 0, total = 0))
+                        scanDuplicates(context, scanItems, duplicateRepository, dismissed) { done, total ->
+                            DuplicateSession.setCheck(DuplicateCheckStatus.Running(done, total))
+                        }
+                    },
+                ) ?: return@launch
+                val status = report.checkStatus()
+                DuplicateSession.setCheck(status)
+                withContext(Dispatchers.Main) {
+                    // The live groups, not the report: a prune after the publish must not open an empty review screen.
+                    if (
+                        duplicateCheckOpensReview(status, onSettings = routeStack.lastOrNull() == RobiaRoute.Settings) &&
+                        DuplicateSession.groups.value.isNotEmpty()
+                    ) {
+                        pushRoute(RobiaRoute.DuplicateReview)
+                    }
+                }
+            }
+        }
     }
 
     fun closeAddEdit() {
@@ -2301,6 +2339,7 @@ private fun RobiaShell(
                 replaceRoute(RobiaRoute.Browse)
             },
             onDuplicateCalibrationClick = { pushRoute(RobiaRoute.DuplicateCalibration) },
+            onDuplicateCheckClick = startDuplicateCheck,
             onRetryRestoredPhoto = onRetryRestoredPhoto,
             browseAttentions = browseAttentions,
             mergeProposalCard = mergeProposalCard,
@@ -3114,6 +3153,7 @@ private fun RobiaNavHost(
     onDeleteDuplicateItems: (List<String>) -> Unit,
     onDuplicatesResolved: (removedCount: Int) -> Unit,
     onDuplicateCalibrationClick: () -> Unit,
+    onDuplicateCheckClick: () -> Unit,
     onRetryRestoredPhoto: (String) -> Unit,
     browseAttentions: List<SyncAttention>,
     mergeProposalCard: (@Composable () -> Unit)? = null,
@@ -3395,6 +3435,7 @@ private fun RobiaNavHost(
             onBrowseLayoutChange = onBrowseLayoutChange,
             onRestoreSyncLogClick = onRestoreSyncLogClick,
             onDuplicateCalibrationClick = onDuplicateCalibrationClick,
+            onDuplicateCheckClick = onDuplicateCheckClick,
         )
         RobiaRoute.DeveloperSyncLog -> if (developerModeUnlocked && developerModeEnabled) {
             DeveloperRestoreSyncLogScreen(
@@ -3420,6 +3461,7 @@ private fun RobiaNavHost(
                 onBrowseLayoutChange = onBrowseLayoutChange,
                 onRestoreSyncLogClick = onRestoreSyncLogClick,
                 onDuplicateCalibrationClick = onDuplicateCalibrationClick,
+                onDuplicateCheckClick = onDuplicateCheckClick,
             )
         }
         RobiaRoute.AdvancedFilters -> AdvancedFiltersScreen(
