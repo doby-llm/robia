@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robia · Color palette playground</title>
+  <style id="base-styles">
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --robiabackground: #F9F9F9;
+      --robiaerror: #BA1A1A;
+      --robiaerrorcontainer: #FFDAD6;
+      --robiainverseonsurface: #F0F1F1;
+      --robiainverseprimary: #DAC1BC;
+      --robiainversesurface: #2F3131;
+      --robiaonbackground: #1A1C1C;
+      --robiaonerror: #FFFFFF;
+      --robiaonerrorcontainer: #93000A;
+      --robiaonprimary: #FFFFFF;
+      --robiaonprimarycontainer: #A08A85;
+      --robiaonsecondary: #FFFFFF;
+      --robiaonsecondarycontainer: #6F6051;
+      --robiaonsurface: #1A1C1C;
+      --robiaonsurfacevariant: #4F4442;
+      --robiaontertiary: #FFFFFF;
+      --robiaontertiarycontainer: #C37F50;
+      --robiaoutline: #817472;
+      --robiaoutlinevariant: #D2C3C0;
+      --robiaprimary: #1D100D;
+      --robiaprimarycontainer: #332421;
+      --robiascrim: #000000;
+      --robiasecondary: #6B5C4D;
+      --robiasecondarycontainer: #F1DCC9;
+      --robiasurface: #F9F9F9;
+      --robiasurfacebright: #F9F9F9;
+      --robiasurfacecontainer: #EFE5D9;
+      --robiasurfacecontainerhigh: #E8E8E8;
+      --robiasurfacecontainerhighest: #E2E2E2;
+      --robiasurfacecontainerlow: #F3F3F4;
+      --robiasurfacecontainerlowest: #FFFFFF;
+      --robiasurfacedim: #DADADA;
+      --robiasurfacetint: #6D5A56;
+      --robiasurfacevariant: #E2E2E2;
+      --robiatertiary: #240D00;
+      --robiatertiarycontainer: #431D00;
+      --shadow: 0 18px 50px rgba(29, 16, 13, .10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--robiaonbackground); background: #e9e6e3; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .shell { min-height: 100vh; padding: 30px; }
+    .app { display: grid; grid-template-columns: minmax(280px, 360px) minmax(360px, 1fr); gap: 24px; max-width: 1280px; margin: 0 auto; align-items: start; }
+    .panel { background: var(--robiasurfacecontainerlowest); border: 1px solid var(--robiaoutlinevariant); border-radius: 20px; box-shadow: var(--shadow); }
+    .controls { overflow: hidden; position: sticky; top: 24px; max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+    .panel-header { padding: 22px 22px 18px; border-bottom: 1px solid var(--robiasurfacecontainerhigh); }
+    .eyebrow { margin: 0 0 7px; color: var(--robiasecondary); font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 8px; color: var(--robiaprimary); font-size: 24px; line-height: 1.1; letter-spacing: -.03em; }
+    h2 { margin-bottom: 5px; color: var(--robiaprimary); font-size: 20px; letter-spacing: -.02em; }
+    .muted { color: var(--robiaonsurfacevariant); font-size: 13px; line-height: 1.5; }
+    .note { margin: 16px 22px; padding: 12px 13px; border-left: 3px solid var(--robiatertiary); color: var(--robiaonsurfacevariant); background: var(--robiasecondarycontainer); border-radius: 8px; font-size: 12px; line-height: 1.45; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 22px 16px; }
+    .btn { border: 1px solid var(--robiaoutline); border-radius: 999px; padding: 9px 13px; color: var(--robiaonsurface); background: transparent; font-size: 12px; font-weight: 750; }
+    .btn:hover, .btn:focus-visible { border-color: var(--robiaprimary); outline: none; }
+    .btn.primary { border-color: var(--robiaprimary); color: var(--robiaonprimary); background: var(--robiaprimary); }
+    .btn.secondary { border-color: var(--robiasecondary); color: var(--robiaonsecondary); background: var(--robiasecondary); }
+    .controls-scroll { overflow: auto; padding: 0 22px 22px; }
+    .group { padding-top: 16px; }
+    .group-title { margin: 0 0 8px; color: var(--robiasecondary); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .color-row { display: grid; grid-template-columns: 1fr auto 74px; gap: 8px; align-items: center; min-height: 39px; border-bottom: 1px solid var(--robiasurfacecontainerlow); }
+    .color-row:last-child { border-bottom: 0; }
+    .color-name { overflow-wrap: anywhere; color: var(--robiaonsurface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .color-value { color: var(--robiaonsurfacevariant); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; text-align: right; text-transform: uppercase; }
+    input[type="color"] { width: 34px; height: 26px; padding: 2px; border: 1px solid var(--robiaoutlinevariant); border-radius: 7px; background: var(--robiasurface); }
+    .preview-wrap { min-width: 0; }
+    .preview-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 0 6px 12px; }
+    .preview-heading .muted { margin: 0; text-align: right; }
+    .phone { width: min(100%, 620px); min-height: 760px; margin: 0 auto; overflow: hidden; color: var(--robiaonbackground); background: var(--robiabackground); border: 8px solid var(--robiainversesurface); border-radius: 36px; box-shadow: 0 24px 65px rgba(29, 16, 13, .22); }
+    .phone-header { display: flex; align-items: center; justify-content: space-between; min-height: 67px; padding: 17px 20px 12px; background: var(--robiasurface); }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; color: var(--robiaonprimary); background: var(--robiaprimary); border-radius: 10px; font-size: 15px; font-weight: 900; }
+    .brand-name { color: var(--robiaprimary); font-size: 18px; font-weight: 850; letter-spacing: -.04em; }
+    .icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--robiaonsurface); background: transparent; font-size: 20px; }
+    .icon-btn:hover { background: var(--robiasurfacevariant); }
+    .phone-main { padding: 20px 20px 78px; }
+    .greeting { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+    .greeting h3 { max-width: 330px; margin-bottom: 6px; color: var(--robiaprimary); font-size: clamp(23px, 5vw, 31px); line-height: 1.06; letter-spacing: -.055em; }
+    .greeting p { margin: 0; color: var(--robiaonsurfacevariant); font-size: 12px; }
+    .wardrobe-count { color: var(--robiaonprimarycontainer); font-size: 12px; font-weight: 800; text-align: right; }
+    .wardrobe-count strong { display: block; color: var(--robiaprimary); font-size: 24px; line-height: 1; }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .summary-card { padding: 12px; border-radius: 14px; background: var(--robiasurfacecontainer); }
+    .summary-card strong { display: block; color: var(--robiaprimary); font-size: 18px; }
+    .summary-card span { color: var(--robiaonsecondarycontainer); font-size: 10px; font-weight: 700; }
+    .filter-bar { display: flex; gap: 8px; margin: 0 -20px 18px; padding: 0 20px 3px; overflow-x: auto; scrollbar-width: none; }
+    .filter-bar::-webkit-scrollbar { display: none; }
+    .chip { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--robiaoutlinevariant); border-radius: 999px; color: var(--robiaonsurfacevariant); background: var(--robiasurface); font-size: 11px; font-weight: 750; }
+    .chip.active { border-color: var(--robiaprimary); color: var(--robiaonprimary); background: var(--robiaprimary); }
+    .section-line { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .section-line h3 { margin: 0; color: var(--robiaprimary); font-size: 15px; }
+    .section-line span { color: var(--robiasecondary); font-size: 11px; font-weight: 750; }
+    .wardrobe-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+    .garment { position: relative; overflow: hidden; border: 1px solid transparent; border-radius: 16px; background: var(--robiasurfacecontainerlowest); box-shadow: 0 5px 16px rgba(29, 16, 13, .06); }
+    .garment:hover { border-color: var(--robiaoutlinevariant); }
+    .garment-art { display: grid; place-items: center; height: 168px; padding: 14px; background: var(--robiasurfacecontainerlow); }
+    .garment-art.tan { background: var(--robiasecondarycontainer); }
+    .garment-art.dark { background: var(--robiaprimarycontainer); }
+    .garment-art.rose { background: var(--robiaerrorcontainer); }
+    .shirt, .coat, .shoe, .trouser { position: relative; filter: drop-shadow(0 7px 6px rgba(0, 0, 0, .13)); }
+    .shirt { width: 91px; height: 105px; background: var(--robiasurfacebright); clip-path: polygon(28% 0, 43% 9%, 57% 9%, 72% 0, 100% 20%, 82% 43%, 73% 35%, 73% 100%, 27% 100%, 27% 35%, 18% 43%, 0 20%); }
+    .shirt::after { content: ""; position: absolute; inset: 9% 45% 0; background: var(--robiasurfacedim); opacity: .75; }
+    .coat { width: 85px; height: 115px; background: var(--robiatertiary); clip-path: polygon(26% 0, 43% 11%, 57% 11%, 74% 0, 100% 19%, 82% 39%, 72% 30%, 72% 100%, 28% 100%, 28% 30%, 18% 39%, 0 19%); }
+    .coat::after { content: ""; position: absolute; top: 14px; bottom: 0; left: calc(50% - 1px); width: 2px; background: var(--robiaontertiary); opacity: .65; }
+    .shoe { width: 126px; height: 52px; background: var(--robiasurfacebright); border-radius: 30px 32px 12px 12px; transform: rotate(-8deg); }
+    .shoe::after { content: ""; position: absolute; right: -8px; bottom: 0; width: 105px; height: 13px; background: var(--robiaoutlinevariant); border-radius: 0 12px 12px 10px; }
+    .trouser { width: 74px; height: 118px; background: var(--robiasecondary); clip-path: polygon(8% 0, 92% 0, 60% 100%, 50% 100%, 49% 52%, 39% 100%, 27% 100%); }
+    .favorite { position: absolute; z-index: 1; top: 9px; right: 9px; display: grid; place-items: center; width: 27px; height: 27px; border: 0; border-radius: 50%; color: var(--robiasecondary); background: color-mix(in srgb, var(--robiasurface) 82%, transparent); font-size: 15px; }
+    .garment-copy { padding: 10px; }
+    .garment-copy strong, .garment-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .garment-copy strong { color: var(--robiaonsurface); font-size: 12px; }
+    .garment-copy span { margin-top: 3px; color: var(--robiaonsurfacevariant); font-size: 10px; }
+    .tag { display: inline-block !important; width: max-content; margin-top: 7px !important; padding: 4px 7px; border-radius: 5px; color: var(--robiaontertiarycontainer) !important; background: color-mix(in srgb, var(--robiatertiarycontainer) 15%, transparent); font-size: 9px !important; font-weight: 800; }
+    .bottom-nav { position: absolute; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); padding: 10px 18px 15px; background: var(--robiasurfacecontainer); border-top: 1px solid var(--robiasurfacecontainerhigh); }
+    .nav-item { display: grid; gap: 4px; justify-items: center; border: 0; color: var(--robiaonsurfacevariant); background: transparent; font-size: 10px; font-weight: 700; }
+    .nav-item.active { color: var(--robiaonprimarycontainer); }
+    .nav-icon { display: grid; place-items: center; width: 48px; height: 27px; border-radius: 999px; font-size: 16px; }
+    .nav-item.active .nav-icon { color: var(--robiaonprimary); background: var(--robiaprimarycontainer); }
+    .export { margin-top: 18px; }
+    .export summary { cursor: pointer; color: var(--robiasecondary); font-size: 12px; font-weight: 800; }
+    textarea { width: 100%; min-height: 180px; margin-top: 10px; padding: 12px; resize: vertical; border: 1px solid var(--robiaoutlinevariant); border-radius: 10px; color: var(--robiaonsurface); background: var(--robiasurfacecontainerlow); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .status { min-height: 16px; margin: 8px 0 0; color: var(--robiasecondary); font-size: 11px; }
+    @media (max-width: 820px) {
+      .shell { padding: 14px; }
+      .app { grid-template-columns: 1fr; }
+      .controls { position: static; max-height: none; }
+      .controls-scroll { max-height: 520px; }
+      .preview-heading { align-items: start; flex-direction: column; gap: 3px; }
+      .preview-heading .muted { text-align: left; }
+    }
+    @media (max-width: 430px) {
+      .shell { padding: 8px; }
+      .panel { border-radius: 16px; }
+      .phone { border-width: 5px; border-radius: 27px; }
+      .phone-main { padding-right: 14px; padding-left: 14px; }
+      .filter-bar { margin-right: -14px; margin-left: -14px; padding-right: 14px; padding-left: 14px; }
+    }
+  </style>
+  <style id="runtime-colors"></style>
+</head>
+<body>
+  <div class="shell">
+    <div class="app">
+      <aside class="panel controls" aria-label="Robia palette controls">
+        <header class="panel-header">
+          <p class="eyebrow">Robia design system</p>
+          <h1>Color palette playground</h1>
+          <p class="muted">Tune the Material 3 palette and see the browse screen respond instantly.</p>
+        </header>
+        <p class="note"><strong>Approximation:</strong> this is a fast visual prototype. The source of truth remains <code>Color.kt</code>; use the export below to manually copy values back.</p>
+        <div class="actions">
+          <button class="btn secondary" id="resetButton" type="button">Reset to Color.kt</button>
+          <button class="btn primary" id="copyButton" type="button">Copy Kotlin</button>
+        </div>
+        <div class="controls-scroll" id="colorControls"></div>
+      </aside>
+
+      <main class="preview-wrap">
+        <div class="preview-heading">
+          <div>
+            <p class="eyebrow">Live preview</p>
+            <h2>Robia / Browse</h2>
+          </div>
+          <p class="muted">Edit any swatch · no build step · works offline</p>
+        </div>
+        <section class="phone" aria-label="Robia browse screen preview">
+          <header class="phone-header">
+            <div class="brand"><div class="brand-mark">R</div><span class="brand-name">Robia</span></div>
+            <button class="icon-btn" type="button" aria-label="Settings">⚙</button>
+          </header>
+          <div class="phone-main">
+            <section class="greeting">
+              <div><h3>Your wardrobe,<br>thoughtfully yours.</h3><p>Good morning, Manu · Monday, 16 August</p></div>
+              <div class="wardrobe-count"><strong>48</strong>pieces</div>
+            </section>
+            <section class="summary" aria-label="Wardrobe summary">
+              <div class="summary-card"><strong>12</strong><span>looks this month</span></div>
+              <div class="summary-card"><strong>08</strong><span>favorites</span></div>
+              <div class="summary-card"><strong>04</strong><span>new pieces</span></div>
+            </section>
+            <div class="filter-bar" aria-label="Wardrobe filters">
+              <button class="chip active" type="button">All pieces</button><button class="chip" type="button">Tops</button><button class="chip" type="button">Bottoms</button><button class="chip" type="button">Shoes</button><button class="chip" type="button">Season</button>
+            </div>
+            <div class="section-line"><h3>Recently added</h3><span>View all →</span></div>
+            <section class="wardrobe-grid">
+              <article class="garment"><button class="favorite" type="button" aria-label="Favorite linen shirt">♡</button><div class="garment-art"><div class="shirt"></div></div><div class="garment-copy"><strong>Everyday linen shirt</strong><span>Natural · Muji</span><span class="tag">SUMMER</span></div></article>
+              <article class="garment"><button class="favorite" type="button" aria-label="Favorite field jacket">♥</button><div class="garment-art tan"><div class="coat"></div></div><div class="garment-copy"><strong>Field jacket</strong><span>Olive · Universal Works</span><span class="tag">OUTERWEAR</span></div></article>
+              <article class="garment"><button class="favorite" type="button" aria-label="Favorite sneakers">♡</button><div class="garment-art rose"><div class="shoe"></div></div><div class="garment-copy"><strong>Minimal sneakers</strong><span>Cloud · Common Projects</span><span class="tag">ESSENTIAL</span></div></article>
+              <article class="garment"><button class="favorite" type="button" aria-label="Favorite trousers">♡</button><div class="garment-art dark"><div class="trouser"></div></div><div class="garment-copy"><strong>Pleated trousers</strong><span>Espresso · COS</span><span class="tag">ALL SEASON</span></div></article>
+            </section>
+          </div>
+          <nav class="bottom-nav" aria-label="Main navigation">
+            <button class="nav-item active" type="button"><span class="nav-icon">▦</span>Browse</button>
+            <button class="nav-item" type="button"><span class="nav-icon">＋</span>Add piece</button>
+            <button class="nav-item" type="button"><span class="nav-icon">◌</span>Looks</button>
+          </nav>
+        </section>
+        <details class="export panel">
+          <summary>Show Kotlin export</summary>
+          <textarea id="exportOutput" readonly aria-label="Kotlin color declarations"></textarea>
+          <div class="status" id="status" role="status"></div>
+        </details>
+      </main>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const SOURCE_COLORS = {
+        RobiaBackground: '#F9F9F9',
+        RobiaError: '#BA1A1A',
+        RobiaErrorContainer: '#FFDAD6',
+        RobiaInverseOnSurface: '#F0F1F1',
+        RobiaInversePrimary: '#DAC1BC',
+        RobiaInverseSurface: '#2F3131',
+        RobiaOnBackground: '#1A1C1C',
+        RobiaOnError: '#FFFFFF',
+        RobiaOnErrorContainer: '#93000A',
+        RobiaOnPrimary: '#FFFFFF',
+        RobiaOnPrimaryContainer: '#A08A85',
+        RobiaOnSecondary: '#FFFFFF',
+        RobiaOnSecondaryContainer: '#6F6051',
+        RobiaOnSurface: '#1A1C1C',
+        RobiaOnSurfaceVariant: '#4F4442',
+        RobiaOnTertiary: '#FFFFFF',
+        RobiaOnTertiaryContainer: '#C37F50',
+        RobiaOutline: '#817472',
+        RobiaOutlineVariant: '#D2C3C0',
+        RobiaPrimary: '#1D100D',
+        RobiaPrimaryContainer: '#332421',
+        RobiaScrim: '#000000',
+        RobiaSecondary: '#6B5C4D',
+        RobiaSecondaryContainer: '#F1DCC9',
+        RobiaSurface: '#F9F9F9',
+        RobiaSurfaceBright: '#F9F9F9',
+        RobiaSurfaceContainer: '#EFE5D9',
+        RobiaSurfaceContainerHigh: '#E8E8E8',
+        RobiaSurfaceContainerHighest: '#E2E2E2',
+        RobiaSurfaceContainerLow: '#F3F3F4',
+        RobiaSurfaceContainerLowest: '#FFFFFF',
+        RobiaSurfaceDim: '#DADADA',
+        RobiaSurfaceTint: '#6D5A56',
+        RobiaSurfaceVariant: '#E2E2E2',
+        RobiaTertiary: '#240D00',
+        RobiaTertiaryContainer: '#431D00'
+      };
+      const GROUPS = {
+        'Foundation': ['RobiaBackground', 'RobiaOnBackground', 'RobiaSurface', 'RobiaSurfaceBright', 'RobiaSurfaceDim', 'RobiaSurfaceTint', 'RobiaSurfaceVariant', 'RobiaSurfaceContainerLowest', 'RobiaSurfaceContainerLow', 'RobiaSurfaceContainer', 'RobiaSurfaceContainerHigh', 'RobiaSurfaceContainerHighest'],
+        'Primary': ['RobiaPrimary', 'RobiaOnPrimary', 'RobiaPrimaryContainer', 'RobiaOnPrimaryContainer', 'RobiaInversePrimary'],
+        'Secondary': ['RobiaSecondary', 'RobiaOnSecondary', 'RobiaSecondaryContainer', 'RobiaOnSecondaryContainer'],
+        'Tertiary': ['RobiaTertiary', 'RobiaOnTertiary', 'RobiaTertiaryContainer', 'RobiaOnTertiaryContainer'],
+        'Text & states': ['RobiaOnSurface', 'RobiaOnSurfaceVariant', 'RobiaInverseSurface', 'RobiaInverseOnSurface', 'RobiaOutline', 'RobiaOutlineVariant', 'RobiaScrim'],
+        'Error': ['RobiaError', 'RobiaOnError', 'RobiaErrorContainer', 'RobiaOnErrorContainer']
+      };
+      let colors = { ...SOURCE_COLORS };
+      const baseStyles = document.getElementById('base-styles');
+      const BASE_CSS = baseStyles.textContent;
+      const cssLookup = () => Object.fromEntries(Object.entries(colors).map(([name, value]) => [name.toLowerCase(), value]));
+      const controls = document.getElementById('colorControls');
+      const exportOutput = document.getElementById('exportOutput');
+      const status = document.getElementById('status');
+
+      const cssName = (name) => `--${name.toLowerCase()}`;
+      const normalize = (value) => {
+        const match = String(value).trim().match(/^#?([0-9a-f]{6})$/i);
+        return match ? `#${match[1].toUpperCase()}` : null;
+      };
+      const kotlinExport = () => Object.entries(colors).map(([name, value]) => `internal val ${name} = Color(0x${value.slice(1)} )`.replace(' )', ')')).join('\n');
+      const refreshExport = () => { exportOutput.value = kotlinExport(); };
+      const announce = (message) => { status.textContent = message; window.clearTimeout(announce.timer); announce.timer = window.setTimeout(() => { status.textContent = ''; }, 2600); };
+
+      function applyColors() {
+        const lookup = cssLookup();
+        baseStyles.textContent = BASE_CSS.replace(/var\(--([a-z0-9]+)\)/g, (match, key) => lookup[key] ?? match);
+        document.querySelectorAll('[data-color-value]').forEach((node) => { node.textContent = colors[node.dataset.colorValue]; });
+        document.querySelectorAll('input[data-color-input]').forEach((input) => { input.value = colors[input.dataset.colorInput]; });
+        refreshExport();
+      }
+
+      function renderControls() {
+        controls.innerHTML = Object.entries(GROUPS).map(([group, names]) => `
+          <section class="group"><h3 class="group-title">${group}</h3>
+            ${names.map((name) => `<label class="color-row"><span class="color-name">${name}</span><input type="color" data-color-input="${name}" value="${colors[name]}" aria-label="Edit ${name}"><span class="color-value" data-color-value="${name}">${colors[name]}</span></label>`).join('')}
+          </section>`).join('');
+        controls.querySelectorAll('input[data-color-input]').forEach((input) => input.addEventListener('input', () => {
+          colors[input.dataset.colorInput] = input.value.toUpperCase();
+          applyColors();
+        }));
+      }
+
+      document.getElementById('resetButton').addEventListener('click', () => {
+        colors = { ...SOURCE_COLORS };
+        applyColors();
+        announce('Reset to the values from Color.kt.');
+      });
+      document.getElementById('copyButton').addEventListener('click', async () => {
+        const text = exportOutput.value;
+        try {
+          await navigator.clipboard.writeText(text);
+          announce('Kotlin declarations copied to the clipboard.');
+        } catch (error) {
+          exportOutput.focus();
+          exportOutput.select();
+          document.execCommand('copy');
+          announce('Kotlin declarations selected for copying.');
+        }
+      });
+
+      renderControls();
+      applyColors();
+    })();
+  </script>
+</body>
+</html>
